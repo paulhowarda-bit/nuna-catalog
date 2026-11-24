@@ -12,7 +12,7 @@ import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, f
   load, muted, panel, pill, plural, s, sizeWords, tabsNav, tbl, when} from './dom.js';
 import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
-import {sourceWords, tableHealthTab} from './health.js';
+import {policyKey, sourceWords, tableHealthTab} from './health.js';
 import {accessTab, actionWords, auditTab, exportDialog, governanceSummary} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
@@ -615,7 +615,7 @@ function historyTab(target, t) {
   load(expiry, async () => {
     const pol = await api.policy(target);
     const r = pol.resolved || {};
-    const fact = k => [code(k.replace('snapshot-expiry.', '')), r[k] ? [h('b', null, String(r[k].value)), ' · ', sourceWords(r[k].source),
+    const fact = k => [policyKey(k), r[k] ? [h('b', null, String(r[k].value)), ' · ', sourceWords(r[k].source),
       r[k].reason ? [h('br'), h('span', {class: 'fine'}, `"${r[k].reason}"`)] : null] : muted('–')];
     const on = r['snapshot-expiry.enabled'] && String(r['snapshot-expiry.enabled'].value) === 'true';
     return h('div', {class: 'panel'}, h('h2', null, 'Snapshot expiry ', on ? pill('ok', 'On') : pill('held', icon('lock'), 'Off')),

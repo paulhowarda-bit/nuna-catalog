@@ -16,6 +16,19 @@ export class ApiError extends Error {
 const STATUS_TEXT = {200: 'OK', 201: 'Created', 204: 'No Content'};
 
 /**
+ * JSON as the catalog wrote it (backlog 204): an integer past 2^53, as Iceberg's 64-bit snapshot ids mostly are, is read
+ * from its own digits as a BigInt, not rounded to the nearest double, so the console shows, links and copies the id
+ * the catalog sent. Safe integers stay numbers; ids compare with ===, key Maps and print with String() either way.
+ */
+export const parseJson = text => JSON.parse(text, (key, value, context) =>
+  typeof value === 'number' && !Number.isSafeInteger(value) && context && /^-?\d+$/.test(context.source)
+    ? BigInt(context.source) : value);
+
+/** JSON text of `x`, writing each BigInt `parseJson` read as the digits it was read from. */
+export const toJson = (x, space) => JSON.stringify(x, (key, value) =>
+  typeof value === 'bigint' ? JSON.rawJSON(String(value)) : value, space);
+
+/**
  * A JSON request. Resolves to {status, statusText, requestId, body} (body null for 204); rejects with ApiError on
  * any non-2xx, carrying the server's own type and message and its X-Request-ID.
  */
@@ -26,7 +39,7 @@ export async function send(path, {method = 'GET', body, headers = {}} = {}) {
   let text;
   try {
     response = await fetch(path, {
-      method, headers: sent, body: body === undefined ? undefined : JSON.stringify(body),
+      method, headers: sent, body: body === undefined ? undefined : toJson(body),
       cache: 'no-store', credentials: 'omit', redirect: 'error',
     });
     text = response.status === 204 ? '' : await response.text();
@@ -38,7 +51,7 @@ export async function send(path, {method = 'GET', body, headers = {}} = {}) {
   const requestId = response.headers.get('X-Request-ID');
   let json = null;
   try {
-    json = text ? JSON.parse(text) : null;
+    json = text ? parseJson(text) : null;
   } catch {
     json = null;
   }

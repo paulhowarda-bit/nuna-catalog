@@ -8,8 +8,8 @@ import {lastNightPanel, nightKpis, thirtyNights} from './nights.js';
 import {dialogForm, failure, field, fill, fmt, granted, h, icon, load, openDialog, pageHead, panel, pill, plural, tbl, text}
   from './dom.js';
 import {catalogOff, emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
-import {sourceWords, workerPanel} from './health.js';
-import {mayModifyAny, pickDialog} from './requests.js';
+import {policyKey, sourceWords, workerPanel} from './health.js';
+import {mayModify, mayModifyAny, pickDialog} from './requests.js';
 import {nothingToRead} from './overview.js';
 import {pageHref} from './route.js';
 
@@ -45,7 +45,7 @@ export function maintenancePage(catalog) {
       const table = queueTable(rows, {id: 'neediest'});
       queuePanel = panel('Tonight\'s queue', 'equality deletes first, then the highest score', queueChips(rows, table), table);
     } else {
-      queuePanel = emptyQueue(catalog, c, !!off);
+      queuePanel = emptyQueue(catalog, c, !!off, editPolicyLink(catalog, () => main.replaceWith(maintenancePage(catalog))));
     }
     return [
       pageHead({
@@ -72,14 +72,29 @@ export function maintenancePage(catalog) {
 
 const isChild = key => !key.endsWith('.enabled');
 
+/**
+ * Edit the catalog's policy, after an empty state that says maintenance is off there (backlog 206): drawn only for a
+ * caller whose groups hold modify on the catalog itself, which setting its policy needs; `reload` redraws the page.
+ */
+export function editPolicyLink(catalog, reload) {
+  const target = {catalog, kind: 'catalog', namespace: []};
+  const slot = h('span', {'data-edit-policy': ''});
+  mayModify(target).then(may => {
+    if (may) fill(slot, ' ', h('button', {class: 'linkish', type: 'button', 'data-act': 'edit-policy', onclick: () =>
+      api.policy(target).then(p => editPolicy(catalog, p, reload), error => openDialog(`Policy for ${catalog}`, failure(error)))},
+    "Edit the catalog's policy"));
+  });
+  return slot;
+}
+
 async function policyPanel(catalog, host) {
   const target = {catalog, kind: 'catalog', namespace: []};
   const p = await api.policy(target);
   const resolved = p.resolved || {};
   const keys = [...KEYS.filter(k => resolved[k]), ...Object.keys(resolved).filter(k => !KEYS.includes(k)).sort()];
-  return h('div', {class: 'panel', id: 'policy', 'data-policy': ''}, h('h2', null, `Policy for ${catalog} `, h('span', {class: 'meta'}, 'each key with where it was set')),
-    tbl('policy stack-line', ['Key', 'Value', 'Set by'], keys.map(key => h('tr', {'data-key': key},
-      h('td', {class: 'name' + (isChild(key) ? ' indent-1' : '')}, isChild(key) ? key.slice(key.indexOf('.') + 1) : key),
+  return h('div', {class: 'panel', id: 'policy', 'data-policy': ''}, h('h2', null, `Policy for ${catalog} `, h('span', {class: 'meta'}, 'each setting with where it was set')),
+    tbl('policy stack-line', ['Setting', 'Value', 'Set by'], keys.map(key => h('tr', {'data-key': key},
+      h('td', {class: isChild(key) ? 'indent-1' : null}, policyKey(key)),
       h('td', {class: 'name'}, resolved[key].value),
       h('td', null, sourceWords(resolved[key].source))))),
     h('div', {class: 'refusal-acts'},
@@ -96,7 +111,7 @@ function editPolicy(catalog, p, reload) {
   const body = h('div', null,
     h('p', null, 'Keys set here apply to every table in ', h('code', null, catalog), ' that does not set its own. '
       + 'A guardrail, a hold or a freeze, still wins. Leave a key empty to use the built-in value.'),
-    dialogForm(h('div', {class: 'dlg-grid'}, keys.map(key => field(key, text(key, resolved[key] ? resolved[key].value : '', own[key])))),
+    dialogForm(h('div', {class: 'dlg-grid'}, keys.map(key => field(policyKey(key), text(key, resolved[key] ? resolved[key].value : '', own[key])))),
       'Save the policy', async (form, out) => {
         const keysSet = {};
         for (const el of form.elements) if (el.name && el.value.trim()) keysSet[el.name] = el.value.trim();

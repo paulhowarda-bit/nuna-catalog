@@ -369,7 +369,7 @@ function jsonNodes(v, indent = '') {
     out.push(indent + '}');
     return out;
   }
-  if (typeof v === 'number' || typeof v === 'boolean' || v === null) return [h('span', {class: 'n'}, String(v))];
+  if (typeof v === 'number' || typeof v === 'bigint' || typeof v === 'boolean' || v === null) return [h('span', {class: 'n'}, String(v))];
   return [h('span', {class: 's'}, JSON.stringify(v))];
 }
 

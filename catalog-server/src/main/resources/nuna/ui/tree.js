@@ -174,7 +174,9 @@ function draw(st) {
   };
   walk([], 1);
   st.ul.replaceChildren(...items);
-  if (f && items.length === 1) st.ul.append(h('li', {class: 'tree-none muted'}, `No open namespace in ${c} holds a matching name. Open more of the tree, or use Go to a path.`));
+  // Go to a path finds a name typed alone in every catalog (backlog 198), so the filter's words go to it (backlog 208).
+  if (f && items.length === 1) st.ul.append(h('li', {class: 'tree-none muted'}, `No open namespace in ${c} holds a matching name. Open more of the tree, or use Go to a path.`,
+    ' ', h('button', {class: 'btn sm', type: 'button', 'data-act': 'goto', 'data-goto-words': st.input.value.trim()}, icon('search'), 'Go to a path')));
 }
 
 /** What the tree has listed beneath a level so far, or null. */

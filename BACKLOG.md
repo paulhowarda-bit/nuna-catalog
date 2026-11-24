@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**53 open:** 15 S, 18 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**47 open:** 11 S, 16 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,12 +53,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
-| [203](backlog/203.md) | S | Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified | the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test | 2026-11-23 |
-| [204](backlog/204.md) | M | Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot | the console parses every answer with `JSON.parse`, which makes each 64-bit id a double; the fix reads ids as strings (a reviver that keeps the source text of an integer past 2^53, as Chrome 114+ and Firefox 135+ give it) and every page that shows or links an id uses that string | 2026-11-23 |
-| [205](backlog/205.md) | S | Console: audit words still say Kafka after audit moved to the log (item 195) | the Audit page and Service say where audit records go now that the catalog audits to its log (D23 as item 195 amended it), and show a record's place in the log or the audit table rather than a Kafka partition and offset | 2026-11-23 |
-| [206](backlog/206.md) | S | Console: with maintenance off, the empty queue offers Edit the catalog's policy | one link on two empty states, drawn only for those who may modify the catalog, and a browser test | 2026-11-23 |
-| [207](backlog/207.md) | M | Console: maintenance policy keys get labels, each key in its title | an 11-entry label map used by four panels and the policy editor's fields, and their browser tests | 2026-11-23 |
-| [208](backlog/208.md) | S | Console: the tree filter's empty answer offers Go to a path | one button on the tree filter's empty state that opens Go to a path with the words typed, and a browser test | 2026-11-23 |
 | [212](backlog/212.md) | S | Console: a ref's merge verdict on its Changes tab, so what a branch changed and whether it merges is one step | the merge verdict line on a ref's Changes tab, linked to the Merge tab | 2026-11-23 |
 | [213](backlog/213.md) | M | Console: a regulated area says why and who set it, on Governance, and Access says Yes, not true | the regulated flag's reason, setter and time shown where the flag is listed, which may need them in the governance summary route | 2026-11-23 |
 | [214](backlog/214.md) | ? | Console: Audit uses the chips' words everywhere, badges and By kind included, so its counts add up | one map from record type to the chips' word, used by the row badges and By kind | 2026-11-23 |
@@ -2900,103 +2894,6 @@ Done looks like:
   or explains them when Kafka is not configured.
 - The console checked in the demo with every switch off, signed in as gary.
 
-### 203. Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java catalog-server/src/test/java/nuna/catalog/server/ui/
-- Effort: S, the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test
-
-`UiWiring` serves `/ui/*` from the jar with `Cache-Control: no-cache` and the jar entry's Last-Modified, which Gradle's
-reproducible jars set to `Fri, 01 Feb 1980 00:00:00 GMT` for every file, with no ETag. A browser revalidates each
-file, the server answers 304 for every one, and the browser goes on running the console it loaded before the
-upgrade, new server or not, until its cache is cleared. Found on 2026-11-23 rebuilding the nuna-demo stack for the
-console's wayfinding: the headless Chrome kept the pre-rebuild `app.js` (no `access.js`, the rail's Service link
-`undefined`) through every reload, with `curl -D -` showing the 1980 Last-Modified and no ETag, until each file was
-fetched with `cache: 'reload'`. At work every upgrade would leave people on the old console with the new server
-behind it, and a module set that mixes old and new files can fail to load at all.
-
-Done looks like: a file whose bytes changed answers 200 with its new content on the next revalidation, and an
-unchanged one 304 by its ETag; no `/ui/` answer carries the 1980 Last-Modified; a route test fetches a file, then
-revalidates with the ETag it got (304) and with a stale one (200); a bite that sets the Last-Modified back makes it
-fail.
-
-### 204. Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/api.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: M, the console parses every answer with `JSON.parse`, which makes each 64-bit id a double; the fix reads ids as strings (a reviver that keeps the source text of an integer past 2^53, as Chrome 114+ and Firefox 135+ give it) and every page that shows or links an id uses that string
-
-Atelier's re-walk of the console (2026-11-23, in the demo at fe86cfe2): a table's Overview shows its current snapshot
-as `8809372496300770000` where the REST answer names `…770237`. Iceberg snapshot ids are 64-bit; `JSON.parse` keeps
-only 53 bits of them, so the console shows, copies and links ids that name no snapshot. Anyone who copies one to read
-the table as of it gets "snapshot not found" or, worse, nothing at all. Snapshots, the metadata log, the refs pages
-and the merge preview probably show the same; Atelier checked Overview only. Her first review quoted such an id and
-did not notice.
-
-Done looks like: every id the console shows or puts in a link is the one the catalog sent, digit for digit (snapshot
-ids, parent ids, sequence numbers past 2^53); a heavy browser test reads a table whose snapshot id is past 2^53 and
-compares the Overview's and Snapshots' ids with the REST answer's text; a bite that parses ids as numbers again
-makes it fail.
-
-### 205. Console: audit words still say Kafka after audit moved to the log (item 195)
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: S, the Audit page and Service say where audit records go now that the catalog audits to its log (D23 as item 195 amended it), and show a record's place in the log or the audit table rather than a Kafka partition and offset
-
-Atelier's re-walk of the console (2026-11-23, in the demo at fe86cfe2, after item 195 landed): Service shows a panel
-"Audit to Kafka" with 0 records acknowledged, which reads as audit being broken; the Audit page says each record
-"opens to the event as Kafka holds it"; a record shows "Kafka partition -1, offset 1795482234678168", and its chain
-check says "acknowledged by Kafka". Since item 195 the catalog audits to its log `nuna.audit`, which the audit table
-writer takes over OTLP, and Kafka is not on the audit path.
-
-Done looks like: Service's audit panel names where records go and what it counts (or is gone, if the server no longer
-reports it), with no Kafka figure while Kafka is not on the path; the Audit page and a record's details say where the
-record came from in words a reader follows, with no partition or offset of -1; heavy browser tests updated; the item
-that changed the server's health answer (195) is read first, so the console says what the server now reports.
-
-### 206. Console: with maintenance off, the empty queue offers Edit the catalog's policy
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/queue.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: S, one link on two empty states, drawn only for those who may modify the catalog, and a browser test
-
-With maintenance off in a catalog's policy, the empty queue (`queue.js` `emptyQueue`) and Overview's "Nothing queued"
-say so but give no way to turn it on. Atelier's words table for backlog 202 (`docs/design/console/words-table-2026-11-23.md`, "Not words" 1) asks for an
-**Edit the catalog's policy** link after "Maintenance is off in {catalog}'s policy…", for people who may modify the
-catalog.
-
-Done looks like: both empty states end with that link, opening the catalog's maintenance policy editor, shown only to
-callers who may modify the catalog; a heavy browser test for both, and a bite.
-
-### 207. Console: maintenance policy keys get labels, each key in its title
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: M, an 11-entry label map used by four panels and the policy editor's fields, and their browser tests
-
-The maintenance policy's keys show as raw keys (`snapshot-expiry.max-age`, `compaction.target-file-size-bytes` and
-so on) in `maintenance.js` `policyPanel` and `editPolicy`, `health.js` `policyFacts` and the table's snapshot expiry
-facts. Atelier's words table for backlog 202 (`docs/design/console/words-table-2026-11-23.md`, "Not words" 3, and rule 3) gives the labels: "Snapshot expiry",
-"Keep snapshots for", "Keep at least", "Orphan removal", "Remove orphans older than", "Compaction", "Target file size",
-"Fewest input files", "Delete-file share", "Manifest rewrite", "Fewest manifests".
-
-Done looks like: each panel and the edit dialog's fields show the label, with the key as its `title`; heavy browser
-tests updated; a bite for the map.
-
-### 208. Console: the tree filter's empty answer offers Go to a path
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: S, one button on the tree filter's empty state that opens Go to a path with the words typed, and a browser test
-
-The tree filter's empty state (`tree.js`) says no open namespace holds a matching name (row C7 of Atelier's words
-table for backlog 202, `docs/design/console/words-table-2026-11-23.md`) but gives no way on. Since backlog 198, Go to a path finds a name typed alone in any
-catalog. "Not words" 4 of the table asks for a **Go to a path** button there.
-
-Done looks like: the empty state has a Go to a path button that opens the dialog with the filter's words already
-typed; a heavy browser test and a bite.
-
 ### 212. Console: a ref's merge verdict on its Changes tab, so what a branch changed and whether it merges is one step
 
 - Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
@@ -3239,6 +3136,12 @@ Done looks like: each settled as Atelier says, checked in the demo.
 | [200](backlog/200.md) | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | done | 2026-11-23 |
 | [201](backlog/201.md) | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | done | 2026-11-23 |
 | [202](backlog/202.md) | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | done | 2026-11-23 |
+| [203](backlog/203.md) | Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified | done | 2026-11-23 |
+| [204](backlog/204.md) | Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot | done | 2026-11-23 |
+| [205](backlog/205.md) | Console: audit words still say Kafka after audit moved to the log (item 195) | done | 2026-11-23 |
+| [206](backlog/206.md) | Console: with maintenance off, the empty queue offers Edit the catalog's policy | done | 2026-11-23 |
+| [207](backlog/207.md) | Console: maintenance policy keys get labels, each key in its title | done | 2026-11-23 |
+| [208](backlog/208.md) | Console: the tree filter's empty answer offers Go to a path | done | 2026-11-23 |
 | [209](backlog/209.md) | Console browser tests: one Chrome per server, faster polling, and none beside the demo | done | 2026-11-23 |
 | [211](backlog/211.md) | Console: a first sign-in whose home is Audit lands on the catalog with the most records, not the first name | done | 2026-11-23 |
 | [218](backlog/218.md) | Console browser tests beside the demo: the agent takes the demo down, runs them and brings it back up (D49) | done | 2026-11-23 |

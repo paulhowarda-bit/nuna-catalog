@@ -118,8 +118,7 @@ async function catalogHealth() {
         h('p', {class: 'fine hide-sm'}, 'Share within the objective on a 97 to 100% scale. The tall tick is the 99% objective; a share '
           + 'below 97% points off the scale\'s left edge, with its value.')),
       h('div', {class: 'grid-3'},
-        panel('Audit to Kafka', null, audit(health.audit || {}),
-          h('p', {class: 'fine'}, 'If an audit record cannot be published, the request it records is refused.')),
+        panel('Audit', null, audit(health.audit || {})),
         panel('Credential vending', null, vends(health['credential-vends'] || {})),
         panel('Alerts fired', null, alerts(health.alerts || {}),
           h('p', {class: 'fine'}, 'Paging stays in your alerting; these are the last day\'s counts.'))),
@@ -148,13 +147,21 @@ function alerts(counts) {
       h('b', {class: counts[kind] ? 'warn-n' : null, 'data-count': ''}, String(counts[kind] ?? 0)))));
 }
 
+/**
+ * Where audit records go (D23, amended 2026-11-23; backlog 205): every one to the log before the catalog answers, and
+ * a copy to Kafka where it is configured, best effort. The server's figures count only that copy.
+ */
 function audit(a) {
-  return facts([
-    ['Records acknowledged', fmt(a.acknowledged ?? 0)],
-    ['Mean acknowledgement', a['mean-ms'] !== undefined ? a['mean-ms'] + ' ms' : null],
-    ['p99', p99(a.p99)],
-    ['Publishes failed', a.failed ? h('span', {class: 'warn-n'}, String(a.failed)) : '0'],
-  ]);
+  const copied = (a.acknowledged ?? 0) + (a.failed ?? 0) > 0;
+  return h('div', {id: 'health-audit'},
+    h('p', null, "Each request's audit record is written to the log ", code('nuna.audit'), ' before the catalog answers it.'),
+    copied ? [facts([
+      ['Copied to Kafka', fmt(a.acknowledged ?? 0)],
+      ['Mean time to copy', a['mean-ms'] !== undefined ? a['mean-ms'] + ' ms' : null],
+      ['p99', p99(a.p99)],
+      ['Copies failed', a.failed ? h('span', {class: 'warn-n'}, String(a.failed)) : '0'],
+    ]), h('p', {class: 'fine'}, 'A copy that fails blocks nothing: the log already holds the record.')]
+      : h('p', {class: 'fine'}, 'No record was copied to Kafka in the last day.'));
 }
 
 function vends(v) {
@@ -379,12 +386,28 @@ export async function tableHealthTab(target, reload) {
   return [requestsBox(health.requests), h('div', {class: 'grid-2'}, assessment, h('div', {class: 'stack'}, last, policyPanel))];
 }
 
+/** The maintenance policy's keys in words (Atelier's words table, "Not words" 3; backlog 207). */
+export const POLICY_LABELS = {
+  'snapshot-expiry.enabled': 'Snapshot expiry', 'snapshot-expiry.max-snapshot-age': 'Keep snapshots for',
+  'snapshot-expiry.min-snapshots-to-keep': 'Keep at least', 'orphan-removal.enabled': 'Orphan removal',
+  'orphan-removal.older-than': 'Remove orphans older than', 'compaction.enabled': 'Compaction',
+  'compaction.target-file-size-bytes': 'Target file size', 'compaction.min-input-files': 'Fewest input files',
+  'compaction.delete-file-ratio': 'Delete-file share', 'manifest-rewrite.enabled': 'Manifest rewrite',
+  'manifest-rewrite.min-manifests': 'Fewest manifests',
+};
+
+/** A policy key as its label, the key itself in its title; a key the console has no label for stays a name. */
+export const policyKey = key => POLICY_LABELS[key] ? h('span', {title: key, 'data-key': key}, POLICY_LABELS[key]) : code(key);
+
 /** The policy in force on a table: each key with where it was set. */
 async function policyFacts(target) {
   const p = await api.policy(target);
-  const resolved = Object.entries(p.resolved || {}).sort(([a], [b]) => a.localeCompare(b));
-  return h('div', {'data-policy': ''}, panel('Policy for this table', 'each key with where it was set', h('dl', {class: 'facts one'},
-    resolved.map(([key, setting]) => [h('dt', null, h('code', null, key)),
+  // In the policy's own order, as the catalog's panel lists them; a key with no label after, by name.
+  const order = Object.keys(POLICY_LABELS);
+  const rank = key => order.includes(key) ? order.indexOf(key) : order.length;
+  const resolved = Object.entries(p.resolved || {}).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
+  return h('div', {'data-policy': ''}, panel('Policy for this table', 'each setting with where it was set', h('dl', {class: 'facts one'},
+    resolved.map(([key, setting]) => [h('dt', null, policyKey(key)),
       h('dd', null, setting.source === 'guardrail' ? [h('b', null, setting.value), ' · guardrail',
         setting.reason ? [h('br'), h('span', {class: 'fine'}, setting.reason)] : null]
         : [setting.value, ' · ', sourceWords(setting.source)])]))));

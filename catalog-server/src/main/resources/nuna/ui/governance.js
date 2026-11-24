@@ -228,7 +228,7 @@ function exportGrants(catalog) {
   const dlg = openDialog(`Every grant in ${catalog}`, out, {wide: true});
   load(out, async () => {
     const x = await api.exportGrants(catalog);
-    const json = JSON.stringify(x, null, 2);
+    const json = api.toJson(x, 2);
     const cell = v => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
     const csv = ['group,privilege,type,namespace,name,granted-by,granted-at', ...(x.grants || []).map(g => [g.group, g.privilege,
       g.securable.type, (g.securable.namespace || []).join('.'), g.securable.name || '', g['granted-by'] || '', g['granted-at'] || '']
