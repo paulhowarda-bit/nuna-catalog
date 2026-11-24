@@ -4,7 +4,7 @@
 import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startAgain, startSignIn, useToken, whenSignedOut}
   from './auth.js';
 import * as api from './api.js';
-import {auditOpen, groupWords, keepAccess, operates, readsData} from './access.js';
+import {auditOpen, groupWords, keepAccess, landingCatalogs, operates, readsData} from './access.js';
 import {$, $$, at, failure, fill, fmt, h, icon, pill} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
@@ -59,13 +59,14 @@ function pickTheme(value) {
 }
 
 // ---- the catalog a sign-in opens: the one used last in this browser, else the one with the most tables the caller
-// may read, else the first (Atelier's review, F2). Kept per viewer as a convenience: it may come back empty. ----
+// may read, else the first (Atelier's review, F2). Kept per viewer and per person signed in, so one who signs in
+// after another in the same browser lands on their own (backlog 200); a convenience: it may come back empty. ----
 
-const LAST = 'nuna.catalog';
+const last = () => 'nuna.catalog.' + ((claims() || {}).sub || '');
 
 function lastCatalog() {
   try {
-    return localStorage.getItem(LAST);
+    return localStorage.getItem(last());
   } catch {
     return null;
   }
@@ -73,15 +74,17 @@ function lastCatalog() {
 
 function keepCatalog(c) {
   try {
-    if (c && c !== lastCatalog()) localStorage.setItem(LAST, c);
+    if (c && c !== lastCatalog()) localStorage.setItem(last(), c);
   } catch {
     // remembered for this page only
   }
 }
 
-async function landingCatalog(names) {
-  const last = lastCatalog();
-  if (last && names.includes(last)) return last;
+// The audit tables' catalog is never a landing: an auditor's work is on Audit (Atelier's re-walk, 2026-11-23).
+async function landingCatalog(all) {
+  const names = landingCatalogs(all);
+  const kept = lastCatalog();
+  if (kept && names.includes(kept)) return kept;
   let rows = [];
   try {
     rows = await estate();
@@ -93,11 +96,12 @@ async function landingCatalog(names) {
   return names.reduce((best, n) => counts.get(n) > counts.get(best) ? n : best, names[0]);
 }
 
-/** Where a caller's work is (item 184): Overview for those who read data, Audit for auditors, Service for operators. */
+/** Where a caller's work is (items 184 and 200): Audit for auditors and grant admins, Service for operators, Overview
+ * for those who read data, in that order (Atelier, 2026-11-23), else the catalog. */
 function homeHref(c) {
-  if (readsData()) return pageHref('overview', c);
   if (auditOpen(c)) return pageHref('audit', c);
   if (operates()) return pageHref('service');
+  if (readsData()) return pageHref('overview', c);
   return href({c});
 }
 
@@ -155,11 +159,15 @@ function closeMenus() {
 function setChrome(navKey, ref) {
   consoleEl.classList.toggle('rail', !!railPick);
   syncMenuButton();
+  // Service is the whole deployment's, so it offers no catalog to pick (Atelier's re-walk, 2026-11-23).
+  $('.pick-wrap').hidden = navKey === 'service';
   // The catalog chip names the catalog; the Reading control beside it names the ref read (backlog 201).
   for (const b of $$('[data-cat]')) fill(b, cat || '–');
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
-  const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat, r: ref}), maintenance: pageHref('maintenance', cat),
-    governance: pageHref('governance', cat), audit: pageHref('audit', cat), service: pageHref('service')};
+  // The ref read goes along to the pages that show main only, which say so beside it (Atelier, 2026-11-23).
+  const hrefs = {overview: href({page: 'overview', c: cat, r: ref}), catalog: href({c: cat, r: ref}),
+    maintenance: href({page: 'maintenance', c: cat, r: ref}), governance: href({page: 'governance', c: cat, r: ref}),
+    audit: href({page: 'audit', c: cat, r: ref}), service: pageHref('service')};
   // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
   // read, Audit is for audit readers and those who manage the catalog's grants, Service for platform operators.
   const open = {overview: readsData(), catalog: true, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
@@ -603,11 +611,12 @@ function render() {
     content = notFound();
   }
   const reading = !r.page && r.k !== 'ref' ? r.r : null;
-  setChrome(navKey, reading);
+  const carried = r.page && r.page !== 'service' ? r.r : null;
+  setChrome(navKey, reading || carried);
   // A browse page that reads through a ref draws the Reading control itself (refChrome); every other page with a
   // catalog gets one whose refs open the catalog through them (Atelier's review, S4; backlog 201).
   const pageReads = navKey === 'catalog' && r.k !== 'ref' && !(!r.k && r.tab === 'refs');
-  if (cat && r.page !== 'service' && !pageReads) readingControl({c: cat});
+  if (cat && r.page !== 'service' && !pageReads) readingControl({c: cat, r: carried}, !!carried);
   if (!slot.contains(content) || slot.firstElementChild !== content) slot.replaceChildren(content);
   document.title = `${title} · ${r.page === 'service' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · nuna`;
   if (tabOnly && prev.tab !== r.tab) {

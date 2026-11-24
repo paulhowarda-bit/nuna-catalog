@@ -156,9 +156,9 @@ function refPick(where, list) {
 // itself as the place each ref links to, any other page with its catalog.
 let wanted = 0;
 
-function showReading(pick) {
+function showReading(...parts) {
   const slot = document.getElementById('reading-slot');
-  if (slot) slot.replaceChildren(pick);
+  if (slot) slot.replaceChildren(...parts.filter(Boolean));
 }
 
 /** Empties the header's Reading control as a page starts, so one left from the page before never shows. */
@@ -167,10 +167,14 @@ export function clearReading() {
   showReading();
 }
 
-/** The header's Reading control for a page that is not read through a ref: each ref opens the catalog through it. */
-export function readingControl(where) {
+/**
+ * The header's Reading control for a page that is not read through a ref: each ref opens the catalog through it. A
+ * page that shows main only keeps the ref the caller was reading and says so beside it (Atelier, 2026-11-23).
+ */
+export function readingControl(where, mainOnly = false) {
   const mine = ++wanted;
-  refsOf(where.c).then(list => { if (mine === wanted) showReading(refPick(where, list)); }, () => {});
+  const note = mainOnly ? h('span', {class: 'main-only', 'data-main-only': ''}, 'This page shows main only') : null;
+  refsOf(where.c).then(list => { if (mine === wanted) showReading(refPick(where, list), note); }, () => {});
 }
 
 /** The band under a page's title while it reads through a ref. */

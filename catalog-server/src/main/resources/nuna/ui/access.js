@@ -8,12 +8,18 @@ import {h} from './dom.js';
 
 let byCatalog = new Map();
 let deployment = {};
+let auditCatalogs = new Set();
 
-/** Keeps what the catalog list answered: {catalogs: [{name, may}], may}. */
+/** Keeps what the catalog list answered: {catalogs: [{name, may, audit}], may}. */
 export function keepAccess(body) {
   byCatalog = new Map((body.catalogs || []).map(c => [c.name, c.may || {}]));
+  auditCatalogs = new Set((body.catalogs || []).filter(c => c.audit).map(c => c.name));
   deployment = body.may || {};
 }
+
+/** The catalogs a sign-in may land on: every one but the audit tables' own, unless that is all there is (backlog 200). */
+export const landingCatalogs = names => names.filter(n => !auditCatalogs.has(n)).length
+  ? names.filter(n => !auditCatalogs.has(n)) : names;
 
 /** Whether the caller's groups hold `privilege` (select, modify, manage-grants, manage-tags) somewhere in the catalog. */
 export const may = (catalog, privilege) => !!(byCatalog.get(catalog) || {})[privilege];
@@ -21,8 +27,9 @@ export const may = (catalog, privilege) => !!(byCatalog.get(catalog) || {})[priv
 /** A platform operator: the Service page and the DR freeze. */
 export const operates = () => !!deployment.operate;
 
-/** Whether the caller reads data in any catalog, which Overview and Maintenance are about. */
-export const readsData = () => [...byCatalog.values()].some(m => m.select);
+/** Whether the caller reads data in any catalog, which Overview and Maintenance are about; reading the audit tables
+ * is an auditor's work, on Audit, not data of their own (Atelier's re-walk, 2026-11-23; backlog 200). */
+export const readsData = () => [...byCatalog].some(([name, m]) => m.select && !auditCatalogs.has(name));
 
 /** Audit: the catalog's feed for audit readers, its own trail and every object's for those who manage its grants. */
 export const auditFeedOpen = () => !!deployment['read-audit-feed'];

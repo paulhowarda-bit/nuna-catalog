@@ -1,0 +1,17 @@
+Breaks: The catalog list no longer marks the audit tables' catalog, so the console lands auditors on it as on their data.
+Module: catalog-server
+Test: CatalogListTest#theAuditTablesCatalogSaysSo
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+index 44c65568..a238cfdc 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+@@ -169,7 +169,7 @@ class UiRoutes {
+     /** Whether the catalog holds the audit tables, which the console leaves out of a sign-in's landing (backlog 200). */
+     private boolean isAuditCatalog(CatalogRecord catalog) {
+         return auditTables.catalog() != null && !auditTables.catalog().isBlank()
+-                && Names.normalize(auditTables.catalog()).equals(catalog.normalizedName());
++                && false;
+     }
+ 
+     /** Whether the caller may read the audit feed: select on the audit tables' catalog, as the feed's route asks. */
