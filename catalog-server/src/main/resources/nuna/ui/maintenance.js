@@ -8,7 +8,7 @@ import {lastNightPanel, nightKpis, thirtyNights} from './nights.js';
 import {dialogForm, failure, field, fill, fmt, granted, h, icon, load, openDialog, pageHead, panel, pill, plural, tbl, text}
   from './dom.js';
 import {catalogOff, emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
-import {sourceWords, workerPanel} from './health.js';
+import {policyKey, sourceWords, workerPanel} from './health.js';
 import {mayModify, mayModifyAny, pickDialog} from './requests.js';
 import {nothingToRead} from './overview.js';
 import {pageHref} from './route.js';
@@ -92,9 +92,9 @@ async function policyPanel(catalog, host) {
   const p = await api.policy(target);
   const resolved = p.resolved || {};
   const keys = [...KEYS.filter(k => resolved[k]), ...Object.keys(resolved).filter(k => !KEYS.includes(k)).sort()];
-  return h('div', {class: 'panel', id: 'policy', 'data-policy': ''}, h('h2', null, `Policy for ${catalog} `, h('span', {class: 'meta'}, 'each key with where it was set')),
-    tbl('policy stack-line', ['Key', 'Value', 'Set by'], keys.map(key => h('tr', {'data-key': key},
-      h('td', {class: 'name' + (isChild(key) ? ' indent-1' : '')}, isChild(key) ? key.slice(key.indexOf('.') + 1) : key),
+  return h('div', {class: 'panel', id: 'policy', 'data-policy': ''}, h('h2', null, `Policy for ${catalog} `, h('span', {class: 'meta'}, 'each setting with where it was set')),
+    tbl('policy stack-line', ['Setting', 'Value', 'Set by'], keys.map(key => h('tr', {'data-key': key},
+      h('td', {class: isChild(key) ? 'indent-1' : null}, policyKey(key)),
       h('td', {class: 'name'}, resolved[key].value),
       h('td', null, sourceWords(resolved[key].source))))),
     h('div', {class: 'refusal-acts'},
@@ -111,7 +111,7 @@ function editPolicy(catalog, p, reload) {
   const body = h('div', null,
     h('p', null, 'Keys set here apply to every table in ', h('code', null, catalog), ' that does not set its own. '
       + 'A guardrail, a hold or a freeze, still wins. Leave a key empty to use the built-in value.'),
-    dialogForm(h('div', {class: 'dlg-grid'}, keys.map(key => field(key, text(key, resolved[key] ? resolved[key].value : '', own[key])))),
+    dialogForm(h('div', {class: 'dlg-grid'}, keys.map(key => field(policyKey(key), text(key, resolved[key] ? resolved[key].value : '', own[key])))),
       'Save the policy', async (form, out) => {
         const keysSet = {};
         for (const el of form.elements) if (el.name && el.value.trim()) keysSet[el.name] = el.value.trim();

@@ -347,6 +347,39 @@ class ConsoleHealthTest {
     }
 
     /**
+     * The maintenance policy's keys read as words wherever the console shows them, each with its key as its title,
+     * which people type (Atelier's words table, "Not words" 3; backlog 207).
+     */
+    @Test
+    void policyKeysShowTheirLabelsWithTheKeyInTheirTitle() {
+        browser.signIn(token("rita", readers));
+        browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=orders&tab=maintenance");
+        assertLabel(By.cssSelector("[data-policy] dt [data-key='compaction.enabled']"), "Compaction");
+        assertLabel(By.cssSelector("[data-policy] dt [data-key='orphan-removal.older-than']"), "Remove orphans older than");
+        browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=orders&tab=history");
+        assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.max-snapshot-age']"), "Keep snapshots for");
+        assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.min-snapshots-to-keep']"), "Keep at least");
+
+        browser.open("/ui/#p=maintenance&c=trading");
+        assertLabel(By.cssSelector("#policy tr[data-key='compaction.target-file-size-bytes'] [data-key]"),
+                "Target file size");
+        assertLabel(By.cssSelector("#policy tr[data-key='manifest-rewrite.min-manifests'] [data-key]"), "Fewest manifests");
+        assertThat(driver.findElements(By.cssSelector("#policy td code"))).as("no key shown as a name").isEmpty();
+        driver.findElement(By.xpath("//div[@id='policy']//button[normalize-space()=\"Edit the catalog's policy\"]")).click();
+        browser.awaitText(By.cssSelector("dialog.dlg h2"), "Policy for trading");
+        WebElement field = driver.findElement(By.xpath("//dialog//label[.//input[@name='compaction.delete-file-ratio']]"));
+        assertThat(field.findElement(By.cssSelector("[data-key]")).getText()).isEqualTo("Delete-file share");
+        assertThat(field.findElement(By.cssSelector("[data-key]")).getDomAttribute("title"))
+                .isEqualTo("compaction.delete-file-ratio");
+    }
+
+    private void assertLabel(By label, String words) {
+        WebElement shown = browser.await(label);
+        assertThat(shown.getText()).isEqualTo(words);
+        assertThat(shown.getDomAttribute("title")).isEqualTo(shown.getDomAttribute("data-key"));
+    }
+
+    /**
      * With maintenance off in the catalog's policy, both empty states end with Edit the catalog's policy for someone
      * who may modify the catalog (backlog 206). Such a grant shows them every table in the catalog, the assessed ones
      * here among them, so nell's own grants are answered in the page with modify on the catalog; the server still

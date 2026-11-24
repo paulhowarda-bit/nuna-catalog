@@ -379,12 +379,25 @@ export async function tableHealthTab(target, reload) {
   return [requestsBox(health.requests), h('div', {class: 'grid-2'}, assessment, h('div', {class: 'stack'}, last, policyPanel))];
 }
 
+/** The maintenance policy's keys in words (Atelier's words table, "Not words" 3; backlog 207). */
+export const POLICY_LABELS = {
+  'snapshot-expiry.enabled': 'Snapshot expiry', 'snapshot-expiry.max-snapshot-age': 'Keep snapshots for',
+  'snapshot-expiry.min-snapshots-to-keep': 'Keep at least', 'orphan-removal.enabled': 'Orphan removal',
+  'orphan-removal.older-than': 'Remove orphans older than', 'compaction.enabled': 'Compaction',
+  'compaction.target-file-size-bytes': 'Target file size', 'compaction.min-input-files': 'Fewest input files',
+  'compaction.delete-file-ratio': 'Delete-file share', 'manifest-rewrite.enabled': 'Manifest rewrite',
+  'manifest-rewrite.min-manifests': 'Fewest manifests',
+};
+
+/** A policy key as its label, the key itself in its title; a key the console has no label for stays a name. */
+export const policyKey = key => POLICY_LABELS[key] ? h('span', {title: key, 'data-key': key}, POLICY_LABELS[key]) : code(key);
+
 /** The policy in force on a table: each key with where it was set. */
 async function policyFacts(target) {
   const p = await api.policy(target);
   const resolved = Object.entries(p.resolved || {}).sort(([a], [b]) => a.localeCompare(b));
-  return h('div', {'data-policy': ''}, panel('Policy for this table', 'each key with where it was set', h('dl', {class: 'facts one'},
-    resolved.map(([key, setting]) => [h('dt', null, h('code', null, key)),
+  return h('div', {'data-policy': ''}, panel('Policy for this table', 'each setting with where it was set', h('dl', {class: 'facts one'},
+    resolved.map(([key, setting]) => [h('dt', null, policyKey(key)),
       h('dd', null, setting.source === 'guardrail' ? [h('b', null, setting.value), ' · guardrail',
         setting.reason ? [h('br'), h('span', {class: 'fine'}, setting.reason)] : null]
         : [setting.value, ' · ', sourceWords(setting.source)])]))));
