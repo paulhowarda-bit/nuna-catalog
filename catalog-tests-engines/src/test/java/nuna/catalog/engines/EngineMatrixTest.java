@@ -239,6 +239,7 @@ class EngineMatrixTest {
         kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "engine-token", "--from-literal=token=" + token);
         kubectl(Duration.ofMinutes(1), "create", "configmap", "idp-keys", "--from-file=keys.json=" + keys);
         apply(stack, "stack.yaml");
+        apply(stack, "kafka.yaml");
         List<String> deployments = new ArrayList<>(List.of("postgres", "kafka", "idp", "kafka-ui"));
         if (store != TestS3.Kind.AWS) {
             apply(stack, "store-" + store.name().toLowerCase(Locale.ROOT) + ".yaml");

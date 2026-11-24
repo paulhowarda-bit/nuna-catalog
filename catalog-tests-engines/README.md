@@ -55,8 +55,8 @@ instead of `--context`).
   cluster `nuna-engines`, with `-Pengines.cluster=kind`), builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
   and the three engine images (`images/`), pulls the infrastructure images, and loads them all into the
   cluster: nothing is pulled from inside it.
-- The stack is the demo's manifests. `demo/k8s/stack.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), `idp`,
-  a busybox file server for the issuer's JWKS, and `kafka-ui` (kafbat). The S3 store follows `-Ps3`:
+- The stack is the demo's manifests. `demo/k8s/stack.yaml`: PostgreSQL 18 and `idp`, a busybox file server for
+  the issuer's JWKS; `demo/k8s/kafka.yaml`: Kafka 4.2.2 (256 MB heap) and `kafka-ui` (kafbat). The S3 store follows `-Ps3`:
   `demo/k8s/store-silo.yaml` or `demo/k8s/store-ceph.yaml` as Service `s3`
   (`http://s3:9000` on Silo, `http://s3:8080` on Ceph), and a `seed` Job (`demo/k8s/seed.yaml`) creates the
   bucket; on AWS there is no
