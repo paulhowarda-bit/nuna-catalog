@@ -22,10 +22,12 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 
 /**
- * The audit table writer as a service (D23, amended 2026-11-20): no web server, one thread reading the audit topic
- * and committing to the audit catalog every {@code nuna.audit-tables.commit-interval}. One replica: a second would
- * only fail the first's commits and its own in turn (see {@link EventsTable}). An outage of the catalog or of Kafka
- * delays rows; no request waits for the writer.
+ * The audit table writer as a service (D23, amended 2026-11-20 and 2026-11-23): no web server, and one thread
+ * committing to the audit catalog every {@code nuna.audit-tables.commit-interval}. It takes the records from the
+ * source {@code nuna.audit-tables.source} names: the audit topic, which that thread reads ({@link Loop}), or the
+ * catalog's log, which the catalog's OTLP log exporter sends to its logs receiver ({@link LogLoop}). One replica: a
+ * second would only fail the first's commits and its own in turn (see {@link EventsTable}). An outage of the catalog
+ * or of Kafka delays rows; no request waits for the writer.
  */
 @SpringBootApplication
 @EnableConfigurationProperties(AuditTablesSettings.class)
@@ -49,8 +51,11 @@ public class AuditTablesApplication {
     }
 
     @Bean
-    Loop loop(AuditTablesSettings settings, RESTCatalog catalog, Clock clock) {
-        return new Loop(settings, catalog, clock);
+    SmartLifecycle loop(AuditTablesSettings settings, RESTCatalog catalog, Clock clock) {
+        return switch (settings.source()) {
+            case KAFKA -> new Loop(settings, catalog, clock);
+            case OTLP -> new LogLoop(settings, catalog, clock);
+        };
     }
 
     static Map<String, String> clientProperties(AuditTablesSettings settings) {
@@ -151,6 +156,81 @@ public class AuditTablesApplication {
                 thread.join(Duration.ofMinutes(1));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+            }
+        }
+
+        @Override
+        public synchronized boolean isRunning() {
+            return running;
+        }
+    }
+
+    /**
+     * The source {@code otlp}: the logs receiver takes records into the {@link LogWriter}, and one non-daemon thread,
+     * which keeps the service alive, commits them. Stopping stops the receiver, then commits what waits.
+     */
+    static final class LogLoop implements SmartLifecycle {
+
+        private static final Logger LOG = LoggerFactory.getLogger(LogLoop.class);
+        private static final Duration TICK = Duration.ofSeconds(1);
+        private static final Duration RETRY = Duration.ofSeconds(10);
+
+        private final AuditTablesSettings settings;
+        private final LogWriter writer;
+        private volatile boolean running;
+        private OtlpLogsReceiver receiver;
+        private Thread thread;
+
+        LogLoop(AuditTablesSettings settings, RESTCatalog catalog, Clock clock) {
+            this.settings = settings;
+            Namespace namespace = Namespace.of(settings.namespace());
+            this.writer = new LogWriter(() -> EventsTable.open(catalog, namespace, LogWriter.SOURCE),
+                    settings.principal(), settings.commitInterval(), settings.maxRows(), settings.otlp().dedupWindow(),
+                    clock);
+        }
+
+        @Override
+        public synchronized void start() {
+            running = true;
+            receiver = OtlpLogsReceiver.start(settings.otlp().port(), settings.otlp().token(), writer);
+            thread = Thread.ofPlatform().name("nuna-audit-tables").daemon(false).start(this::run);
+            LOG.info("Writing the log {} taken on port {} at {} to {}.{}.{} at {} every {}",
+                    OtlpLogsReceiver.AUDIT_LOGGER, receiver.port(), OtlpLogsReceiver.PATH, settings.catalog(),
+                    settings.namespace(), EventsTable.NAME, settings.catalogUri(), settings.commitInterval());
+        }
+
+        private void run() {
+            while (running) {
+                try {
+                    writer.commitIfDue();
+                    Thread.sleep(TICK);
+                } catch (InterruptedException e) {
+                    return;
+                } catch (RuntimeException e) {
+                    LOG.error("The audit table writer could not commit {} records from the log; it keeps them and"
+                            + " retries in {}", writer.waiting(), RETRY, e);
+                    try {
+                        Thread.sleep(RETRY);
+                    } catch (InterruptedException stopped) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        @Override
+        public synchronized void stop() {
+            running = false;
+            receiver.close();
+            thread.interrupt();
+            try {
+                thread.join(Duration.ofMinutes(1));
+                writer.commit();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (RuntimeException e) {
+                LOG.error("The audit table writer stopped with {} records from the log not written", writer.waiting(),
+                        e);
             }
         }
 

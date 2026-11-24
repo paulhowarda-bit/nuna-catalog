@@ -1,6 +1,6 @@
 # nuna-audit-tables: the audit table writer (D23). One release per catalog deployment, beside the nuna-catalog
-# release; it reaches the catalog over HTTP like any client, and the audit topic like the SIEM. See
-# catalog-audit-tables/README.md.
+# release; it reaches the catalog over HTTP like any client, and takes the audit records from the audit topic like
+# the SIEM, or from the catalog's log over OTLP/HTTP. See catalog-audit-tables/README.md.
 
 image:
   repository: nuna-audit-tables
@@ -26,6 +26,17 @@ config:
       # principal: nuna-audit-tables
       # How often waiting rows are committed: rows are about this far behind the topic.
       commit-interval: PT1M
+      # Where the records come from (D23, amended 2026-11-23): kafka, the audit topic (kafka, below), or otlp, the
+      # catalog's log nuna.audit, which the catalog's OTLP log exporter sends to this writer's receiver (otlp, below;
+      # the catalog chart's telemetry.logsEndpoint and logsTokenSecret).
+      source: kafka
+      # The OTLP/HTTP logs receiver, for the source otlp: POST /v1/logs on port, protobuf or JSON. It keeps the
+      # records of the log nuna.audit and ignores the rest. Every request must carry the token,
+      # nuna.audit-tables.otlp.token in `secrets` (at least 32 letters, digits, '-', '_', '.' or '~'), in
+      # X-Nuna-Audit-Token. A record whose id was seen in the last dedup-window is not written again.
+      otlp:
+        port: 4318
+        dedup-window: 15m
       # How the writer signs in: the client-credentials grant (client-secret in `secrets`). Its group needs create
       # and write on the audit catalog, and nothing anywhere else.
       token:
@@ -54,6 +65,12 @@ secrets:
 javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 
 env: []
+
+# The Service in front of the OTLP logs receiver, made for the source otlp only, port name otlp-http. The catalog's
+# telemetry.logsEndpoint names it: http://<this release's full name>:<otlpPort>/v1/logs.
+service:
+  type: ClusterIP
+  otlpPort: 4318
 
 # Rows wait in memory for a commit interval, or until max-rows of them wait (100,000 by default).
 resources:

@@ -1,0 +1,17 @@
+Breaks: A commit from the log that fails drops its rows.
+Module: catalog-audit-tables
+Test: LogWriterTest#aCommitThatFailsKeepsItsRowsForTheNext
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+index f15ea540..29471395 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+@@ -195,6 +195,9 @@ final class LogWriter {
+             table.append(batch, Map.of(PARTITION, next));
+         } catch (RuntimeException e) {
+             stale = true;
++            synchronized (this) {
++                rows.clear();
++            }
+             throw e;
+         }
+         LOG.info("Wrote {} audit records from the log to the audit table", batch.size());

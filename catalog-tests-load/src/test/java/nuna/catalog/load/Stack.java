@@ -178,8 +178,8 @@ final class Stack implements AutoCloseable {
                 "--nuna.security.issuers[0].client-id-claim=azp",
                 "--nuna.security.platform-operator-groups=" + OPERATORS,
                 "--nuna.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers(),
-                "--logging.level.root=WARN",
-                "--logging.level.nuna.audit.fallback=ERROR"));
+                // The audit log nuna.audit stays at INFO (application.yaml): the server refuses to start without it.
+                "--logging.level.root=WARN"));
         if (archiveBucket != null) {
             // Segments written within a second of their first record, so the archive is current when the drill reads it.
             properties.addAll(List.of("--nuna.audit.archive.bucket=" + archiveBucket,

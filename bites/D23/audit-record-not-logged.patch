@@ -1,0 +1,15 @@
+Breaks: A read, denial or credential issue is not written to the audit log.
+Module: catalog-server
+Test: AuditTrailTest#withoutKafkaEveryRecordIsWrittenToTheLogBeforeTheCallReturns
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index 0046e5cd..ee1c0a2c 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -83,7 +83,6 @@ public final class AuditTrail {
+ 
+     /** {@link #record(EventData)} for an event another seam built. */
+     public void record(CatalogEvent event) {
+-        log(event);
+         if (topic.isPresent() && kafkaTried()) {
+             try {
+                 topic.get().publish(event);

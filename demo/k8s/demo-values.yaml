@@ -33,6 +33,10 @@ config:
         catalog: nuna_audit
         readers: demo-auditors
         writers: demo-audit-writers
+      # No Kafka: the demo's catalog audits to its log (D23, amended 2026-11-23), and Kafka runs only while the
+      # brokerage world's generator or the CDC leg does (D50). catalog-values.yaml, which the engine matrix shares,
+      # keeps its Kafka.
+      kafka-bootstrap-servers: ""
     security:
       issuers:
         - issuer: https://idp.demo/nuna
@@ -53,6 +57,15 @@ config:
       oidc:
         issuer: https://${DEMO_HOST}:8180/realms/nuna
         client-id: nuna-console
+
+# The catalog's logs, the audit log nuna.audit among them, go over OTLP to the audit table writer's receiver, which
+# keeps nuna.audit's records for the Audit page (audit-tables-values.yaml); metrics and traces go nowhere. The
+# token is the one demo.sh makes once in ~/.nuna-demo/keycloak/audit-otlp-token.
+telemetry:
+  logsEndpoint: http://nuna-audit-tables:4318/v1/logs
+  logsTokenSecret:
+    name: keycloak-keys
+    key: audit-otlp-token
 
 secrets:
   values:

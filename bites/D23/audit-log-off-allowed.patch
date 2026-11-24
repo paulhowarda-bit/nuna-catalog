@@ -1,0 +1,16 @@
+Breaks: The server starts with the audit log nuna.audit switched off.
+Module: catalog-server
+Test: AuditTrailTest#theServerRefusesToStartWithTheAuditLogOff
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index 0046e5cd..292899fd 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -65,7 +65,7 @@ public final class AuditTrail {
+      * that turns it off ({@code logging.level.nuna.audit} coarser than INFO) stops the server at startup.
+      */
+     static void requireLogged(Logger logger) {
+-        if (!logger.isInfoEnabled()) {
++        if (false) {
+             throw new IllegalStateException("logging.level." + LOGGER + " must be INFO or finer: every audit record"
+                     + " is written to the log " + LOGGER + ", and that log is the record of audit (D23)");
+         }

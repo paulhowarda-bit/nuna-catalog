@@ -21,8 +21,10 @@ config:
         client-id: nuna-audit-tables
         # Iceberg's client asks for scope catalog unless told otherwise, which Keycloak refuses as unknown.
         scope: openid
-      kafka:
-        bootstrap-servers: kafka:9092
+      # The catalog's audit log over OTLP (D23, amended 2026-11-23): the catalog sends its log nuna.audit to this
+      # writer's receiver on 4318 (demo-values.yaml, telemetry), with the token demo.sh passes in `secrets`. The
+      # demo runs Kafka only while gen or cdc is on (D50).
+      source: otlp
 
 # The demo's traffic is small: a minute's rows are a few thousand at most. 384 MB is what it asks of the node, so
 # the engines' Spark job still fits beside it; the JVM may use up to 512 MB.

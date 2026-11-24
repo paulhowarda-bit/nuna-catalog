@@ -1,9 +1,6 @@
 package nuna.catalog.server.governance;
 
-import nuna.catalog.audit.CredentialIssue;
 import nuna.catalog.audit.archive.ObjectLockArchive;
-import nuna.catalog.audit.publish.AuditUnavailableException;
-import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.core.commit.CommitRule;
 import nuna.catalog.core.commit.Rules;
 import nuna.catalog.objectstore.CaBundle;
@@ -94,37 +91,35 @@ class GovernanceWiring {
         }
     }
 
+    /**
+     * Audit delivery. Each synchronous record's publish to Kafka, up to its acknowledgement, is observed
+     * (docs/observability/spans.md).
+     */
     @Bean(destroyMethod = "close")
     AuditRuntime auditRuntime(AuditSettings audit, StorageSettings storage, CatalogStore store,
-                              GovernanceSettings governance, RestSettings rest, Clock clock) {
+                              GovernanceSettings governance, RestSettings rest, Clock clock,
+                              ObservationRegistry observations) {
         MaintenancePolicy.canonical(governance.maintenanceDefaults(), governance);
         requireDropWindowBeyondPitr(rest.dropRetention(), governance.pitrWindow());
-        return new AuditRuntime(audit, store, archive(audit, storage, clock), clock);
+        return new AuditRuntime(audit, store, archive(audit, storage, clock), rest.auditSource(),
+                publisher -> new ObservedPublisher(publisher, audit.auditTopic(), observations), clock);
     }
 
-    /** Each synchronous record's publish, up to Kafka's acknowledgement, is observed (docs/observability/spans.md). */
+    /** Every audit record goes through it: to the log, and to Kafka where it is configured, best effort (D23). */
     @Bean
-    AuditTrail auditTrail(AuditRuntime runtime, AuditSettings audit, RestSettings rest, Clock clock,
-                          ObservationRegistry observations) {
-        return new AuditTrail(runtime.auditPublisher().map(publisher -> (EventPublisher) new ObservedPublisher(
-                publisher, audit.auditTopic(), observations)), rest.auditSource(), clock, audit.probeInterval());
+    AuditTrail auditTrail(AuditRuntime runtime) {
+        return runtime.trail();
     }
 
     /**
-     * The synchronous audit seam of M5 and M6 (denials, authentication failures, credential issues), on the
-     * audit topic. A credential issue fails closed, so vending hands nothing out; the others never fail.
-     * The trail is looked up on first use: M5's filter takes this bean while the web server starts, before
-     * the audit and storage settings may be bound.
+     * The synchronous audit seam of M5 and M6 (denials, authentication failures, reads, credential issues). None of
+     * them fails for want of Kafka: a credential issue is recorded as the others are (D23, amended 2026-11-23). The
+     * trail is looked up on first use: M5's filter takes this bean while the web server starts, before the audit and
+     * storage settings may be bound.
      */
     @Bean
     AuditPublisher auditPublisher(ObjectProvider<AuditTrail> trail) {
-        return event -> {
-            if (event.data() instanceof CredentialIssue) {
-                trail.getObject().requireRecorded(event);
-            } else {
-                trail.getObject().record(event);
-            }
-        };
+        return event -> trail.getObject().record(event);
     }
 
     /**
@@ -138,12 +133,10 @@ class GovernanceWiring {
 
     /**
      * A branch's expiry warning (D33, choice 11), which changes nothing in the store, goes out as the relay sends a
-     * batch: to the audit topic, then the change stream. Without Kafka it fails closed, so the warning is not marked
-     * sent.
+     * batch: to the log, then, where Kafka is configured, the audit topic and the change stream.
      */
     @Bean
     RefRoutes.Notices refNotices(AuditRuntime runtime) {
-        return event -> runtime.notices().orElseThrow(() -> new AuditUnavailableException(event,
-                new IllegalStateException("nuna.audit.kafka-bootstrap-servers is not set"))).deliver(List.of(event));
+        return event -> runtime.notices().deliver(List.of(event));
     }
 }
