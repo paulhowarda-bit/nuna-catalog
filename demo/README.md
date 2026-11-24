@@ -22,9 +22,9 @@ demo/demo.sh up
 ```
 
 - Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, `kubectl`, `helm`, `curl`, `unzip`,
-  and JDK 25 (`JAVA_HOME`, or `java` on the path). Every `up` builds the server jar, the change-feed
-  connector jar and the brokerage world's classpath (`demo-datagen`) from this checkout (no tests run) and the
-  images below, so the stack never runs code older
+  and JDK 25 (`JAVA_HOME`, or `java` on the path). Every `up` builds the server jar, the audit table writer's and
+  the maintenance worker's jars, the change-feed connector jar and the brokerage world's classpath (`demo-datagen`)
+  from this checkout (no tests run) and the images below, so the stack never runs code older
   than the checkout; when nothing changed, Gradle and Docker do nothing. The cluster never pulls an image: it
   runs them from the local Docker engine, and `up` pulls the public ones there.
 - Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `docker-desktop`
@@ -45,9 +45,15 @@ demo/demo.sh up
     `nuna-audit-tables`, image `nuna-audit-tables:demo` (`deploy/image/audit-tables.Dockerfile`), values
     `audit-tables-values.yaml`. It writes the audit topic to `nuna_audit.audit.events`, which the console's
     Audit page reads (below).
+  - The maintenance worker (`catalog-maintenance`, D30): the chart `deploy/helm/nuna-maintenance`, release
+    `nuna-maintenance`, image `nuna-maintenance:demo` (`deploy/image/maintenance.Dockerfile`), values
+    `maintenance-values.yaml`, with its compaction Jobs in namespace `nuna-demo-compaction`
+    (`maintenance-jobs.yaml`), running the engine matrix's Spark image, which `up` builds once. It keeps
+    `lakehouse`'s tables (Maintenance, below).
   - `keycloak.yaml`: Keycloak in development mode, with realm `nuna` (`keycloak-realm.json`): the people
-    below, their groups, and the clients of the console, kafbat, CloudBeaver, Studio and the audit table
-    writer. Its signing key and the secrets of CloudBeaver and the writer come from Secret `keycloak-keys`, which `up` makes once per machine in
+    below, their groups, and the clients of the console, kafbat, CloudBeaver, Studio, the audit table
+    writer and the maintenance worker. Its signing key and the secrets of CloudBeaver, the writer and the worker
+    come from Secret `keycloak-keys`, which `up` makes once per machine in
     `~/.nuna-demo/keycloak` (with `openssl`) and keeps. Only the demo runs it; the engine matrix on its own
     does not.
   - `singlestore.yaml`: image `nuna-demo-singlestore:<connector hash>`, the dev image with the change-feed
@@ -79,16 +85,18 @@ demo/demo.sh up
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
   768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus the audit
-  table writer's 384 MB, of up to 512 MB (6.4 GB in all), plus Kafka Connect's 512 MB, of up to 1 GB, and the
-  brokerage world's generator's 256 MB, of up to 384 MB (7.1 GB in all), plus one job at a time: the lake writer
-  768 MB, the brokerage world's bootstrap 384 MB, or an engine up to 2 GB (Spark). Docker Desktop's
-  Kubernetes has about 7.5 GB, which leaves about 390 MB beside Kafka Connect and the generator: too little for
-  the lake writer, Spark, or a catalog server rolling to a new image (its new pod starts before the old one
-  stops). So `up`, `rate` and `engines` stop both while they run and start them again after; `up` starts them
-  last. `engines` also stops Trino and CloudBeaver to make room for Spark (7.25 GB asked with Spark). The CDC
-  leg asks for 1.75 GB (Oracle 1.25 GB, CockroachDB 384 MB, using about 450 MB of up to 768 MB, its PostgreSQL
-  128 MB), so `cdc` stops Trino, the audit table writer and the generator, and `engines` and `rate` refuse to
-  run beside it. With the leg up, the stack's requests fill
+  table writer's 384 MB, of up to 512 MB, and the maintenance worker's 192 MB, of up to 512 MB (6.6 GB in all),
+  plus Kafka Connect's 512 MB, of up to 1 GB, and the brokerage world's generator's 256 MB, of up to 384 MB
+  (7.3 GB in all), plus one job at a time: the lake writer 768 MB, the brokerage world's bootstrap 384 MB, or an
+  engine up to 2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, which leaves about 200 MB beside Kafka
+  Connect and the generator: too little for the lake writer, Spark, or a catalog server rolling to a new image (its
+  new pod starts before the old one stops). So `up`, `rate` and `engines` stop both while they run and start them
+  again after; `up` starts them last. A compaction Job asks for only 64 MB, of up to 1.25 GB, so it schedules
+  beside everything: it uses memory the others leave unused (about 1.2 GB on 2026-11-24), and is the first pod
+  stopped if that runs short. `engines` also stops Trino, CloudBeaver and the maintenance worker to make room for
+  Spark (7.25 GB asked with Spark). The CDC leg asks for 1.75 GB (Oracle 1.25 GB, CockroachDB 384 MB, using about
+  450 MB of up to 768 MB, its PostgreSQL 128 MB), so `cdc` stops Trino, the audit table writer, the maintenance
+  worker and the generator, and `engines` and `rate` refuse to run beside it. With the leg up, the stack's requests fill
   Kubernetes to within about 20 MB, so CloudBeaver is replaced by stopping the old pod first.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
@@ -369,8 +377,43 @@ feed, its filters and the last day's counts, D45) reads it back and says how far
 - While the CDC leg runs beside SingleStore (`ss` on), the writer is stopped for its memory: the Audit page misses
   the records of that time, which the catalog's log (`kubectl -n nuna-demo logs deployment/nuna-catalog`) still
   holds. `cdc stop` starts it again. With `ss` off it keeps running beside the leg.
-- Nothing prunes the table's snapshots: the demo has no maintenance worker, and its data lasts as long as Silo's
-  pod.
+- Nothing prunes the table's snapshots: the maintenance worker keeps only `lakehouse` (below), and the table's data
+  lasts as long as Silo's pod.
+
+### Maintenance
+
+The maintenance worker (`catalog-maintenance/README.md`, D30) keeps catalog `lakehouse` tidy, so the console's
+Overview and Maintenance pages show a working estate: every table's mark, the queue, the night's jobs and the
+nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`, and starts the worker.
+
+- The policy (catalog level; Governance, a table's Settings tab): snapshot expiry, orphan removal, compaction and
+  manifest rewrite all on. Snapshots go once an hour old, the least the catalog allows, keeping each table's newest
+  5; the rest as built in: a table needs compaction once a partition holds 5 data files under 384 MB (75% of the
+  512 MB target), or more delete files than 30% of its data files, or any equality delete; manifests are rewritten
+  at 100; orphans are files unreferenced for 14 days.
+- The cleanup window is open all day, each night ending as the next begins at 12:00 in New York
+  (`maintenance-values.yaml`). So whenever the demo comes up, the worker assesses every table at its first scan,
+  queues the ones that need compaction, and compacts them one at a time, a Spark Job each in namespace
+  `nuna-demo-compaction`; at noon the next night assesses them again. It scans every 5 minutes, expiring snapshots
+  and rewriting manifests at each scan, and starts the next Job as the last ends. Each table is compacted once a
+  night at most.
+- The brokerage world's Kafka Connect sink and SingleStore's change feeds commit every 15 and 5 seconds, so their
+  tables gather small files and snapshots all day: they are the queue. `markets.equities.eu.xetra.orders` and
+  `brokerage.trading.orders` carry equality deletes, which go first.
+- What it leaves alone: branches and tags keep their snapshots and files (the catalog's `dev` and `sample`, and
+  `xetra.trades`' own `eod-2026-11-09` and `surveillance-review`); the legal hold on `xetra.trades` and the DR freeze
+  on `reference.countries` stop its expiry and orphan scans there, as the catalog's work list leaves them out.
+- Its identity: Keycloak's service account of client `nuna-maintenance`, `service-account-nuna-maintenance`, the
+  catalog's maintenance principal (`demo-values.yaml`), in group `demo-maintenance`, which holds `write` on
+  `lakehouse`. Its compaction Jobs sign in the same way. It deletes from Silo as its own user, `nuna-maintenance`,
+  which may only list and delete beneath the tables (`silo-maintenance.json`); `up` makes it, since Silo keeps users
+  only for the pod's life.
+- Nothing it queues for deletion is deleted: a file waits out the 7-day PITR window first, and the demo's data
+  never lasts that long. Nor do the nights: the database goes with its pod, so after the overnight run's rebuild
+  the 30-night trends start again.
+- Memory: the worker asks for 192 MB, of up to 512 MB; a compaction Job asks for 64 MB, of up to 1.25 GB, with
+  Spark's driver at 640 MB (Start, above). `cdc` and `engines` stop the worker and any Job running, and start the
+  worker again after.
 
 ## SingleStore
 
@@ -629,8 +672,8 @@ her connection "nuna (Trino, as ana)" runs the SQL below.
 demo/demo.sh cdc
 ```
 
-starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino, the audit table writer and the brokerage
-world's generator to make room for it:
+starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino, the audit table writer, the maintenance
+worker and the brokerage world's generator to make room for it:
 
 - `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
 - `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
@@ -749,8 +792,8 @@ demo/demo.sh engines
 
 runs the engine matrix (`catalog-tests-engines`, `EngineMatrixTest`) against this stack instead of one of its
 own: Spark, Kafka Connect and PyIceberg as Kubernetes jobs, then SingleStore's ingest in the demo's SingleStore,
-all into catalog `engines` as `engine-matrix`. Trino, CloudBeaver, Kafka Connect and the brokerage world's
-generator stop for the run and start again after it. It takes about 4 minutes once the engine images exist; the first
+all into catalog `engines` as `engine-matrix`. Trino, CloudBeaver, Kafka Connect, the brokerage world's
+generator and the maintenance worker stop for the run and start again after it. It takes about 4 minutes once the engine images exist; the first
 run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
 shows, and SingleStore's copies in database `nuna_m8`.
 Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.
@@ -768,7 +811,7 @@ Debezium's change topics, the sinks' control topics and Oracle's schema history.
 demo/demo.sh down
 ```
 
-This deletes the namespace and everything in it. The signing key, tokens and Keycloak's keys stay in
+This deletes the namespace, the compaction Jobs' namespace `nuna-demo-compaction`, and everything in them. The signing key, tokens and Keycloak's keys stay in
 `~/.nuna-demo`; the next `up` loads the sample data again.
 
 ```bash

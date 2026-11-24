@@ -482,13 +482,19 @@ maintenance_worker() {
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-maintenance:demo)" --wait --timeout 5m >/dev/null
 }
 
-# Stops the maintenance worker, if it runs, for memory something else needs (cdc, engines). A compaction Job already
-# running finishes.
+# Stops the maintenance worker, if it runs, and any compaction Job still running, for memory something else needs
+# (cdc, engines). A Job stopped part way keeps the file groups it committed; the worker compacts that table again
+# when it starts.
 stop_maintenance() {
+  local job
   if running nuna-maintenance; then
     k scale deployment/nuna-maintenance --replicas=0 >/dev/null
     k wait --for=delete pod -l app.kubernetes.io/instance=nuna-maintenance --timeout=2m >/dev/null 2>&1 || true
   fi
+  for job in $(kubectl --context "$CONTEXT" -n "$NS-compaction" get jobs \
+      -o jsonpath='{range .items[?(@.status.active)]}{.metadata.name}{" "}{end}' 2>/dev/null); do
+    kubectl --context "$CONTEXT" -n "$NS-compaction" delete job "$job" --wait=true >/dev/null
+  done
 }
 
 # Catalog lakehouse's maintenance policy (D30), as ana, who may modify it: every job on, snapshots expired once an
