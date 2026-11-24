@@ -187,7 +187,8 @@ class ConsoleBrowserTest {
         browser.await("sign-in did not open the overview of trading",
                 d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
         browser.await(By.cssSelector("#overview-kpis"));
-        assertThat(driver.executeScript("return localStorage.getItem('nuna.catalog')")).isEqualTo("trading");
+        assertThat(driver.executeScript("return Object.keys(localStorage).filter(k => k.startsWith('nuna.catalog.'))"
+                + ".map(k => localStorage.getItem(k))")).as("kept per person (backlog 200)").isEqualTo(List.of("trading"));
 
         // Grant administrators read no table (D18).
         signIn(api.grantAdmin());
@@ -209,11 +210,17 @@ class ConsoleBrowserTest {
         assertThat(rail()).containsExactly("overview", "catalog", "maintenance", "governance");
         browser.open("/ui/#" + at("table", eu, "trades", "governance"));
         browser.await(By.cssSelector("#governance .status-row"));
+        // A table's six tabs, Audit left out for one who may not read its trail (backlog 199); Access leads with
+        // what the tester's groups may do there.
         assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab]")))
-                .extracting(a -> a.getDomAttribute("data-tab")).doesNotContain("audit").contains("grants");
+                .extracting(a -> a.getDomAttribute("data-tab"))
+                .containsExactly("overview", "schema", "history", "access", "maintenance");
         assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels']"))).isEmpty();
-        tab("grants");
-        browser.await(By.cssSelector("[data-grants='own']"));
+        browser.await(By.cssSelector("#access-tab > :first-child #you-may li"));
+        assertThat(driver.findElements(By.cssSelector("#you-may li"))).extracting(ConsoleBrowser::textContent)
+                .as("the testers' create and modify on the catalog, in words")
+                .containsExactly("Read and write its data, and change it: its schema, properties and maintenance.");
+        browser.await(By.cssSelector("#access-tab [data-grants='own']"));
         assertThat(driver.findElements(By.cssSelector(".nc-main form.grant-form"))).isEmpty();
         browser.open("/ui/#p=audit&c=trading");
         assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
@@ -368,16 +375,18 @@ class ConsoleBrowserTest {
         assertThat(textContent(topRow.findElement(By.cssSelector("td.last"))))
                 .matches(".+ in (equities\\.eu\\.trades|equities\\.eu\\.positions|ledger\\.accounts)");
 
-        // Who made the current snapshot is on the table's Overview, and each snapshot's author on Snapshots, paired
-        // with its commit in the metadata log (Atelier's review, F6; backlog 186).
+        // Who made the current snapshot is on the table's Overview, and each snapshot's author on History, the
+        // commit that added it (Atelier's review, F6; backlog 186). An old link to Snapshots opens History (backlog 199).
         browser.open("/ui/#" + at("table", eu, "trades", null));
         assertThat(textContent(browser.await(By.cssSelector("#overview-tab #current-by b")))).isEqualTo(committer);
         assertThat(textContent(driver.findElement(By.id("current-by")))).startsWith("by " + committer);
         browser.open("/ui/#" + at("table", eu, "trades", "snapshots"));
-        browser.await(By.cssSelector("table.snaps td.by b"));
-        assertThat(driver.findElements(By.cssSelector("table.snaps thead th"))).extracting(ConsoleBrowser::textContent)
-                .contains("By");
-        assertThat(driver.findElements(By.cssSelector("table.snaps tbody td.by b"))).hasSize(3)
+        browser.await(By.cssSelector("#metadata-log tr[data-id] td.by b"));
+        assertThat(driver.findElement(By.cssSelector("#table-page nav.tabs a[aria-current]")).getDomAttribute("data-tab"))
+                .isEqualTo("history");
+        assertThat(driver.findElements(By.cssSelector("#metadata-log thead th"))).extracting(ConsoleBrowser::textContent)
+                .contains("Snapshot", "By");
+        assertThat(driver.findElements(By.cssSelector("#metadata-log tbody tr[data-id] td.by b"))).hasSize(3)
                 .extracting(ConsoleBrowser::textContent).containsOnly(committer);
     }
 
@@ -431,7 +440,7 @@ class ConsoleBrowserTest {
         assertThat(schemaFields()).containsExactly("id", "symbol", "price");
         assertThat(addedFields()).containsExactly("price");
 
-        tab("partitioning");
+        // Partitioning and sort order are on Schema (backlog 199).
         List<WebElement> specs = driver.findElements(By.cssSelector("#table-page [data-spec]"));
         assertThat(specs).extracting(spec -> spec.getDomAttribute("data-spec")).containsExactly("1", "0");
         assertThat(specs.get(0).findElement(By.tagName("h2")).getText()).contains("Spec 1", "Default");
@@ -444,24 +453,28 @@ class ConsoleBrowserTest {
         assertThat(fact("1st")).isEqualTo("id · identity · ascending · nulls first");
         assertThat(panel("Sort order 0").getText()).contains("Unsorted");
 
-        tab("snapshots");
-        List<WebElement> snapshots = driver.findElements(By.cssSelector("table.snaps tbody tr"));
+        // History: one row per commit, newest first, each with the snapshot it added (backlog 199).
+        tab("history");
+        List<WebElement> snapshots = browser.await("the commits that added snapshots are not shown", d -> {
+            List<WebElement> found = d.findElements(By.cssSelector("#metadata-log tbody tr[data-id]"));
+            return found.size() == 3 ? found : null;
+        });
         assertThat(snapshots).extracting(row -> row.getDomAttribute("data-id"))
                 .containsExactly(String.valueOf(S3), String.valueOf(S2), String.valueOf(S1));
-        assertThat(snapshots.get(0).getDomAttribute("class")).contains("is-cur");
-        assertThat(cell(snapshots.get(0), 3)).startsWith("append");
+        assertThat(snapshots.get(0).getDomAttribute("class")).as("the current snapshot is selected").contains("is-sel");
+        assertThat(cell(snapshots.get(0), 4)).isEqualTo(S3 + " · append");
+        assertThat(cell(snapshots.get(0), 5)).isEqualTo("+10");
         assertThat(cell(snapshots.get(0), 7)).isEqualTo("main");
         assertThat(cell(snapshots.get(1), 7)).isEqualTo("review");
         assertThat(cell(snapshots.get(2), 7)).isEqualTo("close-day-1");
         assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]"))).hasSize(3);
         snapshots.get(2).findElement(By.cssSelector("button.row-pick")).click();
         browser.await("the oldest snapshot is not selected", d -> d.findElement(
-                By.cssSelector("table.snaps tr[data-id='" + S1 + "']")).getDomAttribute("class").contains("is-sel"));
+                By.cssSelector("#metadata-log tr[data-id='" + S1 + "']")).getDomAttribute("class").contains("is-sel"));
         String summary = textContent(browser.await(By.cssSelector("#selected-snapshot pre.raw")));
         assertThat(JsonPath.<String>read(summary, "$.operation")).isEqualTo("append");
         assertThat(JsonPath.<String>read(summary, "$.total-records")).isEqualTo("10");
 
-        tab("metadata-log");
         String id = api.id(String.join("\u001f", eu), "tables", "trades");
         HttpResponse<String> log = expect(api.manage("GET", "/objects/" + id + "/metadata-log", null), 200);
         List<Integer> versions = JsonPath.read(log.body(), "$.journal[*].new-version");
@@ -473,13 +486,11 @@ class ConsoleBrowserTest {
         assertThat(commits).extracting(row -> row.getDomAttribute("data-version"))
                 .containsExactlyElementsOf(versions.stream().map(String::valueOf).toList());
         assertThat(commits.get(0).getDomAttribute("class")).contains("is-cur");
-        assertThat(cell(commits.get(0), 4)).startsWith(principals.get(0));
-        commits.get(0).findElement(By.tagName("button")).click();
+        assertThat(cell(commits.get(0), 6)).startsWith(principals.get(0));
+        assertThat(cell(commits.get(0), 4)).as("the newest commit set refs and added no snapshot").isEqualTo("–");
+        commits.get(0).findElement(By.cssSelector("td:last-child button")).click();
         String location = JsonPath.read(log.body(), "$.pointer.metadata-location");
         browser.awaitText(By.cssSelector("#metadata-log tr.mlog-det"), location);
-        assertThat(driver.findElements(By.cssSelector("#snapshot-log tbody tr")))
-                .extracting(row -> row.getDomAttribute("data-id"))
-                .containsExactly(String.valueOf(S3), String.valueOf(S2), String.valueOf(S1));
 
         browser.open("/ui/#" + at("table", eu, "positions", null));
         browser.awaitText(By.cssSelector("#table-page .title-row .badge"), "iceberg v3");
@@ -904,8 +915,8 @@ class ConsoleBrowserTest {
         browser.await("the drawer did not close", d -> !d.findElement(By.id("console")).getDomAttribute("class")
                 .contains("menu-open"));
 
-        for (String page : List.of(at("table", eu, "trades", "snapshots"), at("table", eu, "trades", "schema"),
-                at("namespace", equities, null, "governance"), at("namespace", equities, null, "grants"),
+        for (String page : List.of(at("table", eu, "trades", "history"), at("table", eu, "trades", "schema"),
+                at("table", eu, "trades", "settings"), at("namespace", equities, null, "access"),
                 "p=governance&c=trading&tab=grants", "c=trading")) {
             browser.open("/ui/#" + page);
             browser.await("the page did not load: " + page, d -> d.findElements(

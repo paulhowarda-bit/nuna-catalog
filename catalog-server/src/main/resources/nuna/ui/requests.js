@@ -14,14 +14,15 @@ export const JOBS = {
 
 const lower = value => String(value || '').toLowerCase();
 
-/** Whether a grant made on `on` reaches the table: on the catalog, a namespace above it, or the table itself. */
+/** Whether a grant made on `on` reaches the object: on the catalog, a namespace above it, or the object itself. */
 function reaches(on, target) {
   if (!on) return false;
   if (on.type === 'catalog') return true;
   const levels = on.namespace || [];
   const above = levels.length <= target.namespace.length && levels.every((l, i) => lower(l) === lower(target.namespace[i]));
   if (on.type === 'namespace') return above;
-  return on.type === 'table' && above && levels.length === target.namespace.length && lower(on.name) === lower(target.name);
+  return (on.type === 'table' || on.type === 'view') && !!target.name && above && levels.length === target.namespace.length
+    && lower(on.name) === lower(target.name);
 }
 
 const grantsKept = new Map();
@@ -33,6 +34,11 @@ function ownGrants(catalog) {
   const promise = api.grantsOfGroups(catalog, []).catch(() => []);
   grantsKept.set(catalog, {at: Date.now(), promise});
   return promise;
+}
+
+/** The caller's own groups' grants that reach the object, for what its Access tab says they may do (backlog 199). */
+export async function heldHere(target) {
+  return (await ownGrants(target.catalog)).filter(g => reaches(g.securable, target));
 }
 
 /** Whether the caller's groups hold modify on the table, which a request needs. */
