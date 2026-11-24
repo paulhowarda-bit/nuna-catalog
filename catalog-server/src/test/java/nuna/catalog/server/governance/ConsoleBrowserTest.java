@@ -302,21 +302,24 @@ class ConsoleBrowserTest {
         signIn(tester());
         browser.open("/ui/#" + at("namespace", eu, null, null));
         browser.await(By.cssSelector("#namespace-page table.contents tr[data-name='trades']"));
+        // A column with nothing on any row is dropped (backlog 193): the queue and governance columns come and go with
+        // what other tests leave, so only the columns these tables always fill are named.
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
-                .extracting(ConsoleBrowser::textContent).containsExactly("Name", "Kind", "Format", "Tonight's queue",
-                        "Governance", "Snapshots", "Last commit");
+                .extracting(ConsoleBrowser::textContent).containsSubsequence("Name", "Kind", "Format", "Snapshots",
+                        "Last commit");
         WebElement trades = contentsRow("trades");
-        assertThat(contentsCell(trades, 3)).isEqualTo("v2");
-        assertThat(contentsCell(trades, 6)).isEqualTo("3");
+        assertThat(contentsCell(trades, "fmt")).isEqualTo("v2");
+        assertThat(contentsCell(trades, "snaps")).isEqualTo("3");
         assertThat(textContent(trades.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
         assertThat(textContent(trades.findElement(By.cssSelector("td.last")))).endsWith(" by " + committer);
         WebElement positions = contentsRow("positions");
-        assertThat(contentsCell(positions, 3)).isEqualTo("v3");
-        assertThat(contentsCell(positions, 6)).as("created, never appended to").isEqualTo("0");
+        assertThat(contentsCell(positions, "fmt")).isEqualTo("v3");
+        assertThat(contentsCell(positions, "snaps")).as("created, never appended to").isEqualTo("0");
 
         // A namespace's row counts the tables beneath it, sums their snapshots and names the newest commit by its
         // table's path below it, as the catalog's totals answer (backlog 147); it has no format of its own. A view
-        // has none of the three.
+        // has none of the three, so with only a namespace and a view here, the format column is dropped; and a
+        // namespace's header names its dotted path only where it differs from its name (backlog 193).
         HttpResponse<String> totals = expect(api.manage("GET", "/namespaces/" + ns(equities) + "/namespaces", null),
                 200);
         assertThat(JsonPath.<List<String>>read(totals.body(), "$.namespaces[*].name")).containsExactly("eu");
@@ -329,12 +332,16 @@ class ConsoleBrowserTest {
         browser.open("/ui/#" + at("namespace", equities, null, null));
         WebElement euRow = contentsRow("eu");
         assertThat(contentsCell(euRow, 1)).isEqualTo("eu · 2 tables");
-        assertThat(contentsCell(euRow, 3)).isEqualTo("–");
-        assertThat(contentsCell(euRow, 6)).isEqualTo("3");
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).doesNotContain("Format");
+        assertThat(euRow.findElements(By.cssSelector("td.fmt"))).isEmpty();
+        assertThat(textContent(driver.findElement(By.cssSelector("#namespace-page .title-row code"))))
+                .isEqualTo(top + ".equities");
+        assertThat(contentsCell(euRow, "snaps")).isEqualTo("3");
         assertThat(textContent(euRow.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
         assertThat(textContent(euRow.findElement(By.cssSelector("td.last")))).endsWith(" in " + newest.getFirst());
         WebElement daily = contentsRow("daily");
-        assertThat(List.of(contentsCell(daily, 3), contentsCell(daily, 6), contentsCell(daily, 7))).containsOnly("–");
+        assertThat(List.of(contentsCell(daily, "snaps"), contentsCell(daily, "last"))).containsOnly("–");
 
         // A name is a link in the link colour, as every link is, and its row opens it: a chevron, and a click
         // anywhere on the row follows the name (Atelier's review, F11; backlog 189).
@@ -348,6 +355,10 @@ class ConsoleBrowserTest {
 
         // The catalog's Contents counts every level beneath each top namespace: trades and positions two levels
         // down, accounts one.
+        browser.open("/ui/#" + at("namespace", List.of(top), null, null));
+        browser.await(By.cssSelector("#namespace-page .title-row h1"));
+        assertThat(driver.findElements(By.cssSelector("#namespace-page .title-row code")))
+                .as("a top namespace's path is its name").isEmpty();
         browser.open("/ui/#c=trading");
         WebElement topRow = contentsRow(top);
         assertThat(contentsCell(topRow, 1)).isEqualTo(top + " · 3 tables");
@@ -1195,6 +1206,11 @@ class ConsoleBrowserTest {
     /** A Contents row's {@code n}th cell's text, counting from 1, whether or not this width shows that column. */
     private static String contentsCell(WebElement row, int n) {
         return textContent(row.findElement(By.xpath("./td[" + n + "]"))).trim();
+    }
+
+    /** A Contents row's cell of one column, by its class (fmt, queue, gov, snaps, last), as columns come and go. */
+    private static String contentsCell(WebElement row, String column) {
+        return textContent(row.findElement(By.cssSelector("td." + column))).trim();
     }
 
     /** The groups beside {@code label} in the grants tab's "Who may". */

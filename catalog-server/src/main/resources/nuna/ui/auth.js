@@ -5,8 +5,33 @@
 // "Sign out" forgets the token and ends the person's session at the IdP too (D16, amended 2026-11-19).
 
 const TOKEN = 'nuna.token';
+const ID_TOKEN = 'nuna.id-token';
 const PENDING = 'nuna.oidc.pending';
 const SIGNING_OUT = 'nuna.oidc.signing-out';
+
+/** How long the console waits on the IdP before saying it is not answering (Atelier's review, F13; backlog 193). */
+export const IDP_WAIT_MS = 15000;
+
+/**
+ * A call to the IdP that gives up after IDP_WAIT_MS. A slow or unreachable IdP is named by its host, so the person
+ * reads which service is not answering rather than "Loading…" for a minute.
+ */
+async function idp(url, init) {
+  const host = new URL(url).host;
+  try {
+    return await fetch(url, {...init, credentials: 'omit', signal: AbortSignal.timeout(IDP_WAIT_MS)});
+  } catch (error) {
+    throw new Error(error && error.name === 'TimeoutError'
+      ? `${host} is not answering: no reply in ${IDP_WAIT_MS / 1000} s.`
+      : `${host} could not be reached: ${error && error.message || error}.`);
+  }
+}
+
+/** Forgets a sign-in this tab started and did not finish, so the next "Sign in" starts afresh. */
+export function startAgain() {
+  sessionStorage.removeItem(PENDING);
+  sessionStorage.removeItem(SIGNING_OUT);
+}
 
 let onSignedOut = () => {};
 
@@ -66,7 +91,7 @@ function random(n) {
 
 async function discovery(oidc) {
   const issuer = oidc.issuer.replace(/\/+$/, '');
-  const response = await fetch(issuer + '/.well-known/openid-configuration', {credentials: 'omit'});
+  const response = await idp(issuer + '/.well-known/openid-configuration', {});
   if (!response.ok) throw new Error(`The IdP's discovery document answered ${response.status}`);
   return response.json();
 }
@@ -106,8 +131,8 @@ export async function finishSignIn(oidc) {
   if (!pending || pending.state !== params.get('state')) {
     throw new Error('The sign-in answer does not match a sign-in this tab started; start again.');
   }
-  const response = await fetch(pending.tokenEndpoint, {
-    method: 'POST', credentials: 'omit',
+  const response = await idp(pending.tokenEndpoint, {
+    method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: new URLSearchParams({
       grant_type: 'authorization_code', code: params.get('code'), redirect_uri: redirectUri(oidc),
@@ -119,6 +144,8 @@ export async function finishSignIn(oidc) {
     throw new Error(`The IdP's token endpoint answered ${response.status} ${body.error || ''}`);
   }
   sessionStorage.setItem(TOKEN, body.access_token);
+  // Kept only to name the session when signing out, so the IdP ends it without asking (backlog 193).
+  if (body.id_token) sessionStorage.setItem(ID_TOKEN, body.id_token);
   return true;
 }
 
@@ -127,13 +154,14 @@ export async function finishSignIn(oidc) {
 /**
  * The IdP's end-session URL from its discovery document, or null if it names no end_session_endpoint. The IdP sends
  * the browser back to the console's page, the sign-in's redirect URI, which its client must also allow after a
- * logout. The console keeps no ID token, so it names its client instead of sending id_token_hint: Keycloak and
- * PingFederate then ask the person to confirm the sign-out on their own page.
+ * logout. It names the session by the sign-in's ID token (id_token_hint), so Keycloak and PingFederate end it in one
+ * step; without one, they ask the person to confirm on their own page (Atelier's review, F13; backlog 193).
  */
-export function endSessionUrl(meta, oidc) {
+export function endSessionUrl(meta, oidc, idToken) {
   if (!meta.end_session_endpoint) return null;
   const url = new URL(meta.end_session_endpoint);
   url.searchParams.set('client_id', oidc['client-id']);
+  if (idToken) url.searchParams.set('id_token_hint', idToken);
   url.searchParams.set('post_logout_redirect_uri', redirectUri(oidc));
   return url.toString();
 }
@@ -145,12 +173,13 @@ export function endSessionUrl(meta, oidc) {
  * or cannot be read.
  */
 export async function signOut(oidc) {
+  const idToken = sessionStorage.getItem(ID_TOKEN);
   sessionStorage.clear();
   if (!oidc) return 'Signed out.';
   const host = new URL(oidc.issuer).host;
   let url;
   try {
-    url = endSessionUrl(await discovery(oidc), oidc);
+    url = endSessionUrl(await discovery(oidc), oidc, idToken);
   } catch (error) {
     return `Signed out here, but your session at ${host} was not ended: ${error.message}. `
       + 'Signing in again may not ask for a password.';

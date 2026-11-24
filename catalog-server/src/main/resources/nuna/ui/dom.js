@@ -150,6 +150,13 @@ export function opensRow(e) {
 
 /** A table in its scrolling wrapper. Heads are text or [text, class]; rows are <tr>s or a tbody. */
 export function tbl(cls, heads, rows, attrs) {
+  // Each cell carries its column's name, which a phone's card shows beside the value (backlog 193).
+  const labels = heads.map(x => Array.isArray(x) ? x[0] : x);
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r instanceof HTMLTableRowElement && r.children.length === labels.length) {
+      [...r.children].forEach((td, i) => { if (labels[i]) td.dataset.label = labels[i]; });
+    }
+  }
   return h('div', {class: 'wrap-tbl'}, h('table', Object.assign({class: 'tbl compact' + (cls ? ' ' + cls : '')}, attrs || {}),
     h('thead', null, h('tr', null, heads.map(x => Array.isArray(x) ? h('th', {class: x[1]}, x[0]) : h('th', null, x)))),
     rows instanceof HTMLTableSectionElement ? rows : h('tbody', null, rows)));

@@ -3,7 +3,6 @@ package nuna.catalog.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
@@ -174,17 +173,14 @@ class ConsoleSignInTest {
         browser.awaitText(By.id("who"), "ana");
 
         // "Sign out": to Keycloak's end-session endpoint, for the console's client, back to the console's page. The
-        // console holds no ID token to send as id_token_hint, so Keycloak, holding a session in this browser, asks
-        // the person to confirm (its LogoutEndpoint).
+        // console names the session by the sign-in's ID token (id_token_hint), so Keycloak ends it without asking the
+        // person to confirm on its own page (Atelier's review, F13; backlog 193).
+        assertThat(storageKeys("sessionStorage")).contains("nuna.id-token");
         driver.findElement(By.id("sign-out")).click();
-        browser.await("neither Keycloak's sign-out page nor anything shown instead", d -> !d.findElements(
+        browser.await("neither the console signed out nor anything shown instead", d -> !d.findElements(
                 By.cssSelector("#kc-logout, main .notice, main .alert, #kc-error-message")).isEmpty());
         assertThat(driver.findElements(By.id("kc-logout"))).as(
-                "Keycloak asks to confirm the sign-out; the page shows:%n%s", browser.visibleText()).isNotEmpty();
-        String back = URLEncoder.encode(browser.origin() + "/ui/", StandardCharsets.UTF_8);
-        assertThat(driver.getCurrentUrl()).startsWith(ISSUER + "/protocol/openid-connect/logout?")
-                .contains("client_id=nuna-console", "post_logout_redirect_uri=" + back).doesNotContain("id_token_hint");
-        driver.findElement(By.id("kc-logout")).click();
+                "Keycloak ends the session without asking; the page shows:%n%s", browser.visibleText()).isEmpty();
         browser.awaitText(By.cssSelector("main .notice"), "Signed out.");
         assertThat(driver.getCurrentUrl()).isEqualTo(browser.origin() + "/ui/");
         assertThat(storageKeys("sessionStorage")).isEmpty();
@@ -212,6 +208,31 @@ class ConsoleSignInTest {
         assertThat(driver.getCurrentUrl()).doesNotContain("code=", "state=");
         assertThat(storageKeys("sessionStorage")).doesNotContain("nuna.token", "nuna.oidc.pending");
         assertThat(driver.findElement(By.id("who")).getText()).isEmpty();
+
+        // Start again opens the sign-in screen afresh, with no half-finished sign-in left in the tab (backlog 193).
+        driver.findElement(By.cssSelector("main [data-act='start-again']")).click();
+        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080");
+        assertThat(driver.findElements(By.cssSelector("main .notice"))).isEmpty();
+        assertThat(storageKeys("sessionStorage")).doesNotContain("nuna.oidc.pending");
+    }
+
+    /**
+     * An IdP that does not answer is named, with what to do, instead of "Loading…" for a minute: the console gives up
+     * on it after 15 s (Atelier's review, F13; backlog 193). The page's fetch is made to time out at once here, as
+     * AbortSignal.timeout would after its wait.
+     */
+    @Test
+    void anIdpThatDoesNotAnswerIsNamedWithStartAgain() {
+        RemoteWebDriver driver = browser.session();
+        browser.open("/ui/");
+        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080");
+        driver.executeScript("const real = window.fetch; window.fetch = (url, init) => String(url).includes('keycloak')"
+                + " ? Promise.reject(new DOMException('signal timed out', 'TimeoutError')) : real(url, init);");
+        driver.findElement(By.cssSelector("main button.primary")).click();
+        browser.awaitText(By.cssSelector("main .refusal"), "keycloak:8080 is not answering: no reply in 15 s.");
+        driver.findElement(By.cssSelector("main [data-act='start-again']")).click();
+        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080");
+        assertThat(driver.findElements(By.cssSelector("main .refusal"))).isEmpty();
     }
 
     /**

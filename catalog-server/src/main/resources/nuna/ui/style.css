@@ -662,7 +662,8 @@ code, kbd, .mono { font-size: max(12px, 0.93em); }
   .tbl.stack-line td:first-child, .tbl.stack-line td.name { flex-basis: 100%; }
   .tbl.stack-line td.score .bar { width: 56px; }
   .tbl.queue td:nth-child(1), .tbl.queue td:nth-child(5), .tbl.queue td:nth-child(6), .tbl.queue td:nth-child(8), .tbl.queue td.g-none { display: none; }
-  .tbl.contents td:nth-child(3), .tbl.contents td:nth-child(6) { display: none; }
+  .tbl.contents td.fmt, .tbl.contents td.snaps { display: none; }
+  .tbl.contents td[data-label]:not(.name):not([data-label="Kind"])::before { content: attr(data-label) " "; color: var(--text-2); font-size: 12px; }
   .tbl.scans th:nth-child(4), .tbl.scans td:nth-child(4) { display: none; }
   .tbl.policy td:first-child { white-space: nowrap; }
   .tbl.policy td:nth-child(2) { flex-basis: auto; }
@@ -1208,3 +1209,6 @@ details.panel.fold[open] > summary::before { content: '\25BE'; }
 details.tech { margin-top: 6px; }
 details.tech > summary { cursor: pointer; font-size: 12px; color: var(--text-2); }
 details.tech[open] > summary { margin-bottom: 4px; }
+
+/* A touch screen has no keys to press (backlog 193). */
+@media (hover: none) and (pointer: coarse) { .nc-nav .foot { display: none; } }
