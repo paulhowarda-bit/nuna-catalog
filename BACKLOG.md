@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**47 open:** 11 S, 17 M, 14 L, 5 XL.
+**53 open:** 15 S, 18 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -59,6 +59,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [206](backlog/206.md) | S | Console: with maintenance off, the empty queue offers Edit the catalog's policy | one link on two empty states, drawn only for those who may modify the catalog, and a browser test | 2026-11-23 |
 | [207](backlog/207.md) | M | Console: maintenance policy keys get labels, each key in its title | an 11-entry label map used by four panels and the policy editor's fields, and their browser tests | 2026-11-23 |
 | [208](backlog/208.md) | S | Console: the tree filter's empty answer offers Go to a path | one button on the tree filter's empty state that opens Go to a path with the words typed, and a browser test | 2026-11-23 |
+| [212](backlog/212.md) | S | Console: a ref's merge verdict on its Changes tab, so what a branch changed and whether it merges is one step | the merge verdict line on a ref's Changes tab, linked to the Merge tab | 2026-11-23 |
+| [213](backlog/213.md) | M | Console: a regulated area says why and who set it, on Governance, and Access says Yes, not true | the regulated flag's reason, setter and time shown where the flag is listed, which may need them in the governance summary route | 2026-11-23 |
+| [214](backlog/214.md) | ? | Console: Audit uses the chips' words everywhere, badges and By kind included, so its counts add up | one map from record type to the chips' word, used by the row badges and By kind | 2026-11-23 |
+| [215](backlog/215.md) | S | Console: the monospace S5 missed, the Overview chart caption, number headers, kind words, dates | four CSS rules | 2026-11-23 |
+| [216](backlog/216.md) | S | Console: an audit record with no archive offers no archive check, and its labels read as words | the archive link drawn only when an archive is configured, and the record's labels as words | 2026-11-23 |
+| [217](backlog/217.md) | S | Console: smaller findings from Atelier's re-walk after phase 2 | five small fixes | 2026-11-23 |
 
 ## Open items in full
 
@@ -2991,6 +2997,85 @@ catalog. "Not words" 4 of the table asks for a **Go to a path** button there.
 Done looks like: the empty state has a Go to a path button that opens the dialog with the filter's words already
 typed; a heavy browser test and a bite.
 
+### 212. Console: a ref's merge verdict on its Changes tab, so what a branch changed and whether it merges is one step
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S, the merge verdict line on a ref's Changes tab, linked to the Merge tab
+
+Atelier's re-walk after phase 2 (2026-11-23, `status/2026-11-23-console-wayfinding.md`), task 3 ("what dev changed, and its merge preview") is still 3 steps (Reading, What changed, Merge), against
+her estimate of 2: the merge verdict is only on the Merge tab.
+
+Done looks like: a branch's Changes tab opens with the verdict line ("Ready: 2 tables would move to main…") linked to
+the Merge tab, or the Reading menu's branch row has a Preview merge link beside What changed (Atelier's two options);
+task 3 is 2 steps; a heavy browser test and a bite.
+
+### 213. Console: a regulated area says why and who set it, on Governance, and Access says Yes, not true
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/java/ catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: M, the regulated flag's reason, setter and time shown where the flag is listed, which may need them in the governance summary route
+
+Atelier's re-walk after phase 2 (2026-11-23, `status/2026-11-23-console-wayfinding.md`), task 4: a hold shows its reason on Governance, but Governance › Regulated areas shows neither why an area is
+regulated nor who set it, and the Access tab then says "Regulated area: true". Her review's target was who set it,
+when and why, on the Governance page.
+
+Done looks like: each regulated area on Governance shows its reason (the attribute's provenance), who set it and
+when; the Access tab says Yes, not true; heavy browser tests updated.
+
+### 214. Console: Audit uses the chips' words everywhere, badges and By kind included, so its counts add up
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S/M, one map from record type to the chips' word, used by the row badges and By kind
+
+Atelier's re-walk after phase 2 (2026-11-23, `status/2026-11-23-console-wayfinding.md`): Audit's chips say Grants, Holds and freezes, Commits, while By kind and the row badges say `grant`,
+`governance`, `credential-issue`, `label`, so Holds and freezes 22 must be summed from governance 21 and hold 1. Her
+answer on the words table's Y3: a badge shows the chip's word (Grant, Commit, Read, Hold, Credential) in the UI font, and the
+raw record type is its `title`, in the record's JSON and in Technical details, in mono; By kind uses the same words,
+so its counts add up to the chips. This replaces row A8 of `docs/design/console/words-table-2026-11-23.md`.
+
+Done looks like: as above; heavy browser tests that read badges or By kind updated.
+
+### 215. Console: the monospace S5 missed, the Overview chart caption, number headers, kind words, dates
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/style.css
+- Effort: S, four CSS rules
+
+Atelier's re-walk after phase 2 (2026-11-23, `status/2026-11-23-console-wayfinding.md`): monospace that S5 (backlog 202) missed: the Overview chart caption (`.ice-cap`, a sentence); every
+right-aligned header (`.tbl th.num` sets `--f-mono`: "At the point", "Records", "Closed"); the kind words "· namespace"
+and "· table" on Governance; the "Anyone" and "Up to now" fields, and the dates in a ref's Point and Expires figures.
+
+Done looks like: each in the UI font, with tabular figures where it holds numbers; checked in the demo.
+
+### 216. Console: an audit record with no archive offers no archive check, and its labels read as words
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/audit.js
+- Effort: S, the archive link drawn only when an archive is configured, and the record's labels as words
+
+Atelier's re-walk after phase 2 (2026-11-23, `status/2026-11-23-console-wayfinding.md`): an audit record says "Hash chain: no archive is configured" beside a "Check its link in the archive"
+button; it shows "Kafka partition -1" (backlog 205) and a lowercase "table" label.
+
+Done looks like: no archive check is offered without an archive; the labels read as words; a heavy browser test.
+
+### 217. Console: smaller findings from Atelier's re-walk after phase 2
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/
+- Effort: S, five small fixes
+
+Atelier's re-walk after phase 2 (2026-11-23, `status/2026-11-23-console-wayfinding.md`), the smaller findings:
+- gary's rail lists Catalog, Governance, Audit: his home comes third.
+- On a tag, the Maintenance panel says "main's" twice.
+- "Copy warehouse" reads as if it copies the warehouse; "Copy name lakehouse@dev" says what it does.
+- Go to a path's rows name no catalog when a match is in the catalog you are in; with S1 searching every catalog, she
+  wants it named on every row.
+- The long path in the merge side panel runs to the panel's border.
+
+Done looks like: each settled as Atelier says, checked in the demo.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3155,3 +3240,4 @@ typed; a heavy browser test and a bite.
 | [201](backlog/201.md) | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | done | 2026-11-23 |
 | [202](backlog/202.md) | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | done | 2026-11-23 |
 | [209](backlog/209.md) | Console browser tests: one Chrome per server, faster polling, and none beside the demo | done | 2026-11-23 |
+| [211](backlog/211.md) | Console: a first sign-in whose home is Audit lands on the catalog with the most records, not the first name | done | 2026-11-23 |

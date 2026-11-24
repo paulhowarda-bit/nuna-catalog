@@ -85,14 +85,22 @@ async function landingCatalog(all) {
   const names = landingCatalogs(all);
   const kept = lastCatalog();
   if (kept && names.includes(kept)) return kept;
-  let rows = [];
-  try {
-    rows = await estate();
-  } catch {
-    // the estate only ranks the catalogs; without it the first is taken
-  }
   const counts = new Map(names.map(n => [n, 0]));
-  for (const t of rows) if (counts.has(t.catalog)) counts.set(t.catalog, counts.get(t.catalog) + 1);
+  if (names.some(auditOpen)) {
+    // Home is Audit (homeHref): the catalog with the most records in the last day, not the first name (Atelier's
+    // re-walk after phase 2: gary landed on an empty catalog's Audit).
+    await Promise.all(names.filter(auditOpen).map(n => api.auditSummary(n).then(sum => {
+      counts.set(n, Object.values(sum['by-type'] || {}).reduce((s, x) => s + Number(x || 0), 0));
+    }, () => {})));
+  } else {
+    let rows = [];
+    try {
+      rows = await estate();
+    } catch {
+      // the estate only ranks the catalogs; without it the first is taken
+    }
+    for (const t of rows) if (counts.has(t.catalog)) counts.set(t.catalog, counts.get(t.catalog) + 1);
+  }
   return names.reduce((best, n) => counts.get(n) > counts.get(best) ? n : best, names[0]);
 }
 

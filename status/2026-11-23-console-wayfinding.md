@@ -154,3 +154,39 @@ Her design answers for S2 and S3 are in backlog 199 and 200's notes when built:
   processes. Tonight's heavy run runs them.
 - **S5 (backlog 202):** Atelier wrote the words table (`docs/design/console/words-table-2026-11-23.md`). Her four
   "not words" items became backlog 206 to 208, and T2 goes in with S5.
+
+## Atelier's re-walk after phase 2 (demo at daca35a3, console files at a10e4348)
+
+Atelier re-walked her six tasks live, as ana for tasks 1 to 5 and gary for task 6, counting from the landing. S5's
+files were swapped in, because the demo's build predates S5 and a plain tab ran the stale console (backlog 203).
+
+| # | Task | Before | After phase 1 | After phase 2 | Steps now |
+|---|---|---|---|---|---|
+| 1 | `rates`: who changed it last | 7 | 3 | 3 | `/`, `rates`, Enter; Overview names the author |
+| 2 | Read `@sample`, then back to main | 3 | 3 | 3 | Reading, @sample, Read main instead |
+| 3 | What `dev` changed, and its merge preview | 6 | 3 | 3 | Reading, What changed, Merge |
+| 4 | Why a table is held or regulated | 3 | 1 | 1 | Governance (a regulated area's reason takes 2) |
+| 5 | Tonight's maintenance for a table | 7 | 3 | 3 | `/`, `rates`, Enter; Overview says maintenance is off in the policy |
+| 6 | gary finds a grant's audit record | 6 | 5 | 4, now 2 | catalog picker, lakehouse, Grants chip, Show record |
+| | Total | 32 | 18 | 17, now 15 | |
+
+She estimated 14. Two tasks missed it:
+- **Task 6.** gary landed on the empty Audit page of `engines`, a regression from S3, which keeps the remembered
+  catalog per person. The landing ranked catalogs by tables, which says nothing of an auditor's work. Fixed in backlog
+  211: a home of Audit now lands on the catalog with the most audit records. Checked live: gary lands on lakehouse's
+  Audit with 1,140 records, so task 6 is 2 steps and the total 15.
+- **Task 3.** It stays at 3, because the merge verdict is only on the Merge tab. Backlog 212.
+
+Her other findings became backlog items:
+- 213: a regulated area says why and who set it.
+- 214: Audit uses the chips' words everywhere. This settles the words table's Y3 question: a badge shows the chip's
+  word in the UI font, and the raw record type goes in its `title`.
+- 215: the monospace S5 missed.
+- 216: an audit record offers an archive check without an archive.
+- 217: five smaller ones.
+
+Backlog 204 (rounded snapshot ids) and 205 (Kafka words in Audit) are still open.
+
+She said these landed well: search by fragment with recent items first; the Reading control and its menu; Read main
+instead; the six tabs; Access leading with "What you may do"; the Audit chips kept in the URL; and Settings offering
+no changes through a tag.
