@@ -30,11 +30,13 @@ export function overviewPage(catalog) {
       eyebrow: `${catalog} · ${now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}, `
         + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
       title: !c.total ? nothingToRead(catalog, everywhere, 'overview')
-        : off ? [off, h('br'), h('span', {class: 'q'}, shapeWords(c))]
+        : off ? off
         : none ? shapeWords(c)
           : [shapeWords(c) + ' ', c.queued
             ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
-      sub: 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s health is on its own page.',
+      sub: off ? `${plural(c.total, 'table')} you may read, none assessed: the worker assesses a table only where its policy turns `
+        + 'maintenance on. Each table\'s health is on its own page.'
+        : 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s health is on its own page.',
       side: assessed ? pill('ok', icon('check'), 'Last assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
     })];
     if (c.total) {

@@ -402,8 +402,9 @@ function gotoDraw() {
     return li;
   }));
   if (!gotoItems.length) {
-    gotoList.append(h('li', {class: 'none'}, `Not found among the ${fmt(all.length)} ${all.length === 1 ? 'name' : 'names'} listed so far in ${cat}. `
-      + 'Open a namespace, or type the full dotted path, such as markets.fx.rates.'));
+    const example = (all.find(x => x.target.kind === 'table') || {}).path || 'namespace.table';
+    gotoList.append(h('li', {class: 'none'}, `Not found among the names listed so far in ${cat}. `
+      + `Open a namespace, or type the full dotted path, such as ${example}.`));
   }
   gotoMark();
 }

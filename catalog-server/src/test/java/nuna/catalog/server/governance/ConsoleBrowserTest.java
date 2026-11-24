@@ -275,7 +275,8 @@ class ConsoleBrowserTest {
         box = browser.await(By.id("goto-in"));
         box.sendKeys("zzqq");
         assertThat(textContent(browser.await(By.cssSelector("#goto-list li.none"))))
-                .startsWith("Not found among the ").contains("listed so far in trading").doesNotContain("fewer words");
+                .startsWith("Not found among the names listed so far in trading").doesNotContain("fewer words")
+                .as("an example from this catalog, not the demo's").doesNotContain("markets.fx.rates");
         box.clear();
         box.sendKeys(top + ".equities.nothing_here");
         box.sendKeys(Keys.ENTER);

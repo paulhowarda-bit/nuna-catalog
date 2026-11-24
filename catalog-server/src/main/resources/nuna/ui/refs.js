@@ -9,6 +9,7 @@ import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, edgeCue, facts, failure, fill, fmt, granted, h, icon, jsonPre, load, muted,
   openDialog, dialogForm, field, opensRow, panel, pill, plural, s, select, tabsNav, tbl, techDetails, when} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
+import {auditOpen} from './access.js';
 
 const DAY = 86_400_000;
 const ms = iso => new Date(iso).getTime();
@@ -313,6 +314,8 @@ export function liveRefLink(c, d) {
 
 /** The last day's ref records of a catalog from the audit feed; none when the caller may not read it. */
 async function refRecords(c, pages = 2) {
+  // Asking a feed the caller may not read is refused and audited as a denial (Atelier's re-walk, 2026-11-23).
+  if (!auditOpen(c)) return null;
   const out = [];
   let pageToken = null;
   try {
@@ -595,11 +598,12 @@ export function refPage(c, name, tab) {
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'until deleted' : `${untilWords(r['expires-at'])} · at most ${dayMon(r['max-expires-at'])}`)),
       h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Warehouse'), h('p', {class: 'kpi-v sm mono'}, `${c}@${r.name}`),
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'read endpoints only' : 'reads and commits')));
-    const tabs = r.kind === 'branch' ? [['', 'Changes', total], ['merge', 'Merge'], ['record', 'Record']] : [['', 'What it keeps'], ['record', 'Record']];
+    const record = auditOpen(c) ? [['record', 'Record']] : [];
+    const tabs = r.kind === 'branch' ? [['', 'Changes', total], ['merge', 'Merge'], ...record] : [['', 'What it keeps'], ...record];
     const key = tabs.some(([k]) => k === (tab || '')) ? tab || '' : '';
     const body = h('div', {class: 'tab-body'});
     if (key === 'merge') load(body, () => mergeTab(c, r, list));
-    else if (key === 'record') load(body, () => recordTab(c, r));
+    else if (key === 'record' && record.length) load(body, () => recordTab(c, r));
     else if (r.kind === 'branch') load(body, () => changesTab(c, r, total));
     else fill(body, tagKeeps(c, r, cut));
     return [h('div', {class: 'ph'}, crumbs, title, sub, side), kpis, tabsNav('Ref', tabs, key, k => refHref(c, r.name, k || null)), body];

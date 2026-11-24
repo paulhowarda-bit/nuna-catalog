@@ -1205,7 +1205,7 @@ td.acts { width: 1%; white-space: nowrap; }
 /* A panel folded behind its heading (backlog 191): the heading is the summary. */
 details.panel.fold > summary { cursor: pointer; list-style: none; }
 details.panel.fold > summary::-webkit-details-marker { display: none; }
-details.panel.fold > summary h2 { display: inline; }
+details.panel.fold > summary h2 { display: inline; font: 600 var(--t-14)/1.3 var(--f-ui); margin: 0; }
 details.panel.fold > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--text-2); }
 details.panel.fold[open] > summary::before { content: '\25BE'; }
 
