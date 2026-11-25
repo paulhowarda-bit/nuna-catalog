@@ -1,0 +1,18 @@
+Breaks: on MongoDB a scan's end report keeps no storage, so what the worker reached and deleted in the scan is lost once it ends (backlog 250).
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Health#aScanKeepsWhatTheWorkerReaches
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoHealth.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoHealth.java
+index 5e4739f5..b046bb00 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoHealth.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoHealth.java
+@@ -193,7 +193,8 @@ final class MongoHealth {
+                                 .append("error", text(scan.error().orElse(null)))
+                                 .append("workerGroups", scan.groups().<BsonValue>map(MongoHealth::groups)
+                                         .orElse(BsonNull.VALUE))
+-                                .append("workerStorage", scan.storage().<BsonValue>map(MongoHealth::storage)
++                                .append("workerStorage", scan.storage().filter(stores -> scan.endedAt().isEmpty())
++                                        .<BsonValue>map(MongoHealth::storage)
+                                         .orElse(BsonNull.VALUE))),
+                         new UpdateOptions().upsert(true));
+             }

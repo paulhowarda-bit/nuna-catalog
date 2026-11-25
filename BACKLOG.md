@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**57 open:** 16 S, 21 M, 15 L, 5 XL.
+**55 open:** 15 S, 20 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -61,8 +61,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 | [248](backlog/248.md) | M | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | one dialog replacing two forms, with browser tests; waits on items 246 and 247 | 2026-11-24 |
-| [250](backlog/250.md) | M | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | a new field on the scan report kept by all four stores with the conformance suite, and one list call per prefix per scan | 2026-11-24 |
-| [251](backlog/251.md) | S | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | one route reading item 250's record, the catalog's storage profile, the grants and the resolved policy; waits on item 250 | 2026-11-24 |
 | [252](backlog/252.md) | M | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button | 2026-11-24 |
 | [253](backlog/253.md) | S | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250 | 2026-11-24 |
 | [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
@@ -3098,68 +3096,6 @@ Access tab, beside item 243's rules button.
 The dialog replaces both forms and does each of the above. Browser tests, signed in as `gary`, show a grant made,
 one already held and one refused.
 
-### 250. Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-maintenance/src/main/java/nuna/maintenance/, catalog-maintenance/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, catalog-store-api/, catalog-store-sql/, catalog-store-oracle/, catalog-store-mongo/, catalog-tests-conformance/, bites/
-- Effort: M, a new field on the scan report kept by all four stores with the conformance suite, and one list call per prefix per scan
-
-## What is missing
-
-Paul set up a second catalog, `ledger`, at work and opened Maintenance for it: nothing happened, and nothing said why
-(2026-11-24). The worker cannot maintain a catalog until four steps are done: a write grant for its group, a storage
-profile covering the catalog's bucket, the store's permission to list and delete there, and a policy that turns a job
-on. The catalog can check the first and the last; it cannot see the middle two, because only the worker meets them
-(Atelier, 2026-11-24):
-
-- When no worker profile covers a location, `Storage.io()` throws "no nuna.maintenance.storage profile covers …"; when
-  the store refuses, the worker gets AccessDenied. Both reach the catalog only as counts by kind on the scan report
-  (`orphan-scan 3`) and as failed night jobs, with no reason, table, catalog or bucket (`HealthReports`,
-  `Management.reportScan`, `reportJob`). The catalog never learns the worker's groups either.
-- Meanwhile the Maintenance page says "N tables not assessed yet: the maintenance worker has not reported"
-  (`queue.js:122`), even while the worker reports every scan.
-- With only the grant done, maintenance looks healthy and deletes nothing. Expiry, manifest rewrite, assessment and
-  compaction run on credentials the catalog vends; only deletion, orphan scans and purges use the worker's own storage
-  identity. Every replaced file waits on the pending list for ever, and the first deletion falls due only after the
-  PITR window (7 days by default), so deletion results alone are a week-late signal. A list check at each scan is not.
-
-## Done when
-
-- At the start of each scan, `PUT /management/v1/maintenance/scans/{id}` carries `storage`: for each profile its name,
-  endpoint and prefixes, and for each prefix `listed`, `ok` or `refused` with the store's code (AccessDenied,
-  NoSuchBucket). The worker lists at most one key per prefix for this, which its policy already allows.
-- At the end of the scan, for each profile, the deletes done and refused, with the first refusal's code.
-- The catalog records the worker's groups from its token.
-- A test shows no key or secret in the body. The conformance suite passes on all four databases. A bite shows a
-  refused list is kept as refused.
-- If item 256 lands first, the report is per store identity, with the prefixes the catalog gave it.
-
-### 251. Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, bites/
-- Effort: S, one route reading item 250's record, the catalog's storage profile, the grants and the resolved policy; waits on item 250
-
-## What is missing
-
-Nothing tells a catalog's owner which of the four steps the maintenance worker needs is missing (item 250 has the
-evidence). The console's checklist (item 252) needs one answer per step (Atelier, 2026-11-24).
-
-## Done when
-
-`GET /management/v1/catalogs/{catalog}/maintenance/readiness`, for those who may `describe` the catalog, answers four
-steps, each `done`, `missing`, `refused` or `unknown`, and the time of the worker's last report:
-
-- `grant`: the worker's last-reported groups hold `write` on the catalog.
-- `storage`: each allowed prefix of the catalog's storage profile lies beneath a prefix the worker reported, matched
-  the way `Storage.io()` matches. (If item 256 has landed: the worker holds an identity for the profile's store.)
-- `store`: the worker's last list check there succeeded and no delete there was refused.
-- `policy`: the catalog's resolved policy turns at least one job on.
-
-Before any worker has reported, the first three are `unknown`. Names (the worker's group, prefixes, profiles) go only to
-those who may modify the catalog or manage its grants, and to platform operators. Route tests cover each state, and a
-bite shows an uncovered prefix is reported `missing`.
-
 ### 252. Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3609,4 +3545,6 @@ labels and holds, and anything on a namespace or catalog reaches what is below.
 | [246](backlog/246.md) | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | done | 2026-11-24 |
 | [247](backlog/247.md) | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | done | 2026-11-24 |
 | [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
+| [250](backlog/250.md) | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | done | 2026-11-24 |
+| [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

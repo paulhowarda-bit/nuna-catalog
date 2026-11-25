@@ -23,6 +23,7 @@ import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.TableAssessment;
 import nuna.catalog.store.TableHealth;
+import nuna.catalog.store.WorkerStorage;
 import nuna.catalog.store.WriteResult;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,6 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.bson.BsonArray;
@@ -46,8 +49,9 @@ import org.bson.BsonValue;
 
 /**
  * What the maintenance worker reports of its own work, kept for the console (D38): each table's latest assessment and
- * last compaction in {@code table_health}, by the table's id, and the recent scans in {@code maintenance_scan}. The
- * reports carry no change id and write no audit record; each is safe to repeat. Recording marks the table, so a drop
+ * last compaction in {@code table_health}, by the table's id, and the recent scans in {@code maintenance_scan}, each
+ * with the worker's groups and the storage it reached as arrays (backlog 250). The reports carry no change id and
+ * write no audit record; each is safe to repeat. Recording marks the table, so a drop
  * at the same moment conflicts with it and one of them retries; a purge's completion deletes its health. The neediest
  * are read in order and their tables checked a chunk at a time, in one snapshot.
  */
@@ -186,7 +190,11 @@ final class MongoHealth {
                                 .append("endedAt", scan.endedAt().<BsonValue>map(Docs::time).orElse(BsonNull.VALUE))
                                 .append("outcome", text(scan.outcome().map(Enum::name).orElse(null)))
                                 .append("failures", failures)
-                                .append("error", text(scan.error().orElse(null)))),
+                                .append("error", text(scan.error().orElse(null)))
+                                .append("workerGroups", scan.groups().<BsonValue>map(MongoHealth::groups)
+                                        .orElse(BsonNull.VALUE))
+                                .append("workerStorage", scan.storage().<BsonValue>map(MongoHealth::storage)
+                                        .orElse(BsonNull.VALUE))),
                         new UpdateOptions().upsert(true));
             }
             List<BsonValue> keeping = new ArrayList<>();
@@ -234,7 +242,47 @@ final class MongoHealth {
         return new MaintenanceScan(uuid(doc.get("_id")), string(doc, "worker"), instant(doc.get("startedAt")),
                 optionalInstant(doc, "endedAt"),
                 Optional.ofNullable(string(doc, "outcome")).map(MaintenanceScan.Outcome::valueOf), failures,
-                Optional.ofNullable(string(doc, "error")));
+                Optional.ofNullable(string(doc, "error")), array(doc, "workerGroups").map(groups -> groups.stream()
+                        .map(group -> group.asString().getValue()).collect(Collectors.toCollection(TreeSet::new))),
+                array(doc, "workerStorage").map(stores -> stores.stream().map(store -> storage(store.asDocument()))
+                        .toList()));
+    }
+
+    /** The array at {@code field}; empty when it is absent or null, as in a scan kept before backlog 250. */
+    private static Optional<BsonArray> array(BsonDocument doc, String field) {
+        BsonValue value = doc.get(field);
+        return value == null || value.isNull() ? Optional.empty() : Optional.of(value.asArray());
+    }
+
+    private static BsonArray groups(SortedSet<String> groups) {
+        return new BsonArray(groups.stream().<BsonValue>map(BsonString::new).toList());
+    }
+
+    /** The worker's storage identities, each with its prefixes (backlog 250). */
+    private static BsonArray storage(List<WorkerStorage> storage) {
+        return new BsonArray(storage.stream().<BsonValue>map(store -> new BsonDocument("kind",
+                new BsonString(store.kind())).append("endpoint", text(store.endpoint().orElse(null)))
+                .append("prefixes", new BsonArray(store.prefixes().stream().<BsonValue>map(prefix ->
+                        new BsonDocument("location", new BsonString(prefix.location()))
+                                .append("listed", new BsonString(prefix.listed().name()))
+                                .append("listCode", text(prefix.listCode().orElse(null)))
+                                .append("deleted", new BsonInt64(prefix.deleted()))
+                                .append("deleteRefused", new BsonInt64(prefix.deleteRefused()))
+                                .append("deleteFailed", new BsonInt64(prefix.deleteFailed()))
+                                .append("deleteCode", text(prefix.deleteCode().orElse(null)))).toList())))
+                .toList());
+    }
+
+    private static WorkerStorage storage(BsonDocument store) {
+        return new WorkerStorage(string(store, "kind"), Optional.ofNullable(string(store, "endpoint")),
+                store.getArray("prefixes").stream().map(value -> {
+                    BsonDocument prefix = value.asDocument();
+                    return new WorkerStorage.Prefix(string(prefix, "location"),
+                            WorkerStorage.Listed.valueOf(string(prefix, "listed")),
+                            Optional.ofNullable(string(prefix, "listCode")), prefix.getInt64("deleted").getValue(),
+                            prefix.getInt64("deleteRefused").getValue(), prefix.getInt64("deleteFailed").getValue(),
+                            Optional.ofNullable(string(prefix, "deleteCode")));
+                }).toList());
     }
 
     private static Set<String> reasons(BsonDocument doc) {

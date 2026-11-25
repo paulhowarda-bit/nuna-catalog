@@ -84,7 +84,7 @@ class MaintenanceRoutes {
      * checked against.
      */
     static final Duration RECHECK_MARGIN = Duration.ofHours(1);
-    private static final List<String> JOBS = List.of(MaintenancePolicy.EXPIRY_ENABLED, MaintenancePolicy.ORPHAN_ENABLED,
+    static final List<String> JOBS = List.of(MaintenancePolicy.EXPIRY_ENABLED, MaintenancePolicy.ORPHAN_ENABLED,
             MaintenancePolicy.COMPACTION_ENABLED, MaintenancePolicy.REWRITE_ENABLED);
 
     /** The work list's sections, in the order its pages walk them. */

@@ -1,0 +1,19 @@
+Breaks: readiness reports a catalog's storage step done whenever the worker has reported any storage, so an allowed prefix no reported prefix covers is never reported missing (backlog 251).
+Module: catalog-server
+Test: ReadinessRoutesTest#aPrefixNoReportedPrefixCoversIsMissingAndItsStoreUnknown
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+index 8db3d571..20904a4f 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+@@ -128,9 +128,7 @@ class ReadinessRoutes {
+      */
+     private static ObjectNode storageStep(CatalogStorage.Bound profile, List<String> prefixes,
+                                           Optional<MaintenanceScan> last, boolean names) {
+-        ObjectNode node = state(last.isEmpty() ? State.UNKNOWN
+-                : prefixes.stream().allMatch(prefix -> last.get().covering(prefix).isPresent()) ? State.DONE
+-                : State.MISSING);
++        ObjectNode node = state(last.isEmpty() ? State.UNKNOWN : State.DONE);
+         if (names) {
+             node.put("profile", profile.name());
+             if (profile.profile().kind() != StoreKind.S3) {

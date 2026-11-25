@@ -3,15 +3,15 @@ Module: catalog-server
 Test: FrozenLifecycleRefusalTest
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
-index 0758ef2..3e174d4 100644
+index 3a538372..750e159e 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
-@@ -103,7 +103,7 @@ class ManagementGuard {
-
+@@ -116,7 +116,7 @@ class ManagementGuard {
+ 
      /** A refusal under a DR freeze, audited as a denial with reason {@code dr_freeze} (D18, D37). */
      AccessDenied frozen(Request request, nuna.catalog.audit.Securable target, String operation, String message) {
 -        return denials.refuse(request.actor(), operation, target, null, "dr_freeze", message);
 +        return new AccessDenied(message);
      }
-
-     private boolean operator(Request request) {
+ 
+     /** Whether the caller is a platform operator (D18), asked to decide what an answer holds: nothing is audited. */
