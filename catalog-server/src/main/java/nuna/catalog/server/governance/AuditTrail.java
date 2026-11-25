@@ -123,10 +123,10 @@ public final class AuditTrail {
 
     /** {@link #record(EventData)} for an event another seam built. */
     public void record(CatalogEvent event) {
-        StampedEvent logged = log(event);
+        StampedEvent copy = log(event);
         if (topic.isPresent() && kafkaTried()) {
             try {
-                topic.get().publish(logged);
+                topic.get().publish(copy);
             } catch (RuntimeException e) {
                 kafkaFailed(1, e);
             }
@@ -139,13 +139,13 @@ public final class AuditTrail {
      * Never throws for Kafka, so the relay marks the batch relayed once it is in the log.
      */
     public void deliver(List<CatalogEvent> orderedBatch) {
-        List<StampedEvent> logged = new ArrayList<>(orderedBatch.size());
+        List<StampedEvent> copies = new ArrayList<>(orderedBatch.size());
         for (CatalogEvent event : orderedBatch) {
-            logged.add(log(event));
+            copies.add(log(event));
         }
         if (stream.isPresent() && kafkaTried()) {
             try {
-                stream.get().deliver(logged);
+                stream.get().deliver(copies);
             } catch (RuntimeException e) {
                 kafkaFailed(orderedBatch.size(), e);
             }
