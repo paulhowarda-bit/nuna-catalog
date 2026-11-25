@@ -43,6 +43,10 @@ public final class Mint {
         USERS.put("gary", new String[] {"nuna-console", "demo-grant-admins", "demo-auditors"});
         USERS.put("stella", new String[] {"nuna-console", "demo-stewards"});
         USERS.put("oscar", new String[] {"nuna-console", "demo-operators"});
+        // Everything, in one sign-in (backlog 273): every person's groups, and demo-presenters, which holds every
+        // privilege on every catalog (demo.sh grants).
+        USERS.put("presenter", new String[] {"nuna-console", "demo-analysts", "demo-grant-admins", "demo-stewards",
+                "demo-operators", "demo-auditors", "demo-presenters"});
         USERS.put("singlestore", new String[] {"singlestore-demo", "demo-loaders"});
         USERS.put("lake", new String[] {"lake-writer-demo", "demo-loaders"});
         // The brokerage world's generator (demo-datagen): its bootstrap Job makes its namespaces, tables and views.

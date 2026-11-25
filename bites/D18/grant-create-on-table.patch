@@ -3,12 +3,12 @@ Module: catalog-server
 Test: GrantPreviewTest#createIsRefusedOnATableOrViewAndAdmittedOnANamespace+theGrantRouteRefusesCreateOnATableOrViewUnauditedAndARevokeStillRemovesOne
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index 7d9e0545..e179f2da 100644
+index 3e8a1a04..0b3fb328 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -411,7 +411,7 @@ class GrantRoutes {
+@@ -452,7 +452,7 @@ class GrantRoutes {
       */
-     private static Optional<Refusal> refusal(Caller caller, Asked asked) {
+     private Optional<Refusal> refusal(Caller caller, Asked asked) {
          Securable.Kind kind = asked.on().stored().kind();
 -        if (asked.privilege() == Privilege.CREATE && (kind == Securable.Kind.TABLE || kind == Securable.Kind.VIEW)) {
 +        if (false) {

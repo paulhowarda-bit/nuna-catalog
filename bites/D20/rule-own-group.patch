@@ -2,14 +2,14 @@ Breaks: a grant admin may set a row filter or column masks for a group they belo
 Module: catalog-server
 Test: SecurityGateTest#trinoGetsEachUsersRowFilterAndColumnMasksThroughOpa
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
-index ad6c975f..d6ed6876 100644
+index df39c146..d9b9723b 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
-@@ -106,7 +106,7 @@ class RuleRoutes {
+@@ -124,7 +124,7 @@ class RuleRoutes {
                      + " to give a group every row, set row-filter to true");
          }
          require(request, on, SET);
--        if (request.caller().subject().groups().contains(group)) {
+-        if (!ownGroups.mayActOn(request.caller(), group)) {
 +        if (false) {
              throw denials.refuse(request.actor(), SET.name(), on.named(), SET.privilege().wireName(),
                      "separation-of-duties", "no one sets row filters or column masks for a group they belong to: "

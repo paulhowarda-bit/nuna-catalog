@@ -27,6 +27,8 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
  *                                  as nobody's do
  * @param refuseIdentityLessCommits D17's switch (CMP-7): refuse writes to regulated areas by a trusted engine
  *                                  that names no end user
+ * @param ownGroupPrincipals        users, by principal id, who may grant to and set row/column rules for groups they
+ *                                  belong to ({@link OwnGroups}): a demo's showcase sign-in, no one at work
  */
 @ConfigurationProperties("nuna.security")
 public record SecuritySettings(
@@ -35,7 +37,8 @@ public record SecuritySettings(
         @DefaultValue Set<String> grantAdminGroups,
         @DefaultValue Set<String> platformOperatorGroups,
         @DefaultValue Set<String> maintenancePrincipals,
-        @DefaultValue("false") boolean refuseIdentityLessCommits) {
+        @DefaultValue("false") boolean refuseIdentityLessCommits,
+        @DefaultValue Set<String> ownGroupPrincipals) {
 
     public SecuritySettings {
         if (issuers == null || issuers.isEmpty()) {
@@ -46,6 +49,7 @@ public record SecuritySettings(
         grantAdminGroups = Set.copyOf(grantAdminGroups);
         platformOperatorGroups = Set.copyOf(platformOperatorGroups);
         maintenancePrincipals = Set.copyOf(maintenancePrincipals);
+        ownGroupPrincipals = Set.copyOf(ownGroupPrincipals);
     }
 
     /** Whether the caller is a maintenance principal acting as itself; one acting for an end user is not. */
