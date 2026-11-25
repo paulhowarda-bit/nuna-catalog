@@ -51,7 +51,7 @@ class IdpOutageTest {
         idp.publish(key);
         SecuritySettings settings = new SecuritySettings(List.of(new SecuritySettings.Issuer(ISSUER, idp.jwksUri(),
                 Set.of(AUDIENCE), Set.of(SignatureAlgorithm.RS256), "upn", "groups", "azp")),
-                TestIdp.SKEW, Set.of(), Set.of(), Set.of(), false);
+                TestIdp.SKEW, Set.of(), Set.of(), Set.of(), false, Set.of());
         TokenAuthenticator authenticator = new TokenAuthenticator(
                 settings.issuers().stream().map(SecuritySettings.Issuer::policy).toList(), TestIdp.SKEW, TestIdp.CLOCK);
         RestSettings rest = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),

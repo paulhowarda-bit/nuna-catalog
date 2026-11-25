@@ -102,7 +102,7 @@ class GrantHiddenNamesTest {
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
         Denials denials = new Denials(audit::add, settings, clock);
         routes = new GrantRoutes(store, authorizer, separation, request -> caller, denials,
-                new Holdings(authorizer, store, settings, separation, denials), settings, clock);
+                new Holdings(authorizer, store, settings, separation, denials), settings, OwnGroups.NONE, clock);
     }
 
     // ---- grant, revoke and the listing by object ----

@@ -82,7 +82,7 @@ class GrantRaceTest {
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
         Denials denials = new Denials(audit::add, settings, clock);
         routes = new GrantRoutes(store, authorizer, separation, request -> GINA, denials,
-                new Holdings(authorizer, store, settings, separation, denials), settings, clock);
+                new Holdings(authorizer, store, settings, separation, denials), settings, OwnGroups.NONE, clock);
     }
 
     @AfterEach
