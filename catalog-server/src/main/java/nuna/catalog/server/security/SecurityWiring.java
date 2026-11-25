@@ -35,6 +35,11 @@ class SecurityWiring {
                 settings.maintenancePrincipals());
     }
 
+    @Bean
+    OwnGroups ownGroups(SecuritySettings settings) {
+        return new OwnGroups(settings.ownGroupPrincipals());
+    }
+
     /** The caller the authentication filter established; routes are never reached without one. */
     @Bean
     Callers callers() {

@@ -35,12 +35,13 @@ GRANT SELECT, CHANGEFEED ON TABLE positions.holdings TO debezium;
 GRANT SYSTEM VIEWCLUSTERSETTING TO debezium;
 
 -- The demo's people, with their Keycloak passwords: everyone reads every table, ana also writes, creates,
--- alters and drops tables in the database, and gary is an admin.
+-- alters and drops tables in the database, and gary and presenter are admins.
 CREATE USER ana WITH PASSWORD 'ana-demo';
 CREATE USER gary WITH PASSWORD 'gary-demo';
 CREATE USER stella WITH PASSWORD 'stella-demo';
 CREATE USER oscar WITH PASSWORD 'oscar-demo';
-GRANT admin TO gary;
+CREATE USER presenter WITH PASSWORD 'presenter-demo';
+GRANT admin TO gary, presenter;
 GRANT CREATE ON DATABASE custody TO ana;
 GRANT ALL ON SCHEMA positions TO ana;
 GRANT ALL ON TABLE positions.holdings TO ana;

@@ -1,6 +1,7 @@
 package nuna.catalog.server.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Proxy;
 import java.net.URI;
@@ -17,6 +18,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import nuna.catalog.server.rest.AccessDenied;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
@@ -56,6 +58,12 @@ class RuleRoutesTest {
     /** A grant admin, by configuration. */
     private static final Caller GINA = new Caller(new Principal("gina", Set.of("grant-admins")), "console", false,
             Optional.empty());
+    /** A grant admin who is also an analyst. */
+    private static final Caller GIL = new Caller(new Principal("gil", Set.of("grant-admins", "analysts")), "console",
+            false, Optional.empty());
+    /** The same, named by nuna.security.own-group-principals, as the demo's presenter is. */
+    private static final Caller PIA = new Caller(new Principal("pia", Set.of("grant-admins", "analysts")), "console",
+            false, Optional.empty());
 
     private final CatalogRecord catalog = new CatalogRecord(UUID.randomUUID(), "gate", "gate");
     private final NamespaceRecord markets = new NamespaceRecord(catalog.id(), UUID.randomUUID(), catalog.id(),
@@ -67,6 +75,7 @@ class RuleRoutesTest {
     private final List<OptionalLong> expected = new ArrayList<>();
     private final List<CatalogEvent> audit = new ArrayList<>();
     private Instant clock = NOW;
+    private Caller caller = GINA;
     private final RuleRoutes routes;
 
     RuleRoutesTest() {
@@ -79,8 +88,9 @@ class RuleRoutesTest {
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
         Denials denials = DenialsForTests.denials(publisher, settings, fixed);
         Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
-        routes = new RuleRoutes(store, authorizer, request -> GINA, denials, holdings, settings,
-                TableColumnsForTests.of(table -> List.of("desk", "Trader", "quantity")), fixed);
+        routes = new RuleRoutes(store, authorizer, request -> caller, denials, holdings, settings,
+                TableColumnsForTests.of(table -> List.of("desk", "Trader", "quantity")),
+                new OwnGroups(Set.of("pia")), fixed);
     }
 
     // ---- expressions ----
@@ -122,6 +132,25 @@ class RuleRoutesTest {
 
         assertThat(rules.get("analysts").rule().rowFilter()).contains(filter);
         assertThat(rules.get("analysts").rule().columnMasks()).containsOnlyKeys("Trader");
+    }
+
+    // ---- own groups (D18) ----
+
+    @Test
+    void noOneSetsARuleForAGroupTheyBelongTo() {
+        caller = GIL;
+
+        assertThatThrownBy(() -> set("analysts", "desk = 'EQ'", null, null)).isInstanceOf(AccessDenied.class)
+                .hasMessageContaining("no one sets row filters or column masks for a group they belong to: analysts");
+        assertThat(rules).isEmpty();
+    }
+
+    @Test
+    void someoneTheSettingNamesSetsARuleForTheirOwnGroup() {
+        caller = PIA;
+
+        assertThat(answer(() -> set("analysts", "desk = 'EQ'", null, null))).isEqualTo(204);
+        assertThat(rules.get("analysts").rule().rowFilter()).contains("desk = 'EQ'");
     }
 
     // ---- versions ----

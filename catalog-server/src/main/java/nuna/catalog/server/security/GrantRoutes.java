@@ -112,10 +112,11 @@ class GrantRoutes {
     private final Denials denials;
     private final Holdings holdings;
     private final RestSettings settings;
+    private final OwnGroups ownGroups;
     private final Clock clock;
 
     GrantRoutes(CatalogStore store, Authorizer authorizer, Separation separation, Callers callers, Denials denials,
-                Holdings holdings, RestSettings settings, Clock clock) {
+                Holdings holdings, RestSettings settings, OwnGroups ownGroups, Clock clock) {
         this.store = store;
         this.authorizer = authorizer;
         this.separation = separation;
@@ -123,6 +124,7 @@ class GrantRoutes {
         this.denials = denials;
         this.holdings = holdings;
         this.settings = settings;
+        this.ownGroups = ownGroups;
         this.clock = clock;
     }
 
@@ -445,17 +447,17 @@ class GrantRoutes {
     /**
      * Why a grant is refused before the store's write, in the order the grant route asks: a privilege that means
      * nothing on the securable ({@code create} on a table or view, which has nothing inside it to create), then a
-     * grant to one of the caller's own groups. Empty when only the separation of duties is left, which the store
+     * grant to one of the caller's own groups, unless {@link OwnGroups} names them. Empty when only the separation of duties is left, which the store
      * asks inside its write ({@link #admits}).
      */
-    private static Optional<Refusal> refusal(Caller caller, Asked asked) {
+    private Optional<Refusal> refusal(Caller caller, Asked asked) {
         Securable.Kind kind = asked.on().stored().kind();
         if (asked.privilege() == Privilege.CREATE && (kind == Securable.Kind.TABLE || kind == Securable.Kind.VIEW)) {
             return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT, "create means nothing on a "
                     + kind.name().toLowerCase(java.util.Locale.ROOT)
                     + ": it creates namespaces, tables and views in a catalog or namespace"));
         }
-        if (caller.subject().groups().contains(asked.group())) {
+        if (!ownGroups.mayActOn(caller, asked.group())) {
             return Optional.of(new Refusal(Refusal.Kind.SELF_GRANT,
                     "no one grants to a group they belong to: " + asked.group()));
         }

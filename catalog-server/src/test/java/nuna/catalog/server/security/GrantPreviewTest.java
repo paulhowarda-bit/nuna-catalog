@@ -66,6 +66,8 @@ class GrantPreviewTest {
     private static final Caller OTTO = person("otto", "outsiders");
     /** Nothing in the catalog. */
     private static final Caller NED = person("ned", "newcomers");
+    /** Manage-grants on sales as a steward, and in taggers; nuna.security.own-group-principals names her. */
+    private static final Caller PIA = person("pia", "stewards", "taggers");
 
     private final CatalogRecord catalog = new CatalogRecord(UUID.randomUUID(), CATALOG, CATALOG);
     private final Map<UUID, NamespaceRecord> namespaces = new LinkedHashMap<>();
@@ -101,7 +103,7 @@ class GrantPreviewTest {
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
         Denials denials = new Denials(audit::add, settings, clock);
         routes = new GrantRoutes(store, authorizer, separation, request -> caller, denials,
-                new Holdings(authorizer, store, settings, separation, denials), settings, clock);
+                new Holdings(authorizer, store, settings, separation, denials), settings, new OwnGroups(Set.of("pia")), clock);
     }
 
     // ---- the three answers ----
@@ -134,6 +136,18 @@ class GrantPreviewTest {
         assertThat(answer(() -> routes.grant(CATALOG, body, http))).as("the grant route, through the same check")
                 .isEqualTo(new Answer(403, "ForbiddenException", "no one grants to a group they belong to: sam-team"));
         assertThat(writes).isZero();
+    }
+
+    @Test
+    void someoneTheSettingNamesGrantsToTheirOwnGroupButNotAcrossTheSeparationOfDuties() {
+        caller = PIA;
+        String select = body(namespaceSpec("sales"), "taggers", "select");
+        assertThat(preview(select)).containsEntry("answer", "admitted");
+        assertThat(answer(() -> routes.grant(CATALOG, select, http)).status()).isEqualTo(204);
+        assertThat(writes).isOne();
+
+        Map<String, Object> modify = preview(body(namespaceSpec("sales"), "taggers", "modify"));
+        assertThat(modify).containsEntry("answer", "refused").containsEntry("refusal", "separation-of-duties");
     }
 
     @Test

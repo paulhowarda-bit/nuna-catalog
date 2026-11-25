@@ -164,7 +164,7 @@ The console offers two ways in:
 | `gary` | `gary-demo` | `demo-grant-admins`, `demo-auditors` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused. As an auditor, the console's Audit page, and the audit table itself (below) |
 | `stella` | `stella-demo` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
 | `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
-| `presenter` | `presenter-demo` | all five groups above | everything the four people may do, in one sign-in, for showing the demo |
+| `presenter` | `presenter-demo` | all five groups above, and `demo-presenters` | everything, in one sign-in, for showing the demo (below) |
 | `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
 | `brokerage` | token only | `demo-loaders` | create and modify; the brokerage world's generator, whose bootstrap makes its namespaces, tables and views |
@@ -185,16 +185,23 @@ signed in there; its users hold the realm's default roles (`default-roles-nuna` 
 `k8s/keycloak-realm.json`), without which that page fails with "Something went wrong". Keycloak's users and
 sessions go with its pod.
 
-`presenter` is for showing the demo without changing user: Keycloak puts them in all five groups, so the
-console shows data, grants, the audit trail and the Audit page, governance and the DR freeze together. Separation of duties is
-checked on grants to groups, so nothing in the catalog refuses one person in every group; at work that is
-the directory's to prevent. In kafbat `presenter` administers, as `demo-operators`. Studio and CloudBeaver
-have no `presenter`: Keycloak signs them in, and both refuse them; use `oscar` there. CloudBeaver shows its
-administrator every person's connections, so `oscar` can show each person's view there without changing user.
+`presenter` may do everything, in every UI, for showing the demo without changing user (Paul, 2026-11-25: "Truly
+everything"; D18 amended; backlog 273). Keycloak puts them in all five groups, so the console shows data, grants,
+the audit trail and the Audit page, governance and the DR freeze together, and in `demo-presenters`, which holds
+every privilege on every catalog, `nuna_audit` included (by SQL, so the separation of duties never sees it). The
+catalog also names them in `nuna.security.own-group-principals`, so they grant to and set row filters and column
+masks for their own groups, which no one else may, and in `nuna.security.maintenance-principals`, so they claim
+and complete purges and read a flagged table's files without Trino, as the maintenance worker does. Separation of
+duties between groups still holds for them: a grant that would give one group two duties is refused. Outside the
+catalog `presenter` administers kafbat (as `demo-operators`), CloudBeaver (team `admin`, with their own four
+connections), SingleStore and Studio (all privileges, with grant option), Silo (`consoleAdmin`), realm `nuna` in
+Keycloak's admin console (`realm-admin`), and the CDC leg's databases (superuser, DBA, admin). CloudBeaver shows
+its administrators every person's connections, so `oscar` or `presenter` can show each person's view there without
+changing user. None of this is for work, where the directory keeps one person to one duty.
 
-No one grants to a group they belong to: the catalog refuses it as separation of duties ("no one grants to a
-group they belong to"). So `presenter`, in all five groups, can grant to none of them, and `gary` cannot grant to
-`demo-grant-admins` or `demo-auditors`. To show a grant, sign in as `gary` or `presenter` and grant to a new group
+No one else grants to a group they belong to: the catalog refuses it as separation of duties ("no one grants to a
+group they belong to"). So `gary` cannot grant to `demo-grant-admins` or `demo-auditors`. To show that refusal,
+sign in as `gary`; to show a grant, sign in as `gary` or `presenter` and grant to a new group
 name, such as `select` on a namespace to `demo-readers`: grants go to group names, and the catalog does not check
 that the directory has the group, so Keycloak needs no change. To show the separation-of-duties refusal itself,
 sign in as `gary` and grant `manage-tags` to `demo-analysts`: data and tags never share a group. In the console,
@@ -259,14 +266,16 @@ its own terms, and how Silo's and Keycloak's own consoles do:
   (`k8s/silo-warehouse-read.json`, made by `up` after the seed job): list the buckets, browse and download the
   `warehouse` bucket's objects, write nothing. What they read there goes round the catalog's grants,
   governance and audit, as reading the store directly does; nothing they do there can change a table. `presenter`
-  holds both policies. Anyone else has no `policy` claim, and Silo refuses them. Silo reads Keycloak's discovery document inside the cluster, where Keycloak names its own
+  holds both, and `consoleAdmin`, Silo's own administrator policy: every bucket and object (backlog 273). Anyone else has no `policy` claim, and Silo refuses them. Silo reads Keycloak's discovery document inside the cluster, where Keycloak names its own
   `http://keycloak:8080` for tokens and keys (`--hostname-backchannel-dynamic`), and only as it starts, so its
   pod waits up to 5 minutes for Keycloak first. The store's root, `nunatest`, keeps its access-key sign-in.
 - **Keycloak's admin console**: `demo-operators` hold realm `nuna`'s view roles (`view-realm`, `view-users`,
-  `view-clients`, `view-events`, `view-identity-providers`, `view-authorization`), so `oscar` and `presenter`
-  read the realm's admin console without a second sign-in, and change nothing. Changing the realm stays with
-  Keycloak's `admin` (below), in the master realm: whoever could change it could put themselves in any group,
-  which separation of duties rules out for the people in the demo.
+  `view-clients`, `view-events`, `view-identity-providers`, `view-authorization`), so `oscar` reads
+  the realm's admin console without a second sign-in, and changes nothing; `presenter` also holds `realm-admin`
+  there, and may change the realm, users and groups included (backlog 273). Otherwise changing the realm stays
+  with Keycloak's `admin` (below), in the master realm: whoever could change it could put themselves in any group,
+  which separation of duties rules out for the other people in the demo. Changes last until Keycloak's pod goes:
+  it imports the realm file at every start (D52).
 - **Keys**: the realm signs with a fixed key, not one Keycloak makes at each start, because SingleStore reads
   its certificate only as it starts. `up` makes the key, its certificate and CloudBeaver's client and cookie
   secrets once, with `openssl`, in `~/.nuna-demo/keycloak`, and loads them as Secret `keycloak-keys`. To

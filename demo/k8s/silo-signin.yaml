@@ -9,6 +9,7 @@
 # What a person may do comes from the ID token's claim "policy": the client roles of client silo, named after
 # Silo's policies. Group demo-operators holds "diagnostics", Silo's built-in policy for the server's health,
 # metrics, logs and traces, and no bucket or object, so the platform operators see no data here either (D18).
+# presenter also holds "consoleAdmin", Silo's built-in administrator policy (backlog 273).
 # Someone with no role there, ana, gary and stella among them, has no policy claim and Silo refuses them. The
 # store's root, nunatest, still signs in with its access key and secret.
 #

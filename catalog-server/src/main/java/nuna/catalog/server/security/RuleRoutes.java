@@ -89,10 +89,11 @@ class RuleRoutes {
     private final Holdings holdings;
     private final RestSettings settings;
     private final TableColumns columns;
+    private final OwnGroups ownGroups;
     private final Clock clock;
 
     RuleRoutes(CatalogStore store, Authorizer authorizer, Callers callers, Denials denials, Holdings holdings,
-               RestSettings settings, TableColumns columns, Clock clock) {
+               RestSettings settings, TableColumns columns, OwnGroups ownGroups, Clock clock) {
         this.store = store;
         this.authorizer = authorizer;
         this.callers = callers;
@@ -100,6 +101,7 @@ class RuleRoutes {
         this.holdings = holdings;
         this.settings = settings;
         this.columns = columns;
+        this.ownGroups = ownGroups;
         this.clock = clock;
     }
 
@@ -122,7 +124,7 @@ class RuleRoutes {
                     + " to give a group every row, set row-filter to true");
         }
         require(request, on, SET);
-        if (request.caller().subject().groups().contains(group)) {
+        if (!ownGroups.mayActOn(request.caller(), group)) {
             throw denials.refuse(request.actor(), SET.name(), on.named(), SET.privilege().wireName(),
                     "separation-of-duties", "no one sets row filters or column masks for a group they belong to: "
                             + group);

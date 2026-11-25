@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**56 open:** 15 S, 22 M, 14 L, 5 XL.
+**57 open:** 15 S, 22 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -68,6 +68,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [270](backlog/270.md) | M | SecurityGateTest: the grant and engine routes' audit lines never reach the log capture | the cause is not known yet: finding whether the grant and engine routes no longer write their audit records or the capture misses them, then the fix | 2026-11-25 |
 | [271](backlog/271.md) | M | ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch | the cause is not known yet: finding whether the console or the test changed (items 109, 212 to 217, 254 touched the header), then the fix | 2026-11-25 |
 | [272](backlog/272.md) | M | Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends | a column pair in the audit table, one lookup route, the console's Hash chain line and a metric; nothing to wait on | 2026-11-25 |
+| [273](backlog/273.md) | ? | Demo: presenter may do absolutely everything | and the demo's people in eight files across six UIs) | 2026-11-25 |
 
 ## Open items in full
 
@@ -3384,6 +3385,40 @@ chain, and every line the server logs carries its run and number (`nunarun`, `nu
 - Each server exports its own count of records logged in its run (a gauge tagged with the run), so a dashboard can set
   it beside the archive's highest number for that run and show a tail that has not arrived while the server runs.
 - Tests for each, and bites for the lookup's link check and the column mapping.
+
+### 273. Demo: presenter may do absolutely everything
+
+- Added: 2026-11-25 by local_c54f9c3c-94cf-4eea-9919-cdad09127ccb
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, demo/, bites/D18/, bites/D20/, bites/M5/
+- Effort: M (one server setting with tests and bites, and the demo's people in eight files across six UIs)
+- Decided: 2026-11-25, D18
+
+Paul (2026-11-25): "can you make sure presenter has access to absolutely everything". Asked how far, past the
+four people's rights, he chose "Truly everything" (D18, amended 2026-11-25).
+
+What `presenter` lacked: CloudBeaver and Studio refused them (not in `DEMO_USERS`, no SingleStore user); nobody
+held `manage-tags` on `engines` or `modify` and `manage-tags` on `nuna_audit`; Silo was read-only; Keycloak's
+admin console was read-only; the catalog refused grants and row/column rules for their own groups; only the
+maintenance worker claims purges and reads a flagged table's files without Trino.
+
+Done looks like: after `demo/demo.sh up`, `presenter` signs in to every UI as its administrator, holds every
+privilege on every catalog, grants to and sets rules for their own groups, and still meets the separation of
+duties between groups.
+
+## What was done
+
+- `nuna.security.own-group-principals` (`SecuritySettings`, `OwnGroups`): the grant route, its preview and the rule
+  route ask it before refusing a caller's own group. `GrantPreviewTest` and `RuleRoutesTest` check that a named
+  user acts on their own group while separation of duties between groups still refuses them, and that anyone else
+  is refused. New bite `D18/own-group-setting-ignored`; `D18/grant-create-on-table`,
+  `D18/grant-self-grant-check-dropped`, `M5/self-grant-allowed` and `D20/rule-own-group` recorded again against
+  the moved code. The first two bite (run by hand).
+- Demo: `presenter` is in the new `demo-presenters` (Keycloak, Mint.java), which holds create, modify and
+  manage-tags on `lakehouse`, `engines` and `nuna_audit` (demo.sh `grants`), and is named in the server's
+  own-group and maintenance principals (demo-values.yaml). Keycloak gives them Silo's `consoleAdmin` and realm
+  `nuna`'s `realm-admin`; CloudBeaver adds them (`DEMO_USERS`, their token in Secret `demo-people-tokens`);
+  SingleStore and the CDC leg's databases make them an administrator. README, up's closing text and the
+  ledger (D18) say so.
 
 ## Done and dropped
 

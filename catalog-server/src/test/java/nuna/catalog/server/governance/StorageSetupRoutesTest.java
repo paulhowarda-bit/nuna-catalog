@@ -125,7 +125,7 @@ class StorageSetupRoutesTest {
         SecuritySettings security = new SecuritySettings(List.of(new SecuritySettings.Issuer("https://idp.test",
                 URI.create("https://idp.test/keys"), Set.of("nuna"), Set.of(), "sub", "groups", "azp")),
                 Duration.ofSeconds(60), Set.of("grant-admins"), Set.of("platform-ops"), Set.of("nuna-maintenance"),
-                false);
+                false, Set.of());
         ManagementGuard guard = new ManagementGuard(authorizer, separation, security, denials, holdings);
         routes = new StorageSetupRoutes(storage, store, management, guard);
 
