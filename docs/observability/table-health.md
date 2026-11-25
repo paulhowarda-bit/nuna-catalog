@@ -412,3 +412,7 @@ What the worker reaches (backlog 250) has eight bites in `bites/D30/`:
 - `scan-end-keeps-start-storage-sql`, `scan-end-keeps-start-storage-oracle`, `scan-end-drops-storage-mongo`
   (`HealthSuite` on each store): the end's report does not replace the start's storage.
 - `scan-groups-not-recorded` (`HealthRoutesTest`): a scan is kept without the groups of the worker's token.
+
+Readiness (backlog 251) has one bite in `bites/D30/`: `readiness-uncovered-prefix-done`
+(`ReadinessRoutesTest#aPrefixNoReportedPrefixCoversIsMissingAndItsStoreUnknown`), the storage step done whenever the
+worker has reported any storage, so an allowed prefix no reported prefix covers is never `missing`.
