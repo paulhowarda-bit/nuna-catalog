@@ -1309,3 +1309,21 @@ textarea.expr:disabled { opacity: 0.55; }
 @media (max-width: 760px) {
   .steps .step { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 }
+
+/* What an operator sets up outside the catalog (backlog 254): the dialog's two blocks of text to copy, each fill-in
+   marked and each policy folded, and Service's Worker storage table. */
+.setup { display: grid; gap: 14px; }
+.setup-step { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.setup-step h3 { font: 600 var(--t-14)/1.3 var(--f-ui); }
+.setup-step p { overflow-wrap: anywhere; }
+.setup-policy { display: grid; gap: 8px; }
+.setup-policy + .setup-policy { margin-top: 6px; }
+pre.setup-text { margin: 0; }
+mark.fill-in { background: var(--warn-wash); color: var(--warn-ink); border-radius: 3px; padding: 0 2px; }
+details.setup-fold > summary { cursor: pointer; font-size: var(--t-13); color: var(--text-2); }
+details.setup-fold[open] > summary { margin-bottom: 6px; }
+.setup-tbl td { vertical-align: top; }
+.setup-tbl td[data-state="no-identity"], .setup-tbl td[data-state="list-refused"],
+.setup-tbl td[data-state="delete-refused"], .setup-tbl td[data-state="unprotected"] { color: var(--bad-ink); }
+.setup-tbl td[data-state="no-answer"] { color: var(--warn-ink); }
+.setup-prefixes code { overflow-wrap: break-word; }

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**57 open:** 16 S, 21 M, 15 L, 5 XL.
+**56 open:** 16 S, 20 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,7 +60,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
 | [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
@@ -3111,58 +3110,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 254. Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/main/resources/nuna/ui/dom.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/
-- Effort: M, one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253
-
-## What is missing
-
-The two maintenance steps done outside the catalog (the worker's settings, the store's policy: item 252) leave the
-operator to work out what to change by reading `deploy/README.md`. The console can hand over the exact text from item
-253's route (Atelier, 2026-11-24).
-
-## Atelier's design
-
-**Dialog "Set up the worker's storage for ledger"**, opened by **What to add** and **What to apply** on Maintenance
-(item 252) and by **What to set up** on Service. Intro: "Two changes outside the catalog, one in the worker's settings
-and one in the store. The steps on the Maintenance page turn to Done at the worker's next scan after each."
-
-- **"1. The worker's settings"**
-  - A store the worker already reaches: "Add s3://ledger-warehouse/tables to the worker's profile s3, which already
-    reaches http://s3:9000:", the YAML with both prefixes, then "Then upgrade the nuna-maintenance release. The worker
-    reads its settings only when it starts." Button **Copy the settings**. After item 256 this case needs nothing, and
-    the block is not shown.
-  - A new store: "Add a profile for {endpoint}. Its key and secret are the worker's own on that store, never the
-    catalog's:", the YAML with `access-key-id: <the worker's access key on this store>`, then "Put the secret in the
-    release's secrets as nuna.maintenance.storage.{name}.secret-access-key, then upgrade the release. On AWS S3 with a
-    role for the worker (IRSA or Pod Identity), leave both keys out."
-- **"2. The store's policy"**
-  - MinIO: "As a store admin, let the worker's user list and delete beneath …:", the `mc admin policy create/attach`
-    commands with `<alias>` marked, buttons **Copy the commands** and **Copy the policy**, the policy itself folded.
-    Then "Then attach nuna-no-delete to every other user of the store, the catalog's own included, so only the worker
-    deletes there:" with its own commands.
-  - AWS S3 and Ceph: "As an identity that may, put this policy on bucket ledger-warehouse. A bucket holds one policy:
-    merge these statements into any it already has.", then `aws s3api put-bucket-policy …`, with `--endpoint-url` for
-    Ceph.
-  - No maintenance principal on the profile: "The catalog's profile {name} names no maintenance principal, so the
-    catalog generates no delete policy for it and nothing stops other keys deleting there. Name the worker's storage
-    identity in the catalog's settings, then upgrade the catalog and come back:", then
-    `nuna.storage.profiles.{name}.maintenance-principal`.
-- Foot: "The catalog writes these policies but never applies them: its own keys would then need the right to undo
-  them."
-
-**Service page, a "Worker storage" panel, operators only.** One row per catalog storage profile, those with something
-not done first. Columns: Profile · Catalogs · Prefixes · Worker settings ("Covered by s3" / "Not covered") · Store
-("Listed 14:05" / "Refused: AccessDenied" / "Not checked") · Delete policy ("Generated for nuna-maintenance; the catalog
-can't see whether it is applied" / "Unprotected"). Each row has **What to set up**, opening the dialog.
-
-## Done when
-
-The dialog and panel work as above, and browser tests as `oscar` show a store in each state. The note's link from item
-252 opens the Service page on the Worker storage panel.
-
 ### 258. Grants: refuse write on a view, which gives only select there yet counts as a data duty
 
 - Added: 2026-11-24 by catalog-security review of backlog 246
@@ -3692,6 +3639,7 @@ profile), which readiness says and Overview does not.
 | [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
 | [252](backlog/252.md) | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | done | 2026-11-24 |
 | [253](backlog/253.md) | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | done | 2026-11-24 |
+| [254](backlog/254.md) | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | done | 2026-11-24 |
 | [255](backlog/255.md) | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

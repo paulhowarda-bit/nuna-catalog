@@ -10,6 +10,7 @@ import {may, operates} from './access.js';
 import {grantAccess} from './grant.js';
 import {ownGrants} from './requests.js';
 import {pageHref} from './route.js';
+import {setupDialogFor} from './storage.js';
 
 const STEPS = ['grant', 'storage', 'store', 'policy'];
 
@@ -88,11 +89,15 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
   const reported = ready['reported-at'];
   const storage = `${catalog}'s storage`;
   const askNames = () => h('p', {class: 'fine step-ask'}, `Ask someone with modify on ${catalog} or a platform operator.`);
-  const serviceLink = (act, words) => h('a', {class: 'btn sm', href: pageHref('service'), 'data-act': act}, words);
+  // What to add and What to apply open the operator's dialog for the catalog's profile (backlog 254); Open Worker
+  // storage opens Service on the Worker storage panel, at the profile's row.
+  const operatorAction = (act, words) => act === 'open-worker-storage'
+    ? h('a', {class: 'btn sm', href: workerStorageHref(ready), 'data-act': act}, words)
+    : h('button', {class: 'btn sm', type: 'button', 'data-act': act, onclick: () => setupDialogFor(catalog)}, words);
   const note = noteButton(catalog, ready);
-  // An action for a step done outside the catalog: an operator's link, the note for others who may see names, else
-  // whom to ask.
-  const outside = (act, words) => !names ? askNames() : operates() ? serviceLink(act, words) : note();
+  // An action for a step done outside the catalog: an operator's dialog or link, the note for others who may see names,
+  // else whom to ask.
+  const outside = (act, words) => !names ? askNames() : operates() ? operatorAction(act, words) : note();
 
   // 1. Write access.
   const grant = ready.grant || {};
@@ -228,7 +233,7 @@ export function noteText(catalog, ready) {
     }
   }
   parts.push(`What to apply is on the console's Service page, under Worker storage: ${location.origin}${location.pathname}`
-    + pageHref('service'));
+    + workerStorageHref(ready));
   return parts.join(' ');
 }
 
@@ -250,6 +255,9 @@ function noteButton(catalog, ready) {
     return h('div', {class: 'step-note'}, button, sent);
   };
 }
+
+/** Service, on the Worker storage panel at the catalog's profile's row (backlog 254). */
+const workerStorageHref = ready => pageHref('service', null, 'worker-storage', (ready.storage || {}).profile);
 
 /** Step 2's gap, with names (item 256): no identity for the store at the profile's endpoint, or for AWS S3's own. */
 const noIdentity = storage => storage.endpoint ? `The worker holds no identity for the store at ${storage.endpoint}.`
