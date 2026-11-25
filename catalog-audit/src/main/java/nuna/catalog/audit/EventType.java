@@ -7,7 +7,8 @@ import java.net.URI;
  * drops, undrops, purge claims and purges, unregisters, namespace changes, renames, governance attributes
  * and the label changes they make, holds, break-glass, storage setup, pending file deletions, refs, row filters and column masks) travel through
  * the outbox; reads, denials, authentication failures, credential issues, audit reads and maintenance
- * exemptions are published synchronously, and so is a branch's expiry warning, which changes no record.
+ * exemptions are published synchronously, and so is a branch's expiry warning, which changes no record. A server's
+ * run end is the last record it writes to the log (backlog 262).
  */
 public enum EventType {
     COMMIT("commit", 1, Commit.class),
@@ -33,7 +34,8 @@ public enum EventType {
     FILE_DELETION("file-deletion", 1, FileDeletion.class),
     MAINTENANCE_EXEMPTION("maintenance-exemption", 1, MaintenanceExemption.class),
     REF("ref", 1, RefChange.class),
-    ROW_COLUMN_RULE_CHANGE("row-column-rule", 1, RowColumnRuleChange.class);
+    ROW_COLUMN_RULE_CHANGE("row-column-rule", 1, RowColumnRuleChange.class),
+    RUN_END("run-end", 1, RunEnd.class);
 
     private final String typeName;
     private final URI dataSchema;

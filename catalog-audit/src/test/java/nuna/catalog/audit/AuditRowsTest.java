@@ -33,7 +33,8 @@ class AuditRowsTest {
             EventType.HOLD_CHANGE, EventType.LABEL_CHANGE);
     private static final Set<EventType> ABOUT_THE_CATALOG = EnumSet.of(EventType.GRANT_CHANGE, EventType.STORAGE_SETUP,
             EventType.REF);
-    private static final Set<EventType> ABOUT_NO_OBJECT = EnumSet.of(EventType.AUTH_FAILURE, EventType.ENGINE_CHANGE);
+    private static final Set<EventType> ABOUT_NO_OBJECT = EnumSet.of(EventType.AUTH_FAILURE, EventType.ENGINE_CHANGE,
+            EventType.RUN_END);
 
     /** A golden line, its event and its row. */
     private record Mapped(String line, CatalogEvent event, AuditRow row) {
@@ -87,6 +88,12 @@ class AuditRowsTest {
     @Test
     void everyRequestNamesWhoMadeIt() throws IOException {
         byType().forEach((type, row) -> {
+            if (type == EventType.RUN_END) {
+                // A server's own record: no request, no one who made it.
+                assertThat(row.requestId()).isNull();
+                assertThat(row.principal()).isNull();
+                return;
+            }
             assertThat(row.requestId()).as(type.typeName()).isNotNull();
             if (type == EventType.AUTH_FAILURE) {
                 assertThat(row.principal()).isNull();
