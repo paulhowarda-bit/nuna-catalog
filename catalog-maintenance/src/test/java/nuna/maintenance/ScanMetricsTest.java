@@ -233,6 +233,11 @@ class ScanMetricsTest {
             }
 
             @Override
+            public Prefixes reach(List<Management.StorageProfile> profiles) {
+                return storage.reach(profiles);
+            }
+
+            @Override
             public void close() {
                 storage.close();
             }

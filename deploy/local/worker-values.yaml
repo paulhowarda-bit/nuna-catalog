@@ -31,11 +31,11 @@ config:
         client-id: nuna-maintenance
         scope: nuna-catalog
         audience: nuna-catalog
-      # The worker's own Silo user, which run.sh up makes; its secret key is in `secrets`.
+      # The worker's own Silo user, which run.sh up makes; its secret key is in `secrets`. run.sh worker sets the
+      # endpoint as run.sh up sets the catalog's profile silo, whose prefixes the worker reads from the catalog.
       storage:
         silo:
-          prefixes: [s3://warehouse/tables]
-          path-style-access: true
+          kind: minio
           access-key-id: nuna-maintenance
       # The engine matrix's Spark image (catalog-tests-engines/images/spark), from the local Docker engine.
       compaction:

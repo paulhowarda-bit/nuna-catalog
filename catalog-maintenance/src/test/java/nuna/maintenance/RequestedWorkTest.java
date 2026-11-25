@@ -252,6 +252,11 @@ class RequestedWorkTest {
             }
 
             @Override
+            public Prefixes reach(List<Management.StorageProfile> profiles) {
+                return TestReach.everyProfile(profiles);
+            }
+
+            @Override
             public Map<String, String> clientProperties() {
                 return Map.of();
             }

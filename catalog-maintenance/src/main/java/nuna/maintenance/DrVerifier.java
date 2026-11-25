@@ -122,7 +122,9 @@ final class DrVerifier implements AutoCloseable {
 
     /**
      * The verifier as the service runs it: the catalog reached as the worker reaches it, as a maintenance principal,
-     * and the DR store through the replicas {@code dr} names.
+     * and the DR store through the replicas {@code dr} names. Each pass reads the storage prefixes the catalog gives
+     * the worker (item 256) before the work list's first page, and the DR store reads beneath those alone: none when
+     * that read fails, which fails the pass.
      */
     static DrVerifier of(WorkerSettings settings, WorkerSettings.Dr dr, Clock clock, MeterRegistry meters,
                          ObservationRegistry observations) {
@@ -135,6 +137,10 @@ final class DrVerifier implements AutoCloseable {
         return new DrVerifier(new Catalog() {
             @Override
             public Management.Page<DrVerify.Item> work(Optional<String> token) {
+                if (token.isEmpty()) {
+                    stores.reach(Prefixes.NONE);
+                    stores.reach(Prefixes.resolve(management.storageProfiles(), settings.storage()));
+                }
                 return management.drWork(token);
             }
 

@@ -107,6 +107,8 @@ class FailedOrphanScanTest {
             if (path.equals("/management/v1/maintenance/work")) {
                 answer(exchange, 200, query.contains("section=tables") ? tables
                         : query.contains("section=purges") ? "{\"purges\":[]}" : "{\"deletions\":[]}");
+            } else if (path.equals(TestReach.ROUTE)) {
+                answer(exchange, 200, TestReach.ONE_PROFILE);
             } else if (path.equals("/v1/config")) {
                 answer(exchange, 200, "{\"defaults\":{},\"overrides\":{}}");
             } else if (path.equals("/v1/namespaces/ns/tables/t")) {
@@ -151,6 +153,11 @@ class FailedOrphanScanTest {
         @Override
         public void delete(Collection<String> locations) {
             throw new AssertionError("an empty table has nothing to delete: " + locations);
+        }
+
+        @Override
+        public Prefixes reach(List<Management.StorageProfile> profiles) {
+            return TestReach.everyProfile(profiles);
         }
 
         @Override

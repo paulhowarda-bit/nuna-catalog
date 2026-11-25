@@ -52,6 +52,8 @@ class DeletePolicyMinioTest {
     private static final String CATALOG_USER = "nuna-catalog";
     private static final String CATALOG_SECRET = "nuna-catalog-secret-key";
     private static final String WORKER_SECRET = "nuna-maintenance-secret-key";
+    private static final String ONLY_TO_USER = "nuna-worker-only-to";
+    private static final String ONLY_TO_SECRET = "nuna-worker-only-to-secret-key";
 
     @Test
     @DisplayName("only the worker deletes and lists beneath the prefix; the catalog's user and its sessions set no"
@@ -114,6 +116,53 @@ class DeletePolicyMinioTest {
             assertThat(root.getObjectAsBytes(r -> r.bucket(bucket).key("other/x")).asUtf8String()).isEqualTo("other/x");
             assertThatThrownBy(() -> root.getObjectAsBytes(r -> r.bucket(bucket).key("other/y")))
                     .isInstanceOf(NoSuchKeyException.class);
+        }
+    }
+
+    /**
+     * The worker's rights on MinIO come from its {@code to} policy alone (item 256; deploy/README.md, "Delete rights"):
+     * a user holding only that policy, in no group and with keys of its own, lists and deletes beneath the prefix and
+     * is refused everywhere else, outside the prefix in its bucket and in a second bucket, whatever prefixes the
+     * catalog gives the worker. A user of its own, so the other test's worker policy cannot change what this one holds.
+     */
+    @Test
+    @DisplayName("a worker user holding only its own policy lists and deletes beneath the prefix, and nowhere else")
+    void aWorkerHoldingOnlyItsOwnPolicyIsRefusedOutsideIt() {
+        assumeTrue(TestS3.kindFromSystemProperty() == TestS3.Kind.SILO, "MinIO's user policies are checked on Silo");
+        TestS3 store = TestS3.get();
+        String bucket = store.bucket("worker-only-to");
+        String elsewhere = store.bucket("worker-only-to-elsewhere");
+        store.siloUser(ONLY_TO_USER, ONLY_TO_SECRET, "nuna-worker-only-to",
+                DeletePolicy.workerPolicy(List.of(ObjectLocation.parse("s3://" + bucket + "/tables"))));
+        try (S3Client root = store.client();
+             S3Client worker = store.client(keys(ONLY_TO_USER, ONLY_TO_SECRET))) {
+            for (String key : List.of("tables/t/a", "tables/t/b", "tablespace/t/a", "other/x")) {
+                root.putObject(r -> r.bucket(bucket).key(key), RequestBody.fromString(key));
+            }
+            root.putObject(r -> r.bucket(elsewhere).key("tables/t/a"), RequestBody.fromString("elsewhere"));
+
+            assertThat(worker.listObjectsV2(r -> r.bucket(bucket).prefix("tables/t/")).contents())
+                    .extracting(S3Object::key).containsExactly("tables/t/a", "tables/t/b");
+            worker.deleteObject(r -> r.bucket(bucket).key("tables/t/a"));
+            assertThat(worker.deleteObjects(r -> r.bucket(bucket).delete(d -> d.objects(
+                    ObjectIdentifier.builder().key("tables/t/b").build()))).errors()).isEmpty();
+
+            for (String key : List.of("tablespace/t/a", "other/x")) {
+                assertDenied(() -> worker.deleteObject(r -> r.bucket(bucket).key(key)));
+                assertNotDeleted(worker.deleteObjects(r -> r.bucket(bucket).delete(d -> d.objects(
+                        ObjectIdentifier.builder().key(key).build()))), key);
+            }
+            assertDenied(() -> worker.listObjectsV2(r -> r.bucket(bucket).prefix("other/")));
+            assertDenied(() -> worker.listObjectsV2(r -> r.bucket(bucket)));
+            assertDenied(() -> worker.deleteObject(r -> r.bucket(elsewhere).key("tables/t/a")));
+            assertNotDeleted(worker.deleteObjects(r -> r.bucket(elsewhere).delete(d -> d.objects(
+                    ObjectIdentifier.builder().key("tables/t/a").build()))), "tables/t/a");
+            assertDenied(() -> worker.listObjectsV2(r -> r.bucket(elsewhere).prefix("tables/")));
+
+            assertThat(root.listObjectsV2(r -> r.bucket(bucket)).contents()).extracting(S3Object::key)
+                    .containsExactly("other/x", "tablespace/t/a");
+            assertThat(root.getObjectAsBytes(r -> r.bucket(elsewhere).key("tables/t/a")).asUtf8String())
+                    .isEqualTo("elsewhere");
         }
     }
 

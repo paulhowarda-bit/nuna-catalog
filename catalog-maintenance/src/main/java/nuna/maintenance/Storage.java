@@ -1,9 +1,7 @@
 package nuna.maintenance;
 
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.iceberg.aws.s3.S3FileIO;
@@ -22,19 +20,28 @@ interface Storage extends AutoCloseable {
     /** Deletes these objects; one already gone is no failure. */
     void delete(Collection<String> locations);
 
+    /**
+     * Takes the storage profiles the catalog gives the worker at this scan (item 256): from now on it lists and
+     * deletes strictly beneath their prefixes alone, and nowhere when there are none, the catalog's answer naming none
+     * or the worker failing to read it. No earlier answer is kept.
+     *
+     * @return the prefixes it now reaches, and what it refused
+     */
+    Prefixes reach(List<Management.StorageProfile> profiles);
+
     @Override
     void close();
 
     /**
      * The client properties that make the worker's other S3 clients, those reading table files with the credentials
-     * the catalog vends it ({@link Catalogs}), trust the profiles' CA bundles as these do (backlog 21); none when no
-     * profile names one.
+     * the catalog vends it ({@link Catalogs}), trust the stores' CA bundles as these do (backlog 21); none when no
+     * store names one.
      */
     default Map<String, String> clientProperties() {
         return Map.of();
     }
 
-    /** Whether one location names the same object as another, whatever S3 scheme each was written with. */
+    /** Whether one location names the same object as another, whatever S3 scheme it was written with. */
     static String normalize(String location) {
         if (location.startsWith("s3a://") || location.startsWith("s3n://")) {
             return "s3://" + location.substring(6);
@@ -43,68 +50,35 @@ interface Storage extends AutoCloseable {
     }
 
     /**
-     * One S3FileIO per profile of the settings, each serving the locations under its prefixes and trusting the CA
-     * bundle of its endpoint, if a profile names one.
+     * The worker's own storage: one S3FileIO per store identity of the settings, trusting the CA bundle of its
+     * endpoint, if it names one, and reaching nothing until the catalog's prefixes are handed to it.
      *
-     * @throws IllegalArgumentException when a profile's CA bundle cannot be read ({@link TrustedS3Clients#register})
+     * @throws IllegalArgumentException when a store's CA bundle cannot be read ({@link TrustedS3Clients#register})
      */
-    static Storage of(Map<String, WorkerSettings.StorageProfile> profiles) {
-        Map<String, String> trust = TrustedS3Clients.register(profiles);
-        Map<String, S3FileIO> byPrefix = new LinkedHashMap<>();
-        List<S3FileIO> all = new java.util.ArrayList<>();
-        profiles.forEach((name, profile) -> {
-            S3FileIO io = new S3FileIO();
-            Map<String, String> properties = new HashMap<>();
-            properties.put("client.region", profile.region());
-            properties.put("s3.path-style-access", Boolean.toString(profile.pathStyleAccess()));
-            properties.put("http-client.type", "apache");
-            if (profile.endpoint() != null) {
-                properties.put("s3.endpoint", profile.endpoint().toString());
-            }
-            if (profile.accessKeyId() != null) {
-                properties.put("s3.access-key-id", profile.accessKeyId());
-                properties.put("s3.secret-access-key", profile.secretAccessKey());
-            }
-            properties.putAll(trust);
-            io.initialize(properties);
-            all.add(io);
-            profile.prefixes().forEach(prefix -> byPrefix.put(normalize(prefix), io));
-        });
-        List<String> prefixes = byPrefix.keySet().stream().sorted(Comparator.comparingInt(String::length).reversed())
-                .toList();
-        return new Storage() {
-            @Override
-            public Iterable<FileInfo> list(String prefix) {
-                return io(prefix).listPrefix(prefix);
-            }
+    static OwnStorage of(Map<String, WorkerSettings.Store> stores) {
+        return new OwnStorage(stores);
+    }
 
-            @Override
-            public void delete(Collection<String> locations) {
-                Map<S3FileIO, List<String>> byIo = new LinkedHashMap<>();
-                locations.forEach(location -> byIo.computeIfAbsent(io(location), io -> new java.util.ArrayList<>())
-                        .add(location));
-                byIo.forEach(S3FileIO::deleteFiles);
-            }
-
-            @Override
-            public void close() {
-                all.forEach(S3FileIO::close);
-            }
-
-            @Override
-            public Map<String, String> clientProperties() {
-                return trust;
-            }
-
-            private S3FileIO io(String location) {
-                String normalized = normalize(location);
-                for (String prefix : prefixes) {
-                    if (normalized.startsWith(prefix.endsWith("/") ? prefix : prefix + "/") || normalized.equals(prefix)) {
-                        return byPrefix.get(prefix);
-                    }
-                }
-                throw new IllegalStateException("no nuna.maintenance.storage profile covers " + location);
-            }
-        };
+    /**
+     * An S3FileIO on one store as an identity reaches it: its endpoint, if it names one, region, addressing by path
+     * on MinIO and Ceph, its keys or the AWS SDK's default chain, and the client properties {@code trust} that select
+     * the registered CA bundles.
+     */
+    static S3FileIO fileIo(WorkerSettings.Store store, Map<String, String> trust) {
+        S3FileIO io = new S3FileIO();
+        Map<String, String> properties = new HashMap<>();
+        properties.put("client.region", store.region());
+        properties.put("s3.path-style-access", Boolean.toString(store.kind().pathStyle()));
+        properties.put("http-client.type", "apache");
+        if (store.endpoint() != null) {
+            properties.put("s3.endpoint", store.endpoint().toString());
+        }
+        if (store.accessKeyId() != null) {
+            properties.put("s3.access-key-id", store.accessKeyId());
+            properties.put("s3.secret-access-key", store.secretAccessKey());
+        }
+        properties.putAll(trust);
+        io.initialize(properties);
+        return io;
     }
 }
