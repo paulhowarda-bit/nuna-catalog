@@ -1,0 +1,17 @@
+Breaks: A flagged table's Overview, Schema and History show the refusal, not that Trino reads it.
+Module: catalog-server
+Test: ConsoleFlaggedTableBrowserTest#aStewardFlagsATableItsTabsSayItIsReadThroughTrinoAndTheFlagStaysWhileRulesStand
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index 1b2d6b70..114e1be7 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -60,7 +60,7 @@ function refusedLoad(error, others, ref) {
+  * Overview, Schema and History say why instead of the refusal (Atelier, 2026-11-24; backlog 241).
+  */
+ async function flaggedLoad(error, target) {
+-  if (error.status !== 403 || !(await api.governance(target).then(flaggedHere, () => false))) return null;
++  if (error.status !== 403 || true) return null;
+   return h('div', {class: 'notice', id: 'read-through-trino'}, icon('info'), h('span', null, TRINO_WORDS));
+ }
+ 
