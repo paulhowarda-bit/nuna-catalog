@@ -1,0 +1,16 @@
+Breaks: a schema change that renames or drops a column a row filter or column mask names is let through, so a rename serves the column unmasked under its new name.
+Module: catalog-server
+Test: GovernanceRefusalTest#aRenameOfAMaskedColumnIsRefusedAndAuditedAsADenial+aDropOfAColumnARowFilterNamesIsRefusedAndAuditedAsADenial
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/RuleColumnGuard.java b/catalog-server/src/main/java/nuna/catalog/server/security/RuleColumnGuard.java
+index c965e362..b870c3e8 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/RuleColumnGuard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/RuleColumnGuard.java
+@@ -33,7 +33,7 @@ public class RuleColumnGuard implements CommitRule {
+     @Override
+     public Optional<Rejection> judge(Change change) {
+         if (!(change.before() instanceof TableFacts before) || !(change.after() instanceof TableFacts after)
+-                || after.columns().containsAll(before.columns())) {
++                || true) {
+             return Optional.empty();
+         }
+         return RuleColumns.taken(before.columns(), after.columns(),

@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -516,6 +517,44 @@ class SecurityGateTest {
                     .formatted(ann)).body())
                     .isEqualTo("{\"result\":[{\"index\":0,\"viewExpression\":{\"expression\":\"NULL\"}}]}");
             assertThat(send(null, "POST", "/opa/v1/allow", "{\"input\":{}}").body()).isEqualTo("{\"result\":true}");
+        } finally {
+            noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
+                    .formatted(table)));
+        }
+    }
+
+    /**
+     * A rule names only columns pii has: a misspelt mask or a filter on a column it lacks is refused, and a mask is kept
+     * under the schema's spelling; a commit that renames or drops a column a rule names is refused and audited, so a
+     * rename never unmasks it (backlog 240).
+     */
+    @Test
+    void aRuleNamesOnlyColumnsTheTableHasAndNoSchemaChangeTakesThemAway() throws Exception {
+        String rules = "/management/v1/catalogs/gate/row-column-rules";
+        String table = "{\"type\":\"table\",\"namespace\":[\"sales\",\"eu\"],\"name\":\"pii\"}";
+        HttpResponse<String> typo = send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","column-masks":{"idd":"NULL"}}""".formatted(table));
+        assertError(typo, 400, "BadRequestException");
+        assertThat(JsonPath.<String>read(typo.body(), "$.error.message")).startsWith("column-masks names idd,");
+        assertError(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","row-filter":"desk = 'EQ'"}""".formatted(table)),
+                400, "BadRequestException");
+
+        noContent(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","column-masks":{"ID":"NULL"}}""".formatted(table)));
+        try {
+            HttpResponse<String> listed = send(GINA, "GET", rules + "?namespace=sales&namespace=eu&name=pii", null);
+            ok(listed);
+            assertThat(JsonPath.<Map<String, String>>read(listed.body(), "$.rules[0].column-masks"))
+                    .containsExactly(Map.entry("id", "NULL"));
+
+            String pii = "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii";
+            assertDenied(send(ENGINE, "POST", pii, """
+                    {"requirements":[{"type":"assert-current-schema-id","current-schema-id":0}],"updates":[
+                     {"action":"add-schema","schema":{"type":"struct","schema-id":1,"fields":[
+                      {"id":1,"name":"pii_id","required":true,"type":"long"}]}},
+                     {"action":"set-current-schema","schema-id":-1}]}"""), "updateTable", "row_column_rule");
+            assertThat(audit.denials().getLast().reason()).contains("group analysts's rule names id");
         } finally {
             noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
                     .formatted(table)));

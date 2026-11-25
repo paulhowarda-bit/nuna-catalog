@@ -1,0 +1,16 @@
+Breaks: a row filter that names a column the table lacks is kept, and fails every query of its group.
+Module: catalog-security
+Test: RuleColumnsTest#aFilterOnAColumnTheSchemaLacksIsRefusedNamingIt
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
+index f15ba207..5d102a24 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
+@@ -87,7 +87,7 @@ public final class RuleColumns {
+         }
+         Set<String> known = lowered(columns);
+         List<String> unknown = filter.map(RuleColumns::columnsReferenced).orElse(Set.of()).stream()
+-                .filter(name -> !known.contains(name)).toList();
++                .filter(name -> false).toList();
+         if (!unknown.isEmpty()) {
+             return new Checked.Unfit("row-filter names " + listed(unknown) + ", which the table's current schema"
+                     + " does not have; a filter's columns are the table's as it is now (D20)");

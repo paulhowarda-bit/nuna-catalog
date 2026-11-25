@@ -31,7 +31,7 @@ class StorageRulesTest {
     private static CommitRule.Change change(String location, Facts before, Map<String, String> properties) {
         CatalogObject object = CatalogObject.active(UUID.randomUUID(), ID, UUID.randomUUID(), new Name("t", "t"),
                 CatalogObject.Kind.TABLE, location);
-        TableFacts after = new TableFacts(ID.toString(), 2, location, properties, 0, 0, Map.of());
+        TableFacts after = new TableFacts(ID.toString(), 2, location, properties, 0, 0, Map.of(), List.of());
         return new CommitRule.Change(object, before, after, Instant.now(), new CommitRule.Governance() {
             @Override
             public boolean held() {
@@ -51,7 +51,7 @@ class StorageRulesTest {
     }
 
     private static TableFacts facts(Map<String, String> properties) {
-        return new TableFacts(ID.toString(), 2, ASSIGNED, properties, 0, 0, Map.of());
+        return new TableFacts(ID.toString(), 2, ASSIGNED, properties, 0, 0, Map.of(), List.of());
     }
 
     @Test

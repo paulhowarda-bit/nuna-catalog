@@ -1,0 +1,16 @@
+Breaks: a column mask that names a column the table lacks, a typo, is kept as given and masks nothing.
+Module: catalog-security
+Test: RuleColumnsTest#aMaskOnAColumnTheSchemaLacksIsRefusedNamingIt
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
+index f15ba207..238e7185 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
+@@ -76,7 +76,7 @@ public final class RuleColumns {
+         for (Map.Entry<String, String> mask : masks.entrySet()) {
+             Optional<String> column = column(columns, mask.getKey());
+             if (column.isEmpty()) {
+-                lacking.add(mask.getKey());
++                kept.put(mask.getKey(), mask.getValue());
+             } else if (kept.put(column.get(), mask.getValue()) != null) {
+                 return new Checked.Unfit("column-masks masks column " + column.get() + " twice");
+             }

@@ -108,6 +108,19 @@ class OpaAnswersTest {
     }
 
     @Test
+    void aTableWhoseAskDoesNotNameAMaskedColumnGetsEveryColumnNull() {
+        // account_id renamed to acct after its mask was set (backlog 240), or a snapshot read whose schema named it so.
+        JsonNode ask = columnMasks("ana-token", column("lakehouse", "orders", "id"),
+                column("lakehouse", "orders", "acct"), column("lakehouse", "orders", "price"),
+                column("lakehouse", "fills", "price"));
+
+        assertThat(answers.columnMasks(ask)).isEqualTo("{\"result\":["
+                + "{\"index\":0,\"viewExpression\":{\"expression\":\"NULL\"}},"
+                + "{\"index\":1,\"viewExpression\":{\"expression\":\"NULL\"}},"
+                + "{\"index\":2,\"viewExpression\":{\"expression\":\"NULL\"}}]}");
+    }
+
+    @Test
     void withoutAnAcceptedTokenEveryColumnOfAServedCatalogIsNull() {
         JsonNode ask = columnMasks("forged", column("lakehouse", "orders", "id"), column("postgres", "orders", "id"));
 
