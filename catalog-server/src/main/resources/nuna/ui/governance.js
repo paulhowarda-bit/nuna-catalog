@@ -95,7 +95,7 @@ function summaryPage(catalog, tabs) {
           closed.length ? [h('h3', null, 'Closed until classified'), h('ul', {class: 'stack closed-list'}, closed.map(on =>
             h('li', {'data-on': (on.path || []).join('.')}, onLink(catalog, on))))] : null,
           h('p', {class: 'fine'}, 'Until a table in a regulated area has its own classification, people can find it but not read or change it.'))),
-      h('div', {class: 'panel', id: 'flagged'}, h('h2', null, 'Flagged tables'),
+      h('div', {class: 'panel', id: 'flagged'}, h('h2', null, 'Flagged tables ', h('span', {class: 'meta'}, 'read through Trino')),
         flagged.length ? tbl('stack-line', ['Table', ['Rules', 'num']], flagged.map(x => h('tr', {class: 'opens', onclick: opensRow,
           'data-on': (x.on.path || []).join('.')},
         h('td', {class: 'name'}, onLink(catalog, x.on)), h('td', {class: 'num'}, fmt(x.rules || 0)))))

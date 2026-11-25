@@ -18,8 +18,8 @@ const NOT_FLAGGED = 'Rules need the flag. A steward sets it, so only trusted eng
 const NO_RULES = 'Flagged. No rules yet: Trino shows every row to anyone who may select; other tools get no files.';
 const FIRST_RULE = 'Groups without a rule will see no rows.';
 const OWN_GROUP = 'Another grant admin sets this group\'s rule.';
-const STEWARD_NOTE = 'The grant admin sets each group\'s rules.';
-const CHANGED = 'Another grant admin changed this rule. The list now shows theirs; make your change again.';
+const STEWARD_NOTE = 'The grant admin sets each group\'s rule.';
+const CHANGED = 'Another grant admin changed this rule since you opened it. Close this; the list shows theirs.';
 const NULL_MASK = 'NULL';
 const STARS_MASK = '\'***\'';
 const CUSTOM = 'custom';
@@ -39,12 +39,19 @@ const refusalWords = (key, words) => h('div', {class: 'refusal compact', role: '
  * An edit or removal sends the version the list gave (If-Match, backlog 244). A 412 means another grant admin changed
  * the rule since: say so, and redraw the list so it shows their rule. True when it was that.
  */
-function changedSince(error, out, after) {
+function changedSince(error, form, out, after) {
   if (error.status !== 412) return false;
   fill(out, refusalWords('changed', CHANGED));
+  done(form);
   after();
   return true;
 }
+
+/**
+ * The dialog's version is spent once its change is saved or refused as stale: its button stays off, so the next change
+ * starts from the list as redrawn, never a second 412 for one's own edit (Atelier, 2026-11-24).
+ */
+const done = form => form.setAttribute('data-done', '');
 
 // ---- the panel ----
 
@@ -155,7 +162,7 @@ function ruleForm(target, rule, rules, columns, after) {
     try {
       answer = await api.setRule(target, body, rule ? rule.version : undefined);
     } catch (error) {
-      if (changedSince(error, out, after)) return;
+      if (changedSince(error, f, out, after)) return;
       if (error.status === 409 && error.type === 'NotFlaggedException') {
         fill(out, refusalWords('not-flagged', NOT_FLAGGED));
         return;
@@ -167,6 +174,7 @@ function ruleForm(target, rule, rules, columns, after) {
       throw error;
     }
     fill(out, granted(`Saved the rule for ${chosen.group}`, answer));
+    done(f);
     after();
   });
   form.addEventListener('change', e => {
@@ -186,7 +194,7 @@ function maskLine(columns, column, mask) {
   const line = h('div', {class: 'mask-line', 'data-mask-line': ''},
     select('column', options, column || '', {'aria-label': 'Column'}),
     select('mask', MASKS, kind, {'aria-label': 'Mask'}),
-    h('button', {class: 'btn sm ghost', type: 'button', 'aria-label': 'Remove this column', onclick: () => line.remove()}, icon('x')),
+    h('button', {class: 'btn sm ghost', type: 'button', 'aria-label': 'Remove this mask', onclick: () => line.remove()}, icon('x')),
     custom);
   line.querySelector('select[name="mask"]').addEventListener('change', e => { custom.hidden = e.target.value !== CUSTOM; });
   return line;
@@ -205,7 +213,7 @@ function check(chosen, columns) {
       problems.push('Choose a column on each line.');
       continue;
     }
-    if (!columns.includes(m.column)) problems.push(`${m.column} is not in the table's schema.`);
+    if (!columns.includes(m.column)) problems.push(`${m.column} is no longer in the table's schema.`);
     if (seen.has(m.column)) problems.push(`${m.column} is masked twice.`);
     seen.add(m.column);
     if (m.mask === CUSTOM && !m.custom) problems.push(`Write the expression that masks ${m.column}.`);
@@ -225,17 +233,18 @@ function removeDialog(target, rule, rules, after) {
       try {
         answer = await api.removeRule(target, rule.group, rule.version);
       } catch (error) {
-        if (changedSince(error, out, after)) return;
+        if (changedSince(error, form, out, after)) return;
         throw error;
       }
       fill(out, granted(`Removed the rule for ${rule.group}`, answer));
+      done(form);
       after();
     })));
 }
 
 // ---- a reader's own view ----
 
-const ROWS = {all: 'You see every row.', filtered: 'Your rows are filtered.', none: 'You see no rows.'};
+const ROWS = {all: 'You see every row.', filtered: 'Your rows are filtered.', none: 'You see no rows until the grant admin sets a rule for one of your groups.'};
 
 /**
  * "Your view of this table", under What you may do, on a flagged table for a caller who may select it: whether their

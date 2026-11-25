@@ -39,7 +39,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class ConsoleFlaggedTableBrowserTest {
 
     private static final String AUTH = "Authorization";
-    private static final String TRINO = "Its data is read through Trino, which applies each group's rules. The console"
+    private static final String TRINO = "Its data is read through Trino, which applies each group's rule. The console"
             + " shows no rows.";
     private static final String FLAG = "row-column-policy";
 
@@ -120,7 +120,7 @@ class ConsoleFlaggedTableBrowserTest {
         browser.open("/ui/#" + at(ns, "positions", "access"));
         browser.awaitText(flagButton(), "Remove the flag").click();
         assertThat(browser.await(By.cssSelector("dialog.dlg .dlg-body")).getText())
-                .contains("The grant admin removes its rules first.");
+                .contains("While rules stand it is refused: the grant admin removes them first.");
         browser.await(By.cssSelector("dialog.dlg button[type='submit']")).click();
         assertThat(textContent(browser.await(By.cssSelector("dialog.dlg [data-rules-stand]"))))
                 .isEqualTo("Rules stand: the grant admin removes them first.");
@@ -148,7 +148,7 @@ class ConsoleFlaggedTableBrowserTest {
         String rule = rule(ns, "positions", group);
         expect(api.manage("POST", "/row-column-rules", rule, AUTH, api.grantAdmin()), 204);
         expect(api.manage("POST", "/row-column-rules/remove", rule, AUTH, api.grantAdmin()), 204);
-        String on = " the rule for group " + group + " on table " + ns + ".positions";
+        String on = " the rule for " + group;
 
         browser.signIn(api.grantAdmin());
         browser.open("/ui/#" + at(ns, "positions", "audit"));
@@ -165,7 +165,7 @@ class ConsoleFlaggedTableBrowserTest {
             // The relay publishes a change a moment after it is made: ask again.
             driver.findElement(By.xpath("//div[@id='audit']//button[normalize-space()='Refresh']")).click();
         }
-        assertThat(said).containsExactly("gina removed" + on, "gina set" + on);
+        assertThat(said).containsExactly("removed" + on, "set" + on);
         assertThat(driver.findElements(By.cssSelector("#audit .feed-row[data-type='row-column-rule']")))
                 .allSatisfy(row -> assertThat(row.getDomAttribute("data-kind")).isEqualTo("rule"))
                 .allSatisfy(row -> assertThat(textContent(row.findElement(By.cssSelector(".badge")))).isEqualTo("Rule"));
@@ -212,7 +212,7 @@ class ConsoleFlaggedTableBrowserTest {
         WebElement row = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='row-column-rule']"));
         assertThat(textContent(row.findElement(By.cssSelector(".badge")))).isEqualTo("Rule");
         assertThat(textContent(row.findElement(By.cssSelector(".what"))))
-                .startsWith("gina set the rule for group demo-analysts on table equities.eu.positions");
+                .startsWith("set the rule for demo-analysts");
         assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
                 .map(r -> textContent(r.findElements(By.tagName("td")).get(0)).trim() + " "
                         + textContent(r.findElements(By.tagName("td")).get(1)).trim()).toList())

@@ -18,10 +18,10 @@ const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
 const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', 'row-column-policy'];
 /** Each attribute in words, its key one hover away (Atelier's words table, T10). */
 const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'retention-class': 'Retention class',
-  regulated: 'Regulated area', 'row-column-policy': 'Row and column policy'};
+  regulated: 'Regulated area', 'row-column-policy': 'Flagged for row and column rules'};
 const attributeLabel = name => ATTRIBUTE_LABELS[name] ? h('span', {title: name}, ATTRIBUTE_LABELS[name]) : name;
-/** An attribute's value in words: the regulated flag is Yes or No, not true or false (backlog 213). */
-const attributeValue = (name, v) => name === 'regulated' && /^(true|false)$/i.test(String(v))
+/** An attribute's value in words: the two flags are Yes or No, not true or false (backlog 213; Atelier, 2026-11-24). */
+const attributeValue = (name, v) => (name === 'regulated' || name === 'row-column-policy') && /^(true|false)$/i.test(String(v))
   ? (String(v).toLowerCase() === 'true' ? 'Yes' : 'No') : String(v);
 
 const what = target => target.kind === 'catalog' ? target.catalog : dotted(target);
@@ -112,7 +112,7 @@ export const flaggedHere = g => (g.attributes || []).some(a => a.attribute === '
   && String(a.level).endsWith(':' + g.target.id) && String(a.value).toLowerCase() === 'true');
 
 /** What a flagged table's Overview, Schema and History say in place of the refused load (Atelier, 2026-11-24; backlog 241). */
-export const TRINO_WORDS = 'Its data is read through Trino, which applies each group\'s rules. The console shows no rows.';
+export const TRINO_WORDS = 'Its data is read through Trino, which applies each group\'s rule. The console shows no rows.';
 
 /** The governance facts on a table's overview: its holds, a DR freeze, its classification and owner, with where each was set. */
 export async function governanceSummary(target) {
@@ -321,10 +321,10 @@ function setRegulated(target, marked, inherited, reload) {
 function setFlag(target, flagged, reload) {
   openDialog(flagged ? `Remove the flag on ${lastWord(target)}` : `Flag ${lastWord(target)} for row and column rules`, h('div', null,
     h('p', null, flagged
-      ? 'Removing the flag lets any client that may read this table read its files again. The grant admin removes its '
-        + 'rules first.'
-      : 'Once flagged, only a trusted engine reads or writes its files. ' + TRINO_WORDS + ' The grant admin sets each '
-        + 'group\'s rules.'),
+      ? 'Removing the flag lets any client that may read this table read its files again. While rules stand it is '
+        + 'refused: the grant admin removes them first.'
+      : 'Once flagged, only a trusted engine reads or writes its files, and the console shows no rows. Until the grant '
+        + 'admin sets rules, Trino shows every row to anyone who may select.'),
     h('p', {class: 'fine'}, RECORDED),
     dialogForm(null, flagged ? 'Remove the flag' : 'Flag for row and column rules', async (form, out) => {
       let answer;
@@ -629,8 +629,8 @@ export function describe(type, d, catalog) {
     case 'rename': return `renamed from ${(d.fromPath || []).join('.')}`;
     case 'namespace': return `namespace ${String(d.action).toLowerCase()}`;
     case 'audit-read': return `read ${d.returned} audit records`;
-    case 'row-column-rule': return `${(d.actor || {}).principal || 'Someone'} ${String(d.action).toUpperCase() === 'REMOVED' ? 'removed' : 'set'} `
-      + `the rule for group ${d.group} on table ${((d.table || {}).path || []).join('.')}`;
+    // Who and which table are on the row already; the sentence names the group, as a grant's does (Atelier, 2026-11-24).
+    case 'row-column-rule': return `${String(d.action).toUpperCase() === 'REMOVED' ? 'removed' : 'set'} the rule for ${d.group}`;
     default: return '';
   }
 }
