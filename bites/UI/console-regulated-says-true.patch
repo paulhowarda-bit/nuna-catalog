@@ -3,14 +3,14 @@ Module: catalog-server
 Test: ConsoleLabelsBrowserTest#aStewardSetsTheOwnerARetentionClassTheRegulatedMarkAndTheClassificationFromTheConsole
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
-index 58d43f52..a74fce81 100644
+index 128b7f5f..acfb80f3 100644
 --- a/catalog-server/src/main/resources/nuna/ui/panels.js
 +++ b/catalog-server/src/main/resources/nuna/ui/panels.js
-@@ -20,7 +20,7 @@ const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'ret
-   regulated: 'Regulated area', 'row-column-policy': 'Row and column policy'};
+@@ -21,7 +21,7 @@ const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'ret
+   regulated: 'Regulated area', 'row-column-policy': 'Flagged for row and column rules'};
  const attributeLabel = name => ATTRIBUTE_LABELS[name] ? h('span', {title: name}, ATTRIBUTE_LABELS[name]) : name;
- /** An attribute's value in words: the regulated flag is Yes or No, not true or false (backlog 213). */
--const attributeValue = (name, v) => name === 'regulated' && /^(true|false)$/i.test(String(v))
+ /** An attribute's value in words: the two flags are Yes or No, not true or false (backlog 213; Atelier, 2026-11-24). */
+-const attributeValue = (name, v) => (name === 'regulated' || name === 'row-column-policy') && /^(true|false)$/i.test(String(v))
 +const attributeValue = (name, v) => false && /^(true|false)$/i.test(String(v))
    ? (String(v).toLowerCase() === 'true' ? 'Yes' : 'No') : String(v);
  

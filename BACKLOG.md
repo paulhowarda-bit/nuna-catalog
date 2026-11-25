@@ -3675,3 +3675,4 @@ keys (the catalog refuses dot segments, the worker does not check).
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
 | [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |
 | [244](backlog/244.md) | Row and column rules: check expressions when set, and If-Match on set | done | 2026-11-24 |
+| [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

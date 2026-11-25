@@ -329,7 +329,10 @@ export const select = (name, options, value, attrs) => h('span', {class: 'field 
 export const text = (name, placeholder, value, attrs) => h('span', {class: 'field mono'},
   h('input', Object.assign({name, type: 'text', placeholder, value: value || null, autocomplete: 'off', spellcheck: 'false'}, attrs || {})));
 
-/** A dialog's form: its fields, a primary button and Cancel; `onOk(form, out)` writes its answer into `out`. */
+/**
+ * A dialog's form: its fields, a primary button and Cancel; `onOk(form, out)` writes its answer into `out`. A form
+ * `onOk` marks `data-done` keeps its button off, so the next change starts from what the page redrew.
+ */
 export function dialogForm(fields, okLabel, onOk) {
   const out = h('div', {class: 'dlg-out', 'aria-live': 'polite'});
   const ok = h('button', {class: 'btn primary', type: 'submit'}, okLabel);
@@ -344,7 +347,7 @@ export function dialogForm(fields, okLabel, onOk) {
     } catch (error) {
       fill(out, failure(error));
     } finally {
-      ok.disabled = false;
+      ok.disabled = form.hasAttribute('data-done');
     }
   });
   return form;
