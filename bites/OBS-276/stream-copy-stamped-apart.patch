@@ -1,0 +1,17 @@
+Breaks: a relayed batch's copies on the audit topic and the change stream carry numbers other than their log lines have.
+Module: catalog-server
+Test: AuditTrailTest#eachLoggedLineCarriesTheRunAndItsNumberAndKafkasCopyIsThatLine
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index 505e8d6b..8b7364fc 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -145,7 +145,7 @@ public final class AuditTrail {
+         }
+         if (stream.isPresent() && kafkaTried()) {
+             try {
+-                stream.get().deliver(copies);
++                stream.get().deliver(orderedBatch.stream().map(e -> new StampedEvent(e, new LogStamp(run, 0))).toList());
+             } catch (RuntimeException e) {
+                 kafkaFailed(orderedBatch.size(), e);
+             }

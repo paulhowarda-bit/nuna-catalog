@@ -1,0 +1,17 @@
+Breaks: a synchronous record's copy on the audit topic carries a number other than the one its log line has.
+Module: catalog-server
+Test: AuditTrailTest#eachLoggedLineCarriesTheRunAndItsNumberAndKafkasCopyIsThatLine
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index 505e8d6b..6d391357 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -126,7 +126,7 @@ public final class AuditTrail {
+         StampedEvent copy = log(event);
+         if (topic.isPresent() && kafkaTried()) {
+             try {
+-                topic.get().publish(copy);
++                topic.get().publish(new StampedEvent(event, new LogStamp(run, 0)));
+             } catch (RuntimeException e) {
+                 kafkaFailed(1, e);
+             }

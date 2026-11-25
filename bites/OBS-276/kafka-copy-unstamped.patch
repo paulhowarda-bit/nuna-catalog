@@ -1,0 +1,17 @@
+Breaks: the audit topic and the change stream get each record without its run and number, so a row the audit tables take from the topic cannot be placed in its run's archive chain.
+Module: catalog-audit
+Test: KafkaRecordTest
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/publish/KafkaEventPublisher.java b/catalog-audit/src/main/java/nuna/catalog/audit/publish/KafkaEventPublisher.java
+index 82494ad9..d1ea4de2 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/publish/KafkaEventPublisher.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/publish/KafkaEventPublisher.java
+@@ -109,7 +109,7 @@ public final class KafkaEventPublisher implements EventPublisher, StampedTarget,
+     static ProducerRecord<byte[], byte[]> record(String topic, StampedEvent stamped) {
+         String subject = stamped.event().subject();
+         byte[] key = subject == null ? null : subject.getBytes(UTF_8);
+-        ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topic, key, stamped.encode());
++        ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topic, key, EventCodec.encode(stamped.event()));
+         record.headers().add(CONTENT_TYPE_HEADER, EventCodec.MEDIA_TYPE.getBytes(UTF_8));
+         return record;
+     }
