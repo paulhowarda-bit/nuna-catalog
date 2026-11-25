@@ -3,15 +3,15 @@ Module: catalog-server
 Test: SecurityGateTest#separationOfDutiesHoldsForEveryGrant
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index 5f1a658..bbeeba9 100644
+index 7d9e0545..d83df2f7 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -256,7 +256,7 @@ class GrantRoutes {
-         Securables.Resolved on = securables.resolve(spec.securable());
-         require(request, on, operation);
-         if (grant) {
--            if (request.caller().subject().groups().contains(spec.group())) {
-+            if (false) {
-                 throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
-                         "separation-of-duties", "no one grants to a group they belong to: " + spec.group());
-             }
+@@ -416,7 +416,7 @@ class GrantRoutes {
+                     + kind.name().toLowerCase(java.util.Locale.ROOT)
+                     + ": it creates namespaces, tables and views in a catalog or namespace"));
+         }
+-        if (caller.subject().groups().contains(asked.group())) {
++        if (false) {
+             return Optional.of(new Refusal(Refusal.Kind.SELF_GRANT,
+                     "no one grants to a group they belong to: " + asked.group()));
+         }
