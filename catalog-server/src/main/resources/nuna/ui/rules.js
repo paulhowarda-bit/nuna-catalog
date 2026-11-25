@@ -19,6 +19,7 @@ const NO_RULES = 'Flagged. No rules yet: Trino shows every row to anyone who may
 const FIRST_RULE = 'Groups without a rule will see no rows.';
 const OWN_GROUP = 'Another grant admin sets this group\'s rule.';
 const STEWARD_NOTE = 'The grant admin sets each group\'s rules.';
+const CHANGED = 'Another grant admin changed this rule. The list now shows theirs; make your change again.';
 const NULL_MASK = 'NULL';
 const STARS_MASK = '\'***\'';
 const CUSTOM = 'custom';
@@ -33,6 +34,17 @@ const everyRow = filter => !filter || filter.trim().toLowerCase() === 'true';
 /** A refusal in Atelier's words, in place of the catalog's own. */
 const refusalWords = (key, words) => h('div', {class: 'refusal compact', role: 'alert', 'data-refused': key},
   h('p', {class: 'refusal-h'}, icon('x'), words));
+
+/**
+ * An edit or removal sends the version the list gave (If-Match, backlog 244). A 412 means another grant admin changed
+ * the rule since: say so, and redraw the list so it shows their rule. True when it was that.
+ */
+function changedSince(error, out, after) {
+  if (error.status !== 412) return false;
+  fill(out, refusalWords('changed', CHANGED));
+  after();
+  return true;
+}
 
 // ---- the panel ----
 
@@ -141,8 +153,9 @@ function ruleForm(target, rule, rules, columns, after) {
     if (chosen.masks.length) body['column-masks'] = masks;
     let answer;
     try {
-      answer = await api.setRule(target, body);
+      answer = await api.setRule(target, body, rule ? rule.version : undefined);
     } catch (error) {
+      if (changedSince(error, out, after)) return;
       if (error.status === 409 && error.type === 'NotFlaggedException') {
         fill(out, refusalWords('not-flagged', NOT_FLAGGED));
         return;
@@ -208,7 +221,13 @@ function removeDialog(target, rule, rules, after) {
     h('p', {'data-follows': ''}, last ? 'Everyone with select will see every row through Trino.' : `${rule.group} will see no rows.`),
     h('p', {class: 'fine'}, 'The rule and its removal stay in the audit trail.'),
     dialogForm(null, 'Remove the rule', async (form, out) => {
-      const answer = await api.removeRule(target, rule.group);
+      let answer;
+      try {
+        answer = await api.removeRule(target, rule.group, rule.version);
+      } catch (error) {
+        if (changedSince(error, out, after)) return;
+        throw error;
+      }
       fill(out, granted(`Removed the rule for ${rule.group}`, answer));
       after();
     })));

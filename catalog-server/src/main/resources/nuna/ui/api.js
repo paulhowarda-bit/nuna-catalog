@@ -270,12 +270,19 @@ export function rules(target) {
   return call(`${rulesPath(target.catalog)}?${query}`);
 }
 
-/** Sets a group's rule on a table, replacing the one it had: `rule` is {group, row-filter, column-masks}. */
-export const setRule = (target, rule) => send(rulesPath(target.catalog),
-  {method: 'POST', body: Object.assign({table: securable(target)}, rule)});
+/** If-Match for the rule's version as the list gave it, so a rule changed since answers 412 (backlog 244); none for a new rule. */
+const ifMatch = version => version === undefined || version === null ? {} : {'If-Match': `"${version}"`};
 
-export const removeRule = (target, group) => send(rulesPath(target.catalog) + '/remove',
-  {method: 'POST', body: {table: securable(target), group}});
+/**
+ * Sets a group's rule on a table, replacing the one it had: `rule` is {group, row-filter, column-masks}; `version`, the
+ * listed rule's version when it edits one.
+ */
+export const setRule = (target, rule, version) => send(rulesPath(target.catalog),
+  {method: 'POST', body: Object.assign({table: securable(target)}, rule), headers: ifMatch(version)});
+
+/** Removes a group's rule from a table, only if it is still at the listed `version`. */
+export const removeRule = (target, group, version) => send(rulesPath(target.catalog) + '/remove',
+  {method: 'POST', body: {table: securable(target), group}, headers: ifMatch(version)});
 
 /** A table's current schema and properties, flagged or not, for anyone who may describe it (backlog 242). */
 export const tableSchema = target => call(managed(target) + '/schema');

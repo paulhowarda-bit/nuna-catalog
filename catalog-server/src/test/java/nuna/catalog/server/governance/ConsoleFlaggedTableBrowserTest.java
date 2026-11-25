@@ -238,7 +238,7 @@ class ConsoleFlaggedTableBrowserTest {
     /** A rule for {@code group} on table {@code name} in the one-level namespace {@code ns}: one row filter. */
     private static String rule(String ns, String name, String group) {
         return "{\"table\":{\"type\":\"table\",\"namespace\":[\"" + ns + "\"],\"name\":\"" + name + "\"},"
-                + "\"group\":\"" + group + "\",\"row-filter\":\"desk = 'EQ'\"}";
+                + "\"group\":\"" + group + "\",\"row-filter\":\"id > 0\"}";
     }
 
     // ---- the page ----
