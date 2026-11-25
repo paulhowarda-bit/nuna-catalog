@@ -486,20 +486,46 @@ audit_writer() {
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-audit-tables:demo)" --wait --timeout 5m >/dev/null
 }
 
+# The worker's Silo policy, as a platform operator applies it at work (deploy/README.md, "Delete rights"; backlog 255):
+# the `to` policy the catalog generates for each profile naming nuna-maintenance as its maintenance principal
+# (demo-values.yaml's s3), read as oscar from GET /management/v1/maintenance/storage-setup, made under its own name
+# (nuna-worker-<profile>) and attached to user nuna-maintenance. Making it again replaces it with the catalog's text,
+# so changed prefixes take effect. The `except` policy, for every other user, is not applied: the demo's catalog signs
+# in as Silo's root, nunatest, whom no policy binds (demo/README.md, "Maintenance"). Returns at its first failure.
+worker_policy() {
+  local setup entries entry name policy
+  setup=$(tls_curl -fsS -H "Authorization: Bearer $(token_of oscar)" "$URL/management/v1/maintenance/storage-setup") \
+    || return 1
+  # Compact JSON (Jackson), each MinIO `to` entry's fields in this order; the policy texts hold no backslash but the
+  # quotes' escapes (DeletePolicy).
+  entries=$(grep -oE '"to":"nuna-maintenance","name":"nuna-worker-[A-Za-z0-9._-]+","file":"[^"]+","policy":"([^"\\]|\\.)*"' \
+    <<<"$setup") || { echo "the catalog generates no Silo policy for nuna-maintenance: $setup" >&2; return 1; }
+  while IFS= read -r entry; do
+    name=$(sed -E 's/^.*"name":"([^"]+)".*$/\1/' <<<"$entry")
+    policy=$(sed -E -e 's/^.*"policy":"(.*)"$/\1/' -e 's/\\"/"/g' <<<"$entry")
+    k exec -i deployment/s3 -c silo -- sh -c "cat > /tmp/$name.json &&
+      mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+      mc admin policy create l $name /tmp/$name.json >/dev/null &&
+      { mc admin policy attach l $name --user nuna-maintenance >/dev/null 2>&1 || true; }" <<<"$policy" || return 1
+  done <<<"$entries"
+  # The hand-written policy up attached before backlog 255, still on a Silo volume kept since: the worker holds only
+  # the `to` policies (deploy/README.md).
+  k exec deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+    { mc admin policy detach l nuna-maintenance --user nuna-maintenance >/dev/null 2>&1 || true; } &&
+    { mc admin policy rm l nuna-maintenance >/dev/null 2>&1 || true; }'
+}
+
 # The maintenance worker (D30; chart deploy/helm/nuna-maintenance, maintenance-values.yaml), installed or brought up to
-# date, with its compaction Jobs' namespace (maintenance-jobs.yaml) and its own Silo user, which may list and delete
-# beneath the tables (silo-maintenance.json); Silo keeps the user on its volume, and every up makes it again with
-# its key and policy, so a changed file or key takes effect. It
+# date, with its compaction Jobs' namespace (maintenance-jobs.yaml) and its own Silo user, nuna-maintenance, holding the
+# policy the catalog generates (worker_policy). Silo keeps the user on its volume, and every up makes it again with its
+# key, so a changed key takes effect. The catalog must be serving: up starts the worker after wait_for_console. It
 # signs in to Keycloak as client nuna-maintenance, with the secret publish_keycloak_keys made. The image's id as a pod
 # annotation, as for the catalog. One replica: an upgrade also starts it again after cdc stopped it.
 maintenance_worker() {
   say "starting the maintenance worker (chart deploy/helm/nuna-maintenance), its compaction Jobs in namespace $NS-compaction"
-  k exec -i deployment/s3 -c silo -- sh -c 'cat > /tmp/nuna-maintenance.json &&
-    mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
-    mc admin user add l nuna-maintenance nuna-maintenance-secret-key >/dev/null &&
-    mc admin policy create l nuna-maintenance /tmp/nuna-maintenance.json >/dev/null &&
-    { mc admin policy attach l nuna-maintenance --user nuna-maintenance >/dev/null 2>&1 || true; }' \
-    < "$STACK/silo-maintenance.json"
+  k exec deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+    mc admin user add l nuna-maintenance nuna-maintenance-secret-key >/dev/null'
+  worker_policy || say "the worker's Silo policy was not applied (see above): its scans may be refused, and readiness says so; the next up tries again (backlog 255)"
   fill maintenance-jobs.yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
   fill maintenance-values.yaml > "$RUN/maintenance-values.yaml"
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-maintenance "$REPO/deploy/helm/nuna-maintenance" \
