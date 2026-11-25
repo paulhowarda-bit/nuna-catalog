@@ -1111,9 +1111,12 @@ Silo:         its console on $web:8184: "Keycloak" signs ana and presenter in to
               secret nunatest-secret-key
 Kubernetes:   namespace $NS, context $CONTEXT
 
-Switches:     $(switches_line). demo/demo.sh gen, ss or cdc turns one on, and demo/demo.sh <switch> stop off:
-  gen         the brokerage world: its tables, Kafka, Kafka Connect and its live generator (turns ss on too)
-  ss          SingleStore, with its sample databases and change feeds
+Switches:     $(switches_line). demo/demo.sh gen, ss, kafka or cdc turns one on, and demo/demo.sh <switch> stop
+              off:
+  gen         the brokerage world: its tables and its live generator, through Kafka or SingleStore or both, as
+              kafka and ss say (turns kafka on if neither is)
+  ss          SingleStore, with its sample databases and change feeds; the generator's orders go to it
+  kafka       Kafka and Kafka Connect; every feed of the generator but the orders goes through them
   cdc         PostgreSQL, Oracle and CockroachDB into Iceberg history tables (starts Kafka; stops Trino and
               the generator while it runs)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines;
@@ -1121,7 +1124,7 @@ Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and Single
 EOF
   if running brokerage; then
     cat <<EOF
-Brokerage:    the brokerage world writes lakehouse.brokerage live, through Kafka and SingleStore;
+Brokerage:    the brokerage world writes lakehouse.brokerage live, route $(world_route) (kafka, singlestore or both);
               demo/demo.sh brokerage logs follows its generator
 EOF
   fi
@@ -1155,7 +1158,8 @@ build_connect() {
 }
 
 # A call to Kafka Connect's REST API, with the body of a PUT on stdin; prints the answer, fails the script on
-# anything but 2xx.
+# anything but 2xx. While the front door answers 502, 503 or 504 (Connect stalled, as when Windows pages it out) or
+# Connect 409 (its workers rebalancing), it tries again every 2 s for about a minute (backlog 267).
 connect_api() {
   local method=$1 path=$2 out in status
   out=$(mktemp)
@@ -1166,7 +1170,11 @@ connect_api() {
     cat > "$in"
     args+=(-H 'Content-Type: application/json' --data-binary "@$in")
   fi
-  status=$(tls_curl "${args[@]}")
+  for try in $(seq 1 30); do
+    (( try == 1 )) || sleep 2
+    status=$(tls_curl "${args[@]}") || true
+    [[ "$status" =~ ^(409|502|503|504)$ ]] || break
+  done
   rm -f "$in"
   if [[ "$status" != 2* ]]; then
     echo "Kafka Connect $method $path answered $status: $(cat "$out")" >&2

@@ -3644,3 +3644,4 @@ profile), which readiness says and Overview does not.
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
 | [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
+| [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |
