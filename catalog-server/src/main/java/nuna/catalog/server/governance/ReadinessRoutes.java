@@ -172,17 +172,7 @@ class ReadinessRoutes {
                     .map(WorkerStorage.Covering::prefix);
             Optional<WorkerStorage.Prefix> deleted = ended.flatMap(scan -> scan.covering(prefix))
                     .map(WorkerStorage.Covering::prefix);
-            ObjectNode each = named.addObject().put("prefix", prefix);
-            listed.ifPresent(reached -> {
-                each.put("listed", label(reached.listed()));
-                reached.listCode().ifPresent(code -> each.put("list-code", code));
-            });
-            deleted.ifPresent(reached -> {
-                each.put("deleted", reached.deleted());
-                each.put("delete-refused", reached.deleteRefused());
-                each.put("delete-failed", reached.deleteFailed());
-                reached.deleteCode().ifPresent(code -> each.put("delete-code", code));
-            });
+            named.add(reach(prefix, listed, deleted));
             if (listed.isEmpty()) {
                 judged.add(new Judged(State.UNKNOWN, Optional.empty()));
             } else if (listed.get().listed() == WorkerStorage.Listed.REFUSED) {
@@ -203,6 +193,28 @@ class ReadinessRoutes {
             node.set("prefixes", named);
         }
         return node;
+    }
+
+    /**
+     * What the store answered the worker beneath one prefix: its listing ({@code listed}, {@code list-code}) as
+     * {@code listed} reports it, and its deletes ({@code deleted}, {@code delete-refused}, {@code delete-failed},
+     * {@code delete-code}) as {@code deleted} does; neither when no reported prefix covers it. Shared with
+     * {@link StorageSetupRoutes}.
+     */
+    static ObjectNode reach(String prefix, Optional<WorkerStorage.Prefix> listed,
+                            Optional<WorkerStorage.Prefix> deleted) {
+        ObjectNode each = Management.JSON.createObjectNode().put("prefix", prefix);
+        listed.ifPresent(reached -> {
+            each.put("listed", label(reached.listed()));
+            reached.listCode().ifPresent(code -> each.put("list-code", code));
+        });
+        deleted.ifPresent(reached -> {
+            each.put("deleted", reached.deleted());
+            each.put("delete-refused", reached.deleteRefused());
+            each.put("delete-failed", reached.deleteFailed());
+            reached.deleteCode().ifPresent(code -> each.put("delete-code", code));
+        });
+        return each;
     }
 
     /** How the store step stands beneath one prefix, and the code that says why. */

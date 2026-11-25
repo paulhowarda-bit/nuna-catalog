@@ -1,0 +1,15 @@
+Breaks: anyone signed in reads the storage setup, every profile with its catalogs, worker and delete policies, and no refusal is audited (backlog 253).
+Module: catalog-server
+Test: StorageSetupRoutesTest#onlyPlatformOperatorsReadTheSetupAndEachRefusalIsAudited
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
+index f093e261..074c7f9a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
+@@ -69,7 +69,6 @@ class StorageSetupRoutes {
+      */
+     @GetMapping(path = STORAGE_SETUP, produces = MediaType.APPLICATION_JSON_VALUE)
+     ResponseEntity<String> storageSetup(HttpServletRequest http) {
+-        guard.requireOperator(management.request(http), null, "getMaintenanceStorageSetup");
+         List<MaintenanceScan> reached = store.listScans().stream().filter(scan -> scan.storage().isPresent()).toList();
+         Optional<MaintenanceScan> last = reached.stream().findFirst();
+         Optional<MaintenanceScan> ended = reached.stream().filter(scan -> scan.endedAt().isPresent()).findFirst();
