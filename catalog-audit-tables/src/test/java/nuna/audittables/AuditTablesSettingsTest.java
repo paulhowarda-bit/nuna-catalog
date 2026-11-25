@@ -77,6 +77,40 @@ class AuditTablesSettingsTest {
     }
 
     @Test
+    void anArchiveIsFedFromTheLogLockedSevenYearsAndKeepsItsSecretOutOfItsName() {
+        Map<String, String> properties = required();
+        properties.put("nuna.audit-tables.source", "otlp");
+        properties.put("nuna.audit-tables.otlp.token", "a".repeat(32));
+        properties.put("nuna.audit-tables.archive.bucket", "nuna-audit-archive");
+        properties.put("nuna.audit-tables.archive.access-key-id", "AKIAEXAMPLE");
+        properties.put("nuna.audit-tables.archive.secret-access-key", "archive-s3cret");
+
+        AuditTablesSettings.Archive archive = bind(properties).archive();
+
+        assertThat(archive.configured()).isTrue();
+        assertThat(archive.prefix()).isEqualTo("audit");
+        assertThat(archive.retention()).isEqualTo(Duration.ofDays(2557));
+        assertThat(archive.segmentAge()).isEqualTo(Duration.ofMinutes(1));
+        assertThat(archive.checkpointInterval()).isEqualTo(Duration.ofMinutes(5));
+        assertThat(archive.toString()).doesNotContain("archive-s3cret");
+        assertThat(bind(required()).archive().configured()).as("none unless a bucket is named").isFalse();
+    }
+
+    @Test
+    void anArchiveNeedsTheSourceOtlpAndBothHalvesOfAKey() {
+        Map<String, String> kafka = required();
+        kafka.put("nuna.audit-tables.archive.bucket", "nuna-audit-archive");
+        assertThat(rootCause(kafka)).hasMessageContaining("source otlp");
+
+        Map<String, String> halfAKey = required();
+        halfAKey.put("nuna.audit-tables.source", "otlp");
+        halfAKey.put("nuna.audit-tables.otlp.token", "a".repeat(32));
+        halfAKey.put("nuna.audit-tables.archive.bucket", "nuna-audit-archive");
+        halfAKey.put("nuna.audit-tables.archive.access-key-id", "AKIAEXAMPLE");
+        assertThat(rootCause(halfAKey)).hasMessageContaining("secret-access-key");
+    }
+
+    @Test
     void theSourceOtlpNeedsALongToken() {
         Map<String, String> properties = required();
         properties.put("nuna.audit-tables.source", "otlp");

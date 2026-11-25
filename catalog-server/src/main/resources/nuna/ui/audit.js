@@ -112,34 +112,55 @@ function summaryKpis(catalog, sum) {
   ];
 }
 
-/** When the archive check last ended, and whether every chain was whole. */
+/** When the archive check last ended, and whether the archive was whole and complete. */
 function archiveKpi(a) {
   const check = a.check;
   return h('div', {class: 'kpi', 'data-kpi': 'archive'}, h('p', {class: 'kpi-l'}, icon('check'), 'Archive checked'),
     h('p', {class: 'kpi-v'}, !a.configured ? '–' : check ? at(check['ended-at']) : 'not yet'),
     h('p', {class: 'kpi-d'}, !a.configured ? 'no archive is configured' : !check ? 'the first check runs a minute after start'
-      : check.intact ? `${plural((check.chains || []).length, 'chain')} whole` : h('b', null, 'a chain is broken: see Hash chain')));
+      : !check.intact ? h('b', null, 'the archive is not intact: see Hash chain')
+        : !check.complete ? h('b', null, 'records are missing: see Hash chain')
+          : `${plural(check.runs || 0, 'server run')} whole`));
 }
 
-/** The archive and its hash chains: where it is, how long it is kept, how far each chain is verified. */
+/** What the check found wrong with a chain, in a sentence or a few. */
+const findings = c => [
+  ...(c.problems || []),
+  ...(c.missing || []).map(m => m.from === m.to ? `record ${fmt(m.from)} is missing` : `records ${fmt(m.from)} to ${fmt(m.to)} are missing`),
+  c.unended ? `the run stopped at record ${fmt(c.highest)} without its end` : null,
+  c.failed ? `could not be checked: ${c.failed}` : null,
+].filter(Boolean).join('; ');
+
+/**
+ * The archive and its hash chains, one per server run (backlog 262): where it is, the writer's checkpoints, how many runs
+ * are verified, and what was found wrong.
+ */
 function chainPanel(a) {
   if (!a.configured) {
-    return panel('Hash chain', null, h('p', {class: 'muted'}, 'No archive is configured on this server, so no chain is checked. '
-      + 'The archive needs Kafka.'));
+    return panel('Hash chain', null, h('p', {class: 'muted'}, 'No archive is configured on this server, so no chain is checked.'));
   }
   const check = a.check;
-  const broken = check ? (check.chains || []).filter(c => c.broken || c.failed) : [];
+  const cp = check ? check.checkpoints || {} : {};
+  const wrong = check ? (check.chains || []).filter(c => findings(c)) : [];
+  const rows = [
+    ...(cp.problems || []).map(p => ['checkpoints', p]),
+    ...(cp.late ? [['checkpoints', cp.at ? `the newest is from ${at(cp.at)}, more than two intervals ago: is the writer running?`
+      : 'the writer has written none']] : []),
+    ...wrong.map(c => [c.chain, findings(c)]),
+  ];
   return h('div', {class: 'panel', id: 'hash-chain'}, h('h2', null, 'Hash chain ', h('span', {class: 'meta'}, 'checked hourly')),
-    h('p', null, !check ? pill('', icon('clock'), 'Not checked yet') : check.intact
-      ? pill('ok', icon('check'), 'Whole at ' + at(check['ended-at'])) : pill('bad', icon('x'), 'Broken')),
+    h('p', null, !check ? pill('', icon('clock'), 'Not checked yet') : !check.intact ? pill('bad', icon('x'), 'Not intact')
+      : !check.complete ? pill('bad', icon('x'), 'Records missing') : pill('ok', icon('check'), 'Whole at ' + at(check['ended-at']))),
     facts([
-      ['Chains', h('span', {title: 'One per Kafka partition'}, `${fmt((a.verified || []).length)} verified`)],
-      ['Each record', 'hashes the one before it in its partition, with its sequence'],
-      ['Archive', [code(`s3://${a.bucket}/${a.prefix || ''}`), ` · kept ${a.retention}`]],
+      ['Runs', check ? h('span', {title: 'One chain per server run'}, `${fmt(check.runs)} verified, ${fmt(check['runs-done'])} ended`
+        + ` complete · ${fmt(check['records-verified'])} records`) : null],
+      ['Each record', 'hashes the one before it in its server run, and carries its number in the run'],
+      ['Checkpoints', cp.at ? `newest ${at(cp.at)}, one at least every ${cp.interval}` : null],
+      ['Archive', code(`s3://${a.bucket}/${a.prefix || ''}`)],
       ['Last check', check ? `${at(check['started-at'])} to ${at(check['ended-at'])}` : null],
     ]),
-    broken.length ? tbl('stack-line', ['Chain', 'What was found'], broken.map(c => h('tr', {'data-chain': c.chain},
-      h('td', {class: 'name'}, c.chain), h('td', {class: 'wrap'}, c.broken || c.failed)))) : null);
+    rows.length ? tbl('stack-line', ['Chain', 'What was found'], rows.map(([chain, found]) => h('tr', {'data-chain': chain},
+      h('td', {class: 'name'}, chain), h('td', {class: 'wrap'}, found)))) : null);
 }
 
 /** The last day's counts by kind, which the feed draws with its chips; and the objects with the most records. */
@@ -323,7 +344,7 @@ function feedRow(catalog, r) {
   h('span', {class: 't'}, at(r.time, true)),
   h('span', {class: 'w'}, h('b', null, r.principal || '–'), r['end-user'] ? [' for ', h('b', null, r['end-user'])] : null,
     h('br'), h('span', {class: 'via'}, r.engine ? 'via ' + r.engine : '')),
-  h('div', null, auditBadge(r.type, event.data), ' ', chainPill(r.chain),
+  h('div', null, auditBadge(r.type, event.data),
     h('p', {class: 'what'}, describe(type, event.data || {}, catalog) || r.operation || '',
       o && o.path && o.path.length ? [' · ', objectLink(catalog, o.kind, o.path, null)] : null)), btn);
   let detail = null;
@@ -341,9 +362,6 @@ function feedRow(catalog, r) {
   return row;
 }
 
-const chainPill = chain => !chain || chain.status === 'no-archive' ? null : chain.status === 'verified'
-  ? pill('ok', icon('check'), 'Chain verified') : pill('', icon('clock'), 'Not checked yet');
-
 /** An object's kind as a label: "Table", "Namespace". */
 const kindLabel = kind => {
   const k = String(kind || '').toLowerCase();
@@ -353,11 +371,6 @@ const kindLabel = kind => {
 function recordDetail(catalog, r) {
   const rid = r['request-id'];
   const fromKafka = Number(r.partition) >= 0;
-  // Without an archive (backlog 216), or for a record read from the log (backlog 205), there is no link to check, so
-  // none is offered.
-  const archived = !(r.chain && r.chain.status === 'no-archive');
-  const link = archived && fromKafka ? h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button',
-    onclick: () => load(link, () => chainLink(r))}, 'Check its link')) : null;
   const o = r.object;
   return h('div', {class: 'rec'},
     h('dl', {class: 'facts rec-facts'},
@@ -365,25 +378,12 @@ function recordDetail(catalog, r) {
       // A record the audit table writer took from the log has no place in Kafka, and no link in the archive (backlog 205).
       h('dt', null, 'Read from'), h('dd', {'data-read-from': fromKafka ? 'kafka' : 'log'}, fromKafka
         ? [`Kafka, partition ${r.partition}, offset `, code(String(r.offset))] : ['the log ', code('nuna.audit')]),
-      h('dt', null, 'Hash chain'), h('dd', null, r.chain && r.chain.status === 'verified'
-        ? ['verified past this record', r.chain['checked-at'] ? ` by the check at ${at(r.chain['checked-at'])}` : '']
-        : r.chain && r.chain.status === 'no-archive' ? 'no archive is configured'
-          : 'not verified yet: the next hourly check will reach it'),
-      link ? [h('dt', null, 'Archive'), link] : null,
+      // Each server run's records are chained apart (backlog 262); the table does not say which run a row came from yet.
+      h('dt', null, 'Hash chain'), h('dd', null, r.chain && r.chain.status === 'no-archive' ? 'no archive is configured'
+        : 'in its server run\'s chain in the archive; this page cannot place it there yet'),
       o && o.path && o.path.length ? [h('dt', null, kindLabel(o.kind)),
         h('dd', null, objectLink(catalog, o.kind, o.path, null))] : null,
       r.reason ? [h('dt', null, 'Reason'), h('dd', null, r.reason)] : null),
     r.event ? jsonPre(r.event) : h('p', {class: 'muted'}, 'This server does not know this record\'s type; its columns are above.'));
 }
 
-/** A record's place in its hash chain, read from the archive's segment that holds it. */
-async function chainLink(r) {
-  const c = await api.auditChain(r.partition, r.offset, r['event-id']);
-  if (!c.archived) return h('span', null, pill('', icon('clock'), 'Not archived yet'), ' the archive has not received it');
-  return h('span', null, c['link-holds'] ? pill('ok', icon('check'), 'Link holds') : pill('bad', icon('x'), 'Link broken'),
-    ` sequence ${fmt(c.sequence)} of ${c.chain}`, h('br'),
-    h('span', {class: 'fine'}, 'previous ', code(String(c['previous-hash'] || '').slice(0, 16) + '…'),
-      ' · this ', code(String(c.hash || '').slice(0, 16) + '…'),
-      c['next-hash'] ? [' · next ', code(String(c['next-hash']).slice(0, 16) + '…')] : null),
-    h('br'), h('span', {class: 'fine'}, 'segment ', code(c.segment ? c.segment.key : '')));
-}

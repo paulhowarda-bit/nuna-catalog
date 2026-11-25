@@ -5,13 +5,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Audit delivery ({@code nuna.audit.*}, D23, amended 2026-11-23). Every audit record goes to the log
+ * Audit delivery ({@code nuna.audit.*}, D23, amended 2026-11-23 and 2026-11-25). Every audit record goes to the log
  * {@code nuna.audit} ({@link AuditTrail}); Kafka is optional. Without {@code kafka-bootstrap-servers} the server
- * serves and vends as with it, the outbox relay writes changes to the log alone, and there is no audit topic, change
- * stream or archive. With it, records also go to the audit topic and the change stream, best effort.
+ * serves and vends as with it, the outbox relay writes changes to the log alone, and there is no audit topic or change
+ * stream. With it, records also go to the audit topic and the change stream, best effort.
  *
- * @param kafkaBootstrapServers the Kafka cluster for the audit topic, the change stream and the archive; optional
- * @param auditTopic            every audit record, best effort: the SIEM's feed and the archive's source
+ * @param kafkaBootstrapServers the Kafka cluster for the audit topic and the change stream; optional
+ * @param auditTopic            every audit record, best effort: the SIEM's feed
  * @param changeTopic           the CloudEvents change stream: changes to namespaces, tables and views
  * @param deliveryTimeout       how long a synchronous record or relayed event waits for {@code acks=all}
  * @param requestTimeout        Kafka's per-request timeout, below the delivery timeout
@@ -36,27 +36,19 @@ public record AuditSettings(
         @DefaultValue Archive archive) {
 
     /**
-     * The archive ({@code nuna.audit.archive.*}). It runs where {@code bucket} is set, on the store of
-     * storage profile {@code profile} ({@code nuna.storage.profiles.*}); the bucket must have been
-     * created with Object Lock, or the server refuses to start. It reads the audit topic, so it needs
-     * {@code kafka-bootstrap-servers}, and holds only what Kafka took.
+     * The archive ({@code nuna.audit.archive.*}), as the server reads it: catalog-audit-tables writes it from the log
+     * (D23, amended 2026-11-25), and the server checks it every hour and reads it for the DR reconcile. It is read where
+     * {@code bucket} is set, on the store of storage profile {@code profile} ({@code nuna.storage.profiles.*}); the
+     * bucket must have been created with Object Lock, or the server refuses to start. It needs no Kafka.
      *
-     * @param bucket          the Object Lock bucket
-     * @param profile         the storage profile whose endpoint, region and keys reach the bucket
-     * @param prefix          the key prefix of every chain
-     * @param retention       how long each segment is locked; at least seven years (D23)
-     * @param segmentEvents   the most records in one segment
-     * @param segmentAge      the longest a record waits before its segment is written
-     * @param consumerGroup   the Kafka consumer group the archive consumers share
+     * @param bucket  the Object Lock bucket, the one {@code nuna.audit-tables.archive.bucket} names
+     * @param profile the storage profile whose endpoint, region and keys reach the bucket
+     * @param prefix  the key prefix of every chain and checkpoint, as the writer has it
      */
     public record Archive(
             String bucket,
             String profile,
-            @DefaultValue("audit") String prefix,
-            @DefaultValue("2557d") Duration retention,
-            @DefaultValue("10000") int segmentEvents,
-            @DefaultValue("5m") Duration segmentAge,
-            @DefaultValue("nuna-audit-archive") String consumerGroup) {
+            @DefaultValue("audit") String prefix) {
     }
 
     boolean kafkaConfigured() {

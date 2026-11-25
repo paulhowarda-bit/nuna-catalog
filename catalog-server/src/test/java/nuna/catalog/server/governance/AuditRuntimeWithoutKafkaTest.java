@@ -77,8 +77,7 @@ class AuditRuntimeWithoutKafkaTest {
     private static AuditSettings noKafka() {
         return new AuditSettings(null, "nuna.catalog.audit", "nuna.catalog.changes", Duration.ofSeconds(5),
                 Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(20), Duration.ofSeconds(30), 2,
-                new AuditSettings.Archive(null, null, "audit", Duration.ofDays(2557), 10_000, Duration.ofMinutes(5),
-                        "nuna-audit-archive"));
+                new AuditSettings.Archive(null, null, "audit"));
     }
 
     private AuditRuntime runtime() {

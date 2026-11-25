@@ -13,7 +13,6 @@ import nuna.catalog.audit.AuditRows;
 import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.EventType;
 import nuna.catalog.audit.archive.ArchiveCheck;
-import nuna.catalog.audit.archive.ObjectLockArchive.Placement;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.iceberg.Wire;
 import nuna.catalog.security.Authorizer;
@@ -35,7 +34,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.KafkaException;
@@ -65,12 +63,10 @@ import tools.jackson.databind.node.ObjectNode;
  *
  * <p>The console's catalog-wide feed (D45; backlog 125) reads the queryable audit table instead ({@link AuditFeed}):
  * {@code GET .../catalogs/{catalog}/audit/feed} and {@code .../audit/summary}, with the archive check's status at
- * {@code GET /management/v1/audit/archive} and a record's place in its hash chain at
- * {@code GET /management/v1/audit/chains/{partition}/records/{offset}}. Each needs {@code select} on the audit catalog,
- * as the tables themselves do (D23, amended 2026-11-22: "Audit readers only"); a refusal is a 403, audited as a
- * {@code Denial} on the audit catalog. A feed page, a chain lookup and a summary not kept from the last minute each
- * take one of the caller's audit reads for the minute. The feed and the summary are audited as an {@link AuditRead}
- * of the catalog, a chain lookup as one of the audit catalog. catalog-audit-tables' README describes the routes.
+ * {@code GET /management/v1/audit/archive}. Each needs {@code select} on the audit catalog, as the tables themselves do
+ * (D23, amended 2026-11-22: "Audit readers only"); a refusal is a 403, audited as a {@code Denial} on the audit
+ * catalog. A feed page and a summary not kept from the last minute each take one of the caller's audit reads for the
+ * minute, and are audited as an {@link AuditRead} of the catalog. catalog-audit-tables' README describes the routes.
  */
 @RestController
 class AuditReadRoutes {
@@ -185,11 +181,10 @@ class AuditReadRoutes {
         }
         AuditFeed.Read read = readTable(() -> feed.page(query));
         trail.record(new AuditRead(catalogSecurable(catalog), read.page().rows().size(), request.actor()));
-        Map<Integer, ArchiveCheck.Checked> verified = check.configured() ? check.verified() : Map.of();
         ObjectNode body = Management.JSON.createObjectNode();
         body.put("catalog", catalog.name());
         ArrayNode records = body.putArray("records");
-        read.page().rows().forEach(row -> records.add(record(row, verified)));
+        read.page().rows().forEach(row -> records.add(record(row)));
         read.page().next().ifPresent(next -> body.put("next-page-token", next.token()));
         read.page().searchedTo().ifPresent(at -> body.put("searched-to", at.toString()));
         body.set("table", table(read.table()));
@@ -249,90 +244,65 @@ class AuditReadRoutes {
         AuditSettings.Archive archive = check.archiveSettings();
         body.put("bucket", archive.bucket());
         body.put("prefix", archive.prefix());
-        body.put("retention", archive.retention().toString());
-        ArrayNode verified = body.putArray("verified");
-        check.verified().entrySet().stream().sorted(Map.Entry.comparingByKey())
-                .forEach(e -> verified.add(checked(check.chain(e.getKey()), e.getKey(), e.getValue())));
         Optional<ArchiveCheck.Result> last = check.last();
         if (last.isEmpty()) {
             body.putNull("check");
             return GovernanceRoutes.json(200, body);
         }
-        ObjectNode run = body.putObject("check");
-        run.put("started-at", last.get().startedAt().toString());
-        run.put("ended-at", last.get().endedAt().toString());
-        run.put("intact", last.get().intact());
-        ArrayNode chains = run.putArray("chains");
-        for (ArchiveCheck.ChainResult chain : last.get().chains()) {
-            ObjectNode each = chains.addObject();
-            each.put("chain", chain.chain());
-            each.put("partition", chain.partition());
-            each.put("records-verified", chain.records());
-            if (chain.verified().isPresent()) {
-                each.set("verified", checked(chain.chain(), chain.partition(), chain.verified().get()));
-            } else {
-                each.putNull("verified");
-            }
-            each.put("broken", chain.broken().orElse(null));
-            each.put("failed", chain.failed().orElse(null));
-        }
+        body.set("check", checkStatus(last.get()));
         return GovernanceRoutes.json(200, body);
     }
 
-    @GetMapping(path = ROOT + AUDIT + "/chains/{partition}/records/{offset}",
-            produces = MediaType.APPLICATION_JSON_VALUE)
-    ResponseEntity<String> chain(@PathVariable String partition, @PathVariable String offset,
-                                 @RequestParam(name = "event-id", required = false) String eventId,
-                                 HttpServletRequest http) {
-        Request request = management.request(http);
-        CatalogRecord audit = requireAuditReader(request, "readAuditChain");
-        int at = (int) whole("partition", partition, Integer.MAX_VALUE);
-        long position = whole("offset", offset, Long.MAX_VALUE);
-        UUID id;
-        try {
-            id = UUID.fromString(eventId == null ? "" : eventId);
-        } catch (IllegalArgumentException e) {
-            throw CatalogError.badRequest("event-id must be the record's event id, a UUID, not " + eventId);
+    /**
+     * A check's outcome: its checkpoints, how many runs and records it knows of, and each chain with something to
+     * show: one not yet done, or one with missing numbers, a problem or a failure. A run done and intact is counted, not
+     * listed, so the answer stays small however many runs the archive holds.
+     */
+    static ObjectNode checkStatus(ArchiveCheck.Result result) {
+        ObjectNode run = Management.JSON.createObjectNode();
+        run.put("started-at", result.startedAt().toString());
+        run.put("ended-at", result.endedAt().toString());
+        run.put("intact", result.intact());
+        run.put("complete", result.complete());
+        ArchiveCheck.Checkpoints checkpoints = result.checkpoints();
+        ObjectNode written = run.putObject("checkpoints");
+        written.put("latest", checkpoints.latest().orElse(null));
+        written.put("at", checkpoints.at().map(Instant::toString).orElse(null));
+        written.put("interval", checkpoints.interval().toString());
+        written.put("late", checkpoints.late());
+        ArrayNode checkpointProblems = written.putArray("problems");
+        checkpoints.problems().forEach(checkpointProblems::add);
+        run.put("runs", result.chains().stream().filter(ArchiveCheck.ChainResult::run).count());
+        run.put("runs-done", result.chains().stream().filter(c -> c.run() && c.verified().done()).count());
+        run.put("records-verified", result.chains().stream().mapToLong(c -> c.verified().head().sequence()).sum());
+        ArrayNode chains = run.putArray("chains");
+        for (ArchiveCheck.ChainResult chain : result.chains()) {
+            ArchiveCheck.Verified verified = chain.verified();
+            if (verified.done() && chain.missing().isEmpty() && chain.problems().isEmpty()
+                    && chain.failed().isEmpty()) {
+                continue;
+            }
+            ObjectNode each = chains.addObject();
+            each.put("chain", chain.chain());
+            each.put("run", chain.run());
+            each.put("records-verified", chain.records());
+            each.put("sequence", verified.head().sequence());
+            each.put("hash", verified.head().hash());
+            each.put("segment", verified.segment());
+            each.put("highest", verified.highest());
+            each.put("through", verified.through());
+            each.put("repeats", verified.repeats());
+            each.put("ended", verified.ended());
+            each.put("done", verified.done());
+            each.put("advanced-at", verified.advancedAt().toString());
+            ArrayNode missing = each.putArray("missing");
+            chain.missing().forEach(range -> missing.addObject().put("from", range.from()).put("to", range.to()));
+            each.put("unended", chain.unended());
+            ArrayNode problems = each.putArray("problems");
+            chain.problems().forEach(problems::add);
+            each.put("failed", chain.failed().orElse(null));
         }
-        if (!check.configured()) {
-            throw CatalogError.of(503, "ServiceUnavailableException",
-                    "The audit archive is not configured on this server (nuna.audit.archive.bucket)");
-        }
-        Optional<ResponseEntity<String>> limited = limited(request);
-        if (limited.isPresent()) {
-            return limited.get();
-        }
-        Optional<Placement> placed;
-        try {
-            placed = check.place(at, position, id.toString());
-        } catch (RuntimeException e) {
-            LOG.warn("audit archive could not be read for {} offset {}", check.chain(at), position, e);
-            throw CatalogError.of(503, "ServiceUnavailableException", "The audit archive cannot be read now; retry later");
-        }
-        trail.record(new AuditRead(catalogSecurable(audit), placed.isPresent() ? 1 : 0, request.actor()));
-        ObjectNode body = Management.JSON.createObjectNode();
-        body.put("chain", check.chain(at));
-        body.put("partition", at);
-        body.put("offset", position);
-        body.put("event-id", id.toString());
-        body.put("archived", placed.isPresent());
-        if (placed.isEmpty()) {
-            return GovernanceRoutes.json(200, body);
-        }
-        Placement place = placed.get();
-        body.put("sequence", place.sequence());
-        body.put("hash", place.hash());
-        body.put("previous-hash", place.previous());
-        body.put("next-hash", place.next().orElse(null));
-        body.put("link-holds", place.holds());
-        ArchiveCheck.Checked checked = check.verified().get(at);
-        body.put("verified", checked != null && position < checked.nextOffset());
-        body.put("checked-at", checked == null ? null : checked.at().toString());
-        ObjectNode segment = body.putObject("segment");
-        segment.put("key", place.segment().key());
-        segment.put("first-sequence", place.segment().start().sequence() + 1);
-        segment.put("last-sequence", place.segment().end().sequence());
-        return GovernanceRoutes.json(200, body);
+        return run;
     }
 
     /**
@@ -372,8 +342,8 @@ class AuditReadRoutes {
         }
     }
 
-    /** A feed row: its columns, its place in the topic, how far its chain is verified, and the record itself. */
-    private ObjectNode record(AuditRow row, Map<Integer, ArchiveCheck.Checked> verified) {
+    /** A feed row: its columns, its place in the topic, its chain's status, and the record itself. */
+    private ObjectNode record(AuditRow row) {
         ObjectNode node = Management.JSON.createObjectNode();
         node.put("event-id", row.eventId());
         node.put("time", row.time().toString());
@@ -399,32 +369,15 @@ class AuditReadRoutes {
         node.put("reason", row.reason());
         node.put("partition", row.topicPartition());
         node.put("offset", row.topicOffset());
-        ObjectNode chain = node.putObject("chain");
-        if (!check.configured()) {
-            chain.put("status", "no-archive");
-        } else {
-            ArchiveCheck.Checked checked = verified.get(row.topicPartition());
-            chain.put("status", checked != null && row.topicOffset() < checked.nextOffset() ? "verified" : "unverified");
-            chain.put("checked-at", checked == null ? null : checked.at().toString());
-        }
+        // The archive keeps each run's records in a chain of its own (backlog 262); the table does not carry a row's run
+        // and number yet, so a row cannot be placed in its chain.
+        node.putObject("chain").put("status", check.configured() ? "no-place" : "no-archive");
         try {
             node.set("event", Management.JSON.readTree(EventCodec.encode(AuditRows.event(row))));
         } catch (IllegalArgumentException e) {
             // A type or payload this server does not know, from a newer server: its columns still say what it was.
             node.putNull("event");
         }
-        return node;
-    }
-
-    private static ObjectNode checked(String chain, int partition, ArchiveCheck.Checked checked) {
-        ObjectNode node = Management.JSON.createObjectNode();
-        node.put("chain", chain);
-        node.put("partition", partition);
-        node.put("sequence", checked.head().sequence());
-        node.put("hash", checked.head().hash());
-        node.put("next-offset", checked.nextOffset());
-        node.put("segment", checked.segmentKey());
-        node.put("at", checked.at().toString());
         return node;
     }
 
@@ -487,18 +440,6 @@ class AuditReadRoutes {
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("pageToken is not one this feed gave: " + token);
         }
-    }
-
-    private static long whole(String name, String value, long most) {
-        try {
-            long parsed = Long.parseLong(value);
-            if (parsed >= 0 && parsed <= most) {
-                return parsed;
-            }
-        } catch (NumberFormatException e) {
-            // answered below
-        }
-        throw CatalogError.badRequest(name + " must be a whole number from 0, not " + value);
     }
 
     /** The 429 for a caller whose audit reads this minute are spent; otherwise empty, and one read is taken. */

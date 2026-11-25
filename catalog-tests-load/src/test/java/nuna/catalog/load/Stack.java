@@ -3,6 +3,8 @@ package nuna.catalog.load;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
+import nuna.audittables.ArchiveFromLog;
+import nuna.catalog.audit.archive.ObjectLockArchive;
 import nuna.catalog.security.TestIdp;
 import nuna.catalog.tests.kafka.TestKafka;
 import nuna.catalog.tests.s3.TestS3;
@@ -11,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
@@ -52,6 +55,11 @@ final class Stack implements AutoCloseable {
     private final String bucket;
     /** The audit archive's Object Lock bucket, in a stack with a DR standby; null otherwise. */
     private final String archiveBucket;
+    /**
+     * The audit table writer's archive leg, which the servers export their log to and which writes the archive (D23,
+     * amended 2026-11-25); null without an archive.
+     */
+    private final ArchiveFromLog archiveWriter;
     /** The DR region's store, holding what the {@link #replicator} copied of the bucket; null in other stacks. */
     private final TestS3 drStore;
     private final Replicator replicator;
@@ -85,6 +93,8 @@ final class Stack implements AutoCloseable {
         bucket = s3.bucket("warehouse-" + stack);
         archiveBucket = archive ? s3.bucket("audit-archive-" + stack, true) : null;
         files = s3.client();
+        archiveWriter = archive ? ArchiveFromLog.start(new ObjectLockArchive(files, archiveBucket, "audit",
+                ObjectLockArchive.MINIMUM_RETENTION, Clock.systemUTC())) : null;
         this.drStore = drStore;
         if (drStore != null) {
             drStore.bucket(bucket);
@@ -181,9 +191,11 @@ final class Stack implements AutoCloseable {
                 // The audit log nuna.audit stays at INFO (application.yaml): the server refuses to start without it.
                 "--logging.level.root=WARN"));
         if (archiveBucket != null) {
-            // Segments written within a second of their first record, so the archive is current when the drill reads it.
+            // The server exports its log to the archive writer, which writes a segment within a second of a record, so
+            // the archive is current when the drill reads it; the server reads the archive for the reconcile.
             properties.addAll(List.of("--nuna.audit.archive.bucket=" + archiveBucket,
-                    "--nuna.audit.archive.profile=" + PROFILE, "--nuna.audit.archive.segment-age=1s"));
+                    "--nuna.audit.archive.profile=" + PROFILE));
+            properties.addAll(List.of(archiveWriter.serverProperties()));
         }
         if (drStore != null) {
             properties.add("--nuna.security.maintenance-principals=" + WORKER);
@@ -253,6 +265,9 @@ final class Stack implements AutoCloseable {
     @Override
     public void close() {
         servers.forEach(ServerProcess::close);
+        if (archiveWriter != null) {
+            archiveWriter.close();
+        }
         files.close();
         if (drStore != null) {
             try {
