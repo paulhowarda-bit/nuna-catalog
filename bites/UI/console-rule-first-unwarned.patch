@@ -1,0 +1,17 @@
+Breaks: The first rule's dialog does not warn that groups without a rule will see no rows.
+Module: catalog-server
+Test: ConsoleRowColumnRulesBrowserTest#theGrantAdminAddsEditsAndRemovesRulesAndIsToldWhatFollows
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/rules.js b/catalog-server/src/main/resources/nuna/ui/rules.js
+index ad76c4a9..c830d49d 100644
+--- a/catalog-server/src/main/resources/nuna/ui/rules.js
++++ b/catalog-server/src/main/resources/nuna/ui/rules.js
+@@ -114,7 +114,7 @@ function ruleForm(target, rule, rules, columns, after) {
+     ? text('group', null, rule.group, {readonly: true, 'aria-label': 'Group'})
+     : text('group', 'A group, such as demo-analysts', null, {'aria-label': 'Group'});
+   const form = dialogForm([
+-    !rule && !rules.length ? h('p', {class: 'fine', 'data-first-rule': ''}, FIRST_RULE) : null,
++    false ? h('p', {class: 'fine', 'data-first-rule': ''}, FIRST_RULE) : null,
+     h('label', {class: 'dlg-f'}, h('span', null, 'Group'), group),
+     h('fieldset', {class: 'dlg-set rows-choice'}, h('legend', null, 'Rows'),
+       radio('every', 'Every row', !only), radio('only', 'Only rows where', only), predicate),
