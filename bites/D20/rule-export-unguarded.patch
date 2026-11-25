@@ -1,0 +1,14 @@
+Breaks: the rule export, expressions and all, goes to a caller without manage-grants on the catalog, and the refusal is never audited.
+Module: catalog-server
+Test: RowColumnReadRoutesTest#anyoneElseIsRefusedTheExportAndTheRefusalAudited
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+@@ -163,7 +163,6 @@
+         } else {
+             Target target = management.target(request, "exportRowColumnRules", Privilege.MANAGE_GRANTS, prefix, null,
+                     null, null);
+-            guard.require(request, target, "exportRowColumnRules", Privilege.MANAGE_GRANTS);
+             catalog = target.catalog();
+             expressions = true;
+         }

@@ -1,0 +1,14 @@
+Breaks: a table's schema is served to a caller who may not describe the table, and the refusal is never audited.
+Module: catalog-server
+Test: RowColumnReadRoutesTest#aCallerThatHoldsNothingOnTheTableIsAnsweredAsIfItDidNotExistAndTheRefusalAudited
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+@@ -102,7 +102,6 @@
+         Request request = management.request(http);
+         Target target = management.target(request, "loadTableSchema", Privilege.DESCRIBE, prefix, namespace, table,
+                 null);
+-        guard.require(request, target, "loadTableSchema", Privilege.DESCRIBE);
+         Pointer pointer = store.readPointer(target.object().orElseThrow().mainKey()).orElseThrow(target::missing);
+         TableFiles.Read read = metadata.read(target.catalog().id(), pointer.metadataLocation(), pointer.sha256());
+         if (!read.intact()) {

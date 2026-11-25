@@ -251,6 +251,8 @@ class FlagOnTablesOnlyTest {
                     case "attributesOf" -> attributes.stream()
                             .filter(a -> ((Set<Securable>) args[0]).contains(a.target())).toList();
                     case "holdsOn" -> List.of();
+                    // No rules here; a table's governance counts them for its steward (backlog 242).
+                    case "rulesOn" -> List.of();
                     case "putAttribute" -> put((GovernanceAttribute) args[0], (Change) args[1]);
                     case "removeAttribute" -> remove((Securable) args[0], (GovernanceAttribute.Kind) args[1],
                             (Change) args[3]);

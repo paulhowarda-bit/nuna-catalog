@@ -1,0 +1,15 @@
+Breaks: a table's rule count and groups go to anyone who may describe it, not only its steward and grant admin.
+Module: catalog-server
+Test: RowColumnReadRoutesTest#aReaderOrADescriberSeesATablesGovernanceWithoutItsRules
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+@@ -172,7 +172,7 @@
+         body.set("effective", effective);
+         ArrayNode holds = body.putArray("holds");
+         target.chain().holds().forEach(hold -> holds.add(hold(hold)));
+-        if (target.securable().kind() == Securable.Kind.TABLE && (guard.allows(request, target, "loadGovernance",
++        if (target.securable().kind() == Securable.Kind.TABLE || (guard.allows(request, target, "loadGovernance",
+                 Privilege.MANAGE_TAGS) || guard.allows(request, target, "loadGovernance", Privilege.MANAGE_GRANTS))) {
+             body.set("row-column-rules", rules(target));
+         }
