@@ -222,13 +222,13 @@ class ScanMetricsTest {
         return new Storage() {
             @Override
             public Iterable<FileInfo> list(String prefix) {
-                check();
+                answerUnlessDown();
                 return storage.list(prefix);
             }
 
             @Override
             public void delete(Collection<String> locations) {
-                check();
+                answerUnlessDown();
                 storage.delete(locations);
             }
 
@@ -237,7 +237,7 @@ class ScanMetricsTest {
                 storage.close();
             }
 
-            private void check() {
+            private void answerUnlessDown() {
                 if (down.get()) {
                     throw new IllegalStateException("the store did not answer");
                 }
