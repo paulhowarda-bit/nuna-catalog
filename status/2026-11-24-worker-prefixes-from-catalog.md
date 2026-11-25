@@ -39,8 +39,8 @@
   `bites/D30/`, the route's and the worker's); 6 recorded again with the same break against the moved code
   (`bites/M6/job-storage-ca-any-profile`, `job-storage-ca-left-out`, `worker-ca-bundle-ignored`,
   `worker-ca-bundles-collide`, `bites/OBS-49/catalog-calls-carry-no-trace`, `bites/D33/worker-expired-branch-not-ended`).
-- `./gradlew build` on the branch with `main` merged (backlog 251 in): green in 3 m 13 s, 1,733 test results, none
-  failed; `:bitesApply` passed.
+- `./gradlew build` on the branch with `main` merged (backlogs 251 and 248 in): green in 1 m 41 s, 1,733 test
+  results, none failed; `:bitesApply` passed.
 
 **Not run:** `DeletePolicyAwsTest#theBucketPolicyAloneLetsTheWorkerDelete` (`-Ps3=aws`: no AWS profile here). The
 worker's heavy tests not in the run above (`KafkaDownTest`, `KubernetesCompactionTest`), the Ceph leg, and the
