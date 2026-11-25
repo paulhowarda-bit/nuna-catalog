@@ -49,8 +49,15 @@ config:
     audit:
       # Optional (D23, amended 2026-11-23): every audit record goes to the log nuna.audit, on stdout and to
       # telemetry's logs endpoint. With Kafka named here, records also go to the audit topic and the change stream,
-      # best effort; the audit archive needs it.
+      # best effort.
       kafka-bootstrap-servers: ""
+      # The audit archive, which nuna-audit-tables writes from the log (D23, amended 2026-11-25): with a bucket set,
+      # the catalog checks it every hour and the DR reconcile reads it. profile names the storage profile that reaches
+      # the bucket; prefix is the writer's.
+      # archive:
+      #   bucket: nuna-audit-archive
+      #   profile: archive
+      #   prefix: audit
 
 # Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
 # the property's value, e.g. spring.datasource.password or nuna.storage.profiles.<profile>.secret-access-key.

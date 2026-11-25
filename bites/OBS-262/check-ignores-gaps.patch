@@ -1,0 +1,18 @@
+Breaks: the archive check never records the numbers a run skipped, so records lost on the way never show.
+Module: catalog-audit
+Test: ArchiveCheckTest#numbersMissingFromARunAreReportedOnceTheyHaveBeenMissingForTwoIntervalsAndALateOneFillsItsGap
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+index 74d071bc..b0d271ee 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+@@ -361,9 +361,6 @@ public final class ArchiveCheck {
+             }
+             long n = stamp.get().sequence();
+             if (n > highest) {
+-                if (n > highest + 1) {
+-                    missing.put(highest + 1, new Missed(highest + 1, n - 1, now));
+-                }
+                 highest = n;
+                 advanced = true;
+             } else if (!fill(n)) {

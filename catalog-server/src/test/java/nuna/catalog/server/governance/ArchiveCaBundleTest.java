@@ -92,8 +92,7 @@ class ArchiveCaBundleTest {
     private static AuditSettings audit() {
         return new AuditSettings(null, "nuna.catalog.audit", "nuna.catalog.changes", Duration.ofSeconds(5),
                 Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(250), Duration.ofSeconds(30), 500,
-                new AuditSettings.Archive("audit-archive", "archive", "audit", ObjectLockArchive.MINIMUM_RETENTION,
-                        10_000, Duration.ofMinutes(5), "nuna-audit-archive"));
+                new AuditSettings.Archive("audit-archive", "archive", "audit"));
     }
 
     /** One Ceph profile, {@code archive}, on the test's store, with the archive's own keys and this CA bundle. */

@@ -28,8 +28,6 @@ import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.audit.PointerState;
 import nuna.catalog.audit.archive.ArchiveCheck;
 import nuna.catalog.audit.archive.ChainHead;
-import nuna.catalog.audit.archive.ObjectLockArchive;
-import nuna.catalog.audit.archive.ObjectLockArchive.Placement;
 import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.principal.Caller;
@@ -57,7 +55,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 /**
  * The catalog-wide audit feed's routes (D45; backlog 125): who may read them, settled as for the audit tables (D23,
  * amended 2026-11-22: {@code select} on the audit catalog, "Audit readers only"), with a test for each refusal; what
- * the feed, the day's counts, the archive check's status and a record's place in its chain answer; the 400s and
+ * the feed, the day's counts and the archive check's status answer; the 400s and
  * 503s; and the per-caller audit read limit they share with {@code GET .../audit}. The routes, guard and authorizer
  * are the real ones over a store double; the audit table and the archive are doubles, so this needs only Java.
  * {@code EventsReaderTest} reads a real table and {@code ArchiveCheckTest} a real chain.
@@ -86,8 +84,7 @@ class AuditFeedRoutesTest {
     private final MockHttpServletRequest http = new MockHttpServletRequest();
     private final AuditSettings auditSettings = new AuditSettings("kafka:9092", TOPIC, "nuna.catalog.changes",
             Duration.ofSeconds(5), Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(250),
-            Duration.ofSeconds(30), 500, new AuditSettings.Archive("audit-archive", "store", "audit",
-                    Duration.ofDays(2557), 10_000, Duration.ofMinutes(5), "nuna-audit-archive"));
+            Duration.ofSeconds(30), 500, new AuditSettings.Archive("audit-archive", "store", "audit"));
     private final Table table = new Table();
     private final Archive archive = new Archive();
     private AuditCatalogSettings tables = new AuditCatalogSettings("nuna_audit", "auditors", "audit-writers");
@@ -172,7 +169,6 @@ class AuditFeedRoutesTest {
         assertThat(answer(() -> feed(Map.of()))).isEqualTo(503);
         assertThat(answer(() -> routes.summary("gate", http))).isEqualTo(503);
         assertThat(answer(() -> routes.archive(http))).isEqualTo(503);
-        assertThat(answer(() -> routes.chain("0", "1", UUID.randomUUID().toString(), http))).isEqualTo(503);
         assertThat(table.asked).isEmpty();
     }
 
@@ -221,13 +217,7 @@ class AuditFeedRoutesTest {
                 Map.of("limit", "201"), Map.of("pageToken", "not-a-token"), Map.of("path", "hr\u001f"))) {
             assertThat(answer(() -> feed(bad))).as(bad.toString()).isEqualTo(400);
         }
-        archive.configured = true;
-        assertThat(answer(() -> routes.chain("0", "1", null, http))).isEqualTo(400);
-        assertThat(answer(() -> routes.chain("0", "1", "not-a-uuid", http))).isEqualTo(400);
-        assertThat(answer(() -> routes.chain("-1", "1", UUID.randomUUID().toString(), http))).isEqualTo(400);
-        assertThat(answer(() -> routes.chain("0", "x", UUID.randomUUID().toString(), http))).isEqualTo(400);
         assertThat(table.asked).isEmpty();
-        assertThat(archive.placed).isZero();
         assertThat(audited(AuditRead.class)).isEmpty();
         readTheLimit();
     }
@@ -266,86 +256,64 @@ class AuditFeedRoutesTest {
         assertThat(JsonPath.<String>read(feed(Map.of()).getBody(), "$.records[0].chain.status"))
                 .isEqualTo("no-archive");
         assertThat(JsonPath.<Boolean>read(routes.archive(http).getBody(), "$.configured")).isFalse();
-        assertThat(answer(() -> routes.chain("0", "41", UUID.randomUUID().toString(), http))).isEqualTo(503);
     }
 
     @Test
-    void aRowIsVerifiedWhenTheCheckHasVerifiedItsChainPastIt() {
+    void withAnArchiveARowCannotBePlacedInItsRunsChainYet() {
         archive.configured = true;
-        archive.verified = Map.of(0, checked(40));
-        table.rows = List.of(row(0, 41, "a"), row(0, 39, "b"), row(1, 2, "c"));
+        table.rows = List.of(row(0, 41, "a"), row(-1, -1, "b"));
 
-        String body = feed(Map.of()).getBody();
-
-        assertThat(JsonPath.<List<String>>read(body, "$.records[*].chain.status"))
-                .containsExactly("unverified", "verified", "unverified");
-        assertThat(JsonPath.<String>read(body, "$.records[1].chain.checked-at")).isEqualTo(NOW.toString());
+        assertThat(JsonPath.<List<String>>read(feed(Map.of()).getBody(), "$.records[*].chain.status"))
+                .containsExactly("no-place", "no-place");
     }
 
     @Test
-    void theArchiveStatusGivesTheLastRun() {
+    void theArchiveStatusGivesTheLastRunAndListsOnlyTheChainsWithSomethingToShow() {
         archive.configured = true;
-        archive.verified = Map.of(0, checked(40));
-        archive.last = Optional.of(new ArchiveCheck.Result(NOW.minusSeconds(5), NOW, List.of(
-                new ArchiveCheck.ChainResult("nuna.catalog.audit-0", 0, Optional.of(checked(40)), 12, Optional.empty(),
-                        Optional.empty()),
-                new ArchiveCheck.ChainResult("nuna.catalog.audit-1", 1, Optional.empty(), 0,
-                        Optional.of("after record 0: HASH_MISMATCH"), Optional.empty()))));
+        ArchiveCheck.Verified done = verified(12, true);
+        archive.last = Optional.of(new ArchiveCheck.Result(NOW.minusSeconds(5), NOW,
+                new ArchiveCheck.Checkpoints(Optional.of("audit/checkpoints/20261122/115800.000Z.json"),
+                        Optional.of(NOW.minusSeconds(120)), Duration.ofMinutes(5), false, List.of()),
+                List.of(new ArchiveCheck.ChainResult(RUN_DONE, done, 0, List.of(), false, List.of(), Optional.empty()),
+                        new ArchiveCheck.ChainResult(RUN_GAP, verified(7, false), 7,
+                                List.of(new ArchiveCheck.Range(4, 5)), false, List.of(), Optional.empty()),
+                        new ArchiveCheck.ChainResult(RUN_BROKEN, verified(3, false), 0, List.of(), false,
+                                List.of("after record 3: HASH_MISMATCH"), Optional.empty()))));
 
         String body = routes.archive(http).getBody();
 
         assertThat(JsonPath.<String>read(body, "$.bucket")).isEqualTo("audit-archive");
-        assertThat(JsonPath.<Integer>read(body, "$.verified[0].next-offset")).isEqualTo(40);
         assertThat(JsonPath.<Boolean>read(body, "$.check.intact")).isFalse();
+        assertThat(JsonPath.<Boolean>read(body, "$.check.complete")).isFalse();
         assertThat(JsonPath.<String>read(body, "$.check.ended-at")).isEqualTo(NOW.toString());
-        assertThat(JsonPath.<String>read(body, "$.check.chains[1].broken")).contains("HASH_MISMATCH");
-        assertThat(JsonPath.<Integer>read(body, "$.check.chains[0].records-verified")).isEqualTo(12);
-    }
-
-    @Test
-    void aRecordsPlaceInItsChainGivesItsNeighboursAndWhetherItsLinkHolds() {
-        archive.configured = true;
-        archive.verified = Map.of(0, checked(40));
-        String id = UUID.randomUUID().toString();
-
-        String body = routes.chain("0", "39", id, http).getBody();
-
-        assertThat(JsonPath.<Boolean>read(body, "$.archived")).isTrue();
-        assertThat(JsonPath.<String>read(body, "$.chain")).isEqualTo("nuna.catalog.audit-0");
-        assertThat(JsonPath.<Integer>read(body, "$.sequence")).isEqualTo(40);
-        assertThat(JsonPath.<String>read(body, "$.previous-hash")).isEqualTo("a".repeat(64));
-        assertThat(JsonPath.<String>read(body, "$.hash")).isEqualTo("b".repeat(64));
-        assertThat(JsonPath.<String>read(body, "$.next-hash")).isEqualTo("c".repeat(64));
-        assertThat(JsonPath.<Boolean>read(body, "$.link-holds")).isTrue();
-        assertThat(JsonPath.<Boolean>read(body, "$.verified")).isTrue();
-        assertThat(JsonPath.<Integer>read(body, "$.segment.first-sequence")).isEqualTo(31);
-        assertThat(archive.asked).isEqualTo("0:39:" + id);
-        assertThat(audited(AuditRead.class)).singleElement()
-                .satisfies(read -> assertThat(read.target().id()).isEqualTo(audit.id()));
-
-        archive.placement = Optional.empty();
-        assertThat(JsonPath.<Boolean>read(routes.chain("0", "99", id, http).getBody(), "$.archived")).isFalse();
+        assertThat(JsonPath.<String>read(body, "$.check.checkpoints.interval")).isEqualTo("PT5M");
+        assertThat(JsonPath.<Boolean>read(body, "$.check.checkpoints.late")).isFalse();
+        assertThat(JsonPath.<Integer>read(body, "$.check.runs")).isEqualTo(3);
+        assertThat(JsonPath.<Integer>read(body, "$.check.runs-done")).isEqualTo(1);
+        assertThat(JsonPath.<Integer>read(body, "$.check.records-verified")).isEqualTo(22);
+        assertThat(JsonPath.<List<String>>read(body, "$.check.chains[*].chain")).as("the done run is counted, not listed")
+                .containsExactly(RUN_GAP, RUN_BROKEN);
+        assertThat(JsonPath.<Integer>read(body, "$.check.chains[0].missing[0].from")).isEqualTo(4);
+        assertThat(JsonPath.<Integer>read(body, "$.check.chains[0].records-verified")).isEqualTo(7);
+        assertThat(JsonPath.<String>read(body, "$.check.chains[1].problems[0]")).contains("HASH_MISMATCH");
     }
 
     // ---- the limit ----
 
     @Test
-    void theFeedTheChainAndAFreshSummaryShareTheAuditReadLimit() {
+    void theFeedAndAFreshSummaryShareTheAuditReadLimit() {
         archive.configured = true;
         feed(Map.of());
-        routes.chain("0", "1", UUID.randomUUID().toString(), http);
+        feed(Map.of());
         routes.summary("gate", http);
 
         assertThat(feed(Map.of()).getStatusCode().value()).isEqualTo(429);
-        assertThat(routes.chain("0", "1", UUID.randomUUID().toString(), http).getStatusCode().value())
-                .isEqualTo(429);
         assertThat(routes.summary("gate", http).getStatusCode().value()).as("kept from the last minute: no read")
                 .isEqualTo(200);
         assertThat(table.counts).isEqualTo(1);
         table.counted = Optional.empty();
         assertThat(routes.summary("gate", http).getStatusCode().value()).as("no longer kept").isEqualTo(429);
-        assertThat(table.asked).hasSize(1);
-        assertThat(archive.placed).isEqualTo(1);
+        assertThat(table.asked).hasSize(2);
     }
 
     // ---- helpers ----
@@ -355,17 +323,15 @@ class AuditFeedRoutesTest {
         assertThat(answer(() -> feed(Map.of()))).isEqualTo(403);
         assertThat(answer(() -> routes.summary("gate", http))).isEqualTo(403);
         assertThat(answer(() -> routes.archive(http))).isEqualTo(403);
-        assertThat(answer(() -> routes.chain("0", "1", UUID.randomUUID().toString(), http))).isEqualTo(403);
         assertThat(answer(() -> routes.feed("nowhere", null, null, null, null, null, null, null, http)))
                 .as("refused before the catalog is looked up").isEqualTo(403);
-        assertThat(audited(Denial.class)).hasSize(5).allSatisfy(denial -> {
+        assertThat(audited(Denial.class)).hasSize(4).allSatisfy(denial -> {
             assertThat(denial.securable().id()).as("refused on the audit catalog").isEqualTo(audit.id());
             assertThat(denial.privilege()).isEqualTo("select");
             assertThat(denial.actor().principal()).isEqualTo(who);
         });
         assertThat(table.asked).isEmpty();
         assertThat(table.counts).isZero();
-        assertThat(archive.placed).isZero();
         assertThat(audited(AuditRead.class)).isEmpty();
         caller = AUDREY;
         readTheLimit();
@@ -412,9 +378,14 @@ class AuditFeedRoutesTest {
         return AuditRows.of(event, partition, offset);
     }
 
-    private static ArchiveCheck.Checked checked(long nextOffset) {
-        return new ArchiveCheck.Checked(new ChainHead(nextOffset, "d".repeat(64)), nextOffset,
-                "audit/nuna.catalog.audit-0/x.log", NOW);
+    private static final String RUN_DONE = "a0000000-0000-4000-8000-000000000001";
+    private static final String RUN_GAP = "b0000000-0000-4000-8000-000000000002";
+    private static final String RUN_BROKEN = "c0000000-0000-4000-8000-000000000003";
+
+    /** A run's chain verified to record {@code head}, ended and complete or not. */
+    private static ArchiveCheck.Verified verified(long head, boolean done) {
+        return new ArchiveCheck.Verified(new ChainHead(head, "d".repeat(64)), "audit/runs/x/0000000000000000001.log",
+                NOW, head, done ? head : 3, List.of(), 0, done, NOW.minusSeconds(60), done);
     }
 
     private static GrantRecord grant(CatalogRecord catalog, String group, Privilege privilege) {
@@ -482,18 +453,11 @@ class AuditFeedRoutesTest {
         }
     }
 
-    /** The archive check: configured or not, how far it verified, and the places it gives. */
+    /** The archive check: configured or not, and its last run. */
     private final class Archive extends AuditArchiveCheck {
 
         boolean configured;
-        Map<Integer, ArchiveCheck.Checked> verified = Map.of();
         Optional<ArchiveCheck.Result> last = Optional.empty();
-        Optional<Placement> placement = Optional.of(new Placement(new ObjectLockArchive.Segment(
-                "audit/nuna.catalog.audit-0/0000000000000000031.log", "v1", new ChainHead(30, "e".repeat(64)),
-                new ChainHead(45, "f".repeat(64)), 45), 40, "b".repeat(64), "a".repeat(64),
-                Optional.of("c".repeat(64)), true));
-        int placed;
-        String asked;
 
         Archive() {
             super(auditSettings, Optional.empty(), Clock.fixed(NOW, ZoneOffset.UTC));
@@ -505,20 +469,8 @@ class AuditFeedRoutesTest {
         }
 
         @Override
-        Map<Integer, ArchiveCheck.Checked> verified() {
-            return verified;
-        }
-
-        @Override
         Optional<ArchiveCheck.Result> last() {
             return last;
-        }
-
-        @Override
-        Optional<Placement> place(int partition, long offset, String eventId) {
-            placed++;
-            asked = partition + ":" + offset + ":" + eventId;
-            return placement;
         }
     }
 

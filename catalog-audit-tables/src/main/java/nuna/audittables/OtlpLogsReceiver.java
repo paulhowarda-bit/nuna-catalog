@@ -9,6 +9,7 @@ import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceResponse;
 import io.opentelemetry.proto.common.v1.AnyValue;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.archive.ArchiveSink;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,8 +21,10 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 import java.util.zip.GZIPInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,13 +38,16 @@ import tools.jackson.databind.json.JsonMapper;
  * ({@code application/json}), gzip-compressed or not. It keeps only the log records of the catalog's audit logger,
  * {@value #AUDIT_LOGGER}, whose name OpenTelemetry's logback appender puts in the record's instrumentation scope; each
  * one's body is a CloudEvent, which goes to the {@link LogWriter}. Every other record is ignored, so the catalog's
- * whole log may be sent here.
+ * whole log may be sent here. With an archive (D23, amended 2026-11-25), the audit logger's records go to the {@link
+ * ArchiveSink} first, as they came, before anything the table leaves out is dropped.
  *
  * <p>A request must carry the shared token in {@value #TOKEN_HEADER}, or it is refused with 401 and nothing in it is
  * read: the table is the console's Audit page, and nothing but the catalog may add to it. Answers follow OTLP/HTTP: 200
  * when the records are taken, with a partial success naming how many were rejected (a body that is no CloudEvent, or of
  * a type this writer cannot map), 400 for a body that is no OTLP request, 413 past {@value #MAX_BODY} bytes, 415 for
- * another content type, and 503 while the writer is too far behind, which the exporter retries.
+ * another content type, and 503 while the archive or the table writer is too far behind, or the archive cannot read
+ * where a run's chain ends, which the exporter retries: a record the archive took is taken once however often it is
+ * sent again.
  */
 final class OtlpLogsReceiver implements AutoCloseable {
 
@@ -62,21 +68,31 @@ final class OtlpLogsReceiver implements AutoCloseable {
     private final ExecutorService threads;
     private final byte[] token;
     private final LogWriter writer;
+    /** {@link ArchiveSink#offer}, where there is an archive. */
+    private final Optional<Function<List<byte[]>, ArchiveSink.Taken>> archive;
 
-    private OtlpLogsReceiver(HttpServer server, ExecutorService threads, String token, LogWriter writer) {
+    private OtlpLogsReceiver(HttpServer server, ExecutorService threads, String token, LogWriter writer,
+                             Optional<Function<List<byte[]>, ArchiveSink.Taken>> archive) {
         this.server = server;
         this.threads = threads;
         this.token = token.getBytes(StandardCharsets.UTF_8);
         this.writer = writer;
+        this.archive = archive;
     }
 
     /** Listens on {@code port} of every address; 0 picks a free one. */
     static OtlpLogsReceiver start(int port, String token, LogWriter writer) {
+        return start(port, token, writer, Optional.empty());
+    }
+
+    /** {@link #start(int, String, LogWriter)}, archiving every audit record first where {@code archive} is given. */
+    static OtlpLogsReceiver start(int port, String token, LogWriter writer,
+                                  Optional<Function<List<byte[]>, ArchiveSink.Taken>> archive) {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
             ExecutorService threads = Executors.newFixedThreadPool(4, Thread.ofPlatform().name("otlp-logs-", 0)
                     .daemon(true).factory());
-            OtlpLogsReceiver receiver = new OtlpLogsReceiver(server, threads, token, writer);
+            OtlpLogsReceiver receiver = new OtlpLogsReceiver(server, threads, token, writer, archive);
             server.createContext(PATH, receiver::handle);
             server.setExecutor(threads);
             server.start();
@@ -125,6 +141,9 @@ final class OtlpLogsReceiver implements AutoCloseable {
                 answer(exchange, 400, null);
                 return;
             }
+            if (archive.isPresent() && !archived(exchange, records)) {
+                return;
+            }
             List<CatalogEvent> events = new ArrayList<>();
             int rejected = 0;
             for (String record : records) {
@@ -150,6 +169,33 @@ final class OtlpLogsReceiver implements AutoCloseable {
             LOG.error("The OTLP logs receiver failed on a request", e);
             exchange.sendResponseHeaders(500, -1);
         }
+    }
+
+    /**
+     * Hands the records to the archive, as they came. False when it answered 503: the archive holds too many records
+     * waiting, or could not read where a run's chain ends.
+     */
+    private boolean archived(HttpExchange exchange, List<String> records) throws IOException {
+        List<byte[]> bodies = records.stream().map(r -> r.getBytes(StandardCharsets.UTF_8)).toList();
+        ArchiveSink.Taken taken;
+        try {
+            taken = archive.orElseThrow().apply(bodies);
+        } catch (ArchiveSink.Busy e) {
+            LOG.warn("The audit archive is behind: {}; answered 503", e.getMessage());
+            exchange.getResponseHeaders().set("Retry-After", "10");
+            answer(exchange, 503, null);
+            return false;
+        } catch (RuntimeException e) {
+            LOG.error("The audit archive could not take {} records; answered 503", records.size(), e);
+            exchange.getResponseHeaders().set("Retry-After", "10");
+            answer(exchange, 503, null);
+            return false;
+        }
+        if (taken.refused() > 0) {
+            LOG.error("{} log records of {} are not whole audit records and are not archived", taken.refused(),
+                    AUDIT_LOGGER);
+        }
+        return true;
     }
 
     /** The bodies of the audit logger's records, in order. */

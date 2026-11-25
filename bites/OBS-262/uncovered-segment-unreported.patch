@@ -1,0 +1,17 @@
+Breaks: a segment no checkpoint covers is never reported, so a chain's head can run ahead of its anchor unseen.
+Module: catalog-audit
+Test: ArchiveCheckTest#aSegmentNoCheckpointCoversIsReportedOnceItIsOlderThanTwoIntervals
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+index 74d071bc..b26f0f25 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+@@ -262,7 +262,7 @@ public final class ArchiveCheck {
+         long anchoredTo = anchor.map(a -> a.head().sequence()).orElse(0L);
+         Instant stale = now.minus(interval.multipliedBy(2));
+         segments.stream().filter(s -> s.end().sequence() > Math.max(anchoredTo, was.head().sequence())
+-                        && s.written().isBefore(stale)).findFirst()
++                        && s.written().isBefore(stale) && false).findFirst()
+                 .ifPresent(s -> problems.add("segment " + s.key() + ", written " + s.written() + ", ends past record "
+                         + anchoredTo + ", the furthest any checkpoint gives this chain: no checkpoint covers it"));
+ 

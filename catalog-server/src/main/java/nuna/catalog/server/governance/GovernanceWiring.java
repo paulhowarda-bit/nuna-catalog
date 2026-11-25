@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -71,8 +72,9 @@ class GovernanceWiring {
             }
             bundle.applyTo(s3);
         }
+        // The server writes nothing but the check's state: the retention is the writer's, and the floor stands in.
         ObjectLockArchive archive = new ObjectLockArchive(s3.build(), bucket, audit.archive().prefix(),
-                audit.archive().retention(), clock);
+                ObjectLockArchive.MINIMUM_RETENTION, clock);
         archive.checkBucket();
         return Optional.of(archive);
     }
@@ -109,6 +111,51 @@ class GovernanceWiring {
     @Bean
     AuditTrail auditTrail(AuditRuntime runtime) {
         return runtime.trail();
+    }
+
+    /**
+     * Logs the run's run-end record as the server stops (D23, amended 2026-11-25), in the last phase, after the web
+     * server, the relay and every other part that records have stopped.
+     */
+    @Bean
+    SmartLifecycle auditRunEnd(AuditTrail trail) {
+        return new SmartLifecycle() {
+            private volatile boolean running;
+
+            @Override
+            public void start() {
+                running = true;
+            }
+
+            @Override
+            public void stop() {
+                running = false;
+                trail.end(host());
+            }
+
+            @Override
+            public boolean isRunning() {
+                return running;
+            }
+
+            @Override
+            public int getPhase() {
+                return Integer.MIN_VALUE;
+            }
+        };
+    }
+
+    /** The pod's name where Kubernetes sets it, else the machine's. */
+    static String host() {
+        String name = System.getenv("HOSTNAME");
+        if (name != null && !name.isBlank()) {
+            return name;
+        }
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName();
+        } catch (java.net.UnknownHostException e) {
+            return "unknown";
+        }
     }
 
     /**

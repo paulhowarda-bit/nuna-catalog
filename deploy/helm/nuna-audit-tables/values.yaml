@@ -37,6 +37,23 @@ config:
       otlp:
         port: 4318
         dedup-window: 15m
+      # The hash-chained Object Lock archive (D23, amended 2026-11-25), for the source otlp: with a bucket set, every
+      # audit record the receiver takes is archived first, in one chain per catalog server run, with a locked
+      # checkpoint at least every checkpoint-interval. The bucket must have been created with Object Lock. Keys, if
+      # not the default credential chain, go in `secrets` (nuna.audit-tables.archive.access-key-id and
+      # .secret-access-key). For a store whose certificate a private CA signed, ca-bundle: a PEM file mounted from
+      # archiveCaConfigMap, e.g. /etc/nuna/archive-ca/ceph.crt. The catalog reads the same bucket for its hourly check
+      # and the DR reconcile (its nuna.audit.archive.bucket, profile and prefix).
+      archive:
+        # bucket: nuna-audit-archive
+        prefix: audit
+        region: us-east-1
+        # endpoint: https://s3.ceph.example.internal
+        retention: 2557d
+        segment-events: 10000
+        segment-age: 1m
+        checkpoint-interval: 5m
+        max-waiting: 100000
       # How the writer signs in: the client-credentials grant (client-secret in `secrets`). Its group needs create
       # and write on the audit catalog, and nothing anywhere else.
       token:
@@ -62,6 +79,12 @@ secrets:
   # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
   values: {}
 
+# A ConfigMap in the release's namespace holding the CA bundle of an on-prem store whose certificate a private CA
+# signed, mounted at /etc/nuna/archive-ca; nuna.audit-tables.archive.ca-bundle names its file. Only the archive's S3
+# client trusts it, beside the JVM's CAs.
+archiveCaConfigMap:
+  name: ""
+
 javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 
 env: []
@@ -72,7 +95,8 @@ service:
   type: ClusterIP
   otlpPort: 4318
 
-# Rows wait in memory for a commit interval, or until max-rows of them wait (100,000 by default).
+# Rows wait in memory for a commit interval, or until max-rows of them wait (100,000 by default); with an archive,
+# records also wait for their segment, a minute at most, up to max-waiting of them.
 resources:
   requests:
     cpu: 250m

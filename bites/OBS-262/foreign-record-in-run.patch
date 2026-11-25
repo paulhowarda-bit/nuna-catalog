@@ -1,0 +1,17 @@
+Breaks: the archive check counts a record of another run, or of none, in a run's chain as the run's own.
+Module: catalog-audit
+Test: ArchiveCheckTest#aRecordOfAnotherRunInARunsChainIsReported
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+index 74d071bc..7d6bd281 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+@@ -354,7 +354,7 @@ public final class ArchiveCheck {
+                 return;
+             }
+             Optional<LogStamp> stamp = envelope.stamp();
+-            if (stamp.isEmpty() || !stamp.get().run().toString().equals(chain)) {
++            if (stamp.isEmpty()) {
+                 problems.add("record " + sequence(body) + " belongs to "
+                         + stamp.map(s -> "run " + s.run()).orElse("no run") + ", not to run " + chain);
+                 return;

@@ -1,6 +1,5 @@
 package nuna.catalog.server.governance;
 
-import nuna.catalog.audit.archive.ArchiveConsumer;
 import nuna.catalog.audit.archive.ObjectLockArchive;
 import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.audit.publish.KafkaEventPublisher;
@@ -16,25 +15,23 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 
 /**
- * Audit delivery while the server runs (D23, amended 2026-11-23): the audit trail, the outbox relay, and, where Kafka is
- * configured, the audit and change-stream publishers and the archive consumer where an archive is configured. Every
- * server runs a relay, with or without Kafka; the outbox lease lets one drain at a time. It writes each change to the
- * log {@value AuditTrail#LOGGER} and, where Kafka is configured, to the audit topic and the change stream, best effort
- * ({@link AuditTrail#deliver}), so no change waits in the outbox for Kafka. A record that changes nothing in the store,
- * and so has no transaction to go out with, is delivered at once the way the relay delivers a batch ({@link #notices}).
- * Archive consumers share a consumer group, so each audit partition, and so each hash chain, has one writer.
+ * Audit delivery while the server runs (D23, amended 2026-11-23 and 2026-11-25): the audit trail, the outbox relay,
+ * and, where Kafka is configured, the audit and change-stream publishers. Every server runs a relay, with or without
+ * Kafka; the outbox lease lets one drain at a time. It writes each change to the log {@value AuditTrail#LOGGER} and,
+ * where Kafka is configured, to the audit topic and the change stream, best effort ({@link AuditTrail#deliver}), so no
+ * change waits in the outbox for Kafka. A record that changes nothing in the store, and so has no transaction to go out
+ * with, is delivered at once the way the relay delivers a batch ({@link #notices}). The archive is written from the
+ * log by catalog-audit-tables; the server only reads it, for its check and the DR reconcile.
  */
 public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(AuditRuntime.class);
     private static final Duration FAILURE_BACKOFF = Duration.ofSeconds(1);
-    private static final Duration ARCHIVE_POLL = Duration.ofMillis(500);
 
     private final AuditSettings settings;
     private final Optional<KafkaEventPublisher> audit;
@@ -42,24 +39,17 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
     private final AuditTrail trail;
     private final OutboxRelay relay;
     private final Optional<ObjectLockArchive> archive;
-    private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean();
     private Thread relayThread;
-    private Thread archiveThread;
 
     /**
      * @param observe wraps the audit topic's publisher for the synchronous records, so each publish is observed
-     * @throws IllegalStateException if the audit log is switched off, or an archive is configured without Kafka
+     * @throws IllegalStateException if the audit log is switched off
      */
     AuditRuntime(AuditSettings settings, OutboxStore outbox, Optional<ObjectLockArchive> archive, URI source,
                  UnaryOperator<EventPublisher> observe, Clock clock) {
         AuditTrail.requireLogged();
-        if (archive.isPresent() && !settings.kafkaConfigured()) {
-            throw new IllegalStateException("nuna.audit.archive.bucket is set but nuna.audit.kafka-bootstrap-servers "
-                    + "is not: the archive reads the audit topic");
-        }
         this.settings = settings;
-        this.clock = clock;
         this.archive = archive;
         if (settings.kafkaConfigured()) {
             audit = Optional.of(publisher(settings.auditTopic()));
@@ -69,7 +59,7 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
                     settings.probeInterval());
         } else {
             LOG.info("nuna.audit.kafka-bootstrap-servers is not set: audit records go to the log {} only, with no "
-                    + "audit topic, change stream or archive", AuditTrail.LOGGER);
+                    + "audit topic or change stream", AuditTrail.LOGGER);
             audit = Optional.empty();
             changes = Optional.empty();
             trail = new AuditTrail(Optional.empty(), Optional.empty(), source, clock, settings.probeInterval());
@@ -107,9 +97,6 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
             return;
         }
         relayThread = Thread.ofVirtual().name("outbox-relay").start(this::relayLoop);
-        if (archive.isPresent()) {
-            archiveThread = Thread.ofVirtual().name("audit-archive").start(this::archiveLoop);
-        }
     }
 
     private void relayLoop() {
@@ -119,23 +106,6 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
                 sleep(settings.relayInterval());
             } catch (RuntimeException e) {
                 LOG.error("outbox relay failed; retrying", e);
-                sleep(FAILURE_BACKOFF);
-            }
-        }
-    }
-
-    private void archiveLoop() {
-        while (running.get()) {
-            try (ArchiveConsumer consumer = new ArchiveConsumer(Map.of(
-                    ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, settings.kafkaBootstrapServers(),
-                    ConsumerConfig.GROUP_ID_CONFIG, settings.archive().consumerGroup()),
-                    settings.auditTopic(), archive.orElseThrow(), settings.archive().segmentEvents(),
-                    settings.archive().segmentAge(), clock)) {
-                while (running.get()) {
-                    consumer.pollOnce(ARCHIVE_POLL);
-                }
-            } catch (RuntimeException e) {
-                LOG.error("audit archive failed; restarting from the last written segment", e);
                 sleep(FAILURE_BACKOFF);
             }
         }
@@ -154,13 +124,11 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
         if (!running.compareAndSet(true, false)) {
             return;
         }
-        for (Thread thread : new Thread[] {relayThread, archiveThread}) {
-            if (thread != null) {
-                try {
-                    thread.join(settings.deliveryTimeout().plus(ARCHIVE_POLL).plusSeconds(5));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+        if (relayThread != null) {
+            try {
+                relayThread.join(settings.deliveryTimeout().plusSeconds(5));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
     }

@@ -3,11 +3,11 @@ Module: catalog-audit
 Test: ArchivedCommitsTest#aSegmentThatCannotBeFetchedAfterABreakFailsTheReadAsUnreadable
 
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
-index 7578bba..aa958c0 100644
+index fdccf1d2..970aa393 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
-@@ -240,7 +240,6 @@ public final class ObjectLockArchive {
-                     ChainHead.GENESIS, expected(segments, anchor), verified);
+@@ -395,7 +395,6 @@ public final class ObjectLockArchive {
+                     verified);
              // Fetch the segments after a break too, as the read that fetched every segment before checking any did:
              // a segment the store cannot serve still fails the read as unreadable before the break fails it as broken.
 -            records.transferTo(OutputStream.nullOutputStream());

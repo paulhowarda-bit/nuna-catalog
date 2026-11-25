@@ -19,7 +19,11 @@ import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CommonPrefix;
+import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
@@ -46,11 +50,36 @@ final class MemoryS3 {
     }
 
     private final List<Version> versions = new ArrayList<>();
+    /** Delete markers, as versions with no bytes. */
+    private final List<Version> markers = new ArrayList<>();
+    private long writes;
+    /** When the store takes each write; null keeps the epoch plus a second a write. */
+    private final java.time.Clock clock;
+
+    MemoryS3() {
+        this(null);
+    }
+
+    /** A store that stamps each version with {@code clock}'s time, a nanosecond apart from the write before it. */
+    MemoryS3(java.time.Clock clock) {
+        this.clock = clock;
+    }
+
+    private Instant now() {
+        return clock == null ? Instant.EPOCH.plusSeconds(writes) : clock.instant().plusNanos(writes);
+    }
     private final Map<String, RuntimeException> unreadable = new HashMap<>();
     private RuntimeException failure;
     private long fetched;
     private int open;
     private int mostOpen;
+
+    private int lostAnswers;
+
+    /** The next PUT is stored, and its answer lost on the way back, as a connection that drops after the write. */
+    void loseTheNextPutsAnswer() {
+        lostAnswers++;
+    }
 
     /** Every later call fails with {@code failure}, as a store that cannot be reached. */
     void failWith(RuntimeException failure) {
@@ -110,7 +139,17 @@ final class MemoryS3 {
                         throw failure;
                     }
                     return switch (method.getName()) {
-                        case "putObject" -> put(request(PutObjectRequest.builder(), args[0]), (RequestBody) args[1]);
+                        case "putObject" -> {
+                            PutObjectResponse put = put(request(PutObjectRequest.builder(), args[0]),
+                                    (RequestBody) args[1]);
+                            if (lostAnswers > 0) {
+                                lostAnswers--;
+                                throw software.amazon.awssdk.core.exception.SdkClientException.create(
+                                        "the connection dropped before the answer");
+                            }
+                            yield put;
+                        }
+                        case "deleteObject" -> delete(request(DeleteObjectRequest.builder(), args[0]));
                         case "listObjectsV2Paginator" ->
                                 new ListObjectsV2Iterable((S3Client) proxy, request(ListObjectsV2Request.builder(), args[0]));
                         case "listObjectsV2" -> list((ListObjectsV2Request) args[0]);
@@ -140,8 +179,28 @@ final class MemoryS3 {
         return (R) argument;
     }
 
+    /** The key's current version, or none when it has none or a delete marker is newest. */
+    private Optional<Version> current(String key) {
+        Optional<Version> newest = versions.stream().filter(v -> v.key().equals(key))
+                .max(java.util.Comparator.comparing(Version::at));
+        Optional<Version> marker = markers.stream().filter(v -> v.key().equals(key))
+                .max(java.util.Comparator.comparing(Version::at));
+        return newest.filter(v -> marker.isEmpty() || v.at().isAfter(marker.get().at()));
+    }
+
+    /** A delete marker for a delete with no version, as on a versioned bucket; a version's own delete is refused. */
+    private DeleteObjectResponse delete(DeleteObjectRequest request) {
+        if (request.versionId() != null) {
+            throw (S3Exception) S3Exception.builder().statusCode(403).message("Access Denied: the version is locked")
+                    .build();
+        }
+        String id = "v" + (++writes);
+        markers.add(new Version(request.key(), id, new byte[0], Map.of(), now()));
+        return DeleteObjectResponse.builder().deleteMarker(true).versionId(id).build();
+    }
+
     private PutObjectResponse put(PutObjectRequest request, RequestBody body) {
-        if ("*".equals(request.ifNoneMatch()) && versions.stream().anyMatch(v -> v.key().equals(request.key()))) {
+        if ("*".equals(request.ifNoneMatch()) && current(request.key()).isPresent()) {
             throw (S3Exception) S3Exception.builder().statusCode(412).message("At least one of the pre-conditions you"
                     + " specified did not hold").build();
         }
@@ -151,9 +210,9 @@ final class MemoryS3 {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        String id = "v" + (versions.size() + 1);
+        String id = "v" + (++writes);
         versions.add(new Version(request.key(), id, bytes, Map.copyOf(request.metadata()),
-                Instant.EPOCH.plusSeconds(versions.size())));
+                now()));
         return PutObjectResponse.builder().versionId(id).build();
     }
 
@@ -178,6 +237,12 @@ final class MemoryS3 {
                         .filter(v -> request.keyMarker() == null || v.key().compareTo(request.keyMarker()) > 0)
                         .sorted(java.util.Comparator.comparing(Version::key))
                         .map(v -> ObjectVersion.builder().key(v.key()).versionId(v.id()).lastModified(v.at()).build())
+                        .toList())
+                .deleteMarkers(markers.stream().filter(v -> v.key().startsWith(request.prefix()))
+                        .filter(v -> request.keyMarker() == null || v.key().compareTo(request.keyMarker()) > 0)
+                        .sorted(java.util.Comparator.comparing(Version::key))
+                        .map(v -> DeleteMarkerEntry.builder().key(v.key()).versionId(v.id()).lastModified(v.at())
+                                .build())
                         .toList())
                 .build();
     }
@@ -237,6 +302,10 @@ final class MemoryS3 {
         RuntimeException refused = unreadable.get(request.key());
         if (refused != null) {
             throw refused;
+        }
+        if (request.versionId() == null) {
+            return current(request.key()).orElseThrow(() -> NoSuchKeyException.builder().statusCode(404)
+                    .message("no current version of " + request.key()).build());
         }
         return find(request.key(), request.versionId());
     }

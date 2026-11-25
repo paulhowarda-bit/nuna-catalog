@@ -62,8 +62,8 @@ import tools.jackson.databind.JsonNode;
  * the DR region") rewinds each table to the last version the DR store holds whole, giving up exactly the commits whose
  * files never arrived.
  *
- * <p>Not on {@code -Ps3=aws}: the servers lock the archive in COMPLIANCE mode, as they always do (D23), and an AWS
- * bucket so locked could not be deleted for seven years.
+ * <p>Not on {@code -Ps3=aws}: the archive writer locks the archive in COMPLIANCE mode, as it always does (D23), and an
+ * AWS bucket so locked could not be deleted for seven years.
  */
 @Tag("overnight")
 class DrDrillTest {
@@ -201,8 +201,8 @@ class DrDrillTest {
         assertThat(unknown).as("table locations the DR database does not know").hasSize(1);
         assertThat(acknowledgedTips.get(LATE)).startsWith(unknown.getFirst());
 
-        // The archive proves each tip once the DR server's archive consumer has the audit topic's last records: it
-        // takes the primary servers' partitions when Kafka drops them, up to a session timeout after they died.
+        // The archive proves each tip once the archive writer has written the primary servers' last records, which
+        // their log exporter sent it within a fraction of a second of the relay logging them (D23, amended 2026-11-25).
         JsonNode proven = null;
         long deadline = System.nanoTime() + Duration.ofMinutes(3).toNanos();
         while (System.nanoTime() < deadline) {

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**60 open:** 18 S, 22 M, 15 L, 5 XL.
+**60 open:** 18 S, 23 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -64,7 +64,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
 | [261](backlog/261.md) | M | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's) | 2026-11-24 |
-| [262](backlog/262.md) | L | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | waits on Paul's answer below, which sets the size: (a) is S, a ledger amendment and the doc; (b) M to L, a field on every record and a reconciling check; (c) L, the archive moved off Kafka onto the log path with (b)'s field and a checkpoint of its own | 2026-11-24 |
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
@@ -72,6 +71,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [269](backlog/269.md) | S | MutatingRoutesAuditTest: the OPA routes (item 115) have no case | the test's route discovery counts the three OPA query routes as mutating; exclude them, or give them cases, in one test class | 2026-11-25 |
 | [270](backlog/270.md) | M | SecurityGateTest: the grant and engine routes' audit lines never reach the log capture | the cause is not known yet: finding whether the grant and engine routes no longer write their audit records or the capture misses them, then the fix | 2026-11-25 |
 | [271](backlog/271.md) | M | ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch | the cause is not known yet: finding whether the console or the test changed (items 109, 212 to 217, 254 touched the header), then the fix | 2026-11-25 |
+| [272](backlog/272.md) | M | Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends | a column pair in the audit table, one lookup route, the console's Hash chain line and a metric; nothing to wait on | 2026-11-25 |
 
 ## Open items in full
 
@@ -3246,65 +3246,6 @@ answered 500 for 15 minutes pages; 409s alone do not; no series for 10 minutes p
 stop keeps firing for `keep_firing_for`. Item 233's demo is where the rules first meet live series; item 44 renames
 them at work with the rest.
 
-### 262. Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises)
-
-- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
-- Touches: catalog-audit/ catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/test/java/nuna/catalog/server/governance/ deploy/helm/nuna-catalog/ docs/observability/audit-log.md decision-ledger.md bites/
-- Effort: L, waits on Paul's answer below, which sets the size: (a) is S, a ledger amendment and the doc; (b) M to L, a field on every record and a reconciling check; (c) L, the archive moved off Kafka onto the log path with (b)'s field and a checkpoint of its own
-
-**What is wrong.**
-
-- **The archive misses what Kafka misses.** Since D23's amendment of 2026-11-23 (item 195) the log `nuna.audit` is the
-  record of audit and Kafka a best-effort copy: after one failed send, every record skips Kafka for the 10 s probe
-  interval (`docs/observability/audit-log.md`, "What can be lost"). The Object Lock archive still reads only the audit
-  topic (`catalog-audit/.../archive/ArchiveConsumer.java`), so records from a Kafka outage are in the log and never in
-  the archive; D23 says so itself. The archive's check cannot see the hole: its sequence follows the topic's offsets,
-  which run without a gap across records that never reached the topic (inferred). So the copy that carries tamper
-  evidence is the incomplete one, and the log, which D23 names the record, carries none.
-- **The archiver anchors its own head.** Each chain's head goes into the archiver's own Kafka offset commit, as the
-  commit's metadata (`ArchiveConsumer.java:176`), and `ArchiveCheck` verifies each chain up to that anchor
-  (`ArchiveCheck.java`, lines 123 to 185). The archiver writes the anchor, into a system the same operators run and
-  that D23 now makes optional. COMPLIANCE mode and the archive's earliest-version reads (`ObjectLockArchive.java:308`)
-  stop a locked segment being deleted or replaced, so the exposure is narrower than the report puts it (inferred):
-  an archiver that stops, or is stopped, leaves a shorter chain that still verifies, and nothing outside the archiver
-  says how long the chain should be.
-- **The archive still needs Kafka.** The server refuses to start with an archive and no Kafka (audit-log.md).
-
-**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
-`research/reports/Nuna observability and audit grounding.md`), "Object Lock proves nothing changed, not that nothing
-is missing" and "The tamper-evident copy is the incomplete one". Tamper-evident structures vouch only for what was
-appended to them (Crosby and Wallach, USENIX Security 2009,
-https://www.usenix.org/legacy/event/sec09/tech/full_papers/crosby.pdf); Certificate Transparency catches an omission
-only because the submitter holds a promise of inclusion, and its log re-signs its head on a schedule even when idle
-(RFC 9162). Object Lock protects stored versions, not completeness (AWS, Object Lock). Were the archive ever to hold
-required records, 17a-4(f)(2)(ii) asks the system to verify that each record was completely captured. build-plan.md's
-SEC-9 ("whether notarisation is required beyond hash chaining") is still open.
-
-**Paul decides: what does D23 promise about the archive, now that Kafka is best effort?**
-
-- **(a)** Keep the archive on Kafka and say what it is: D23 and audit-log.md state that the archive proves nothing it
-  holds was changed, not that it holds every record, and a Kafka outage's records stay out of it unseen.
-- **(b)** Keep it on Kafka and make the gaps visible: every record carries a sequence stamped where it is made, with no
-  gaps (per server instance and boot for the records written before an answer, the outbox row's id for changes), and
-  a scheduled check reconciles the archive against the audit table (which can take the log over OTLP) and reports the
-  missing ranges.
-- **(c) Recommended:** feed the archive from the log path, as the audit table writer can already take it
-  (`nuna.audit-tables.source: otlp`), with (b)'s sequence on every record, and anchor each chain's head in a
-  checkpoint of its own: the chain's length and head hash, written as a locked object in the bucket on a fixed
-  schedule and again when idle, so a chain that stops or falls short shows. The archive then needs no Kafka, misses
-  only what the log path loses (a dying pod's last lines, which Paul accepted in D23), and those losses show as gaps
-  instead of passing the check. It follows D23's direction ("People use Prometheus and otel not kafka for this"), and
-  the one sequence also gives item 263's dedup and any reconciliation between stdout and the table a key.
-
-**Done when**, for (c): the archive takes the `nuna.audit` records from the log path; every record carries its source
-sequence (a new field of the versioned record schema, D23); the check reports a missing sequence range, a delete marker
-or a second version on a segment key, and a checkpoint that is late or does not match the chain; the server starts
-with an archive and no Kafka; audit-log.md's "What can be lost" says what the archive can miss and how a miss shows;
-tests, and bites in `bites/OBS-262/`; D23 amended with Paul's answer. One design point to settle in the work: a
-sequence per instance and boot shows a gap inside a run, but a pod whose last lines are lost leaves a run that just
-stops early; say whether that is accepted or how it shows (a boot's final count logged at shutdown, for one).
-For (a) or (b), the matching subset.
-
 ### 263. Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer
 
 - Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
@@ -3491,6 +3432,39 @@ Done when both tests pass in the overnight run and the 22 SecurityGateTest bites
 Evidence, the overnight run of 2026-11-25 on 639b0da5: heavy build, `org.openqa.selenium.TimeoutException: Expected condition failed: no displayed By.cssSelector: #top #reading-slot [data-main-only]`. Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server. Bite `D33/ref-page-delete-counts-nothing` was not run because of it. The catalog-server agent ended at once with an expired OAuth session.
 
 Done when the test passes in the overnight run and the D33 bite runs and bites.
+
+### 272. Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends
+
+- Added: 2026-11-25 by observability-audit, from item 262
+- Touches: catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java catalog-audit-tables/ catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/main/resources/static/console/ docs/observability/audit-log.md
+- Effort: M, a column pair in the audit table, one lookup route, the console's Hash chain line and a metric; nothing to wait on
+
+**What is missing.** Item 262 moved the Object Lock archive onto the log path: each server run's records form one hash
+chain, and every line the server logs carries its run and number (`nunarun`, `nunaseq`). Two things it left out:
+
+- **A feed row cannot be placed in its chain.** The audit table has no run or number column, so the console's Audit
+  page cannot say which chain holds a record or whether the check has verified past it. Item 262 removed the old
+  lookup, `GET /management/v1/audit/chains/{partition}/records/{offset}`, which placed a record by its Kafka
+  partition and offset, and set every feed row's `chain.status` to `no-place` where an archive is configured. The
+  console says the record is "in its server run's chain in the archive; this page cannot place it there yet"
+  (`audit.js`). The table keeps the payload in `data` and drops the CloudEvent's extensions, the stamp among them
+  (`AuditRows`), and the Kafka copy carries no stamp, by design in 262, so a row from the topic has no run at all.
+- **A running server's lost tail shows only when the run ends or a day passes.** The check finds missing numbers
+  below the highest archived, and an unended run after a day. Records lost at the end of a server that is still
+  running (an exporter queue that dropped its last batch, with nothing logged since) show nowhere until the server
+  logs again or stops.
+
+**What done looks like.**
+
+- The audit table has `log_run` (string) and `log_seq` (long), filled from the stamp for rows from the log (and from
+  the topic once the Kafka copy carries the stamp too, if Paul wants that: ask him, since 262 kept it off the topic).
+- A lookup route gives a feed record's place in its run's chain: the segment that holds it, its hash and the one
+  before, whether the link holds, and whether the check has verified the chain past it. The feed's `chain.status` is
+  `verified` or `unverified` again for a row with a run, `no-place` only for one without.
+- The console's Hash chain line links the lookup again (Atelier decides its words).
+- Each server exports its own count of records logged in its run (a gauge tagged with the run), so a dashboard can set
+  it beside the archive's highest number for that run and show a tail that has not arrived while the server runs.
+- Tests for each, and bites for the lookup's link check and the column mapping.
 
 ## Done and dropped
 
@@ -3701,5 +3675,6 @@ Done when the test passes in the overnight run and the D33 bite runs and bites.
 | [255](backlog/255.md) | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
+| [262](backlog/262.md) | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | done | 2026-11-25 |
 | [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
 | [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |

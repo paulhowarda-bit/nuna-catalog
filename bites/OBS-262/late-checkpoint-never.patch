@@ -1,0 +1,17 @@
+Breaks: the archive check never calls the newest checkpoint late, so a writer that has stopped does not show.
+Module: catalog-audit
+Test: ArchiveCheckTest#aWriterThatStopsShowsAsALateCheckpoint
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+index 74d071bc..99420419 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+@@ -218,7 +218,7 @@ public final class ArchiveCheck {
+                     + e.getMessage());
+         }
+         Instant now = clock.instant();
+-        boolean late = latestAt.isEmpty() || latestAt.get().plus(interval.multipliedBy(2)).isBefore(now);
++        boolean late = false;
+ 
+         TreeSet<String> names = new TreeSet<>(before.chains().keySet());
+         names.addAll(anchors.keySet());

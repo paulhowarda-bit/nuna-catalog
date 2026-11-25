@@ -400,12 +400,8 @@ export function auditFeed(catalog, q) {
 /** The last day's audit counts in a catalog: by type, the busiest objects, and the deployment's by type. */
 export const auditSummary = catalog => call(`/management/v1/catalogs/${enc(catalog)}/audit/summary`);
 
-/** The archive check's status: how far each chain is verified, and this server's last run. */
+/** The archive check's status: this server's last run, its checkpoints and what it found wrong. */
 export const auditArchive = () => call('/management/v1/audit/archive');
-
-/** One record's place in its hash chain, from the archive. */
-export const auditChain = (partition, offset, eventId) =>
-  call(`/management/v1/audit/chains/${enc(partition)}/records/${enc(offset)}?event-id=${enc(eventId)}`);
 
 // ---- the catalog's branches and tags (item 26, D33; item 109) ----
 

@@ -26,6 +26,9 @@ val hadoopVersion = "3.4.3"
 dependencies {
     // The event codec and the row mapping (AuditRows); its Kafka client reads the topic.
     implementation(project(":catalog-audit"))
+    // The archive's S3 client trusts a CA bundle as the catalog's storage profiles do (CaBundle), on Apache HttpClient 5.
+    implementation(project(":catalog-objectstore"))
+    implementation("software.amazon.awssdk:apache5-client")
     // The OTLP logs receiver's request and response messages (OtlpLogsReceiver): the version the catalog server's
     // OTLP meter registry already brings, so the server, which links this module, gets no second one.
     implementation("io.opentelemetry.proto:opentelemetry-proto:${property("opentelemetry-proto.version")}")
