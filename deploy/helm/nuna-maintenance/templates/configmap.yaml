@@ -1,6 +1,14 @@
 {{- $_ := required "config.nuna.maintenance.catalog-uri is required: the catalog the worker maintains" (dig "nuna" "maintenance" "catalog-uri" "" .Values.config) -}}
 {{- if not (dig "nuna" "maintenance" "storage" dict .Values.config) -}}
-{{- fail "config.nuna.maintenance.storage needs at least one profile: the worker's own storage identity" -}}
+{{- fail "config.nuna.maintenance.storage needs at least one store: the worker's own storage identity on it" -}}
+{{- end -}}
+{{- range $name, $store := dig "nuna" "maintenance" "storage" dict .Values.config -}}
+{{- if hasKey $store "prefixes" -}}
+{{- fail (printf "config.nuna.maintenance.storage.%s.prefixes: the worker reads its prefixes from the catalog's storage profiles at each scan; name the store's kind and endpoint instead (deploy/README.md, \"Delete rights\")" $name) -}}
+{{- end -}}
+{{- range $part := list "kind" "endpoint" -}}
+{{- $_ := required (printf "config.nuna.maintenance.storage.%s.%s is required: the worker serves a catalog storage profile with the store of its kind and endpoint, written as the profile writes it" $name $part) (get $store $part) -}}
+{{- end -}}
 {{- end -}}
 {{- range $part := list "start" "end" "zone" -}}
 {{- $_ := required (printf "config.nuna.maintenance.cleanup-window.%s is required: the nightly window in which compaction and orphan scans run (start and end as local times such as \"01:00\", zone a named zone such as Europe/London)" $part) (dig "nuna" "maintenance" "cleanup-window" $part "" $.Values.config) -}}

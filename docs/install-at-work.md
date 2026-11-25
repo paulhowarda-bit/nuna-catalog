@@ -308,13 +308,18 @@ helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <wo
 - Settings are `nuna.maintenance.*`; `catalog-maintenance/README.md` lists them all, with an example for one
   Ceph store. The worker needs the client-credentials grant with a scope (`token.endpoint`, `client-id`,
   `client-secret`, `scope`, `audience`) whenever compaction is on.
-- `storage.<profile>.prefixes` must cover every table location, and the keys there are the worker's own.
-- A store with a private CA: give the worker's chart the same `storageCaConfigMap.name` and the profile the same
-  `ca-bundle`, and write its `endpoint` as the catalog's profile writes it (scheme, host and port). The worker's
+- `storage.<store>` holds one identity, the worker's own keys or role, for each store (`kind`, `endpoint`,
+  `region`, keys, `ca-bundle`). Write each store's `endpoint` as the catalog's profiles on it write theirs (scheme,
+  host and port): the worker serves a catalog profile with the one store of its kind and endpoint. The prefixes come
+  from the catalog at each scan (item 256), from every profile that names a `maintenance-principal`; a profile with
+  none is not maintained. The worker deletes wherever the store lets its identity, so give that identity only the
+  rights `deploy/README.md` ("Delete rights") lists for its kind of store.
+- A store with a private CA: give the worker's chart the same `storageCaConfigMap.name` and the store the same
+  `ca-bundle`. The worker's
   S3 clients to that endpoint trust the bundle: its own, and those reading tables with the credentials the catalog
   vends it, which name the catalog's endpoint. A compaction Job for a table on that store gets the bundle from the
   worker, in a ConfigMap of its own in the Jobs' namespace, and its Spark trusts it beside the image's JDK CAs (D21,
-  amended 2026-11-20; backlog 88), so the image needs nothing added. With such a profile the chart also grants the
+  amended 2026-11-20; backlog 88), so the image needs nothing added. With such a store the chart also grants the
   worker `create` on ConfigMaps in the Jobs' namespace. `catalog-maintenance/README.md` ("Compaction on need") says
   what the image must have: `JAVA_HOME` and `keytool`, as the apache/spark images do.
 - Compaction is off until `compaction.image` names the Spark image and `compaction.namespace` the Jobs'
@@ -329,12 +334,11 @@ helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <wo
   prefixes: read `GET /management/v1/maintenance/delete-policies` and apply each entry as `deploy/README.md`
   says (a bucket policy on AWS S3 and Ceph, two user policies on MinIO). The catalog never applies them
   itself. A profile without `maintenance-principal` is listed as `unprotected`.
-- The DR verifier (D37, amended 2026-11-20) is off until `dr.replicas.<profile>` names, for a storage profile,
-  its DR store: the same buckets and paths on the DR region's endpoint (`endpoint`, `region`,
-  `path-style-access`, `access-key-id`, `ca-bundle`; the secret key in `secrets.values` as
-  `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a private CA's bundle in `storageCaConfigMap`). Give
-  it keys of its own that may only read the DR store: `s3:ListBucket` on each replicated bucket and
-  `s3:GetObject` beneath the profile's prefixes. `dr.verify-interval` sets how often it passes (1 minute by
+- The DR verifier (D37, amended 2026-11-20) is off until `dr.replicas.<store>` names, for a store under `storage`,
+  its DR store: the same buckets and paths on the DR region's endpoint (`endpoint`, `region`, `access-key-id`,
+  `ca-bundle`; the secret key in `secrets.values` as `nuna.maintenance.dr.replicas.<store>.secret-access-key`, a
+  private CA's bundle in `storageCaConfigMap`). Give it keys of its own that may only read the DR store:
+  `s3:ListBucket` on each replicated bucket and `s3:GetObject` beneath the prefixes the catalog gives for that store. `dr.verify-interval` sets how often it passes (1 minute by
   default). An AWS DR bucket under another name waits on PLT-4. `deploy/README.md` ("Recovering in the DR
   region") says when to run it in each region.
 

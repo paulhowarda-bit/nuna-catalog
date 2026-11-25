@@ -14,7 +14,18 @@ manifest rewrite, purges and due deletions run at every scan, round the clock. C
 heavy jobs, start only inside the nightly cleanup window (below), unless someone asked for them ("Maintenance on
 request").
 
-- **Refs** (D33, choice 11), first: each catalog branch within `nuna.refs.expiry-warning` of its expiry is warned
+- **Storage prefixes** (item 256; D30, amended 2026-11-24), before the work list: the worker reads
+  `GET /management/v1/maintenance/storage-prefixes`, the prefixes of every catalog storage profile that names a
+  `maintenance-principal`, with each profile's kind and endpoint and never a credential. It serves each profile with
+  the one store under `storage` whose kind and endpoint are the profile's, and refuses a profile that no store, or
+  two, serve, and a prefix that does not parse as the catalog's own (`s3a` and `s3n` read as `s3`; a bare `s3://`, a
+  `:` in a bucket, an empty or dot segment and a wildcard refused). Its own storage then lists and deletes only
+  strictly beneath one of those prefixes, never at one, so a purge or orphan scan rooted at a prefix cannot empty it.
+  A scan whose read fails, or that names no prefix, lists and deletes nothing: it keeps no earlier answer, scans no
+  orphans, and reads the purges and due deletions without acting on them. A failed read and each refusal count as a
+  `storage-prefixes` failure of the scan. The worker logs the set at its first read and whenever it changes, each new
+  prefix at WARN, each prefix gone at INFO, and each refusal once, at WARN.
+- **Refs** (D33, choice 11), first of the work list: each catalog branch within `nuna.refs.expiry-warning` of its expiry is warned
   of, once for each expiry (`POST /management/v1/maintenance/refs/{id}/warn`), and each past it is ended
   (`.../end`), so an ended branch's files are no longer kept at this scan's jobs. A branch renewed, ended or warned
   of since the list was read is left alone.
@@ -77,12 +88,12 @@ logged and counted as a `report` failure, and the work goes on; one for a table 
 was read is refused, and left at that.
 
 Each scan's report also says what the worker's own storage identity reaches (backlog 250), by kind of store and
-endpoint, for each prefix of `nuna.maintenance.storage`: as the scan starts, the worker lists at most one key beneath
-each prefix and reports whether the store let it (`ok`), refused it with a code (`AccessDenied`, `NoSuchBucket`), or
-did not answer; at its end, the deletes beneath each prefix in that scan, done, refused by the store with the first
-refusal's code, and failed. A refused listing is logged as a warning and changes nothing else. The worker sends
-DeleteObjects itself on the profile's S3 client, 250 keys a call as S3FileIO does, to keep the code the store gives each
-key it refuses. No report holds a key, an object or a credential. Platform operators read it, with the groups the
+endpoint as its store under `nuna.maintenance.storage` names them, for each prefix the catalog gives it at that scan
+(item 256): as the scan starts, after reading the prefixes, the worker lists at most one key beneath each prefix and
+reports whether the store let it (`ok`), refused it with a code (`AccessDenied`, `NoSuchBucket`), or did not answer; at
+its end, the deletes beneath each prefix in that scan, done, refused by the store with the first refusal's code, and
+failed. A refused listing is logged as a warning and changes nothing else. The worker sends DeleteObjects itself on the
+store's S3 client, 250 keys a call as S3FileIO does, to keep the code the store gives each key it refuses. No report holds a key, an object or a credential. Platform operators read it, with the groups the
 worker's token carried, in the scans (`GET /management/v1/maintenance/scans`).
 
 It also reports each job of the night, which the catalog keeps for a month for the console's overview and maintenance
@@ -161,15 +172,15 @@ as its name, and stops (exit 3, a `TABLE CHANGED` line) unless the table it load
 long after the scan, when another table may have taken the name. The files it replaces are left for expiry. A
 finished Job is kept a day for its log; how long it is kept schedules nothing.
 
-A table on a store whose certificate a private CA signed, one whose `storage` profile (the one whose prefixes hold
-the table's location) names a `ca-bundle`, gets that CA in its Job too (D21, amended 2026-11-20; backlog 88). A pod
+A table on a store whose certificate a private CA signed, one whose store under `storage` (the one serving the
+storage prefix that holds the table's location) names a `ca-bundle`, gets that CA in its Job too (D21, amended 2026-11-20; backlog 88). A pod
 mounts only ConfigMaps of its own namespace, so the worker copies the bundle it trusts into a ConfigMap of the Job's
 own, one certificate per key, named like the Job's Secret, owned by the Job and created after it, and mounts it at
 `/etc/nuna/storage-ca`. Before Spark starts, the pod builds a trust store of the image's JDK CAs
 (`$JAVA_HOME/lib/security/cacerts`, password `changeit`) and the bundle's with the JDK's `keytool`, and Spark's
 driver trusts that store (`-Djavax.net.ssl.trustStore` in `spark.driver.extraJavaOptions`, on spark-submit's command
 line). So the image needs `JAVA_HOME` and `keytool`, as the apache/spark images have; a `keytool` failure stops the
-Job with keytool's output. A table on a profile without a bundle gets the Job as before. A Job that does not trust
+Job with keytool's output. A table on a store without a bundle gets the Job as before. A Job that does not trust
 the store's certificate logs `PKIX path building failed` only when the store's name has one address: the S3
 client's HttpClient handshakes TLS inside its loop over a name's addresses and reports the last address's error, so
 where the name also has an IPv6 address the pod cannot route (Docker Desktop's `host.docker.internal`), a missing or
@@ -207,9 +218,10 @@ Upgrade the catalog before the worker: a catalog that has no `requests` section 
 ## The DR verifier
 
 The worker also keeps each table's and view's DR watermark (D37, amended 2026-11-20): the newest version whose every
-file, data included, the DR region's store holds. It is off unless a replica is named. Each storage profile whose
-tables replicate gets one, under its own name in `dr.replicas`: the same buckets and paths on the DR store's endpoint,
-read with keys that may only read there. Every `dr.verify-interval` (1 minute by default), on a thread of its own and
+file, data included, the DR region's store holds. It is off unless a replica is named. Each store whose tables
+replicate gets one, under the store's name (under `storage`) in `dr.replicas`: the same buckets and paths on the DR
+store's endpoint, read with keys that may only read there. It reads only beneath the storage prefixes the catalog
+gives the worker, which it reads again before each pass; a pass whose read fails, fails. Every `dr.verify-interval` (1 minute by default), on a thread of its own and
 round the clock, it reads the catalog's DR work list (`GET /management/v1/maintenance/dr-work`), checks the versions
 above each watermark in the DR store and reports the newest whole one to the catalog, which keeps it in its database,
 so it reaches the DR region with the database. It only lists and reads the DR store. Run it in the primary region
@@ -249,12 +261,11 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `page-size` | `100` | Work list items per page. |
 | `token.file` | | A file holding the worker's bearer token, read again whenever it changes. Set this or `token.endpoint`, not both. Not with compaction: a Job could outlive the token. |
 | `token.endpoint`, `client-id`, `client-secret`, `scope`, `audience` | | The OAuth 2 client-credentials grant against the identity provider. The token is kept until a minute before it expires. Compaction needs this grant and a `scope`: the Job signs in with the same grant itself, and Iceberg's client asks for scope `catalog` when none is given. |
-| `storage.<profile>.prefixes` | required | The locations this storage identity covers, e.g. `s3://lake/tables`. Every table location in the work list must lie under one profile's prefix. |
-| `storage.<profile>.endpoint` | none (AWS S3) | The S3 endpoint for MinIO or Ceph. |
-| `storage.<profile>.region` | `us-east-1` | The region. |
-| `storage.<profile>.path-style-access` | `false` | Address buckets by path (MinIO, Ceph). |
-| `storage.<profile>.access-key-id`, `secret-access-key` | none | The worker's keys. With neither, the AWS SDK's default chain is used (IRSA, Pod Identity). |
-| `storage.<profile>.ca-bundle` | none | A PEM file of the CA that signed an on-prem store's certificate (backlog 21). It needs the `endpoint`, written as the catalog's profile writes it: the worker's S3 clients to that endpoint, its own and those reading tables with the credentials the catalog vends, trust the bundle beside the JVM's CAs. A compaction Job for a table under the profile's prefixes gets it too, and its Spark trusts it ("Compaction on need"). The worker refuses to start if it cannot read the file or finds no certificate in it. |
+| `storage.<store>.kind` | required | The store's kind as the catalog's storage profiles name it: `s3`, `minio` or `ceph`. MinIO and Ceph buckets are addressed by path. `storage` holds one store identity, the worker's own, for each store; the worker refuses to start with none. The prefixes come from the catalog ("What a scan does"), never from here. |
+| `storage.<store>.endpoint` | required | The store's S3 endpoint, written as the catalog's profiles on that store write it (AWS S3 too, e.g. `https://s3.eu-west-2.amazonaws.com`): the worker serves a profile with the one store of its kind and endpoint, compared by scheme, host and port. |
+| `storage.<store>.region` | `us-east-1` | The region. |
+| `storage.<store>.access-key-id`, `secret-access-key` | none | The worker's keys. With neither, the AWS SDK's default chain is used (IRSA, Pod Identity). Both or neither. |
+| `storage.<store>.ca-bundle` | none | A PEM file of the CA that signed an on-prem store's certificate (backlog 21): the worker's S3 clients to that endpoint, its own and those reading tables with the credentials the catalog vends, trust the bundle beside the JVM's CAs. A compaction Job for a table on the store gets it too, and its Spark trusts it ("Compaction on need"). The worker refuses to start if it cannot read the file or finds no certificate in it. |
 | `compaction.image` | none | The Spark image. Compaction is off without one. |
 | `compaction.image-pull-policy` | `IfNotPresent` | Its pull policy. |
 | `compaction.namespace` | required with an image | Where Jobs run: a namespace for them alone, never the worker's (refused at startup) nor the catalog's. A pod may run as any service account and mount any Secret of its namespace. |
@@ -269,11 +280,10 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `compaction.run-as-user` | `185` | The Spark image's user id. |
 | `compaction.spark-conf` | none | More Spark settings for every Job. |
 | `dr.verify-interval` | `PT1M` | How often the DR verifier reads the DR work list. |
-| `dr.replicas.<profile>.endpoint` | none (AWS S3) | The DR store's S3 endpoint for the storage profile `<profile>` (a name under `storage`; the worker refuses to start on a replica naming none). Without any replica the DR verifier is off. |
-| `dr.replicas.<profile>.region` | `us-east-1` | The DR store's region. |
-| `dr.replicas.<profile>.path-style-access` | `false` | Address its buckets by path (MinIO, Ceph). |
-| `dr.replicas.<profile>.access-key-id`, `secret-access-key` | none | Keys that may only read the DR store ("The identity it needs"). With neither, the AWS SDK's default chain is used. |
-| `dr.replicas.<profile>.ca-bundle` | none | A PEM file of the CA that signed the DR store's certificate, as for a storage profile. The worker refuses to start if it cannot read the file or finds no certificate in it. |
+| `dr.replicas.<store>.endpoint` | none (AWS S3) | The DR store's S3 endpoint for the store `<store>` (a name under `storage`; the worker refuses to start on a replica naming none), of the store's kind. Without any replica the DR verifier is off. |
+| `dr.replicas.<store>.region` | `us-east-1` | The DR store's region. |
+| `dr.replicas.<store>.access-key-id`, `secret-access-key` | none | Keys that may only read the same prefixes in the DR store ("The identity it needs"). With neither, the AWS SDK's default chain is used. |
+| `dr.replicas.<store>.ca-bundle` | none | A PEM file of the CA that signed the DR store's certificate, as for a store. The worker refuses to start if it cannot read the file or finds no certificate in it. |
 
 An example, for one Ceph store:
 
@@ -293,9 +303,8 @@ nuna:
       audience: nuna-catalog
     storage:
       ceph:
-        prefixes: [s3://lake/tables]
+        kind: ceph
         endpoint: https://ceph.example.internal
-        path-style-access: true
         access-key-id: ${NUNA_MAINTENANCE_ACCESS_KEY}
         secret-access-key: ${NUNA_MAINTENANCE_SECRET_KEY}
 ```
@@ -317,13 +326,17 @@ nuna:
     in the bucket's own account; a role in another account also needs them in its own IAM policy. Give the
     chart's service account the role through `serviceAccount.annotations` (IRSA).
   - On MinIO the second user policy, the one to attach to the worker, allows them.
+  - The worker lists and deletes only beneath the prefixes the catalog gives it, but nothing in the worker stops a
+    catalog that gives it a wider one: the store's grants are the limit. So the worker's identity on each store must
+    hold no other right to delete or list, and be one per nuna install, granted by nothing else;
+    `deploy/README.md`, "Delete rights", gives the rules for each kind of store.
 - **In the DR store, for the DR verifier only.** Keys of their own that may only read it: `s3:ListBucket` on each
-  replicated bucket and `s3:GetObject` beneath the profile's prefixes, nothing else. The verifier lists a table's
+  replicated bucket and `s3:GetObject` beneath the store's prefixes, nothing else. The verifier lists a table's
   location to check it whole, and reads and `HEAD`s its files; it never writes or deletes there.
 - **In Kubernetes, for compaction only.** The Jobs run in a namespace of their own, created beforehand: never
   the worker's or the catalog's, since a pod there could run as their service accounts or mount their Secrets.
   In it the worker needs `get` and `create` on Jobs (it reads a Job's conditions to see it finish, or stop at
-  its deadline) and `create` on Secrets, and `create` on ConfigMaps when a storage profile names a `ca-bundle`
+  its deadline) and `create` on Secrets, and `create` on ConfigMaps when a store names a `ca-bundle`
   (each Job's copy of its store's CA), nothing else. Its pods run as
   `job-service-account`, which has no rights and no token mounted. The chart makes that account, the Role and
   its RoleBinding there when `compaction.image` is set, and refuses to render without
@@ -349,9 +362,11 @@ docker build -f deploy/image/maintenance.Dockerfile -t nuna-maintenance:<version
   `--set config.nuna.maintenance.cleanup-window.start=22:30`), and quotes the times in the worker's YAML;
 - secrets under `secrets` (or `secrets.existingSecret`), read as a Spring Boot config tree, each key a
   property name such as `nuna.maintenance.token.client-secret` or
-  `nuna.maintenance.dr.replicas.<profile>.secret-access-key`;
+  `nuna.maintenance.dr.replicas.<store>.secret-access-key`;
 - the DR verifier's settings under `config.nuna.maintenance.dr`, off until a replica is named, and a DR store's CA
-  bundle in `storageCaConfigMap` beside the storage profiles';
+  bundle in `storageCaConfigMap` beside the stores';
+- the stores under `config.nuna.maintenance.storage`, each with its `kind` and `endpoint`; it refuses to render with
+  none, with a store missing either, or with a store's `prefixes`, which now come from the catalog;
 - with `config.nuna.maintenance.compaction.image` set, the Role, RoleBinding and Job service account in the
   Jobs' namespace (`config.nuna.maintenance.compaction.namespace`, which must exist).
 
@@ -387,6 +402,8 @@ day (`TestCatalog.allDay`).
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |
 | `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count, need and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels but for the needy tables' gauge; real scans counted as their reports say, and kept by the catalog as the worker reports them. |
 | `DrVerifyTest`, `DrVerifierTest`, `DrPassesTest` | | The DR check on two in-memory stores: the watermark stops before the first version missing any file, a version that adds nothing passes on its metadata file, a table with no watermark is checked whole and gets the newest version whole in one listing, never its empty creation version below its pointer; a pass reports only above the kept watermark, keeps going past a failed check, sets its meters and logs its tally at INFO (`docs/observability/dr-watermark.md`). |
+| `PrefixesTest`, `WorkerPrefixesTest` | | The storage prefixes the catalog gives the worker (item 256), no Docker: each profile served by the one store of its kind and endpoint however the endpoint is written, a profile no store or two serve refused; `s3a` and `s3n` read as `s3`, a bare `s3://`, a `:` in a bucket, empty and dot segments, wildcards and a trailing slash refused; the worker's storage lists and deletes only strictly beneath a prefix, not at one, nor in a sibling, another folder or another bucket, and nothing before the first read; a scan whose read fails or names no prefix keeps no earlier answer and claims no purge and deletes no due file; the set logged at the first read and on each change, a new prefix at WARN, a refusal once at WARN and counted at every scan. |
+| `DrStoresTest`, `TrustedS3ClientsTest` | | A DR replica named by its store, and read only beneath the prefixes the worker holds; each store's CA bundle trusted for its own endpoint alone, and a bundle that cannot be read named by its setting. |
 | `RefReachTest` | | What the catalog's refs reach, on an in-memory catalog: a tag keeps what its cut reaches and nothing else, a branch what its own head reaches, a file both reach counts for the branch, main's own snapshots are not read again, and with no refs or no files nothing is read. |
 | `WorkerRefsTest` | | The worker's side of refs, against a stand-in catalog on the JDK's HTTP server, on an in-memory Iceberg catalog, no Docker: branches warned of and ended before the tables are read, a branch ended or warned of since skipped, a failure counted as `refs`; a record the catalog refuses checked again against the refs it hands back, and given up after three reads; due files checked against the refs made since they were recorded, the one a ref reaches completed and not deleted, a dropped table's left waiting. |
 | `RefCleanupTest` | `heavy` | Cleanup under refs on a real catalog: a branch's own files survive expiry and the orphan scan until it is deleted, then are queued, its head untouched; a tag's files survive expiry on main; a tag made after the work list was read keeps its files (the 409); a deletion recorded before a tag is checked against it; a merged branch's files are main's; a branch is warned of once and then ended; deleting a tag of a held or frozen table deletes nothing until the hold and freeze go. Commits on a branch and the merge go through the server's store until items 105 and 107 give them routes. |

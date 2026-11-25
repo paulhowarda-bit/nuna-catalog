@@ -37,31 +37,41 @@ final class ChildJvm {
         return new ProcessBuilder(command).redirectErrorStream(true).start();
     }
 
-    /** The worker's storage profile and token file as {@link PurgeProcess} and {@link OrphanScanProcess} take them. */
+    /**
+     * The catalog, the worker's token file and its store identity, as {@link PurgeProcess} and
+     * {@link OrphanScanProcess} take them.
+     */
     static List<String> workerArguments(TestCatalog catalog, Path folder) throws IOException {
         Path token = Files.createTempFile(folder, "token", "");
         Files.writeString(token, catalog.workerTokens().token());
-        WorkerSettings.StorageProfile profile = catalog.storageProfiles().get("test");
-        return List.of(catalog.uri.toString(), token.toString(),
-                profile.endpoint() == null ? "-" : profile.endpoint().toString(), profile.prefixes().getFirst(),
-                profile.accessKeyId() == null ? "-" : profile.accessKeyId(),
-                profile.secretAccessKey() == null ? "-" : profile.secretAccessKey());
+        WorkerSettings.Store store = catalog.stores().get("test");
+        return List.of(catalog.uri.toString(), token.toString(), store.endpoint().toString(), store.kind().name(),
+                store.accessKeyId() == null ? "-" : store.accessKeyId(),
+                store.secretAccessKey() == null ? "-" : store.secretAccessKey());
     }
 
     /**
-     * The worker's storage, from the arguments {@link #workerArguments} made, starting at {@code from}; on AWS, as the
-     * worker's role {@link #start} names ({@link TestCatalog#asRole}).
+     * The worker's storage, from the arguments {@link #workerArguments} made, its store's starting at {@code from};
+     * on AWS, as the worker's role {@link #start} names ({@link TestCatalog#asRole}). It reaches the prefixes the
+     * catalog gives the worker, as at a scan.
      */
     static Storage storage(String[] args, int from) {
         String role = System.getProperty(WORKER_ROLE);
+        Storage storage;
         if (role != null) {
-            return TestCatalog.asRole(role);
+            storage = TestCatalog.asRole(role);
+        } else {
+            String key = args[from + 2].equals("-") ? null : args[from + 2];
+            String secret = args[from + 3].equals("-") ? null : args[from + 3];
+            storage = Storage.of(java.util.Map.of("test", new WorkerSettings.Store(
+                    nuna.catalog.objectstore.StoreKind.valueOf(args[from + 1]), java.net.URI.create(args[from]),
+                    TestS3.REGION, key, secret, null)));
         }
-        java.net.URI endpoint = args[from].equals("-") ? null : java.net.URI.create(args[from]);
-        String key = args[from + 2].equals("-") ? null : args[from + 2];
-        String secret = args[from + 3].equals("-") ? null : args[from + 3];
-        return Storage.of(java.util.Map.of("test", new WorkerSettings.StorageProfile(List.of(args[from + 1]), endpoint,
-                TestS3.REGION, endpoint != null, key, secret, null)));
+        java.net.URI catalog = java.net.URI.create(args[0]);
+        TokenSource tokens = new TokenSource.FileToken(Path.of(args[1]));
+        storage.reach(new Management(catalog, tokens, java.net.http.HttpClient.newHttpClient(), 100)
+                .storageProfiles());
+        return storage;
     }
 
     /** No Spring in a child to configure Logback, whose own default logs everything. */

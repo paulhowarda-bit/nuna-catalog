@@ -215,7 +215,7 @@ kept even when 50 failed scans have come since.
       "groups": ["nuna-maintenance"],
       "storage": [
         {
-          "kind": "s3",
+          "kind": "minio",
           "endpoint": "https://silo.example:9000",
           "prefixes": [
             { "prefix": "s3://lake/tables", "listed": "ok", "deleted": 12, "delete-refused": 0, "delete-failed": 0 },
@@ -233,9 +233,10 @@ kept even when 50 failed scans have come since.
 - `worker` is the maintenance principal that ran it.
 - `groups` are the groups its token carried when it reported (backlog 250): the groups its grants are held by. Absent
   for a scan kept before the catalog recorded them.
-- `storage` is what the worker's own storage identity reached in that scan (backlog 250), one entry for each kind of
-  store and endpoint (`endpoint` absent for AWS S3's own), with the prefixes its settings give it there
-  (`nuna.maintenance.storage`). Each prefix has:
+- `storage` is what the worker's own storage identity reached in that scan (backlog 250), one entry for each of its
+  stores (`nuna.maintenance.storage`), by kind (`s3`, `minio`, `ceph`) and endpoint as the worker's settings name
+  them, with the prefixes the catalog gave it there at that scan (item 256; none when the worker could not read them).
+  `endpoint` is absent from a scan an earlier release reported for AWS S3's own. Each prefix has:
   - `listed`: at the scan's start the worker lists at most one key beneath the prefix, as its delete policy reads it
     (`<prefix>/`). `ok` when the store let it, `refused` when the store answered with an error, whose code is
     `list-code` (`AccessDenied`, `NoSuchBucket`, ...), and `failed` when the store did not answer, `list-code` then

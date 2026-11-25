@@ -13,6 +13,12 @@ final class ScanReport {
     enum Failure {
         /** A page of the work list could not be read; the scan did not succeed. */
         WORK_LIST("work-list"),
+        /**
+         * The storage prefixes the catalog gives the worker could not be read, so the scan listed and deleted nothing;
+         * or the worker refused one of the catalog's storage profiles or prefixes, and lists and deletes nothing
+         * beneath it (item 256).
+         */
+        STORAGE_PREFIXES("storage-prefixes"),
         TABLE_LOAD("table-load"),
         /** The table the work list named is now another table, by id, so nothing ran on it. */
         TABLE_CHANGED("table-changed"),

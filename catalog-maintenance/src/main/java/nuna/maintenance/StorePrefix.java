@@ -16,8 +16,8 @@ import software.amazon.awssdk.services.s3.model.S3Error;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
- * One prefix the worker's own storage identity covers ({@link Storage#of}), and what the store let it do beneath it
- * (backlog 250): the listing of at most one key each scan starts with, and the deletes since then, done, refused, or
+ * One prefix the catalog gives the worker's own storage identity on a store at a scan ({@link OwnStorage}, item 256),
+ * and what the store let it do beneath it (backlog 250): the listing of at most one key each scan starts with, and the deletes since then, done, refused, or
  * failed without the store's answer, with the code of the first not done. The deletes go to the store as S3FileIO
  * sends them, DeleteObjects on the identity's client a batch at a time, but here each key the store refuses comes back
  * with its code (AccessDenied), which S3FileIO counts and drops. Nothing here keeps an object key or a store's message.
@@ -32,6 +32,8 @@ final class StorePrefix {
 
     /** The prefix, normalized ({@link Storage#normalize}). */
     final String location;
+    /** The store's kind as the settings name it, {@code s3}, {@code minio} or {@code ceph}. */
+    final String kind;
     final Optional<URI> endpoint;
     final S3FileIO io;
     /** Set by the first {@link #check}, which comes before any {@link #reach}. */
@@ -42,8 +44,9 @@ final class StorePrefix {
     private long failed;
     private Optional<String> deleteCode = Optional.empty();
 
-    StorePrefix(String location, Optional<URI> endpoint, S3FileIO io) {
+    StorePrefix(String location, String kind, Optional<URI> endpoint, S3FileIO io) {
         this.location = location;
+        this.kind = kind;
         this.endpoint = endpoint;
         this.io = io;
     }
@@ -83,7 +86,7 @@ final class StorePrefix {
 
     /** What the store let the worker do beneath the prefix since the last {@link #check}. */
     synchronized Storage.Reach reach() {
-        return new Storage.Reach("s3", endpoint, location, listed, listCode, deleted, refused, failed, deleteCode);
+        return new Storage.Reach(kind, endpoint, location, listed, listCode, deleted, refused, failed, deleteCode);
     }
 
     /**

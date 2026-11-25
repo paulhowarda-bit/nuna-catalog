@@ -9,11 +9,13 @@ import nuna.catalog.tests.s3.TestS3;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.iam.IamClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.BucketLifecycleConfiguration;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
@@ -125,6 +127,107 @@ class DeletePolicyAwsTest {
                 }
                 worker.deleteBucketPolicy(r -> r.bucket(bucket));
                 awaitInForce(admin, bucket, false);
+            }
+        }
+    }
+
+    /**
+     * The worker's rights on AWS come from the bucket policy alone (item 256; deploy/README.md, "Delete rights"): a
+     * worker role of the test's own, with no policy of its own, lists and deletes beneath the prefix the delete policy
+     * names it for, and is refused everywhere else, outside the prefix and in a second bucket with no policy. So the
+     * worker deletes only where the stores' policies name it, whatever prefixes the catalog gives it.
+     */
+    @Test
+    @DisplayName("a worker role with no policy of its own lists and deletes beneath the prefix, and nowhere else")
+    void theBucketPolicyAloneLetsTheWorkerDelete() {
+        assumeTrue(TestS3.kindFromSystemProperty() == TestS3.Kind.AWS, "the bucket policy is checked on AWS here");
+        TestS3 store = TestS3.get();
+        String bucket = store.bucket("bare-worker");
+        String elsewhere = store.bucket("bare-worker-elsewhere");
+        String account;
+        try (StsClient sts = StsClient.builder().region(Region.of(TestS3.REGION)).credentialsProvider(store.credentials)
+                .build()) {
+            account = sts.getCallerIdentity().account();
+        }
+        String name = "nuna-test-bare-worker-" + UUID.randomUUID().toString().substring(0, 8);
+        try (IamClient iam = IamClient.builder().region(Region.AWS_GLOBAL).credentialsProvider(store.credentials)
+                .build()) {
+            String role = iam.createRole(r -> r.roleName(name).maxSessionDuration(3600)
+                    .description("a nuna test's worker role with no policy of its own; deleted when the test ends")
+                    .assumeRolePolicyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
+                            + "\"Principal\":{\"AWS\":\"arn:aws:iam::" + account + ":root\"},"
+                            + "\"Action\":\"sts:AssumeRole\"}]}")).role().arn();
+            boolean removed = true;
+            try (StsClient sts = StsClient.builder().region(Region.of(TestS3.REGION))
+                    .credentialsProvider(store.credentials).build();
+                 StsAssumeRoleCredentialsProvider sessions = StsAssumeRoleCredentialsProvider.builder().stsClient(sts)
+                         .refreshRequest(r -> r.roleArn(role).roleSessionName("bare-worker").durationSeconds(900))
+                         .build();
+                 S3Client admin = store.client();
+                 S3Client worker = store.client(sessions)) {
+                awaitAssumable(sessions);
+                for (String key : List.of("tables/t/a", "tables/t/b", "other/x")) {
+                    admin.putObject(r -> r.bucket(bucket).key(key), RequestBody.fromString(key));
+                }
+                admin.putObject(r -> r.bucket(elsewhere).key("tables/t/a"), RequestBody.fromString("elsewhere"));
+                // The catalog's text for this role, and one grant more, in the bucket policy too, so the role can
+                // remove the policy at the end: nobody else may.
+                String generated = DeletePolicy.bucketPolicy(StoreKind.S3, TestS3.REGION, bucket, List.of(
+                        new DeletePolicy.Worker(role, List.of(ObjectLocation.parse("s3://" + bucket + "/tables")))));
+                String policy = generated.substring(0, generated.length() - 2) + ",{\"Sid\":\"TestRemovesThePolicy\","
+                        + "\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"" + role + "\"]},"
+                        + "\"Action\":\"s3:DeleteBucketPolicy\",\"Resource\":\"arn:aws:s3:::" + bucket + "\"}]}";
+                removed = false;
+                admin.putBucketPolicy(r -> r.bucket(bucket).policy(policy));
+                try {
+                    awaitInForce(admin, bucket, true);
+
+                    assertThat(worker.listObjectsV2(r -> r.bucket(bucket).prefix("tables/t/")).contents())
+                            .extracting(S3Object::key).containsExactly("tables/t/a", "tables/t/b");
+                    worker.deleteObject(r -> r.bucket(bucket).key("tables/t/a"));
+                    assertThat(worker.deleteObjects(r -> r.bucket(bucket).delete(d -> d.objects(
+                            ObjectIdentifier.builder().key("tables/t/b").build()))).errors()).isEmpty();
+                    assertThat(admin.listObjectsV2(r -> r.bucket(bucket).prefix("tables/")).contents()).isEmpty();
+
+                    assertDenied(() -> worker.deleteObject(r -> r.bucket(bucket).key("other/x")));
+                    assertDenied(() -> worker.listObjectsV2(r -> r.bucket(bucket).prefix("other/")));
+                    assertDenied(() -> worker.deleteObject(r -> r.bucket(elsewhere).key("tables/t/a")));
+                    assertDenied(() -> worker.listObjectsV2(r -> r.bucket(elsewhere).prefix("tables/")));
+                    assertThat(admin.getObjectAsBytes(r -> r.bucket(elsewhere).key("tables/t/a")).asUtf8String())
+                            .isEqualTo("elsewhere");
+                } finally {
+                    worker.deleteBucketPolicy(r -> r.bucket(bucket));
+                    awaitInForce(admin, bucket, false);
+                    removed = true;
+                }
+            } finally {
+                if (removed) {
+                    iam.deleteRole(r -> r.roleName(name));
+                } else {
+                    System.err.println("DeletePolicyAwsTest: kept role " + role + ", the only principal that can"
+                            + " remove the policy of bucket " + bucket + "; remove it as that role, then the role");
+                }
+            }
+        }
+    }
+
+    /** Waits until STS lets the run's sign-in assume a role just made: IAM takes some seconds to say so. */
+    private static void awaitAssumable(StsAssumeRoleCredentialsProvider sessions) {
+        Instant deadline = Instant.now().plus(PROPAGATION);
+        while (true) {
+            try {
+                sessions.resolveCredentials();
+                return;
+            } catch (RuntimeException e) {
+                if (Instant.now().isAfter(deadline)) {
+                    throw e;
+                }
+            }
+            try {
+                Thread.sleep(2_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
             }
         }
     }

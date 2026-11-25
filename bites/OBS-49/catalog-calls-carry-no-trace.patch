@@ -2,10 +2,10 @@ Breaks: the worker's calls to the catalog go through a bare JDK client, so they 
 Module: catalog-maintenance
 Test: WorkerTraceTest
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-index 62b16e8..c70e65d 100644
+index d0621eef..791abfdb 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-@@ -108,8 +108,7 @@ final class Worker implements AutoCloseable {
+@@ -131,8 +131,7 @@ final class Worker implements AutoCloseable {
       */
      static Worker of(WorkerSettings settings, Clock clock, MeterRegistry meters, ObservationRegistry observations,
                       TraceHeaders trace) {
@@ -14,4 +14,4 @@ index 62b16e8..c70e65d 100644
 +        HttpClient http = HttpClient.newHttpClient();
          TokenSource tokens = TokenSource.of(settings.token(), clock, http);
          Management management = new Management(settings.catalogUri(), tokens, http, settings.pageSize());
-         Compactor compactor = settings.compaction().enabled()
+         OwnStorage storage = Storage.of(settings.storage());

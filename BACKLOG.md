@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**55 open:** 16 S, 19 M, 15 L, 5 XL.
+**55 open:** 17 S, 19 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -64,8 +64,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [253](backlog/253.md) | S | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250 | 2026-11-24 |
 | [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
 | [255](backlog/255.md) | S | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | one setting and a change to `maintenance_worker()`, checked with `demo.sh up` | 2026-11-24 |
-| [256](backlog/256.md) | L | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | the worker's settings and routing change shape and the DR replica keys move, plus a route, the chart, the README's rules per store, fast tests with bites and two heavy store tests | 2026-11-24 |
 | [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
+| [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
 
 ## Open items in full
@@ -3219,68 +3219,6 @@ user (`nunatest`), which no user policy can restrict, so the `except` policy can
   second catalog's bucket is set up the same way, from the console (items 252, 254).
 - After `demo.sh up`, item 251's readiness route shows 4 of 4 for `lakehouse`.
 
-### 256. Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30)
-
-- Decided: 2026-11-24, D30
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-maintenance/, catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, catalog-objectstore/src/test/, deploy/helm/nuna-maintenance/, deploy/README.md, demo/k8s/maintenance-values.yaml, bites/
-- Effort: L, the worker's settings and routing change shape and the DR replica keys move, plus a route, the chart, the README's rules per store, fast tests with bites and two heavy store tests
-
-## What is wrong
-
-To maintain a new catalog, an operator adds its bucket's prefix to the worker's settings
-(`nuna.maintenance.storage.<profile>.prefixes`, `WorkerSettings.StorageProfile`) and upgrades the release, since the
-worker reads its settings only at start. The catalog already knows every bucket and prefix, and which identity should
-delete there (each catalog storage profile's `maintenance-principal`, D21). Paul, on setting up catalog `ledger` at
-work: "I should be able to do this stuff from the UI" (2026-11-24). With this change a bucket on a store the worker
-already reaches needs no worker edit and no restart (Atelier, 2026-11-24).
-
-**What it costs** (catalog-security, 2026-11-24). Today `Storage.io()` is the worker's only check of its own on where it
-lists and deletes. Afterwards, if the catalog server is compromised, only the store's policy on the worker's identity
-limits what it lists and deletes. That fits D30 (7), which makes the store the enforcer, so the README's rules per store
-below carry the weight. A compromised catalog gains nothing more where the store holds the worker's identity to the
-generated prefixes.
-
-## Done when
-
-- **The route.** A new route gives the worker the prefixes of every catalog storage profile that names a
-  `maintenance-principal`, never a credential. It answers only a maintenance principal acting as itself; every other
-  caller gets an audited 403 (D18), with a fast test and a bite in `bites/D18/`.
-- **The worker's settings** keep one identity per store: kind, endpoint, region, keys or role, CA bundle, and those come
-  only from the settings, never the route. The worker matches each profile to an identity by its own configured
-  endpoint and kind; a profile matching none, or two, is skipped and reported (item 250). DR replica keys move to the
-  same store identities.
-- **The worker checks what it is sent.** It parses every prefix with `ObjectLocation.parse`, after turning `s3a`/`s3n`
-  into `s3`, and refuses any that fails: a bare `s3://`, a bucket containing `:`, empty or dot segments, wildcards.
-  Fast test and bite.
-- **It lists and deletes only strictly beneath a prefix.** A location equal to a prefix is refused, as the catalog
-  already refuses one (`StorageProfile.approve`), so a purge or orphan scan rooted at a prefix cannot wipe the profile.
-  Today `Storage.java:102` accepts it, and today's refusal has no test or bite. Fast test and bite for each.
-- **A failed or empty prefix read** lists and deletes nothing that scan: no cached or default list. Fast test and bite.
-- **The worker logs its prefix set** at start and whenever it changes, added prefixes at WARN: the one record the
-  catalog cannot suppress.
-- **`deploy/README.md`, "Delete rights",** says the worker deletes wherever the store lets its identity, and requires:
-  - AWS: the worker role's own policies allow no `s3:DeleteObject`, `s3:DeleteObjectVersion` or `s3:ListBucket`
-    outside the generated prefixes (best none in the bucket's own account), and no wildcard buckets.
-  - MinIO: the worker's user is not root, is in no group, holds only the `to` policies, and uses its own keys, not a
-    service account of a broader user.
-  - Ceph: the worker's user owns no bucket, and no ACL or user policy grants it, or all authenticated users, write.
-  - Every store: one worker identity per nuna install, granted by nothing else; DR replica keys read only the same
-    prefixes.
-- **Heavy tests.** AWS (`-Ps3=aws`): a worker role with no S3 policy of its own lists and deletes beneath the prefix
-  and is refused in a second bucket (`DeletePolicyAwsTest` gives the worker role its own policy today, so the README's
-  claim that the bucket policy alone is enough is untested). Silo: a worker user holding only `to` is refused outside
-  it.
-- Items 251, 252 and 253 change as they say: step 2 is done whenever the worker holds an identity for the profile's
-  store, and the settings block is for new stores only.
-- If the console ever sets a catalog profile's prefixes (no item does), that write is for platform operators only and
-  audited, refusals included.
-
-Not checked by catalog-security: whether a bucket-policy allow naming a role ARN is enough on its own for a role
-session on AWS; on Ceph, a bucket owner against an explicit deny, IAM accounts and whether S3FileIO sends
-`tenant:bucket`; MinIO's group and service-account inheritance on Silo; whether S3FileIO's client resolves `..` in
-keys (the catalog refuses dot segments, the worker does not check).
-
 ### 258. Grants: refuse write on a view, which gives only select there yet counts as a data duty
 
 - Added: 2026-11-24 by catalog-security review of backlog 246
@@ -3305,6 +3243,32 @@ labels and holds, and anything on a namespace or catalog reaches what is below.
 - The grant route answers 400 to `write` on a view and the preview `refused` with `privilege-not-on-object`; a
   revoke still removes one.
 - `GrantPreviewTest` covers it at both, and a bite shows the refusal is checked.
+
+### 259. Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete?
+
+- Added: 2026-11-24 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
+- Touches: catalog-objectstore/src/test/java/nuna/catalog/objectstore/DeletePolicyAwsTest.java, deploy/README.md, status/
+- Effort: S, one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails
+
+## What is missing
+
+Item 256 makes the store the only limit on where the maintenance worker deletes, and `deploy/README.md` ("Delete
+rights") tells operators to give the worker role no S3 policy of its own in the bucket's account, since the delete
+policy's bucket-policy allow is enough there. catalog-security did not check that claim (backlog 256, "Not checked by
+catalog-security"). Item 256 wrote the test, `DeletePolicyAwsTest#theBucketPolicyAloneLetsTheWorkerDelete`: a role the
+test makes with a trust policy only, the catalog's bucket policy for it, then list and delete beneath the prefix, and
+refusals outside it and in a second bucket. It has never run: the machine it was written on has no AWS profile, and the
+overnight run has no AWS leg.
+
+## Done when
+
+- `./gradlew :catalog-objectstore:test --tests 'nuna.catalog.objectstore.DeletePolicyAwsTest' -Pheavy -Ps3=aws
+  -Pnuna.aws.profile=<profile>` passes, both tests, and the run leaves no `nuna-test-bare-worker-*` role behind (the
+  test prints one it had to keep).
+- If the role is refused beneath the prefix, the README's AWS rule changes to what works (the role's own policy
+  limited to the generated prefixes) and the test with it; if it is let in outside the prefix, the delete policy is
+  wrong and that is a new item.
+- The run is recorded in `status/`.
 
 ### 260. Console: the Grants page lists the catalog's groups with their duties when no group is named
 
@@ -3530,4 +3494,5 @@ page, sees `stewards` with "Tags", and opens its grants from it.
 | [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
 | [250](backlog/250.md) | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | done | 2026-11-24 |
 | [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
+| [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

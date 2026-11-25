@@ -9,6 +9,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
+import nuna.catalog.objectstore.StoreKind;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -69,13 +70,15 @@ class StorageReportTest {
         try (ServerSocket closed = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             away = URI.create("http://127.0.0.1:" + closed.getLocalPort());
         }
-        Map<String, WorkerSettings.StorageProfile> profiles = new LinkedHashMap<>();
-        profiles.put("tables", profile(silo, "s3://lake/tables", "s3a://ledger-warehouse/tables"));
-        profiles.put("old", profile(gone, "s3://gone"));
-        profiles.put("away", profile(away, "s3://away/tables"));
-        URI catalog = catalog();
+        Map<String, WorkerSettings.Store> stores = new LinkedHashMap<>();
+        stores.put("silo", store(silo));
+        stores.put("gone", store(gone));
+        stores.put("away", store(away));
+        URI catalog = catalog("{\"profiles\":[" + profile("tables", silo, "s3://lake/tables",
+                "s3a://ledger-warehouse/tables") + "," + profile("old", gone, "s3://gone") + ","
+                + profile("away", away, "s3://away/tables") + "]}");
 
-        try (Worker worker = worker(catalog, Storage.of(profiles))) {
+        try (Worker worker = worker(catalog, Storage.of(stores))) {
             ScanReport first = worker.runOnce();
             assertThat(first.failuresByKind).as("the ledger's deletions failed")
                     .containsEntry(ScanReport.Failure.DELETION, 1);
@@ -125,7 +128,7 @@ class StorageReportTest {
 
     private static String reach(URI endpoint, String listed, String listCode, long deleted, long refused,
                                   long failed, String deleteCode) {
-        ObjectNode reach = JSON.createObjectNode().put("kind", "s3").put("endpoint", endpoint.toString())
+        ObjectNode reach = JSON.createObjectNode().put("kind", "minio").put("endpoint", endpoint.toString())
                 .put("listed", listed);
         if (listCode != null) {
             reach.put("list-code", listCode);
@@ -137,9 +140,15 @@ class StorageReportTest {
         return reach.toString();
     }
 
-    private static WorkerSettings.StorageProfile profile(URI endpoint, String... prefixes) {
-        return new WorkerSettings.StorageProfile(List.of(prefixes), endpoint, "us-east-1", true, ACCESS_KEY, SECRET,
-                null);
+    /** The worker's identity on a MinIO store. */
+    private static WorkerSettings.Store store(URI endpoint) {
+        return new WorkerSettings.Store(StoreKind.MINIO, endpoint, "us-east-1", ACCESS_KEY, SECRET, null);
+    }
+
+    /** A catalog storage profile on a MinIO store, as the storage prefixes route gives it (item 256). */
+    private static String profile(String name, URI endpoint, String... prefixes) {
+        return "{\"name\":\"" + name + "\",\"kind\":\"minio\",\"endpoint\":\"" + endpoint + "\",\"prefixes\":[\""
+                + String.join("\",\"", prefixes) + "\"]}";
     }
 
     private static Worker worker(URI catalog, Storage storage) {
@@ -222,10 +231,11 @@ class StorageReportTest {
     }
 
     /**
-     * The catalog as the worker sees it: a work list of due deletions, two of a table beneath the lake's prefix and
-     * two of one beneath the ledger's, none ever completed, and every report taken, each scan's kept.
+     * The catalog as the worker sees it: the storage profiles {@code profiles}, a work list of due deletions, two of a
+     * table beneath the lake's prefix and two of one beneath the ledger's, none ever completed, and every report taken,
+     * each scan's kept.
      */
-    private URI catalog() throws IOException {
+    private URI catalog(String profiles) throws IOException {
         UUID lake = UUID.randomUUID();
         UUID ledger = UUID.randomUUID();
         String deletions = "{\"deletions\":[" + deletion(lake, "s3://lake/tables/ns/t/data/a.parquet")
@@ -237,7 +247,9 @@ class StorageReportTest {
         server.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getPath();
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            if (path.equals("/management/v1/maintenance/work")) {
+            if (path.equals(TestReach.ROUTE)) {
+                answer(exchange, 200, profiles);
+            } else if (path.equals("/management/v1/maintenance/work")) {
                 answer(exchange, 200, String.valueOf(exchange.getRequestURI().getQuery()).contains("section=deletions")
                         ? deletions : "{}");
             } else if (path.startsWith("/management/v1/maintenance/scans/")) {

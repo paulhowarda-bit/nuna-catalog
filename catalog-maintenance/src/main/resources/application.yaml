@@ -11,7 +11,7 @@ nuna:
     scan-interval: PT10M
     orphan-interval: P1D
     # cleanup-window (start, end, zone) has no default: each deployment names its own night.
-    # The DR verifier (D37) is off until dr.replicas names a read-only replica for a storage profile.
+    # The DR verifier (D37) is off until dr.replicas names a read-only replica for a store under storage.
     dr:
       verify-interval: PT1M
 

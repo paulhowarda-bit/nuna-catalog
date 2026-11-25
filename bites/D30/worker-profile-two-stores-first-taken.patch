@@ -1,0 +1,16 @@
+Breaks: a profile two of the worker's stores serve is served by the first of them, by name, instead of being refused (item 256).
+Module: catalog-maintenance
+Test: PrefixesTest#aProfileIsServedByTheOneStoreOfItsKindAndEndpoint
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+index 6563050e..5ccf8190 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+@@ -55,7 +55,7 @@ final class Prefixes {
+         for (Management.StorageProfile profile : profiles) {
+             List<String> serving = stores.entrySet().stream().filter(store -> serves(store.getValue(), profile))
+                     .map(Map.Entry::getKey).sorted().toList();
+-            if (serving.size() != 1) {
++            if (serving.isEmpty()) {
+                 refused.add("storage profile " + profile.name() + " (" + profile.kind() + " at " + profile.endpoint()
+                         + "): " + (serving.isEmpty() ? "no store in nuna.maintenance.storage has its kind and endpoint"
+                         : "the stores " + serving + " in nuna.maintenance.storage all have its kind and endpoint")

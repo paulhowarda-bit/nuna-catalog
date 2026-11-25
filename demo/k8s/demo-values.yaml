@@ -17,6 +17,9 @@ config:
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
           access-key-id: nunatest
+          # The maintenance worker's own Silo user (maintenance-values.yaml): the worker reads this profile's
+          # prefixes only because it names one (item 256).
+          maintenance-principal: nuna-maintenance
       # The audit catalog of the queryable audit tables (D23): the audit table writer (audit-tables-values.yaml)
       # fills nuna_audit.audit.events from the audit topic, and the console's Audit page reads it back.
       catalogs:

@@ -32,6 +32,9 @@ import org.slf4j.LoggerFactory;
  * One scan of the catalog's work list (D30 (2)), as {@link #runOnce} does it:
  *
  * <ol>
+ *   <li><b>Storage prefixes</b> (item 256): where the worker's own identity lists and deletes at this scan, as the
+ *       catalog gives them; when it reaches none, the read having failed or named none, the orphan scans, purges and
+ *       deletions below wait for a scan that reaches some.</li>
  *   <li><b>Refs</b> (D33, choice 11): each branch whose expiry is near is warned of, and each past it ended, so an
  *       ended branch's files are no longer kept at this scan's jobs.</li>
  *   <li><b>Tables</b> whose resolved policy runs a job, with the catalog's guardrails applied (a hold stops expiry
@@ -90,6 +93,8 @@ final class Worker implements AutoCloseable {
     private NightlyCompaction tonight;
     /** The tables this scan found due an orphan scan. */
     private final List<Management.TableWork> orphansDue = new ArrayList<>();
+    /** The storage prefixes as last logged: those of the last scan that read them; none before the first. */
+    private Prefixes logged;
     private final WorkerMetrics metrics;
     private final ScanSpans spans;
     private final HealthReports health;
@@ -130,10 +135,11 @@ final class Worker implements AutoCloseable {
                 .observationRegistry(observations).uriMapper(Management::route).build();
         TokenSource tokens = TokenSource.of(settings.token(), clock, http);
         Management management = new Management(settings.catalogUri(), tokens, http, settings.pageSize());
+        OwnStorage storage = Storage.of(settings.storage());
         Compactor compactor = settings.compaction().enabled()
-                ? new KubernetesJobs(settings.compaction(), settings.catalogUri(), tokens, settings.storage(), clock)
+                ? new KubernetesJobs(settings.compaction(), settings.catalogUri(), tokens, settings.storage(),
+                        storage::store, clock)
                 : Compactor.NONE;
-        Storage storage = Storage.of(settings.storage());
         return new Worker(management, new Catalogs(settings.catalogUri(), tokens, storage.clientProperties(), trace),
                 storage, compactor, clock, settings.cleanupWindow(), settings.orphanInterval(),
                 settings.requestDeadline(), settings.compaction().maxJobs(), meters, observations);
@@ -153,6 +159,9 @@ final class Worker implements AutoCloseable {
 
     private void scan(UUID id, ScanReport report) {
         Instant now = clock.instant();
+        // The prefixes first, so that the scan's start reports what the store lets the worker list beneath those the
+        // catalog gives at this scan (backlog 250).
+        boolean reaches = reach(report);
         health.scanStarted(id, now, storage.check(), report);
         boolean ended = false;
         Optional<String> error = Optional.empty();
@@ -174,11 +183,21 @@ final class Worker implements AutoCloseable {
             pages(Management.Section.REQUESTS, management::requests, requests::addAll, report);
             requested.compact(requests, report);
             compact(report);
-            requested.scanOrphans(requests, () -> compact(report), report);
-            scanOrphans(now, report);
-            pages(Management.Section.PURGES, management::purges, purges -> purges.forEach(p -> purge(p, report)),
-                    report);
-            pages(Management.Section.DELETIONS, management::deletions, due -> delete(due, report), report);
+            if (reaches) {
+                requested.scanOrphans(requests, () -> compact(report), report);
+                scanOrphans(now, report);
+            }
+            // Read whole even when the storage reaches nothing, as a scan that succeeds reads the work list.
+            pages(Management.Section.PURGES, management::purges, purges -> {
+                if (reaches) {
+                    purges.forEach(p -> purge(p, report));
+                }
+            }, report);
+            pages(Management.Section.DELETIONS, management::deletions, due -> {
+                if (reaches) {
+                    delete(due, report);
+                }
+            }, report);
             ended = true;
         } catch (RuntimeException e) {
             error = Optional.of(e.toString());
@@ -211,6 +230,59 @@ final class Worker implements AutoCloseable {
             each.accept(page.items());
             token = page.nextToken();
         } while (token.isPresent());
+    }
+
+    // ---- storage prefixes ----
+
+    /**
+     * Reads the storage prefixes the catalog gives the worker at this scan (item 256; D30, amended 2026-11-24) and
+     * hands them to its storage, which then lists and deletes strictly beneath them alone. When the read fails, the
+     * storage reaches nothing, no earlier answer kept; when it reaches nothing, read or not, this scan's orphan scans,
+     * purges and deletions wait for a scan that reaches some. Each profile or prefix the worker refuses is a failure
+     * of the scan. The prefix set is logged at the first read and whenever it changes, each new prefix at WARN: the
+     * one record of where the worker deletes that the catalog cannot suppress.
+     *
+     * @return whether the storage reaches any prefix this scan
+     */
+    private boolean reach(ScanReport report) {
+        List<Management.StorageProfile> profiles;
+        try {
+            profiles = management.storageProfiles();
+        } catch (RuntimeException e) {
+            storage.reach(List.of());
+            LOG.warn("Cannot read the storage prefixes the catalog gives the worker: it lists and deletes nothing"
+                    + " this scan", e);
+            report.failed(ScanReport.Failure.STORAGE_PREFIXES, "reading the storage prefixes", e);
+            return false;
+        }
+        Prefixes reached = storage.reach(profiles);
+        logChanges(reached);
+        reached.refused().forEach(refused -> report.failed(ScanReport.Failure.STORAGE_PREFIXES, refused));
+        if (reached.isEmpty()) {
+            LOG.warn("The catalog gives the worker no storage prefix it reaches: it lists and deletes nothing this"
+                    + " scan");
+            return false;
+        }
+        return true;
+    }
+
+    /** Logs the prefix set at the first read, then each prefix added (WARN) or gone, and each new refusal (WARN). */
+    private void logChanges(Prefixes reached) {
+        Prefixes before = logged;
+        logged = reached;
+        if (before == null) {
+            LOG.info("The worker lists and deletes strictly beneath the storage prefixes the catalog gives it: {}",
+                    reached);
+        } else {
+            reached.prefixes().stream().filter(prefix -> !before.prefixes().contains(prefix)).forEach(prefix ->
+                    LOG.warn("The catalog gives the worker a new storage prefix: it now lists and deletes strictly"
+                            + " beneath {}", prefix));
+            before.prefixes().stream().filter(prefix -> !reached.prefixes().contains(prefix)).forEach(prefix ->
+                    LOG.info("The catalog no longer gives the worker the storage prefix {}: it lists and deletes there"
+                            + " no more", prefix));
+        }
+        reached.refused().stream().filter(refused -> before == null || !before.refused().contains(refused))
+                .forEach(refused -> LOG.warn("The worker refuses {}", refused));
     }
 
     // ---- refs ----

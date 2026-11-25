@@ -53,10 +53,9 @@ final class CompactionCluster implements AutoCloseable {
      * @param serviceAccount an empty folder, where the worker's service account is written as a pod has it mounted
      * @param catalogForPods the catalog as the Jobs' pods reach it ({@link TestCatalog#forPods}): the chart's and the
      *                       settings' catalog URI
-     * @param bucket         the store's bucket, under whose {@code tables/} the chart's storage profile lies
      * @param values         more of the chart's values, as {@code helm template} arguments
      */
-    static CompactionCluster start(Path serviceAccount, URI catalogForPods, String bucket, String... values)
+    static CompactionCluster start(Path serviceAccount, URI catalogForPods, String... values)
             throws Exception {
         Path repo = Path.of(System.getProperty("repo.root"));
         run(Duration.ofMinutes(20), null, "docker", "build", "-t", IMAGE,
@@ -68,8 +67,8 @@ final class CompactionCluster implements AutoCloseable {
         kubectl(Duration.ofMinutes(1), null, "create", "namespace", jobs);
         try {
             kubectl(Duration.ofMinutes(1), chart(repo, namespace, jobs, "templates/serviceaccount.yaml", catalogForPods,
-                    bucket, values), "apply", "-n", namespace, "-f", "-");
-            kubectl(Duration.ofMinutes(1), chart(repo, namespace, jobs, "templates/rbac.yaml", catalogForPods, bucket,
+                    values), "apply", "-n", namespace, "-f", "-");
+            kubectl(Duration.ofMinutes(1), chart(repo, namespace, jobs, "templates/rbac.yaml", catalogForPods,
                     values), "apply", "-f", "-");
             Files.writeString(serviceAccount.resolve("token"), kubectl(Duration.ofMinutes(1), null, "create", "token",
                     RELEASE, "-n", namespace, "--duration=1h"));
@@ -101,14 +100,18 @@ final class CompactionCluster implements AutoCloseable {
         kubectl(Duration.ofMinutes(5), null, "delete", "namespace", jobs, namespace, "--wait=true", "--timeout=4m");
     }
 
-    /** One template of the chart as a test installs it: the worker in {@code namespace}, its Jobs in {@code jobs}. */
+    /**
+     * One template of the chart as a test installs it: the worker in {@code namespace}, its Jobs in {@code jobs}. The
+     * chart needs a store identity in the worker's storage; its kind and endpoint matter to no template rendered here.
+     */
     private static String chart(Path repo, String namespace, String jobs, String template, URI catalogForPods,
-                                String bucket, String... values) throws Exception {
+                                String... values) throws Exception {
         List<String> command = new ArrayList<>(List.of("helm", "template", RELEASE,
                 repo.resolve("deploy/helm/nuna-maintenance").toString(), "--namespace", namespace,
                 "--show-only", template,
                 "--set", "config.nuna.maintenance.catalog-uri=" + catalogForPods,
-                "--set", "config.nuna.maintenance.storage.test.prefixes[0]=s3://" + bucket + "/tables",
+                "--set", "config.nuna.maintenance.storage.test.kind=minio",
+                "--set", "config.nuna.maintenance.storage.test.endpoint=http://silo:9000",
                 "--set-string", "config.nuna.maintenance.cleanup-window.start=01:00",
                 "--set-string", "config.nuna.maintenance.cleanup-window.end=05:00",
                 "--set", "config.nuna.maintenance.cleanup-window.zone=UTC",

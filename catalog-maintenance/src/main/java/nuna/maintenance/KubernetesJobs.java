@@ -25,13 +25,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
@@ -52,18 +52,18 @@ import javax.net.ssl.TrustManagerFactory;
  * rights. Talks to the API server with the worker's service account: it needs {@code get} and {@code create} on Jobs
  * and {@code create} on Secrets in the Jobs' namespace, and nothing else (the Helm chart's Role).
  *
- * <p>A table on a store whose certificate a private CA signed (its storage profile names a {@code ca-bundle}, backlog
+ * <p>A table on a store whose certificate a private CA signed (its store identity names a {@code ca-bundle}, backlog
  * 21) gets that CA too (D21, amended 2026-11-20 for backlog 88): a pod mounts only ConfigMaps of its own namespace, so
  * the worker copies the bundle it trusts into a ConfigMap of the Secret's name, one certificate per key, owned by the
  * Job like the Secret, and mounts it at {@value #STORAGE_CA}. Before Spark starts, the pod builds a trust store of the
  * image's JDK CAs ({@code $JAVA_HOME/lib/security/cacerts}) and the bundle's with the JDK's keytool, and Spark's driver
  * trusts that store ({@code javax.net.ssl.trustStore} in {@code spark.driver.extraJavaOptions}): its S3 clients, on
  * the credentials the catalog vends, and its catalog client with them. That needs {@code create} on ConfigMaps too.
- * A table on a profile without a bundle gets a Job as before.
+ * A table on a store without a bundle gets a Job as before.
  */
 final class KubernetesJobs implements Compactor {
 
-    /** Where a Job's pod finds its storage profile's CA bundle: one certificate per file, {@code ca-<n>.pem}. */
+    /** Where a Job's pod finds its store's CA bundle: one certificate per file, {@code ca-<n>.pem}. */
     static final String STORAGE_CA = "/etc/nuna/storage-ca";
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -100,17 +100,23 @@ final class KubernetesJobs implements Compactor {
     private final TokenSource tokens;
     private final String namespace;
     private final HttpClient http;
-    /** Every storage profile's prefixes, longest first, each with its profile's CA bundle, if it names one. */
+    /** Each store identity's CA bundle, by the store's name, if it names one. */
     private final Map<String, Optional<CaBundle>> storageCas;
+    /** The store a table's location lies beneath, by name, as the worker's storage finds it at this scan. */
+    private final Function<String, Optional<String>> storeOf;
 
     /**
-     * @param storage the worker's storage profiles; a Job for a table under one with a {@code ca-bundle} trusts it.
+     * @param storage the worker's store identities; a Job for a table on one with a {@code ca-bundle} trusts it.
      *                Each bundle is read now, so one that cannot be read stops the worker starting
      *                ({@link CaBundle#read} names the file)
+     * @param storeOf the store a location lies beneath, by its name, as the catalog's prefixes say at this scan
+     *                ({@link OwnStorage#store})
      * @param clock   the worker's clock, which times each Job's deadline to the window's end
      */
     KubernetesJobs(WorkerSettings.Compaction settings, URI workerCatalogUri, TokenSource tokens,
-                   Map<String, WorkerSettings.StorageProfile> storage, Clock clock) {
+                   Map<String, WorkerSettings.Store> storage, Function<String, Optional<String>> storeOf,
+                   Clock clock) {
+        this.storeOf = storeOf;
         this.settings = settings;
         this.clock = clock;
         this.catalogUri = settings.catalogUri() != null ? settings.catalogUri() : workerCatalogUri;
@@ -239,33 +245,20 @@ final class KubernetesJobs implements Compactor {
     }
 
     /**
-     * The CA bundle of the storage profile the table lies in, found as the worker's own storage finds a location's
-     * profile ({@link Storage#of}): by its longest prefix.
+     * The CA bundle of the store the table lies in, found as the worker's own storage finds a location's store
+     * ({@link OwnStorage#store}): by the catalog's prefix it lies beneath. None for a table beneath no prefix.
      */
     private Optional<CaBundle> storageCa(Management.TableWork table) {
-        String location = Storage.normalize(table.location());
-        for (Map.Entry<String, Optional<CaBundle>> prefix : storageCas.entrySet()) {
-            String under = prefix.getKey().endsWith("/") ? prefix.getKey() : prefix.getKey() + "/";
-            if (location.startsWith(under) || location.equals(prefix.getKey())) {
-                return prefix.getValue();
-            }
-        }
-        return Optional.empty();
+        return storeOf.apply(table.location()).flatMap(store -> storageCas.getOrDefault(store, Optional.empty()));
     }
 
-    private static Map<String, Optional<CaBundle>> storageCas(Map<String, WorkerSettings.StorageProfile> storage) {
-        Map<String, Optional<CaBundle>> byPrefix = new HashMap<>();
-        storage.values().forEach(profile -> {
-            Optional<CaBundle> bundle = Optional.ofNullable(profile.caBundle()).map(CaBundle::read);
-            profile.prefixes().forEach(prefix -> byPrefix.put(Storage.normalize(prefix), bundle));
-        });
-        Map<String, Optional<CaBundle>> longestFirst = new LinkedHashMap<>();
-        byPrefix.keySet().stream().sorted(Comparator.comparingInt(String::length).reversed())
-                .forEach(prefix -> longestFirst.put(prefix, byPrefix.get(prefix)));
-        return longestFirst;
+    private static Map<String, Optional<CaBundle>> storageCas(Map<String, WorkerSettings.Store> storage) {
+        Map<String, Optional<CaBundle>> byStore = new HashMap<>();
+        storage.forEach((name, store) -> byStore.put(name, Optional.ofNullable(store.caBundle()).map(CaBundle::read)));
+        return byStore;
     }
 
-    /** The storage profile's CA bundle for one Job, one PEM certificate per key, owned by the Job. */
+    /** The store's CA bundle for one Job, one PEM certificate per key, owned by the Job. */
     private static ObjectNode storageCaConfigMap(String name, String job, String jobUid, CaBundle bundle) {
         ObjectNode configMap = JSON.createObjectNode().put("apiVersion", "v1").put("kind", "ConfigMap");
         ownedBy(configMap.putObject("metadata").put("name", name), job, jobUid);

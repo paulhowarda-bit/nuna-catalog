@@ -71,6 +71,7 @@ The kinds of `nuna.maintenance.failures`:
 | `kind` | What failed |
 |---|---|
 | `work-list` | Reading a page of the work list. The scan fails. |
+| `storage-prefixes` | Reading the storage prefixes the catalog gives the worker (item 256), when the scan lists and deletes nothing; or, once at every scan for each, a profile no store or two serve, or a prefix the worker refuses. The scan goes on with the rest. |
 | `table-load` | Loading a table the work list named. |
 | `table-changed` | The table under that name is now another table, by id, so nothing ran on it. Normal after a drop and recreate between the work list read and the load; the next scan sees the new table. |
 | `snapshot-expiry` | Expiring a table's snapshots, or recording the files it left unreferenced. |
