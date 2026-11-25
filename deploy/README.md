@@ -252,8 +252,10 @@ telemetry:
 
   The catalog does not apply them itself: its own credentials would then need the right to undo them. Apply
   them again after changing a profile's prefixes. A profile with no `maintenance-principal` is listed as
-  `unprotected`. Each form has a heavy test, and each ran on 2026-11-20 (backlog 4): `DeletePolicyAwsTest`
-  on real S3 (`-Ps3=aws`), `DeletePolicyMinioTest` on Silo with non-root users, and `DeletePolicyCephTest`
+  `unprotected`. `GET /management/v1/maintenance/storage-setup` gives the same policies per profile, each with the
+  commands that apply it, the worker's settings for a store its last report shows it does not reach, and for an
+  unprotected profile the setting to add (docs/observability/table-health.md, "Storage setup"). Each form has a
+  heavy test, and each ran on 2026-11-20 (backlog 4): `DeletePolicyAwsTest` on real S3 (`-Ps3=aws`), `DeletePolicyMinioTest` on Silo with non-root users, and `DeletePolicyCephTest`
   (`-Ps3=ceph`, in the heavy pass's Ceph leg). `local/run.sh up` applies the MinIO form to Silo, and its `smoke`
   tries a delete as each user ("Trying it locally").
 
