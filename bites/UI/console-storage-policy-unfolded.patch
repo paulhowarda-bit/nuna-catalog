@@ -1,0 +1,17 @@
+Breaks: the storage dialog shows each policy's whole text open, where Atelier's design folds it under its summary and leaves the commands and Copy the policy in view.
+Module: catalog-server
+Test: ConsoleStorageSetupBrowserTest#aStoreTheWorkerReachesNeedsOnlyThePolicyAndShowsWhenItWasListed
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/storage.js b/catalog-server/src/main/resources/nuna/ui/storage.js
+index 5b460fb6..7fb1eeeb 100644
+--- a/catalog-server/src/main/resources/nuna/ui/storage.js
++++ b/catalog-server/src/main/resources/nuna/ui/storage.js
+@@ -40,7 +40,7 @@ function pretty(policy) {
+ }
+ 
+ /** The policy, folded behind its summary. */
+-const fold = (summary, policy) => h('details', {class: 'setup-fold', 'data-fold': ''}, h('summary', null, summary),
++const fold = (summary, policy) => h('details', {class: 'setup-fold', 'data-fold': '', open: true}, h('summary', null, summary),
+   block('policy', pretty(policy)));
+ 
+ /** "1. The worker's settings": only for a store the worker holds no identity on (item 256). */

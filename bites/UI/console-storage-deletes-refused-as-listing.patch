@@ -1,0 +1,17 @@
+Breaks: Service's Worker storage panel says a store refused the worker's listing where it listed but refused its deletes, so the operator looks for the wrong grant.
+Module: catalog-server
+Test: ConsoleStorageSetupBrowserTest#anUnprotectedProfileAndTheAwsAndCephPoliciesAsTheRouteGivesThem
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/storage.js b/catalog-server/src/main/resources/nuna/ui/storage.js
+index 5b460fb6..d3ed5b92 100644
+--- a/catalog-server/src/main/resources/nuna/ui/storage.js
++++ b/catalog-server/src/main/resources/nuna/ui/storage.js
+@@ -152,7 +152,7 @@ export function storeOf(profile, reported) {
+   const listing = first(p => p.listed === 'refused');
+   if (listing) return ['list-refused', `Listing refused: ${listing['list-code']}`];
+   const deletes = first(p => (p['delete-refused'] || 0) > 0);
+-  if (deletes) return ['delete-refused', `Deletes refused: ${deletes['delete-code']}`];
++  if (deletes) return ['list-refused', `Listing refused: ${deletes['delete-code']}`];
+   const listFailed = first(p => p.listed === 'failed');
+   if (listFailed) return ['no-answer', `No answer: ${listFailed['list-code']}`];
+   const deleteFailed = first(p => (p['delete-failed'] || 0) > 0);
