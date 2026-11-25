@@ -281,7 +281,7 @@ class ConsoleRowColumnRulesBrowserTest {
         WebElement kpi = browser.await(By.cssSelector("#governance-kpis [data-kpi='flagged']"));
         assertThat(textContent(kpi.findElement(By.cssSelector(".kpi-l")))).isEqualTo("Flagged tables");
         assertThat(textContent(kpi.findElement(By.cssSelector(".kpi-v")))).isEqualTo(String.valueOf(flagged));
-        assertThat(textContent(browser.await(By.cssSelector("#flagged h2")))).isEqualTo("Flagged tables");
+        assertThat(textContent(browser.await(By.cssSelector("#flagged h2")))).isEqualTo("Flagged tables read through Trino");
         WebElement row = browser.await(By.cssSelector("#flagged tr[data-on='" + ns + ".positions']"));
         assertThat(textContent(row.findElement(By.cssSelector("td.num")))).isEqualTo("2");
         assertThat(driver.findElements(By.cssSelector("#flagged tbody tr"))).hasSize(flagged);

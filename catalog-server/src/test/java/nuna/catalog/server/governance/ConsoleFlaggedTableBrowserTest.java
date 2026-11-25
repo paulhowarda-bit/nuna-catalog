@@ -97,7 +97,9 @@ class ConsoleFlaggedTableBrowserTest {
         assertThat(browser.await(flagButton()).getText()).isEqualTo("Flag for row and column rules");
         browser.await(flagButton()).click();
         assertThat(browser.await(By.cssSelector("dialog.dlg .dlg-body")).getText())
-                .contains("only a trusted engine reads or writes its files", TRINO, "recorded as set from the console");
+                .contains("only a trusted engine reads or writes its files, and the console shows no rows",
+                        "Until the grant admin sets rules, Trino shows every row to anyone who may select.",
+                        "recorded as set from the console");
         submit("is flagged for row and column rules");
         browser.awaitText(flagButton(), "Remove the flag");
         assertThat(own(table).get(FLAG)).containsEntry("value", "true").containsEntry("provenance", "console")
