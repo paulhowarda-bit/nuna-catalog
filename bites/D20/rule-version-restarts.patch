@@ -1,0 +1,36 @@
+Breaks: a rule's version starts again at 1, so an If-Match read from a removed rule replaces the rule set after it.
+Module: catalog-server
+Test: RuleRoutesTest#aSetNamingTheVersionOfARuleRemovedSinceAnswers412
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java b/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java
+index a0fad9de..9a7a1dad 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java
+@@ -43,21 +43,21 @@ public record RowColumnRule(UUID catalogId, UUID tableId, String group, Optional
+     }
+ 
+     /**
+-     * The version a set gives a rule (backlog 244): the time of the write in microseconds since 1970, or one past the
+-     * version the rule had when the clock is behind it. A version only grows while the rule lasts, and a rule removed and
+-     * set again does not come back at a version a client read before, as it would if versions started again at 1: an
+-     * If-Match read from the old rule cannot replace the new one.
++     * The version a set gives a rule (backlog 244): the time of the write in microseconds since 1970, or one past
++     * the version the rule had when the clock is behind it. A version only grows while the rule lasts, and a rule
++     * removed and set again does not come back at a version a client read before, as it would if versions started
++     * again at 1: an If-Match read from the old rule cannot replace the new one.
+      *
+      * @param was the version of the rule being replaced; empty when the group has no rule on the table
+      */
+     public static long nextVersion(OptionalLong was, Instant at) {
+         long micros = Math.addExact(Math.multiplyExact(at.getEpochSecond(), 1_000_000L), at.getNano() / 1_000);
+-        return was.isPresent() ? Math.max(was.getAsLong() + 1, micros) : micros;
++        return was.isPresent() ? was.getAsLong() + 1 : 1;
+     }
+ 
+     /**
+-     * A stored rule: who set it and when, and its version, which a set or removal may name to act only on the rule as it
+-     * was read (If-Match, backlog 244). A rule stored before versions were kept reads as version 1.
++     * A stored rule: who set it and when, and its version, which a set or removal may name to act only on the rule
++     * as it was read (If-Match, backlog 244). A rule stored before versions were kept reads as version 1.
+      */
+     public record Stored(RowColumnRule rule, String setBy, Instant setAt, long version) {
+ 

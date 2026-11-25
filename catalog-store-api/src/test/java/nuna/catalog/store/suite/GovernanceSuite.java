@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
@@ -130,6 +131,9 @@ public abstract class GovernanceSuite extends GroupSuite {
                 GovernanceAttribute.Kind.ROW_COLUMN_POLICY, value, "catalog-api", "steward", now()), change()));
     }
 
+    /** Whatever version the rule is at, or none. */
+    private static final OptionalLong NONE = OptionalLong.empty();
+
     private static RowColumnRule rule(UUID catalog, CatalogObject table, String group, String filter,
                                       Map<String, String> masks) {
         return RowColumnRule.of(catalog, table.id(), group, Optional.ofNullable(filter), masks);
@@ -147,20 +151,62 @@ public abstract class GovernanceSuite extends GroupSuite {
                 Map.of("ssn", "'***'", "a.b \"c\"", "NULL"));
         RowColumnRule tradersAgain = rule(catalog, table, "traders", "desk IN ('EQ', 'FX')", Map.of("ssn", "NULL"));
 
-        assertApplied(store.putRule(traders, "grant-admin", change()));
-        assertApplied(store.putRule(auditors, "grant-admin", change()));
-        assertThat(store.putRule(auditors, "grant-admin", change())).isEqualTo(WriteResult.UNCHANGED);
-        assertApplied(store.putRule(tradersAgain, "grant-admin-2", change()));
+        assertApplied(store.putRule(traders, NONE, "grant-admin", change()));
+        assertApplied(store.putRule(auditors, NONE, "grant-admin", change()));
+        assertThat(store.putRule(auditors, NONE, "grant-admin", change())).isEqualTo(WriteResult.UNCHANGED);
+        assertApplied(store.putRule(tradersAgain, NONE, "grant-admin-2", change()));
 
         assertThat(store.rulesOn(table.id())).extracting(RowColumnRule.Stored::rule)
                 .containsExactly(auditors, tradersAgain);
         assertThat(store.rulesOn(table.id()).get(1).setBy()).isEqualTo("grant-admin-2");
-        assertApplied(store.removeRule(catalog, table.id(), "auditors", change()));
-        assertThat(store.removeRule(catalog, table.id(), "auditors", change()))
+        assertApplied(store.removeRule(catalog, table.id(), "auditors", NONE, change()));
+        assertThat(store.removeRule(catalog, table.id(), "auditors", NONE, change()))
                 .isEqualTo(new WriteResult.Missing(WriteResult.Subject.RULE));
-        assertThat(store.removeRule(newCatalog(), table.id(), "traders", change()))
+        assertThat(store.removeRule(newCatalog(), table.id(), "traders", NONE, change()))
                 .isEqualTo(new WriteResult.Missing(WriteResult.Subject.RULE));
         assertThat(store.rulesOn(table.id())).extracting(RowColumnRule.Stored::rule).containsExactly(tradersAgain);
+    }
+
+    @Test
+    @DisplayName("Rules: each rule has a version that grows with each set, and a set or removal that expects another"
+            + " version, or a rule removed since, writes nothing (If-Match, backlog 244)")
+    void aRulesVersionGuardsItsSetAndRemoval() {
+        UUID catalog = newCatalog();
+        CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+        flag(table, "true");
+        RowColumnRule first = rule(catalog, table, "traders", "desk = 'EQ'", Map.of());
+        RowColumnRule second = rule(catalog, table, "traders", "desk = 'FX'", Map.of("ssn", "NULL"));
+
+        assertThat(store.putRule(first, OptionalLong.of(1), "grant-admin", change()))
+                .as("no rule yet").isEqualTo(new WriteResult.VersionMismatch(0));
+        assertApplied(store.putRule(first, NONE, "grant-admin", change()));
+        long v1 = version(table);
+        assertThat(store.putRule(first, OptionalLong.of(v1), "grant-admin", change()))
+                .isEqualTo(WriteResult.UNCHANGED);
+        assertThat(version(table)).as("an unchanged set keeps the version").isEqualTo(v1);
+        assertApplied(store.putRule(second, OptionalLong.of(v1), "grant-admin-2", change()));
+        long v2 = version(table);
+        assertThat(v2).isGreaterThan(v1);
+
+        assertThat(store.putRule(first, OptionalLong.of(v1), "grant-admin", change()))
+                .isEqualTo(new WriteResult.VersionMismatch(v2));
+        assertThat(store.removeRule(catalog, table.id(), "traders", OptionalLong.of(v1), change()))
+                .isEqualTo(new WriteResult.VersionMismatch(v2));
+        assertThat(store.rulesOn(table.id())).extracting(RowColumnRule.Stored::rule).containsExactly(second);
+
+        assertApplied(store.removeRule(catalog, table.id(), "traders", OptionalLong.of(v2), change()));
+        assertThat(store.putRule(second, OptionalLong.of(v2), "grant-admin", change()))
+                .as("removed since").isEqualTo(new WriteResult.VersionMismatch(0));
+        assertThat(store.removeRule(catalog, table.id(), "traders", OptionalLong.of(v2), change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.RULE));
+        // A later write's time: the change's clock is in milliseconds here, and the server's in microseconds.
+        assertApplied(store.putRule(first, NONE, "grant-admin", changeAt(now().plusMillis(5))));
+        assertThat(version(table)).as("a rule set again takes no version read before").isNotIn(v1, v2);
+        assertThat(store.rulesOn(table.id())).extracting(RowColumnRule.Stored::rule).containsExactly(first);
+    }
+
+    private long version(CatalogObject table) {
+        return store.rulesOn(table.id()).getFirst().version();
     }
 
     @Test
@@ -171,15 +217,16 @@ public abstract class GovernanceSuite extends GroupSuite {
         CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
         RowColumnRule traders = rule(catalog, table, "traders", "desk = 'EQ'", Map.of());
 
-        assertThat(store.putRule(traders, "grant-admin", change()))
+        assertThat(store.putRule(traders, NONE, "grant-admin", change()))
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_FLAGGED));
         flag(table, "false");
-        assertThat(store.putRule(traders, "grant-admin", change()))
+        assertThat(store.putRule(traders, NONE, "grant-admin", change()))
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_FLAGGED));
-        assertThat(store.putRule(rule(newCatalog(), table, "traders", "true", Map.of()), "grant-admin", change()))
+        assertThat(store.putRule(rule(newCatalog(), table, "traders", "true", Map.of()), NONE, "grant-admin",
+                change()))
                 .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         flag(table, "true");
-        assertApplied(store.putRule(traders, "grant-admin", change()));
+        assertApplied(store.putRule(traders, NONE, "grant-admin", change()));
 
         assertThat(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "steward",
                 change())).isEqualTo(new WriteResult.Refused(WriteResult.Reason.HAS_RULES));
@@ -189,7 +236,7 @@ public abstract class GovernanceSuite extends GroupSuite {
         assertThat(store.attributesOf(Set.of(table.securable()))).extracting(GovernanceAttribute::value)
                 .containsExactly("true");
 
-        assertApplied(store.removeRule(catalog, table.id(), "traders", change()));
+        assertApplied(store.removeRule(catalog, table.id(), "traders", NONE, change()));
         assertApplied(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "steward",
                 change()));
     }
@@ -200,11 +247,12 @@ public abstract class GovernanceSuite extends GroupSuite {
         UUID catalog = newCatalog();
         CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
         flag(table, "true");
-        assertApplied(store.putRule(rule(catalog, table, "traders", "desk = 'EQ'", Map.of()), "grant-admin", change()));
+        assertApplied(store.putRule(rule(catalog, table, "traders", "desk = 'EQ'", Map.of()), NONE, "grant-admin",
+                change()));
 
         assertApplied(store.dropObject(table.id(), now().minusSeconds(60), change()));
-        assertThat(store.putRule(rule(catalog, table, "auditors", "true", Map.of()), "grant-admin", change()))
-                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.putRule(rule(catalog, table, "auditors", "true", Map.of()), NONE, "grant-admin",
+                change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         assertApplied(store.claimPurge(table.id(), "worker", change()));
         assertApplied(store.completePurge(table.id(), "worker", change()));
 

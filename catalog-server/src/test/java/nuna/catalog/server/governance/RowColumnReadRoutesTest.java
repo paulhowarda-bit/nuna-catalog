@@ -448,7 +448,8 @@ class RowColumnReadRoutesTest {
 
     private void rule(CatalogObject table, String group, Optional<String> filter, Map<String, String> masks) {
         rules.computeIfAbsent(table.id(), id -> new ArrayList<>()).add(new RowColumnRule.Stored(
-                RowColumnRule.of(catalog.id(), table.id(), group, filter, masks), "gina", NOW.minus(Duration.ofDays(1))));
+                RowColumnRule.of(catalog.id(), table.id(), group, filter, masks), "gina",
+                NOW.minus(Duration.ofDays(1)), 1));
     }
 
     private Optional<NamespaceRecord> findNamespace(UUID catalogId, List<String> path) {

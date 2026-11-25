@@ -391,7 +391,7 @@ class GovernanceRefusalTest {
 
     private RowColumnRule.Stored rule(String group, String filter, Map<String, String> masks) {
         return new RowColumnRule.Stored(RowColumnRule.of(catalog.id(), orders.id(), group,
-                Optional.ofNullable(filter), masks), "gina", NOW);
+                Optional.ofNullable(filter), masks), "gina", NOW, 1);
     }
 
     /** An update-table request that makes a schema of {@code fields} orders' current one. */

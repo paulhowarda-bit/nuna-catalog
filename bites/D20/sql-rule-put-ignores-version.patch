@@ -1,0 +1,18 @@
+Breaks: PostgreSQL and CockroachDB put a rule whatever version it is at, so a stale If-Match replaces it.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Governance#aRulesVersionGuardsItsSetAndRemoval
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
+index 4bee92e6..22253cc8 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
+@@ -48,9 +48,7 @@ final class SqlRules {
+             Optional<RowColumnRule.Stored> was = first(connection, "SELECT " + COLUMNS + " FROM row_column_rule"
+                     + " WHERE table_id = ? AND group_name = ?", SqlRules::rule, rule.tableId(), rule.group());
+             long version = was.map(RowColumnRule.Stored::version).orElse(0L);
+-            if (expected.isPresent() && expected.getAsLong() != version) {
+-                return new WriteResult.VersionMismatch(version);
+-            }
++            // a set replaces the rule at whatever version it is
+             if (was.isPresent() && was.get().rule().equals(rule)) {
+                 return WriteResult.UNCHANGED;
+             }

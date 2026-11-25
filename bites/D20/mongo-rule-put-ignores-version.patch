@@ -1,0 +1,18 @@
+Breaks: MongoDB puts a rule whatever version it is at, so a stale If-Match replaces it.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Governance#aRulesVersionGuardsItsSetAndRemoval
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRules.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRules.java
+index 1dbc1dde..7cf7000e 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRules.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRules.java
+@@ -58,9 +58,7 @@ final class MongoRules {
+             Optional<BsonDocument> was = tx.find(RULE, key);
+             was.ifPresent(tx::see);
+             long version = was.map(MongoRules::version).orElse(0L);
+-            if (expected.isPresent() && expected.getAsLong() != version) {
+-                return new WriteResult.VersionMismatch(version);
+-            }
++            // a set replaces the rule at whatever version it is
+             if (was.isPresent() && rule(was.get()).rule().equals(rule)) {
+                 return WriteResult.UNCHANGED;
+             }

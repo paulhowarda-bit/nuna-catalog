@@ -43,10 +43,10 @@ public record RowColumnRule(UUID catalogId, UUID tableId, String group, Optional
     }
 
     /**
-     * The version a set gives a rule (backlog 244): the time of the write in microseconds since 1970, or one past the
-     * version the rule had when the clock is behind it. A version only grows while the rule lasts, and a rule removed and
-     * set again does not come back at a version a client read before, as it would if versions started again at 1: an
-     * If-Match read from the old rule cannot replace the new one.
+     * The version a set gives a rule (backlog 244): the time of the write in microseconds since 1970, or one past
+     * the version the rule had when the clock is behind it. A version only grows while the rule lasts, and a rule
+     * removed and set again does not come back at a version a client read before, as it would if versions started
+     * again at 1: an If-Match read from the old rule cannot replace the new one.
      *
      * @param was the version of the rule being replaced; empty when the group has no rule on the table
      */
@@ -56,8 +56,8 @@ public record RowColumnRule(UUID catalogId, UUID tableId, String group, Optional
     }
 
     /**
-     * A stored rule: who set it and when, and its version, which a set or removal may name to act only on the rule as it
-     * was read (If-Match, backlog 244). A rule stored before versions were kept reads as version 1.
+     * A stored rule: who set it and when, and its version, which a set or removal may name to act only on the rule
+     * as it was read (If-Match, backlog 244). A rule stored before versions were kept reads as version 1.
      */
     public record Stored(RowColumnRule rule, String setBy, Instant setAt, long version) {
 
