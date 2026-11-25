@@ -1,0 +1,17 @@
+Breaks: A link to Governance's old Grants tab opens Governance's Summary, not the rail's Grants.
+Module: catalog-server
+Test: ConsoleBrowserTest#grantsHaveARailItemAndAGrantAdminOpensATableOrViewOnAccess
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/route.js b/catalog-server/src/main/resources/nuna/ui/route.js
+index 7e556c22..0a5ee05d 100644
+--- a/catalog-server/src/main/resources/nuna/ui/route.js
++++ b/catalog-server/src/main/resources/nuna/ui/route.js
+@@ -23,7 +23,7 @@ export function parse() {
+   const p = new URLSearchParams(location.hash.slice(1));
+   const ns = p.get('ns') ? p.get('ns').split(SEP) : [];
+   // Grants were Governance's tab until they had a place in the rail (backlog 245): an old link opens them there.
+-  const grants = p.get('p') === 'governance' && p.get('tab') === 'grants';
++  const grants = false;
+   const page = grants ? 'grants' : OLD_PAGES[p.get('p')] || p.get('p') || null;
+   const k = p.get('k') || (ns.length ? 'namespace' : 'catalog');
+   const tab = grants ? null : p.get('tab');

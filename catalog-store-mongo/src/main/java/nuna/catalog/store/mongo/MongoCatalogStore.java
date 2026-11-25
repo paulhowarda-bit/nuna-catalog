@@ -27,6 +27,7 @@ import nuna.catalog.store.CompactionRun;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
 import nuna.catalog.store.IdempotencyResult;
@@ -609,6 +610,11 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {
         return grants.listOn(securable, page);
+    }
+
+    @Override
+    public Page<GrantGroup> listGrantGroups(UUID catalogId, PageRequest page) {
+        return grants.listGroups(catalogId, page);
     }
 
     // ---- row filters and column masks ----

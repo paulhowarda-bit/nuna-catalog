@@ -7,6 +7,7 @@ import static nuna.catalog.store.oracle.Jdbc.update;
 
 import nuna.catalog.store.Change;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
@@ -19,6 +20,7 @@ import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -128,6 +130,24 @@ final class OracleGrants {
                     + " WHERE securable_id = ? AND securable_kind = ?" + keyset
                     + " ORDER BY group_name, privilege FETCH FIRST ? ROWS ONLY", OracleGrants::grant, parameters.toArray());
             return Jdbc.page(grants, page, found -> PageToken.encode(found.grant().group(), found.grant().privilege()));
+        });
+    }
+
+    /** The page's groups come from an inner keyset read on {@code grant_by_group}; their privileges from the same read. */
+    Page<GrantGroup> listGroups(UUID catalogId, PageRequest page) {
+        Optional<String> after = Jdbc.after(page, 1, List::getFirst);
+        return transactions.autocommit("grant group listing", connection -> {
+            List<Object> parameters = new ArrayList<>(List.of(catalogId));
+            String keyset = after.isPresent()
+                    ? " AND " + Jdbc.greater(List.of("group_name"), List.of(after.get()), parameters) : "";
+            parameters.add(page.size() + 1);
+            parameters.add(catalogId);
+            List<Map.Entry<String, String>> rows = query(connection, "SELECT DISTINCT g.group_name, g.privilege"
+                            + " FROM grant_record g JOIN (SELECT DISTINCT group_name FROM grant_record"
+                            + " WHERE catalog_id = ?" + keyset + " ORDER BY group_name FETCH FIRST ? ROWS ONLY) p"
+                            + " ON g.group_name = p.group_name WHERE g.catalog_id = ? ORDER BY g.group_name, g.privilege",
+                    row -> Map.entry(Jdbc.text(row, "group_name"), Jdbc.text(row, "privilege")), parameters.toArray());
+            return Jdbc.page(GrantGroup.byGroup(rows), page, found -> PageToken.encode(found.group()));
         });
     }
 

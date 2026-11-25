@@ -36,6 +36,10 @@ export const auditFeedOpen = () => !!deployment['read-audit-feed'];
 export const trailOpen = catalog => may(catalog, 'manage-grants');
 export const auditOpen = catalog => auditFeedOpen() || trailOpen(catalog);
 
+/** The tab a table or view opens on when the link names none: Access for one who manages the catalog's grants but reads
+ * none of its data, as a grant admin does (D18), since Overview would refuse them; else Overview (backlog 245). */
+export const openingTab = catalog => may(catalog, 'manage-grants') && !may(catalog, 'select') ? 'access' : '';
+
 /** The caller's groups, from the token, for the words on a page they cannot use. */
 export function groupWords() {
   const groups = (claims() || {}).groups;

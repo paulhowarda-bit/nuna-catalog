@@ -22,11 +22,19 @@ import java.util.Set;
  */
 public final class Separation {
 
-    /** The duties of D18; reading is no duty and goes with anything but grant administration. */
-    enum Duty {
+    /**
+     * The duties of D18; reading is no duty and goes with anything but grant administration. The console names them
+     * Reading, Data, Grants and Tags.
+     */
+    public enum Duty {
         READ, DATA, GRANTS, TAGS;
 
-        static Duty of(Privilege privilege) {
+        /** The name on the wire, e.g. {@code read}. */
+        public String wireName() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+
+        public static Duty of(Privilege privilege) {
             return switch (privilege) {
                 case DESCRIBE, SELECT -> READ;
                 case WRITE, MODIFY, CREATE -> DATA;
@@ -73,7 +81,9 @@ public final class Separation {
 
     /**
      * Why {@code group} may not be granted {@code privilege}, given every privilege it already holds
-     * anywhere in the same catalog; empty when it may.
+     * anywhere in the same catalog; empty when it may. The reason names the conflicting privilege first in
+     * {@link Privilege}'s order, whatever order the store read them in, so the grant preview and the grant
+     * give the same reason (backlog 246).
      */
     public Optional<String> refusal(String group, Privilege privilege, Collection<Privilege> heldInCatalog) {
         if (platformOperatorGroups.contains(group)) {
@@ -85,7 +95,7 @@ public final class Separation {
         Duty wanted = Duty.of(privilege);
         return heldInCatalog.stream()
                 .filter(held -> Duty.of(held).conflictsWith(wanted))
-                .findFirst()
+                .min(java.util.Comparator.naturalOrder())
                 .map(held -> "group " + group + " holds " + held.wireName() + " in this catalog, a "
                         + Duty.of(held).name().toLowerCase(java.util.Locale.ROOT) + " duty that "
                         + privilege.wireName() + " (" + wanted.name().toLowerCase(java.util.Locale.ROOT)

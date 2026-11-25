@@ -14,6 +14,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
 import com.mongodb.client.MongoCollection;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
@@ -28,6 +29,7 @@ import java.util.UUID;
 import java.util.function.Predicate;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
+import org.bson.BsonInt32;
 import org.bson.BsonString;
 import org.bson.BsonValue;
 
@@ -141,6 +143,26 @@ final class MongoGrants {
             List<GrantRecord> found = grants().find(filter).sort(ascending("group", "privilege"))
                     .limit(page.size() + 1).map(MongoGrants::grant).into(new ArrayList<>());
             return page(found, page, record -> PageToken.encode(record.grant().group(), record.grant().privilege()));
+        });
+    }
+
+    /** Groups in order on {@code grant_group}, each folded with every privilege it holds in the catalog. */
+    Page<GrantGroup> listGroups(UUID catalogId, PageRequest page) {
+        Optional<String> after = after(page, 1, List::getFirst);
+        return transactions.read("grant group listing", () -> {
+            BsonDocument match = new BsonDocument("catalogId", uuid(catalogId));
+            after.ifPresent(group -> match.append("group", new BsonDocument("$gt", new BsonString(group))));
+            List<GrantGroup> found = grants().aggregate(List.of(
+                            new BsonDocument("$match", match),
+                            new BsonDocument("$sort", new BsonDocument("group", new BsonInt32(1))),
+                            new BsonDocument("$group", new BsonDocument("_id", new BsonString("$group"))
+                                    .append("privileges", new BsonDocument("$addToSet", new BsonString("$privilege")))),
+                            new BsonDocument("$sort", new BsonDocument("_id", new BsonInt32(1))),
+                            new BsonDocument("$limit", new BsonInt32(page.size() + 1))))
+                    .map(doc -> new GrantGroup(doc.getString("_id").getValue(), doc.getArray("privileges").stream()
+                            .map(privilege -> privilege.asString().getValue()).toList()))
+                    .into(new ArrayList<>());
+            return page(found, page, group -> PageToken.encode(group.group()));
         });
     }
 

@@ -4,14 +4,14 @@
 import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startAgain, startSignIn, useToken, whenSignedOut}
   from './auth.js';
 import * as api from './api.js';
-import {auditOpen, groupWords, keepAccess, landingCatalogs, operates, readsData} from './access.js';
+import {auditOpen, groupWords, keepAccess, landingCatalogs, may, operates, readsData} from './access.js';
 import {$, $$, at, failure, fill, fmt, h, icon, pill, plural, techDetails} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
 import {overviewPage} from './overview.js';
 import {maintenancePage} from './maintenance.js';
 import {healthPage} from './health.js';
-import {governancePage} from './governance.js';
+import {governancePage, grantsPage} from './governance.js';
 import {auditPage} from './audit.js';
 import {browse, notFound} from './browse.js';
 import {clearReading, readingControl, refsHref} from './refs.js';
@@ -122,7 +122,7 @@ function homeKey(c) {
   return 'catalog';
 }
 
-const RAIL = ['overview', 'catalog', 'refs', 'maintenance', 'governance', 'audit', 'service'];
+const RAIL = ['overview', 'catalog', 'refs', 'maintenance', 'governance', 'grants', 'audit', 'service'];
 
 /** A page the caller's groups cannot use, reached by a link: said in plain words, and the catalog is never asked. */
 function closedPage(title, words) {
@@ -186,12 +186,12 @@ function setChrome(navKey, ref) {
   // The ref read goes along to the pages that show main only, which say so beside it (Atelier, 2026-11-23).
   const hrefs = {overview: href({page: 'overview', c: cat, r: ref}), catalog: href({c: cat, r: ref}), refs: refsHref(cat),
     maintenance: href({page: 'maintenance', c: cat, r: ref}), governance: href({page: 'governance', c: cat, r: ref}),
-    audit: href({page: 'audit', c: cat, r: ref}), service: pageHref('service')};
+    grants: href({page: 'grants', c: cat, r: ref}), audit: href({page: 'audit', c: cat, r: ref}), service: pageHref('service')};
   // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
-  // read, Audit is for audit readers and those who manage the catalog's grants, Service for platform operators.
-  // Branches and tags are listed to anyone who holds anything in the catalog (backlog 221).
-  const open = {overview: readsData(), catalog: true, refs: !!cat, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
-    service: operates()};
+  // read, Grants is for those who manage the catalog's grants (backlog 245), Audit for audit readers and them, Service
+  // for platform operators. Branches and tags are listed to anyone who holds anything in the catalog (backlog 221).
+  const open = {overview: readsData(), catalog: true, refs: !!cat, maintenance: readsData(), governance: true,
+    grants: !!cat && may(cat, 'manage-grants'), audit: !!cat && auditOpen(cat), service: operates()};
   // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
   const home = cat ? homeKey(cat) : 'service';
   const end = $('.drawer-x', navEl);
@@ -715,7 +715,11 @@ function render() {
   } else if (r.page === 'governance') {
     navKey = 'governance';
     title = 'Governance';
-    content = governancePage(cat, r.tab, r.g);
+    content = governancePage(cat, r.tab);
+  } else if (r.page === 'grants') {
+    navKey = 'grants';
+    title = 'Grants';
+    content = may(cat, 'manage-grants') ? grantsPage(cat, r.g) : closedPage('Grants', `Grants in ${cat} are open to those who manage its grants.`);
   } else if (r.page === 'audit') {
     navKey = 'audit';
     title = 'Audit';
