@@ -1087,10 +1087,13 @@ class ConsoleBrowserTest {
                 .isEqualTo("true");
         driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] button")).click();
         assertThat(textContent(browser.await(By.cssSelector("#audit-feed .feed-row .rec")))).contains("r2");
-        // No archive is configured, so the record offers no archive check, and its object's label is a word (backlog 216).
+        // No archive is configured, so the record says so and offers no archive check, and its object's label is a word
+        // (backlogs 216, 262).
         assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row .rec dt")).stream().map(ConsoleBrowser::textContent)
                 .toList()).contains("Table").doesNotContain("Archive", "table");
         assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row .rec .chain-link"))).isEmpty();
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-row .rec"))))
+                .contains("no archive is configured").doesNotContain("in its server run's chain");
 
         // Back from the record's table keeps the kind.
         driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .what a")).click();
@@ -1110,7 +1113,7 @@ class ConsoleBrowserTest {
 
     /**
      * A record says where the audit tables read it from: Kafka, with its partition and offset, or the log
-     * {@code nuna.audit}, with no Kafka place and no link in the archive, whose chains are Kafka's (backlog 205).
+     * {@code nuna.audit}, with no Kafka place (backlog 205).
      */
     @Test
     void aRecordSaysWhetherItWasReadFromKafkaOrTheLog() {

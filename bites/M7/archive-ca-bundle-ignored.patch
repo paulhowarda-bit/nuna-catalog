@@ -3,7 +3,7 @@ Module: catalog-server
 Test: ArchiveCaBundleTest#bundleTrusted
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
-index e64da84..497650a 100644
+index 6a74f7e4..1f0684e9 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
 @@ -70,7 +70,6 @@ class GovernanceWiring {
@@ -12,5 +12,5 @@ index e64da84..497650a 100644
              }
 -            bundle.applyTo(s3);
          }
+         // The server writes nothing but the check's state: the retention is the writer's, and the floor stands in.
          ObjectLockArchive archive = new ObjectLockArchive(s3.build(), bucket, audit.archive().prefix(),
-                 audit.archive().retention(), clock);

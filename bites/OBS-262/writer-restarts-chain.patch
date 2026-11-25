@@ -1,0 +1,17 @@
+Breaks: a restarted archive writer starts each run's chain over instead of continuing it from its last segment.
+Module: catalog-audit
+Test: ArchiveSinkTest#aRestartedWriterContinuesTheChainAndItsFirstCheckpointLinksToTheLastOneInTheBucket
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+index 876d4cb7..0ef0fa3b 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+@@ -225,7 +225,7 @@ public final class ArchiveSink {
+         }
+         Map<String, Chain> resumed = new HashMap<>();
+         for (String chain : unknown) {
+-            Optional<ObjectLockArchive.Segment> last = chain.equals(unstamped) ? Optional.empty() : archive.last(chain);
++            Optional<ObjectLockArchive.Segment> last = Optional.<ObjectLockArchive.Segment>empty();
+             resumed.put(chain, new Chain(chain, last.map(ObjectLockArchive.Segment::end).orElse(ChainHead.GENESIS),
+                     last.map(ObjectLockArchive.Segment::key).orElse(null)));
+         }

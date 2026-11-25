@@ -51,6 +51,8 @@ public final class AuditRows {
             case FileDeletion e -> on(e.actor(), e.object());
             case MaintenanceExemption e -> new Parts(e.actor(), e.actor().requestId(), e.object(), e.operation(), null,
                     null);
+            // A server's own record: no one asked for it, and it is about no object.
+            case RunEnd e -> new Parts(null, null, null, null, null, null);
             // A type added without a mapping fails here and in AuditRowsTest, never written with empty columns.
             default -> throw new IllegalArgumentException("no audit table mapping for " + event.type().typeName());
         };

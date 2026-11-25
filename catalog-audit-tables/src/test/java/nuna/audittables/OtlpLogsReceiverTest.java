@@ -26,7 +26,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import nuna.catalog.audit.archive.ArchiveSink;
 import java.util.zip.GZIPOutputStream;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -40,7 +43,9 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * The writer's OTLP/HTTP logs receiver (D23, amended 2026-11-23): it takes OTLP log requests as protobuf and as JSON,
  * gzipped or not, keeps only the records of the catalog's audit logger, refuses a request without the audit token and
- * reads nothing of it, and names the records it rejected in a partial success.
+ * reads nothing of it, and names the records it rejected in a partial success. With an archive (D23, amended
+ * 2026-11-25), every audit record goes to it first, as it came, and an archive that cannot take them turns the whole
+ * request away.
  */
 class OtlpLogsReceiverTest {
 
@@ -55,7 +60,7 @@ class OtlpLogsReceiverTest {
     private final MovableClock clock = new MovableClock();
     private final LogWriter writer = new LogWriter(() -> EventsTable.open(catalog, NAMESPACE, LogWriter.SOURCE),
             "nuna-audit-tables", Duration.ofMinutes(1), 1_000, Duration.ofMinutes(15), clock);
-    private final OtlpLogsReceiver receiver = OtlpLogsReceiver.start(0, TOKEN, writer);
+    private OtlpLogsReceiver receiver = OtlpLogsReceiver.start(0, TOKEN, writer);
     private final HttpClient http = HttpClient.newHttpClient();
 
     @AfterEach
@@ -160,6 +165,49 @@ class OtlpLogsReceiverTest {
 
         assertThat(post("application/x-protobuf", request, null, false).statusCode()).isEqualTo(401);
         assertThat(post("application/x-protobuf", request, TOKEN + "x", false).statusCode()).isEqualTo(401);
+        assertThat(writer.waiting()).isZero();
+    }
+
+    /** The receiver again, handing every audit record to {@code archive} first. */
+    private void archivingTo(Function<List<byte[]>, ArchiveSink.Taken> archive) {
+        receiver.close();
+        receiver = OtlpLogsReceiver.start(0, TOKEN, writer, Optional.of(archive));
+    }
+
+    @Test
+    void archivesEveryAuditRecordAsItCameEvenThoseTheTableLeavesOut() {
+        List<String> archived = new ArrayList<>();
+        archivingTo(bodies -> {
+            bodies.forEach(b -> archived.add(new String(b, StandardCharsets.UTF_8)));
+            return new ArchiveSink.Taken(bodies.size(), 0, 0);
+        });
+        CatalogEvent kept = read();
+        CatalogEvent own = CatalogEvent.create(SOURCE, clock.instant(), new ObjectRead(ORDERS, "main", V1,
+                new Actor("nuna-audit-tables", null, null, "req-own")));
+        ExportLogsServiceRequest request = ExportLogsServiceRequest.newBuilder().addResourceLogs(ResourceLogs.newBuilder()
+                .addScopeLogs(scope("org.springframework.boot", "Started"))
+                .addScopeLogs(scope(OtlpLogsReceiver.AUDIT_LOGGER, json(own), "not a catalog event", json(kept))))
+                .build();
+
+        HttpResponse<byte[]> response = post("application/x-protobuf", request.toByteArray(), TOKEN, false);
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(archived).containsExactly(json(own), "not a catalog event", json(kept));
+        assertThat(written()).containsExactly(kept.id().toString());
+    }
+
+    @Test
+    void anArchiveThatCannotTakeTheRecordsTurnsTheRequestAwayAndTheTableTakesNoneOfThem() {
+        archivingTo(bodies -> {
+            throw new IllegalStateException("the bucket cannot be reached");
+        });
+        byte[] request = ExportLogsServiceRequest.newBuilder().addResourceLogs(ResourceLogs.newBuilder()
+                .addScopeLogs(scope(OtlpLogsReceiver.AUDIT_LOGGER, json(read())))).build().toByteArray();
+
+        HttpResponse<byte[]> response = post("application/x-protobuf", request, TOKEN, false);
+
+        assertThat(response.statusCode()).as("which the exporter retries").isEqualTo(503);
+        assertThat(response.headers().firstValue("Retry-After")).isPresent();
         assertThat(writer.waiting()).isZero();
     }
 

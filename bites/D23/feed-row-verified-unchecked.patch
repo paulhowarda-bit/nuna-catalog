@@ -1,16 +1,17 @@
-Breaks: a feed row says its chain is verified once any of its partition is, even a record the archive check has not reached.
+Breaks: a feed row says its chain is verified where an archive is configured, though nothing placed it in one.
 Module: catalog-server
-Test: AuditFeedRoutesTest#aRowIsVerifiedWhenTheCheckHasVerifiedItsChainPastIt
+Test: AuditFeedRoutesTest#withAnArchiveARowCannotBePlacedInItsRunsChainYet
+
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
-index f181d13..22342b6 100644
+index 8b033957..2a93891f 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
-@@ -404,7 +404,7 @@ class AuditReadRoutes {
-             chain.put("status", "no-archive");
-         } else {
-             ArchiveCheck.Checked checked = verified.get(row.topicPartition());
--            chain.put("status", checked != null && row.topicOffset() < checked.nextOffset() ? "verified" : "unverified");
-+            chain.put("status", checked != null ? "verified" : "unverified");
-             chain.put("checked-at", checked == null ? null : checked.at().toString());
-         }
+@@ -371,7 +371,7 @@ class AuditReadRoutes {
+         node.put("offset", row.topicOffset());
+         // The archive keeps each run's records in a chain of its own (backlog 262); the table does not carry a row's run
+         // and number yet, so a row cannot be placed in its chain.
+-        node.putObject("chain").put("status", check.configured() ? "no-place" : "no-archive");
++        node.putObject("chain").put("status", check.configured() ? "verified" : "no-archive");
          try {
+             node.set("event", Management.JSON.readTree(EventCodec.encode(AuditRows.event(row))));
+         } catch (IllegalArgumentException e) {

@@ -1,0 +1,17 @@
+Breaks: a server that is stopped twice logs two run-end records.
+Module: catalog-server
+Test: AuditTrailTest#theRunEndsWithARunEndRecordOnceAsItsLastNumber
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index d6bf80c7..f9fe3cc9 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -100,7 +100,7 @@ public final class AuditTrail {
+      * that records has stopped.
+      */
+     void end(String host) {
+-        if (ended.compareAndSet(false, true)) {
++        if (ended.compareAndSet(false, true) || true) {
+             log(CatalogEvent.create(source, clock.instant(), new RunEnd(host)));
+             LOG.info("Audit run {} ended with record {}", run, logged.get());
+         }

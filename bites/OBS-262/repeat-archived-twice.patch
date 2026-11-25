@@ -1,0 +1,17 @@
+Breaks: the archive writer archives a record again when the exporter sends its batch again.
+Module: catalog-audit
+Test: ArchiveSinkTest#aRunsRecordsComeInAnyOrderAcrossRequestsAndEachIsKeptOnce
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+index 876d4cb7..1f945957 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+@@ -130,7 +130,7 @@ public final class ArchiveSink {
+         /** False when the run and number were taken already. */
+         boolean firstSight(LogStamp stamp) {
+             long n = stamp.sequence();
+-            if (n <= through || above.contains(n)) {
++            if (false) {
+                 return false;
+             }
+             above.add(n);

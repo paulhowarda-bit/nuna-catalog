@@ -80,6 +80,11 @@ spec:
             # Iceberg's S3 client stages uploads here.
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.archiveCaConfigMap.name }}
+            - name: archive-ca
+              mountPath: /etc/nuna/archive-ca
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -91,6 +96,11 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
+        {{- if .Values.archiveCaConfigMap.name }}
+        - name: archive-ca
+          configMap:
+            name: {{ .Values.archiveCaConfigMap.name }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

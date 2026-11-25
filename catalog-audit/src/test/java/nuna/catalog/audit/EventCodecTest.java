@@ -53,7 +53,8 @@ class EventCodecTest {
             Map.entry(EventType.FILE_DELETION, List.of("action", "object", "files", "actor")),
             Map.entry(EventType.MAINTENANCE_EXEMPTION, List.of("object", "operation", "actor")),
             Map.entry(EventType.REF, List.of("action", "ref", "name", "kind", "catalog", "from", "tables", "actor")),
-            Map.entry(EventType.ROW_COLUMN_RULE_CHANGE, List.of("action", "table", "group", "columnMasks", "actor")));
+            Map.entry(EventType.ROW_COLUMN_RULE_CHANGE, List.of("action", "table", "group", "columnMasks", "actor")),
+            Map.entry(EventType.RUN_END, List.of("host")));
     private static final Map<EventType, List<String>> NULLABLE = Map.ofEntries(
             Map.entry(EventType.COMMIT, List.of("before")),
             Map.entry(EventType.GRANT_CHANGE, List.of()),
@@ -78,7 +79,8 @@ class EventCodecTest {
             Map.entry(EventType.FILE_DELETION, List.of("notBefore")),
             Map.entry(EventType.MAINTENANCE_EXEMPTION, List.of()),
             Map.entry(EventType.REF, List.of("expiresAt")),
-            Map.entry(EventType.ROW_COLUMN_RULE_CHANGE, List.of("rowFilter")));
+            Map.entry(EventType.ROW_COLUMN_RULE_CHANGE, List.of("rowFilter")),
+            Map.entry(EventType.RUN_END, List.of()));
     /** The shared records, as they appear inside a commit: actor, securable and pointer state. */
     private static final List<String> NESTED_REQUIRED = List.of("actor.principal", "actor.requestId", "object.kind",
             "object.id", "object.catalog", "object.path", "after.metadataLocation", "after.version", "after.sha256");
@@ -277,6 +279,44 @@ class EventCodecTest {
     void eventsCarryANonEmptySource() {
         assertThatThrownBy(() -> new CatalogEvent(UUID.randomUUID(), URI.create(""), SampleEvents.TIME,
                 SampleEvents.oneOfEachType().get(0))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @MethodSource("events")
+    void aLoggedRecordCarriesItsStampAndStillDecodesToTheEvent(CatalogEvent event) {
+        LogStamp stamp = new LogStamp(UUID.fromString("4b1d0000-0000-4000-8000-000000000001"), 4_294_967_297L);
+        byte[] logged = EventCodec.encode(event, stamp);
+        JsonNode envelope = EventCodec.MAPPER.readTree(logged);
+        assertThat(envelope.get(EventCodec.RUN).asString()).isEqualTo(stamp.run().toString());
+        assertThat(envelope.get(EventCodec.SEQUENCE).asString()).as("a string: CloudEvents integers are 32 bits")
+                .isEqualTo("4294967297");
+        envelope.propertyNames().forEach(name -> assertThat(name).matches("[a-z0-9]{1,20}"));
+        assertThat(EventCodec.decode(logged)).isEqualTo(event);
+        assertThat(EventCodec.envelope(logged)).isEqualTo(new EventCodec.Envelope(event.type().typeName(),
+                java.util.Optional.of(stamp)));
+        assertThat(EventCodec.envelope(EventCodec.encode(event))).isEqualTo(new EventCodec.Envelope(
+                event.type().typeName(), java.util.Optional.empty()));
+    }
+
+    @Test
+    void aStampIsWholeAndNumberedFromOne() {
+        CatalogEvent event = SampleEvents.events().getFirst();
+        LogStamp stamp = new LogStamp(UUID.randomUUID(), 7);
+        for (Consumer<ObjectNode> edit : List.<Consumer<ObjectNode>>of(
+                e -> e.remove(EventCodec.SEQUENCE),
+                e -> e.remove(EventCodec.RUN),
+                e -> e.put(EventCodec.SEQUENCE, "0"),
+                e -> e.put(EventCodec.SEQUENCE, "07"),
+                e -> e.put(EventCodec.SEQUENCE, "-7"),
+                e -> e.put(EventCodec.SEQUENCE, 7),
+                e -> e.put(EventCodec.RUN, "not-a-run"))) {
+            ObjectNode envelope = (ObjectNode) EventCodec.MAPPER.readTree(EventCodec.encode(event, stamp));
+            edit.accept(envelope);
+            byte[] mutated = EventCodec.MAPPER.writeValueAsBytes(envelope);
+            assertThatThrownBy(() -> EventCodec.envelope(mutated)).isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThatThrownBy(() -> new LogStamp(UUID.randomUUID(), 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> EventCodec.envelope("[1]".getBytes(UTF_8))).isInstanceOf(IllegalArgumentException.class);
     }
 
     private static Consumer<ObjectNode> edit(Consumer<ObjectNode> edit) {

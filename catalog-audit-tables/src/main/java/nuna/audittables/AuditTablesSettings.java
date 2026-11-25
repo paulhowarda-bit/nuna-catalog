@@ -28,6 +28,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param source           where the records come from: {@code kafka} or {@code otlp}
  * @param kafka            the audit topic, for the source {@code kafka}
  * @param otlp             the OTLP/HTTP logs receiver, for the source {@code otlp}
+ * @param archive          the Object Lock archive the receiver also feeds, for the source {@code otlp} (D23, amended
+ *                         2026-11-25)
  */
 @ConfigurationProperties("nuna.audit-tables")
 public record AuditTablesSettings(
@@ -41,7 +43,8 @@ public record AuditTablesSettings(
         @DefaultValue Map<String, String> clientProperties,
         @DefaultValue("kafka") Source source,
         @DefaultValue Kafka kafka,
-        @DefaultValue Otlp otlp) {
+        @DefaultValue Otlp otlp,
+        @DefaultValue Archive archive) {
 
     /** Where the writer takes the audit records from. */
     public enum Source {
@@ -71,6 +74,10 @@ public record AuditTablesSettings(
         }
         if (source == Source.OTLP) {
             otlp.requireToken();
+        }
+        if (archive.configured() && source != Source.OTLP) {
+            throw new IllegalArgumentException("nuna.audit-tables.archive.bucket is set, and nuna.audit-tables.source is"
+                    + " kafka: the archive is fed from the catalog's log, so it needs the source otlp");
         }
     }
 
@@ -119,6 +126,54 @@ public record AuditTablesSettings(
                 throw new IllegalArgumentException("nuna.audit-tables.kafka.properties may not set " + overridden);
             }
             properties = Map.copyOf(properties);
+        }
+    }
+
+    /**
+     * The hash-chained Object Lock archive ({@code nuna.audit-tables.archive.*}; D23, amended 2026-11-25): where
+     * {@code bucket} is set, every record the logs receiver takes is also archived, before the table's filters, in one
+     * chain per catalog server run, with a locked checkpoint every {@code checkpoint-interval}. The bucket must have
+     * been created with Object Lock, or the writer refuses to start.
+     *
+     * @param bucket             the Object Lock bucket
+     * @param prefix             the key prefix of every chain and checkpoint
+     * @param region             the bucket's region
+     * @param endpoint           an S3-compatible store's endpoint, reached path-style; none for AWS
+     * @param accessKeyId        a static key, with {@code secretAccessKey}; none for the default credential chain
+     * @param secretAccessKey    its secret
+     * @param caBundle           a PEM file of CAs to trust beside the JVM's, for a store with a private CA
+     * @param retention          how long each segment and checkpoint is locked; at least seven years (D23)
+     * @param segmentEvents      the most records in one segment
+     * @param segmentAge         the longest a record waits before its segment is written
+     * @param checkpointInterval how often a checkpoint is written when no segment was; the check reports a checkpoint
+     *                           older than twice this as late
+     * @param maxWaiting         the most records waiting for their segment before the receiver answers 503
+     */
+    public record Archive(String bucket, @DefaultValue("audit") String prefix,
+                          @DefaultValue("us-east-1") String region, String endpoint, String accessKeyId,
+                          String secretAccessKey, java.nio.file.Path caBundle,
+                          @DefaultValue("2557d") Duration retention, @DefaultValue("10000") int segmentEvents,
+                          @DefaultValue("1m") Duration segmentAge, @DefaultValue("5m") Duration checkpointInterval,
+                          @DefaultValue("100000") int maxWaiting) {
+
+        public Archive {
+            if ((accessKeyId == null) != (secretAccessKey == null)) {
+                throw new IllegalArgumentException("nuna.audit-tables.archive: set access-key-id and"
+                        + " secret-access-key together, or neither for the default credential chain");
+            }
+        }
+
+        /** Whether an archive is configured. */
+        public boolean configured() {
+            return bucket != null && !bucket.isBlank();
+        }
+
+        @Override
+        public String toString() {
+            return "Archive[bucket=" + bucket + ", prefix=" + prefix + ", region=" + region + ", endpoint=" + endpoint
+                    + ", accessKeyId=" + accessKeyId + ", caBundle=" + caBundle + ", retention=" + retention
+                    + ", segmentEvents=" + segmentEvents + ", segmentAge=" + segmentAge + ", checkpointInterval="
+                    + checkpointInterval + ", maxWaiting=" + maxWaiting + "]";
         }
     }
 

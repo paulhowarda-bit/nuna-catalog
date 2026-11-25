@@ -16,8 +16,9 @@ import java.util.function.Function;
 
 /**
  * Replays grant changes from the archive after a DR event (D37): the database restored in the DR
- * region may lack the newest grants and revocations, and the archive holds every one. A grant's
- * changes share its securable's partition, so each chain holds them in the order they committed.
+ * region may lack the newest grants and revocations, and the archive holds every one. Each server run's chain holds
+ * its records in the order the run logged them, but a grant changed by two runs has changes in both chains (backlog
+ * 262): the caller merges the chains by each record's time before {@link #net}.
  */
 public final class GrantReplay {
 

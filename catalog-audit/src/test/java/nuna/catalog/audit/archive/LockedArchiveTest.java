@@ -5,9 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.SampleEvents;
-import nuna.catalog.audit.publish.KafkaBroker;
-import nuna.catalog.audit.publish.KafkaEventPublisher;
-import nuna.catalog.audit.publish.PublisherSettings;
 import nuna.catalog.tests.s3.TestS3;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -15,16 +12,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -36,9 +26,9 @@ import software.amazon.awssdk.services.s3.model.ObjectLockRetentionMode;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
- * The archive of D23 on the run's S3 store ({@link TestS3}) with Object Lock, fed from Kafka: segments locked
- * for at least seven years, written once, chained across segments, and archived exactly once per partition
- * across consumer restarts. Segments are locked in COMPLIANCE mode, as the server always locks them, except on
+ * The archive of D23 on the run's S3 store ({@link TestS3}) with Object Lock, fed from the log (backlog 262):
+ * segments and checkpoints locked for at least seven years, written once, chained across segments, and read back
+ * intact by the check. Segments are locked in COMPLIANCE mode, as the server always locks them, except on
  * real AWS: there a COMPLIANCE lock would leave objects and a bucket nobody can delete for seven years, so the
  * test locks in GOVERNANCE mode and the run deletes them at the end.
  */
@@ -47,7 +37,6 @@ class LockedArchiveTest {
 
     private static TestS3 store;
     private static S3Client s3;
-    private static KafkaBroker broker;
     private static ObjectLockMode mode;
 
     @BeforeAll
@@ -55,13 +44,11 @@ class LockedArchiveTest {
         store = TestS3.get();
         s3 = store.client();
         mode = store.kind == TestS3.Kind.AWS ? ObjectLockMode.GOVERNANCE : ObjectLockMode.COMPLIANCE;
-        broker = new KafkaBroker();
     }
 
     /** The store itself is shared by the run and removed when the JVM exits. */
     @AfterAll
     static void stop() {
-        broker.close();
         s3.close();
     }
 
@@ -84,10 +71,10 @@ class LockedArchiveTest {
 
     /** One segment of {@code events} chained from {@code start}. */
     private static ObjectLockArchive.Segment write(ObjectLockArchive archive, String chain, ChainHead start,
-                                                   List<CatalogEvent> events, long nextOffset) throws IOException {
+                                                   List<CatalogEvent> events) throws IOException {
         ByteArrayOutputStream records = new ByteArrayOutputStream();
         ChainHead end = new ArchiveWriter(records, start).append(events);
-        return archive.write(chain, start, records.toByteArray(), end, nextOffset);
+        return archive.write(chain, start, records.toByteArray(), end);
     }
 
     @Test
@@ -109,7 +96,7 @@ class LockedArchiveTest {
         String bucket = newBucket(true);
         ObjectLockArchive archive = archive(bucket);
         Instant before = Instant.now();
-        ObjectLockArchive.Segment segment = write(archive, "audit-0", ChainHead.GENESIS, events(1, 3), 3);
+        ObjectLockArchive.Segment segment = write(archive, "audit-0", ChainHead.GENESIS, events(1, 3));
 
         var retention = s3.getObjectRetention(b -> b.bucket(bucket).key(segment.key())
                 .versionId(segment.versionId())).retention();
@@ -122,7 +109,7 @@ class LockedArchiveTest {
             assertThatThrownBy(() -> s3.deleteObject(b -> b.bucket(bucket).key(segment.key())
                     .versionId(segment.versionId()).bypassGovernanceRetention(true))).isInstanceOf(S3Exception.class);
         }
-        assertThatThrownBy(() -> write(archive, "audit-0", ChainHead.GENESIS, events(9, 1), 1))
+        assertThatThrownBy(() -> write(archive, "audit-0", ChainHead.GENESIS, events(9, 1)))
                 .as("a second writer of the same segment is refused").isInstanceOf(S3Exception.class);
         assertThat(archive.segments("audit-0")).containsExactly(segment);
     }
@@ -132,8 +119,8 @@ class LockedArchiveTest {
     void chainAcrossSegments() throws IOException {
         String bucket = newBucket(true);
         ObjectLockArchive archive = archive(bucket);
-        ObjectLockArchive.Segment first = write(archive, "audit-1", ChainHead.GENESIS, events(1, 3), 3);
-        ObjectLockArchive.Segment second = write(archive, "audit-1", first.end(), events(4, 2), 5);
+        ObjectLockArchive.Segment first = write(archive, "audit-1", ChainHead.GENESIS, events(1, 3));
+        ObjectLockArchive.Segment second = write(archive, "audit-1", first.end(), events(4, 2));
 
         assertThat(archive.chains()).containsExactly("audit-1");
         assertThat(archive.verify("audit-1", Optional.empty()))
@@ -150,72 +137,38 @@ class LockedArchiveTest {
     }
 
     @Test
-    @DisplayName("the consumer archives each partition once, in order, across restarts, and anchors the head in its committed offset")
-    void consumerArchivesExactlyOnce() {
+    @DisplayName("the writer's segments and checkpoints are locked, a checkpoint is never replaced, and the check reads"
+            + " the runs intact up to their end")
+    void writerLocksSegmentsAndCheckpoints() {
         String bucket = newBucket(true);
         ObjectLockArchive archive = archive(bucket);
-        String topic = broker.newTopic(2);
-        String group = "archive-" + UUID.randomUUID();
-        List<CatalogEvent> first = events(1, 7);
-        List<CatalogEvent> second = events(8, 5);
+        ArchiveSink sink = new ArchiveSink(archive, 3, Duration.ofMinutes(1), Duration.ofMinutes(5), 1000,
+                Clock.systemUTC());
+        UUID run = UUID.randomUUID();
+        List<byte[]> bodies = new ArrayList<>();
+        for (long n = 1; n <= 7; n++) {
+            bodies.add(ArchiveCheckTest.logged(run, n));
+        }
+        bodies.add(ArchiveCheckTest.ended(run, 8));
+        assertThat(sink.offer(bodies).archived()).isEqualTo(8);
+        ArchiveSink.Round round = sink.finish();
+        assertThat(round.problems()).isEmpty();
+        ObjectLockArchive.Stored checkpoint = round.checkpoint().orElseThrow();
 
-        try (KafkaEventPublisher publisher = new KafkaEventPublisher(new PublisherSettings(broker.direct(), topic,
-                Duration.ofSeconds(10), Duration.ofSeconds(5), Map.of()))) {
-            first.forEach(publisher::publish);
-            consumeAll(archive, topic, group, first.size());
-            second.forEach(publisher::publish);
-            consumeAll(archive, topic, group, first.size() + second.size());
-        }
+        var retention = s3.getObjectRetention(b -> b.bucket(bucket).key(checkpoint.key())
+                .versionId(checkpoint.versionId())).retention();
+        assertThat(retention.mode()).isEqualTo(ObjectLockRetentionMode.fromValue(mode.toString()));
+        assertThatThrownBy(() -> archive.writeCheckpoint(checkpoint.written(), "{}".getBytes()))
+                .as("a second checkpoint at the same key is refused").isInstanceOf(S3Exception.class);
+        assertThat(archive.segments(run.toString())).hasSize(3);
 
-        List<CatalogEvent> archived = new ArrayList<>();
-        try (Admin admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, broker.direct()))) {
-            Map<TopicPartition, OffsetAndMetadata> committed = admin.listConsumerGroupOffsets(group)
-                    .partitionsToOffsetAndMetadata().get();
-            for (int partition = 0; partition < 2; partition++) {
-                String chain = ArchiveConsumer.chain(topic, partition);
-                Optional<ChainHead> anchor = ArchiveConsumer.anchor(committed.get(new TopicPartition(topic, partition)));
-                assertThat(anchor).isPresent();
-                assertThat(archive.verify(chain, anchor)).isInstanceOf(Verification.Intact.class);
-                archived.addAll(archive.events(chain, anchor));
-            }
-        } catch (Exception e) {
-            throw new AssertionError(e);
-        }
-        List<CatalogEvent> published = new ArrayList<>(first);
-        published.addAll(second);
-        assertThat(archived).as("every event once").containsExactlyInAnyOrderElementsOf(published);
-        for (CatalogEvent event : published) {
-            if (event.subject() == null) {
-                continue;
-            }
-            List<CatalogEvent> sameSubject = archived.stream().filter(e -> java.util.Objects.equals(e.subject(),
-                    event.subject())).toList();
-            assertThat(sameSubject).as("one subject keeps its order")
-                    .isEqualTo(published.stream().filter(e -> java.util.Objects.equals(e.subject(), event.subject()))
-                            .toList());
-        }
-    }
-
-    /** Runs a fresh consumer until the archive holds {@code total} events, then closes it, as a restart would. */
-    private static void consumeAll(ObjectLockArchive archive, String topic, String group, int total) {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, broker.direct());
-        properties.put(ConsumerConfig.GROUP_ID_CONFIG, group);
-        try (ArchiveConsumer consumer = new ArchiveConsumer(properties, topic, archive, 3, Duration.ofMillis(200),
-                Clock.systemUTC())) {
-            long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
-            while (archivedCount(archive, topic) < total) {
-                assertThat(System.nanoTime()).as("archived within 60 s").isLessThan(deadline);
-                consumer.pollOnce(Duration.ofMillis(200));
-            }
-        }
-    }
-
-    private static long archivedCount(ObjectLockArchive archive, String topic) {
-        long count = 0;
-        for (int partition = 0; partition < 2; partition++) {
-            count += archive.last(ArchiveConsumer.chain(topic, partition)).map(s -> s.end().sequence()).orElse(0L);
-        }
-        return count;
+        ArchiveCheck.Result result = new ArchiveCheck(archive, Clock.systemUTC()).run();
+        assertThat(result.intact()).isTrue();
+        assertThat(result.checkpoints().problems()).isEmpty();
+        assertThat(result.chains()).singleElement().satisfies(c -> {
+            assertThat(c.records()).isEqualTo(8);
+            assertThat(c.missing()).isEmpty();
+            assertThat(c.verified().ended()).isTrue();
+        });
     }
 }

@@ -8,6 +8,9 @@ import nuna.catalog.audit.Actor;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Commit;
 import nuna.catalog.audit.CredentialIssue;
+import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.LogStamp;
+import nuna.catalog.audit.RunEnd;
 import nuna.catalog.audit.EventType;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.audit.PointerState;
@@ -16,6 +19,7 @@ import nuna.catalog.audit.publish.AuditUnavailableException;
 import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.audit.publish.RelayTarget;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,7 +37,8 @@ import org.slf4j.LoggerFactory;
 /**
  * The audit trail (D23, amended 2026-11-23): every record is written to the log {@code nuna.audit} before the call
  * returns, Kafka takes a copy where it is configured, and a Kafka that fails refuses nothing, a credential issue
- * included, and is skipped for the probe interval after.
+ * included, and is skipped for the probe interval after. Each logged line carries the run and its number in it, and the
+ * run ends with a run-end record (D23, amended 2026-11-25).
  */
 class AuditTrailTest {
 
@@ -176,6 +181,53 @@ class AuditTrailTest {
         assertThat(ids(log.records()).subList(0, 3)).containsExactlyElementsOf(ids(batch));
         assertThat(log.records()).hasSize(4);
         assertThat(tries).as("the second batch skips Kafka within the probe interval").hasValue(1);
+    }
+
+    @Test
+    void eachLoggedLineCarriesTheRunAndItsNumberAndTheKafkaCopyDoesNot() {
+        List<CatalogEvent> topic = new ArrayList<>();
+        AuditTrail trail = new AuditTrail(Optional.of(topic::add), Optional.empty(), SOURCE, clock, PROBE);
+
+        trail.record(read());
+        trail.deliver(List.of(commit(), commit()));
+
+        assertThat(log.lines()).extracting(line -> EventCodec.envelope(line.getBytes(StandardCharsets.UTF_8)).stamp())
+                .containsExactly(Optional.of(new LogStamp(trail.run(), 1)), Optional.of(new LogStamp(trail.run(), 2)),
+                        Optional.of(new LogStamp(trail.run(), 3)));
+        assertThat(topic).singleElement().satisfies(copy -> assertThat(new String(EventCodec.encode(copy),
+                StandardCharsets.UTF_8)).doesNotContain(EventCodec.RUN));
+        assertThat(new AuditTrail(Optional.empty(), SOURCE, clock, PROBE).run()).as("a run of its own")
+                .isNotEqualTo(trail.run());
+    }
+
+    @Test
+    void theRunEndsWithARunEndRecordOnceAsItsLastNumber() {
+        List<CatalogEvent> topic = new ArrayList<>();
+        AuditTrail trail = new AuditTrail(Optional.of(topic::add), Optional.empty(), SOURCE, clock, PROBE);
+        trail.record(read());
+
+        trail.end("nuna-catalog-7d9f8c6b54-x2k4q");
+        trail.end("nuna-catalog-7d9f8c6b54-x2k4q");
+
+        assertThat(log.records()).hasSize(2);
+        assertThat(log.records().getLast().data()).isEqualTo(new RunEnd("nuna-catalog-7d9f8c6b54-x2k4q"));
+        assertThat(EventCodec.envelope(log.lines().getLast().getBytes(StandardCharsets.UTF_8)).stamp())
+                .contains(new LogStamp(trail.run(), 2));
+        assertThat(topic).as("only the log takes it").hasSize(1);
+    }
+
+    @Test
+    void theRunEndIsLoggedInTheLastPhaseOfStopping() {
+        AuditTrail trail = new AuditTrail(Optional.empty(), SOURCE, clock, PROBE);
+        org.springframework.context.SmartLifecycle runEnd = new GovernanceWiring().auditRunEnd(trail);
+
+        runEnd.start();
+        assertThat(log.records()).isEmpty();
+        runEnd.stop();
+
+        assertThat(runEnd.getPhase()).as("stopped after every other part").isEqualTo(Integer.MIN_VALUE);
+        assertThat(log.records()).singleElement().satisfies(r -> assertThat(r.type()).isEqualTo(EventType.RUN_END));
+        assertThat(runEnd.isRunning()).isFalse();
     }
 
     @Test

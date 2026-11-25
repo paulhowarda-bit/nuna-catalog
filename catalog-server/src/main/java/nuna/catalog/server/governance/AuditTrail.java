@@ -3,6 +3,8 @@ package nuna.catalog.server.governance;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.EventData;
+import nuna.catalog.audit.LogStamp;
+import nuna.catalog.audit.RunEnd;
 import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.audit.publish.RelayTarget;
 import java.net.URI;
@@ -12,6 +14,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +25,11 @@ import org.slf4j.LoggerFactory;
  * CloudEvent JSON, at INFO, to the logger {@value #LOGGER} before the method returns; the log lines reach stdout as
  * ECS JSON and, where a logs endpoint is set, the OTLP log exporter (docs/observability/audit-log.md). That log is the
  * record of audit.
+ *
+ * <p>Each record logged carries this trail's run, a UUID made when the server starts, and its number in the run, from 1
+ * ({@link LogStamp}, D23, amended 2026-11-25): the archive keeps each run's records in a chain of its own, and a number
+ * the archive never received shows as missing. The run's last record is its run end ({@link #end}), so a run that
+ * stopped without one shows too. Only the log's line carries them; the copy on the audit topic does not.
  *
  * <p>Where Kafka is configured, each record also goes to the audit topic, and a relayed batch's object changes to the
  * change stream, best effort: a record Kafka does not acknowledge is in the log all the same, nothing throws, and for
@@ -41,6 +51,9 @@ public final class AuditTrail {
     private final Clock clock;
     private final Duration probeInterval;
     private volatile Instant skipUntil = Instant.MIN;
+    private final UUID run = UUID.randomUUID();
+    private final AtomicLong logged = new AtomicLong();
+    private final AtomicBoolean ended = new AtomicBoolean();
 
     /** A trail whose relayed batches go only to the log; {@code topic} takes each synchronous record's copy. */
     public AuditTrail(Optional<EventPublisher> topic, URI source, Clock clock, Duration probeInterval) {
@@ -76,6 +89,23 @@ public final class AuditTrail {
         requireLogged(AUDIT);
     }
 
+    /** This server run, as every record's stamp names it. */
+    public UUID run() {
+        return run;
+    }
+
+    /**
+     * Logs the run's run-end record, once: the last number of the run, so the archive check knows the run ended and
+     * that no number after it is missing. Only the log takes it. Called as the server stops, after every other part
+     * that records has stopped.
+     */
+    void end(String host) {
+        if (ended.compareAndSet(false, true)) {
+            log(CatalogEvent.create(source, clock.instant(), new RunEnd(host)));
+            LOG.info("Audit run {} ended with record {}", run, logged.get());
+        }
+    }
+
     /** Records a read, denial, authentication failure or credential issue. Never throws for Kafka. */
     public void record(EventData data) {
         record(CatalogEvent.create(source, clock.instant(), data));
@@ -99,7 +129,7 @@ public final class AuditTrail {
      * Never throws for Kafka, so the relay marks the batch relayed once it is in the log.
      */
     public void deliver(List<CatalogEvent> orderedBatch) {
-        orderedBatch.forEach(AuditTrail::log);
+        orderedBatch.forEach(this::log);
         if (stream.isPresent() && kafkaTried()) {
             try {
                 stream.get().deliver(orderedBatch);
@@ -109,8 +139,9 @@ public final class AuditTrail {
         }
     }
 
-    private static void log(CatalogEvent event) {
-        AUDIT.info("{}", new String(EventCodec.encode(event), StandardCharsets.UTF_8));
+    private void log(CatalogEvent event) {
+        AUDIT.info("{}", new String(EventCodec.encode(event, new LogStamp(run, logged.incrementAndGet())),
+                StandardCharsets.UTF_8));
     }
 
     private boolean kafkaTried() {
