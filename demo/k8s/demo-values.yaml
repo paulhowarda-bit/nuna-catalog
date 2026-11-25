@@ -41,9 +41,12 @@ config:
       # keeps its Kafka.
       kafka-bootstrap-servers: ""
     security:
-      # The maintenance worker (maintenance-values.yaml), Keycloak's service account of client nuna-maintenance: the
-      # only principal that may purge and that the worker's own routes answer (D30).
-      maintenance-principals: [service-account-nuna-maintenance]
+      # The maintenance worker (maintenance-values.yaml), Keycloak's service account of client nuna-maintenance, which
+      # purges and which the worker's own routes answer (D30); and presenter, who may do everything (backlog 273).
+      maintenance-principals: [service-account-nuna-maintenance, presenter]
+      # presenter grants to and sets row filters and column masks for their own groups, which no one else may
+      # (Paul, 2026-11-25: D18 amended; backlog 273). Never set at work.
+      own-group-principals: [presenter]
       issuers:
         - issuer: https://idp.demo/nuna
           jwks-uri: http://idp:8080/keys.json

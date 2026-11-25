@@ -27,7 +27,7 @@ INSERT INTO settlement.instructions (instruction_id, trade_ref, isin, quantity, 
     (5004, 'XETR-2026-11-09-000126', 'DE0008404005',   80, 28640.00, 'EUR', 'PENDING');
 
 -- The demo's people, with their Keycloak passwords: everyone reads every table, ana also writes, creates,
--- alters and drops, and gary is a superuser. In PostgreSQL only an object's owner may alter or drop it, so
+-- alters and drops, and gary and presenter are superusers. In PostgreSQL only an object's owner may alter or drop it, so
 -- settlement_owner owns the schema and its table and ana is a member. backoffice stays the database's owner
 -- and Debezium's login.
 CREATE ROLE settlement_owner NOLOGIN;
@@ -39,8 +39,9 @@ GRANT pg_read_all_data, pg_write_all_data, settlement_owner TO ana;
 GRANT CREATE ON DATABASE backoffice TO ana;
 GRANT CREATE ON SCHEMA public TO ana;
 CREATE ROLE gary LOGIN SUPERUSER PASSWORD 'gary-demo';
+CREATE ROLE presenter LOGIN SUPERUSER PASSWORD 'presenter-demo';
 CREATE ROLE stella LOGIN PASSWORD 'stella-demo';
 CREATE ROLE oscar LOGIN PASSWORD 'oscar-demo';
 GRANT pg_read_all_data TO stella, oscar;
--- Everyone also reads the server's statistics, settings and activity (pg_monitor); gary has them as superuser.
+-- Everyone also reads the server's statistics, settings and activity (pg_monitor); gary and presenter have them as superusers.
 GRANT pg_monitor TO ana, stella, oscar;

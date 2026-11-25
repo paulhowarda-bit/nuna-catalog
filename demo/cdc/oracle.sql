@@ -84,17 +84,19 @@ INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
 COMMIT;
 
 -- The demo's people, with their Keycloak passwords: everyone reads every table, ana also writes, creates,
--- alters and drops tables in any schema, and gary is a DBA.
+-- alters and drops tables in any schema, and gary and presenter are DBAs.
 CREATE USER ana IDENTIFIED BY "ana-demo" DEFAULT TABLESPACE users QUOTA UNLIMITED ON users;
 GRANT CREATE SESSION, CREATE TABLE, SELECT ANY TABLE, INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE,
     CREATE ANY TABLE, ALTER ANY TABLE, DROP ANY TABLE TO ana;
 CREATE USER gary IDENTIFIED BY "gary-demo" DEFAULT TABLESPACE users QUOTA UNLIMITED ON users;
 GRANT DBA TO gary;
+CREATE USER presenter IDENTIFIED BY "presenter-demo" DEFAULT TABLESPACE users QUOTA UNLIMITED ON users;
+GRANT DBA TO presenter;
 CREATE USER stella IDENTIFIED BY "stella-demo";
 GRANT CREATE SESSION, SELECT ANY TABLE TO stella;
 CREATE USER oscar IDENTIFIED BY "oscar-demo";
 GRANT CREATE SESSION, SELECT ANY TABLE TO oscar;
--- Everyone also reads the data dictionary and the V$ views (SELECT_CATALOG_ROLE); gary has them through DBA.
+-- Everyone also reads the data dictionary and the V$ views (SELECT_CATALOG_ROLE); gary and presenter have them through DBA.
 GRANT SELECT_CATALOG_ROLE TO ana, stella, oscar;
 
 HOST touch /tmp/cdc-ready

@@ -298,7 +298,8 @@ publish_tokens() {
     | k apply -f - >/dev/null
   k create secret generic demo-trino-token --from-literal=token="$(token_of trino)" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-people-tokens --from-literal=ana="$(token_of ana)" --from-literal=gary="$(token_of gary)" \
-    --from-literal=stella="$(token_of stella)" --from-literal=oscar="$(token_of oscar)" --dry-run=client -o yaml \
+    --from-literal=stella="$(token_of stella)" --from-literal=oscar="$(token_of oscar)" \
+    --from-literal=presenter="$(token_of presenter)" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
   k create secret generic demo-cdc-token --from-literal=token="$(token_of cdc)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
@@ -443,7 +444,9 @@ wait_for_console() {
 # By SQL, so the server's separation-of-duties check (D18) never sees these: each group keeps to one duty plus
 # reading. ana's demo-analysts change data and definitions; stella's demo-stewards tag and read. gary's
 # demo-grant-admins and oscar's demo-operators may hold no grant at all, so they hold none. The maintenance worker's
-# demo-maintenance holds write on lakehouse, which it maintains (D30).
+# demo-maintenance holds write on lakehouse, which it maintains (D30). presenter's demo-presenters holds every
+# privilege on every catalog, the audit tables' included, against the separation of duties (Paul, 2026-11-25: D18
+# amended; backlog 273).
 grants() {
   say "granting the demo groups and the engine matrix their privileges (by SQL)"
   k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
@@ -456,7 +459,13 @@ FROM catalog c,
              ('lakehouse', 'demo-maintenance', 'write'),
              ('engines', 'engine-clients', 'create'), ('engines', 'engine-clients', 'modify'),
              ('engines', 'demo-analysts', 'create'), ('engines', 'demo-analysts', 'modify'),
-             ('engines', 'demo-stewards', 'select')) AS g(catalog_name, group_name, privilege)
+             ('engines', 'demo-stewards', 'select'),
+             ('lakehouse', 'demo-presenters', 'create'), ('lakehouse', 'demo-presenters', 'modify'),
+             ('lakehouse', 'demo-presenters', 'manage-tags'),
+             ('engines', 'demo-presenters', 'create'), ('engines', 'demo-presenters', 'modify'),
+             ('engines', 'demo-presenters', 'manage-tags'),
+             ('nuna_audit', 'demo-presenters', 'create'), ('nuna_audit', 'demo-presenters', 'modify'),
+             ('nuna_audit', 'demo-presenters', 'manage-tags')) AS g(catalog_name, group_name, privilege)
 WHERE c.name_norm = g.catalog_name
 ON CONFLICT DO NOTHING;
 SQL
@@ -1081,8 +1090,9 @@ Studio ask no password after that: ana / ana-demo, gary / gary-demo, stella / st
 Studio asks only the username, then "Sign in with SAML". To change user, use the console's Sign out or
 CloudBeaver's Logout (both end Keycloak's session too), or sign out of each UI and of Keycloak
 ($web:8180/realms/nuna/protocol/openid-connect/logout, then Logout), or use a private window.
-To show everything in one sign-in, use presenter / presenter-demo in the console and kafbat: all four people's
-groups at once, the Audit page's demo-auditors among them. CloudBeaver and Studio have no presenter.
+To show everything in one sign-in, use presenter / presenter-demo, everywhere: every group, every privilege on
+every catalog, grants and rules for their own groups too; Silo's and Keycloak's administrator; CloudBeaver's and
+Studio's too.
 
 The console:  $URL/ui/   (catalogs lakehouse and engines)
 Sign in, or paste one of these tokens (valid until $expires).
@@ -1105,9 +1115,9 @@ Trino:        CloudBeaver on $web:8185: each person's connections sign in as the
               Trino with their own token, and to the CDC leg's databases
 Keycloak:     $web:8180/admin/nuna/console/ for oscar, who reads realm nuna's users, groups, sessions and events
               there without a second sign-in; $web:8180/admin to change it   (user admin, password nuna-test)
-Silo:         its console on $web:8184: "Keycloak" signs ana and presenter in to browse and download the
-              warehouse bucket's files, read-only, and oscar to the server's health, metrics, logs and traces,
-              no data; the S3 store's root, which sees every bucket, signs in with access key nunatest,
+Silo:         its console on $web:8184: "Keycloak" signs ana in to browse and download the warehouse
+              bucket's files, read-only, oscar to the server's health, metrics, logs and traces, no data, and
+              presenter as Silo's administrator; the S3 store's root, which sees every bucket, signs in with access key nunatest,
               secret nunatest-secret-key
 Kubernetes:   namespace $NS, context $CONTEXT
 
