@@ -343,3 +343,15 @@ Maintenance on request has four bites in `bites/D30/`:
 - `requested-job-window-deadline` (`RequestedWorkTest`): a requested Job stops at the window's end, not the request's
   deadline.
 - `requested-job-waits-for-window` (`RequestedWorkTest`): a requested job waits for the cleanup window.
+
+What the worker reaches (backlog 250) has eight bites in `bites/D30/`:
+
+- `worker-refused-listing-reported-ok` (`StorageReportTest`): a refused listing is reported as let, with no code.
+- `worker-refused-deletes-counted-deleted` (`StorageReportTest`): keys the store refuses are counted as deleted.
+- `worker-storage-code-takes-a-message` (`WorkerStorageTest`): any text is kept as a store's code, a message naming a
+  key among them.
+- `worker-storage-text-swaps-delete-counts` (`WorkerStorageTest`): the SQL and Oracle stores read refused deletes as
+  failed and failed as refused.
+- `scan-end-keeps-start-storage-sql`, `scan-end-keeps-start-storage-oracle`, `scan-end-drops-storage-mongo`
+  (`HealthSuite` on each store): the end's report does not replace the start's storage.
+- `scan-groups-not-recorded` (`HealthRoutesTest`): a scan is kept without the groups of the worker's token.
