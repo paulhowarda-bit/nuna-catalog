@@ -18,6 +18,7 @@ import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.LegalHold;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
@@ -171,7 +172,24 @@ class GovernanceRoutes {
         body.set("effective", effective);
         ArrayNode holds = body.putArray("holds");
         target.chain().holds().forEach(hold -> holds.add(hold(hold)));
+        if (target.securable().kind() == Securable.Kind.TABLE && (guard.allows(request, target, "loadGovernance",
+                Privilege.MANAGE_TAGS) || guard.allows(request, target, "loadGovernance", Privilege.MANAGE_GRANTS))) {
+            body.set("row-column-rules", rules(target));
+        }
         return json(200, body);
+    }
+
+    /**
+     * A table's row filter and column mask rules for its steward and its grant admin (D20, backlog 242): how many,
+     * and for which groups, without the expressions, which only the grant admin's list gives.
+     */
+    private ObjectNode rules(Target target) {
+        ObjectNode node = Management.JSON.createObjectNode();
+        List<RowColumnRule.Stored> rules = store.rulesOn(target.securable().id());
+        node.put("count", rules.size());
+        ArrayNode groups = node.putArray("groups");
+        rules.forEach(stored -> groups.add(stored.rule().group()));
+        return node;
     }
 
     /** Sets one pushed attribute (D27): {@code {"value": ..., "provenance": ...}}; provenance is required. */

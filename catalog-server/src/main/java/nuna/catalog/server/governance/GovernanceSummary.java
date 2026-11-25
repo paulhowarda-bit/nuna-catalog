@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -40,6 +41,11 @@ final class GovernanceSummary {
     private record Level(Securable securable, List<String> path, Securable parent) {
     }
 
+    /** A table whose own row/column-policy flag is true (D20): its id, and its name as {@link #on} gives it. */
+    record Flagged(UUID id, ObjectNode on) {
+    }
+
+    private final CatalogStore store;
     private final CatalogRecord catalog;
     /** Every level, the catalog first, each namespace before what is in it. */
     private final Map<Securable, Level> levels;
@@ -49,8 +55,9 @@ final class GovernanceSummary {
     private final Map<Securable, Map<GovernanceAttribute.Kind, GovernanceAttribute>> own = new HashMap<>();
     private final Set<Securable> heldLevels = new HashSet<>();
 
-    private GovernanceSummary(CatalogRecord catalog, Map<Securable, Level> levels,
+    private GovernanceSummary(CatalogStore store, CatalogRecord catalog, Map<Securable, Level> levels,
                               List<GovernanceAttribute> attributes, List<LegalHold> holds) {
+        this.store = store;
         this.catalog = catalog;
         this.levels = levels;
         this.attributes = attributes;
@@ -73,7 +80,7 @@ final class GovernanceSummary {
             attributes.addAll(store.attributesOf(batch));
             holds.addAll(store.holdsOn(batch));
         }
-        return new GovernanceSummary(catalog, levels, attributes, holds);
+        return new GovernanceSummary(store, catalog, levels, attributes, holds);
     }
 
     private static void walk(CatalogStore store, Securable parent, List<String> path, Map<Securable, Level> levels) {
@@ -96,7 +103,9 @@ final class GovernanceSummary {
      * The counts: tables, those with a classification (their own or inherited, as their labels carry it), those
      * closed until classified, held (a hold on them or above) and frozen (a DR freeze on them or above); the
      * standing holds and freezes; each regulated area, a level whose own regulated flag is true, with the tables
-     * it covers, how many of those are closed, and the flag's provenance, setter and time; and every closed table.
+     * it covers, how many of those are closed, and the flag's provenance, setter and time; every closed table; and
+     * every flagged table with how many row filter and column mask rules it has (D20, backlog 242), without the
+     * groups or the expressions.
      */
     ObjectNode summary() {
         int tables = 0;
@@ -147,6 +156,8 @@ final class GovernanceSummary {
         counts.put("closed", closed.size());
         counts.put("held", held);
         counts.put("frozen", frozen);
+        List<Flagged> flagged = flagged();
+        counts.put("flagged", flagged.size());
         body.put("holds", holds.size());
         body.put("freezes", freezes().size());
         ArrayNode areas = body.putArray("regulated");
@@ -163,7 +174,29 @@ final class GovernanceSummary {
         });
         ArrayNode closedNode = body.putArray("closed");
         closed.forEach(level -> closedNode.add(on(level)));
+        ArrayNode flaggedNode = body.putArray("flagged");
+        for (Flagged table : flagged) {
+            ObjectNode node = flaggedNode.addObject();
+            node.set("on", table.on());
+            node.put("rules", store.rulesOn(table.id()).size());
+        }
         return body;
+    }
+
+    /**
+     * Every table whose own row/column-policy flag is true, in the walk's order. Rules sit only on these: the flag
+     * stays while a table has rules (D20, backlog 115).
+     */
+    List<Flagged> flagged() {
+        List<Flagged> flagged = new ArrayList<>();
+        for (Level level : levels.values()) {
+            if (level.securable().kind() == Securable.Kind.TABLE
+                    && own(level.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY)
+                            .filter(GovernanceSummary::isTrue).isPresent()) {
+                flagged.add(new Flagged(level.securable().id(), on(level)));
+            }
+        }
+        return flagged;
     }
 
     /** The holds and DR freezes standing now, the newest placed first. */
