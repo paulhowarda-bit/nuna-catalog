@@ -421,4 +421,7 @@ What the worker reaches (backlog 250) has eight bites in `bites/D30/`:
 
 Readiness (backlog 251) has one bite in `bites/D30/`: `readiness-uncovered-prefix-done`
 (`ReadinessRoutesTest#aPrefixNoReportedPrefixCoversIsMissingAndItsStoreUnknown`), the storage step done whenever the
-worker has reported any storage, so an allowed prefix no reported prefix covers is never `missing`.
+worker has reported any storage, so an allowed prefix no reported prefix covers is never `missing`. Who reads it
+(backlog 252) has one in `bites/D18/`: `readiness-admits-every-caller`
+(`ReadinessRoutesTest#aCallerWhoMayNotDescribeTheCatalogIsRefusedAndAudited`), the `describe` check dropped with the
+platform operator's way past it, so a bystander reads the readiness and no refusal is audited.

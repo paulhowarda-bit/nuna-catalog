@@ -1,0 +1,18 @@
+Breaks: readiness admits every caller who holds anything in the catalog, describe or not, so a bystander reads it and no refusal is audited.
+Module: catalog-server
+Test: ReadinessRoutesTest#aCallerWhoMayNotDescribeTheCatalogIsRefusedAndAudited
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+index 955eb6cb..1af445b9 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+@@ -76,9 +76,6 @@ class ReadinessRoutes {
+         Request request = management.request(http);
+         Target target = management.target(request, OPERATION, Privilege.DESCRIBE, prefix, null, null, null);
+         boolean operator = guard.operator(request);
+-        if (!operator) {
+-            guard.require(request, target, OPERATION, Privilege.DESCRIBE);
+-        }
+         boolean names = operator || guard.allows(request, target, OPERATION, Privilege.MODIFY)
+                 || guard.allows(request, target, OPERATION, Privilege.MANAGE_GRANTS);
+         List<MaintenanceScan> reached = store.listScans().stream().filter(scan -> scan.storage().isPresent()).toList();
