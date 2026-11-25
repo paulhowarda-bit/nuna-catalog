@@ -1,11 +1,14 @@
 package nuna.catalog.audit;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Maps each audit record to its row of the queryable audit table (D23, amended 2026-11-20): every event type says
  * who made the request, what it was about, and the operation, privilege and reason where it has them. Everything
- * else stays in the row's {@code data}, the payload as JSON, so a new payload version needs no new column.
+ * else stays in the row's {@code data}, the payload as JSON, so a new payload version needs no new column. A record
+ * from the log also carries where it was logged ({@link LogStamp}), in {@code log_run} and {@code log_seq} (backlog
+ * 272), which place it in its run's archive chain.
  */
 public final class AuditRows {
 
@@ -13,13 +16,26 @@ public final class AuditRows {
     }
 
     /**
-     * The row for one record of the audit topic.
+     * The row for one record of the audit topic, which carries no stamp.
      *
      * @param partition the topic partition it came from
      * @param offset    its offset there
      * @throws IllegalArgumentException for an event type with no mapping here
      */
     public static AuditRow of(CatalogEvent event, int partition, long offset) {
+        return of(event, Optional.empty(), partition, offset);
+    }
+
+    /**
+     * The row for one record, with where it was logged when it came from the log.
+     *
+     * @param stamp     its run and number in the run; empty for a record from the topic, or from a server that stamped
+     *                  none
+     * @param partition the topic partition it came from, or the log writer's
+     * @param offset    its offset there, or the number the log writer gave it
+     * @throws IllegalArgumentException for an event type with no mapping here
+     */
+    public static AuditRow of(CatalogEvent event, Optional<LogStamp> stamp, int partition, long offset) {
         Parts parts = switch (event.data()) {
             case Commit e -> on(e.actor(), e.object());
             case GrantChange e -> new Parts(e.actor(), e.actor().requestId(), e.securable(), null, e.privilege(), null);
@@ -64,7 +80,8 @@ public final class AuditRows {
                 object == null ? null : object.catalog(), object == null ? null : object.kind().name(),
                 object == null ? null : object.id().toString(), object == null ? null : object.path(),
                 parts.operation(), parts.privilege(), parts.reason(), EventCodec.MAPPER.writeValueAsString(event.data()),
-                partition, offset);
+                partition, offset, stamp.map(s -> s.run().toString()).orElse(null),
+                stamp.map(LogStamp::sequence).orElse(null));
     }
 
     /**

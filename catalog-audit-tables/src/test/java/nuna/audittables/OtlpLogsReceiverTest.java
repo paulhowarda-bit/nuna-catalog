@@ -12,6 +12,7 @@ import io.opentelemetry.proto.logs.v1.ScopeLogs;
 import nuna.catalog.audit.Actor;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.LogStamp;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.audit.PointerState;
 import nuna.catalog.audit.Securable;
@@ -138,6 +139,32 @@ class OtlpLogsReceiverTest {
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(ExportLogsServiceResponse.parseFrom(response.body()).hasPartialSuccess()).isFalse();
         assertThat(written()).containsExactlyInAnyOrder(first.id().toString(), second.id().toString());
+    }
+
+    @Test
+    void eachRowKeepsTheServerRunAndNumberItsRecordWasLoggedWith() {
+        // Backlog 272: the stamp places the row in its run's archive chain; a record without one has neither.
+        UUID run = UUID.fromString("a0000000-0000-4000-8000-000000000272");
+        CatalogEvent stamped = read();
+        CatalogEvent unstamped = read();
+        ExportLogsServiceRequest request = ExportLogsServiceRequest.newBuilder().addResourceLogs(ResourceLogs.newBuilder()
+                .addScopeLogs(scope(OtlpLogsReceiver.AUDIT_LOGGER,
+                        new String(EventCodec.encode(stamped, new LogStamp(run, 7)), StandardCharsets.UTF_8),
+                        json(unstamped)))).build();
+
+        assertThat(post("application/x-protobuf", request.toByteArray(), TOKEN, false).statusCode()).isEqualTo(200);
+        writer.commit();
+
+        java.util.Map<String, String> stamps = new java.util.HashMap<>();
+        try (CloseableIterable<Record> rows = IcebergGenerics.read(catalog.loadTable(
+                TableIdentifier.of(NAMESPACE, EventsTable.NAME))).build()) {
+            rows.forEach(row -> stamps.put((String) row.getField("event_id"),
+                    row.getField("log_run") + ":" + row.getField("log_seq")));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        assertThat(stamps).containsOnly(java.util.Map.entry(stamped.id().toString(), run + ":7"),
+                java.util.Map.entry(unstamped.id().toString(), "null:null"));
     }
 
     @Test

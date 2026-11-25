@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,11 +22,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.function.Consumer;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry;
 import software.amazon.awssdk.services.s3.model.GetObjectLockConfigurationResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectLockEnabled;
@@ -296,6 +299,161 @@ public final class ObjectLockArchive {
     /** An object's bytes, as {@code version} of {@code key} holds them. */
     public byte[] read(String key, String version) {
         return s3.getObjectAsBytes(b -> b.bucket(bucket).key(key).versionId(version)).asByteArray();
+    }
+
+    /**
+     * Where a logged record lies in its run's chain, for the audit feed (backlog 272).
+     *
+     * @param segment  the segment holding it
+     * @param position its place in the chain, from 1: the chain's own count, which repeats and losses set apart from
+     *                 the record's number in its run
+     * @param hash     the hash it stores
+     * @param previous the hash of the record before it: the segment's start head for its first record
+     * @param next     the hash of the record after it; empty while it is the chain's last
+     * @param holds    whether its stored hash is the hash of the one before it and its content
+     */
+    public record Placement(Segment segment, long position, String hash, String previous, Optional<String> next,
+                            boolean holds) {
+    }
+
+    /**
+     * The place of record {@code number} of the run whose chain is {@code chain}, with the event id {@code eventId};
+     * empty when no segment searched holds it. A run's records reach its chain in about the order they were numbered,
+     * so the segment its number falls in is found by the numbers of the segments' first records, a binary search
+     * reading one record of each segment it tries, and searched first; then the {@code reach} segments after it and
+     * before it, nearest first. A record that arrived more than {@code reach} segments away from its number's place
+     * is not found: {@link Integer#MAX_VALUE} searches the whole chain.
+     */
+    public Optional<Placement> place(String chain, long number, String eventId, int reach) {
+        List<ObjectVersion> segments = new ArrayList<>(firstVersions(chainPrefix(chain), null, null).values());
+        if (segments.isEmpty()) {
+            return Optional.empty();
+        }
+        // The last segment whose first record's number is at or below the one wanted.
+        int low = 0;
+        int high = segments.size() - 1;
+        while (low < high) {
+            int middle = (low + high + 1) >>> 1;
+            if (firstNumber(segments.get(middle)) <= number) {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        byte[] stamp = ("\"" + EventCodec.SEQUENCE + "\":\"" + number + "\"")
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] id = ("\"id\":\"" + eventId + "\"").getBytes(StandardCharsets.UTF_8);
+        for (int step = 0; step <= Math.min(reach, segments.size()); step++) {
+            for (int at : step == 0 ? new int[] {low} : new int[] {low + step, low - step}) {
+                if (at < 0 || at >= segments.size()) {
+                    continue;
+                }
+                Optional<Placement> found = placeIn(chain, segment(segments.get(at)), stamp, id);
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** The number its run gave the segment's first record; {@link Long#MIN_VALUE} for one that carries none. */
+    private long firstNumber(ObjectVersion version) {
+        try (ResponseInputStream<GetObjectResponse> in = s3.getObject(r -> r.bucket(bucket).key(version.key())
+                .versionId(version.versionId()))) {
+            byte[] line = ArchiveVerifier.nextLine(new BufferedInputStream(in, 8 * 1024));
+            in.abort();
+            return line == null ? Long.MIN_VALUE : number(line);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** The {@code nunaseq} a record line carries, or {@link Long#MIN_VALUE}. */
+    private static long number(byte[] line) {
+        byte[] key = ("\"" + EventCodec.SEQUENCE + "\":\"").getBytes(StandardCharsets.UTF_8);
+        int at = indexOf(line, key);
+        if (at < 0) {
+            return Long.MIN_VALUE;
+        }
+        long number = 0;
+        int digits = 0;
+        for (int i = at + key.length; i < line.length && line[i] >= '0' && line[i] <= '9' && digits < 18; i++) {
+            number = number * 10 + (line[i] - '0');
+            digits++;
+        }
+        return digits == 0 ? Long.MIN_VALUE : number;
+    }
+
+    /** The record in {@code segment} whose line holds both {@code stamp} and {@code id}, read in one pass. */
+    private Optional<Placement> placeIn(String chain, Segment segment, byte[] stamp, byte[] id) {
+        try (InputStream in = new BufferedInputStream(s3.getObject(r -> r.bucket(bucket).key(segment.key())
+                .versionId(segment.versionId())), readBuffer)) {
+            byte[] previous = Chain.HEX.parseHex(segment.start().hash());
+            byte[] line;
+            while ((line = ArchiveVerifier.nextLine(in)) != null) {
+                if (line.length < Chain.HASH_HEX_LENGTH + 2 || line[Chain.HASH_HEX_LENGTH] != ' ') {
+                    return Optional.empty();
+                }
+                String stored = new String(line, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII);
+                if (indexOf(line, stamp) >= 0 && indexOf(line, id) >= 0) {
+                    byte[] body = Arrays.copyOfRange(line, Chain.HASH_HEX_LENGTH + 1,
+                            line.length - (line[line.length - 1] == '\n' ? 1 : 0));
+                    boolean holds = Chain.HEX.formatHex(Chain.link(previous, body)).equals(stored);
+                    byte[] after = ArchiveVerifier.nextLine(in);
+                    Optional<String> next = after != null && after.length >= Chain.HASH_HEX_LENGTH
+                            ? Optional.of(new String(after, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII))
+                            : firstHashAfter(chain, segment);
+                    return Optional.of(new Placement(segment, position(body), stored, Chain.HEX.formatHex(previous),
+                            next, holds));
+                }
+                try {
+                    previous = Chain.HEX.parseHex(stored);
+                } catch (IllegalArgumentException e) {
+                    return Optional.empty();
+                }
+            }
+            return Optional.empty();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** The hash of the first record of the segment after {@code segment}, if there is one yet. */
+    private Optional<String> firstHashAfter(String chain, Segment segment) throws IOException {
+        Map.Entry<String, ObjectVersion> next = firstVersions(chainPrefix(chain), segment.key(), null).firstEntry();
+        if (next == null) {
+            return Optional.empty();
+        }
+        try (ResponseInputStream<GetObjectResponse> in = s3.getObject(r -> r.bucket(bucket).key(next.getKey())
+                .versionId(next.getValue().versionId()))) {
+            byte[] hash = in.readNBytes(Chain.HASH_HEX_LENGTH);
+            in.abort();
+            return hash.length == Chain.HASH_HEX_LENGTH
+                    ? Optional.of(new String(hash, StandardCharsets.US_ASCII)) : Optional.empty();
+        }
+    }
+
+    /** A record body's place in its chain, the number before its first space. */
+    private static long position(byte[] body) {
+        int end = 0;
+        while (body[end] != ' ') {
+            end++;
+        }
+        return Long.parseLong(new String(body, 0, end, StandardCharsets.US_ASCII));
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
     }
 
     /** What the archive check last kept, if anything. */

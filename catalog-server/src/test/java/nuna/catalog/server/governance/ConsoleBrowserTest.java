@@ -1093,7 +1093,7 @@ class ConsoleBrowserTest {
                 .toList()).contains("Table").doesNotContain("Archive", "table");
         assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row .rec .chain-link"))).isEmpty();
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-row .rec"))))
-                .contains("no archive is configured").doesNotContain("in its server run's chain");
+                .contains("no archive is configured").doesNotContain("cannot be checked");
 
         // Back from the record's table keeps the kind.
         driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .what a")).click();
@@ -1128,7 +1128,91 @@ class ConsoleBrowserTest {
         driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='commit'] button")).click();
         WebElement fromLog = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='commit'] .rec"));
         assertThat(textContent(fromLog.findElement(By.cssSelector("[data-read-from]")))).isEqualTo("the log nuna.audit");
-        assertThat(textContent(fromLog)).doesNotContain("Kafka", "partition", "-1", "Check its link");
+        assertThat(textContent(fromLog)).doesNotContain("Kafka", "partition", "-1", "Check this record");
+    }
+
+    /** The feed and one record's place in its run's chain, as an archive gives them (backlog 272). */
+    private static final String AUDIT_CHAIN_IN_THE_PAGE = """
+            const real = window.fetch;
+            window.asked = [];
+            const now = Date.now();
+            const run = 'a0000000-0000-4000-8000-000000000272';
+            const rec = (i, type, chain, seq) => ({time: new Date(now - i * 60000).toISOString(), type: 'nuna.catalog.' + type,
+              principal: 'gina', 'event-id': 'e0000000-0000-4000-8000-00000000000' + i, partition: -1, offset: i,
+              'request-id': 'r' + i, object: null, event: {data: {}}, chain,
+              'log-run': seq ? run : null, 'log-seq': seq || null});
+            const at = new Date(now - 600000).toISOString();
+            const records = [rec(1, 'grant', {status: 'verified', 'checked-at': at}, 41),
+              rec(2, 'commit', {status: 'unverified', 'checked-at': at, missing: {from: 43, to: 44}}, 45),
+              rec(3, 'drop', {status: 'no-place'}, null)];
+            // The drop came from Kafka, whose copy carries no run.
+            Object.assign(records[2], {partition: 0, offset: 7});
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/audit/summary')) {
+                return json({'by-type': {'nuna.catalog.grant': 1, 'nuna.catalog.commit': 1, 'nuna.catalog.drop': 1},
+                  from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+              }
+              if (u.pathname.endsWith('/audit/archive')) return json({configured: true, bucket: 'audit-archive', prefix: 'audit'});
+              if (u.pathname.endsWith('/audit/feed')) return json({records});
+              if (u.pathname.includes('/audit/chains/')) {
+                window.asked.push(u.pathname + u.search);
+                return json({chain: run, 'log-run': run, 'log-seq': 41, 'event-id': records[0]['event-id'], archived: true,
+                  position: 43, hash: 'b'.repeat(64), 'previous-hash': 'a'.repeat(64), 'next-hash': null, 'link-holds': true,
+                  verified: true, 'checked-at': at, segment: {key: 'audit/runs/' + run + '/0000000000000000040.log',
+                    'first-position': 41, 'last-position': 43}});
+              }
+              return real(url, init);
+            };
+            location.hash = '#p=audit&c=trading&kind=all';
+            """;
+
+    /**
+     * A record logged with its server run's number says whether the archive check has verified its run up to it, and
+     * looks its place up in the run's chain; a record after one the check found missing says so; one from Kafka says it
+     * cannot be checked (backlog 272, in Atelier's words).
+     */
+    @Test
+    void aLoggedRecordSaysWhetherItsRunIsVerifiedAndLooksUpItsPlaceInTheChain() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(AUDIT_CHAIN_IN_THE_PAGE);
+        browser.await(By.cssSelector("#audit-feed .feed-row[data-type='drop']"));
+
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant']"))))
+                .contains("Chain verified");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='commit']"))))
+                .contains("Earlier record missing");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='drop']"))))
+                .doesNotContain("Chain verified", "missing", "Not verified");
+
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='commit'] button")).click();
+        assertThat(textContent(browser.await(By.cssSelector("#audit-feed .feed-row[data-type='commit'] .rec"))))
+                .contains("not verified: records 43 to 44 of its server run are missing from the archive; see Hash chain");
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='drop'] button")).click();
+        WebElement drop = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='drop'] .rec"));
+        assertThat(textContent(drop)).contains(
+                "cannot be checked from this page: the Kafka copy does not say which server run logged it");
+        assertThat(drop.findElements(By.cssSelector(".chain-link"))).isEmpty();
+
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] button")).click();
+        WebElement grant = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .rec"));
+        assertThat(textContent(grant.findElement(By.cssSelector("[data-read-from]"))))
+                .startsWith("the log nuna.audit, record 41 of server run a0000000-0000-4000-8000-000000000272");
+        assertThat(textContent(grant)).contains("verified by the check at").contains(
+                "with every earlier record of its server run");
+        grant.findElement(By.cssSelector(".chain-link button")).click();
+        WebElement place = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .chain-link .pill"));
+        assertThat(textContent(place)).isEqualTo("Hash matches");
+        assertThat(textContent(grant.findElement(By.cssSelector(".chain-link")))).contains(
+                "place 43 in its server run's chain", "verified the chain through it",
+                "its place differs from its number in the run", "the newest in its chain",
+                "segment audit/runs/a0000000-0000-4000-8000-000000000272/0000000000000000040.log");
+        assertThat(driver.executeScript("return window.asked")).asList().containsExactly(
+                "/management/v1/audit/chains/a0000000-0000-4000-8000-000000000272/records/41"
+                        + "?event-id=e0000000-0000-4000-8000-000000000001");
     }
 
     /** The types of the feed's rows, as drawn. */

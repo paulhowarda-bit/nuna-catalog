@@ -344,7 +344,7 @@ function feedRow(catalog, r) {
   h('span', {class: 't'}, at(r.time, true)),
   h('span', {class: 'w'}, h('b', null, r.principal || '–'), r['end-user'] ? [' for ', h('b', null, r['end-user'])] : null,
     h('br'), h('span', {class: 'via'}, r.engine ? 'via ' + r.engine : '')),
-  h('div', null, auditBadge(r.type, event.data),
+  h('div', null, auditBadge(r.type, event.data), ' ', chainPill(r),
     h('p', {class: 'what'}, describe(type, event.data || {}, catalog) || r.operation || '',
       o && o.path && o.path.length ? [' · ', objectLink(catalog, o.kind, o.path, null)] : null)), btn);
   let detail = null;
@@ -362,6 +362,29 @@ function feedRow(catalog, r) {
   return row;
 }
 
+/**
+ * Whether the archive check has verified the row's server run up to it; nothing when the row cannot be placed. A row
+ * after a record the check reported missing stays unverified until that record arrives, which may be never, so it says
+ * so rather than "yet".
+ */
+function chainPill(r) {
+  const chain = r.chain;
+  if (!chain || chain.status === 'no-archive' || chain.status === 'no-place') return null;
+  if (chain.status === 'verified') return pill('ok', icon('check'), 'Chain verified');
+  const gap = gapOf(r);
+  if (gap === 'own') return pill('bad', icon('x'), 'Missing from archive');
+  if (gap === 'below') return pill('bad', icon('x'), 'Earlier record missing');
+  return pill('', icon('clock'), 'Not verified yet');
+}
+
+/** Where the gap the check reported in the row's run lies: at its own number, below it, or nowhere. */
+function gapOf(r) {
+  const m = r.chain && r.chain.missing;
+  if (!m) return null;
+  const n = Number(r['log-seq']);
+  return Number(m.from) <= n && n <= Number(m.to) ? 'own' : 'below';
+}
+
 /** An object's kind as a label: "Table", "Namespace". */
 const kindLabel = kind => {
   const k = String(kind || '').toLowerCase();
@@ -371,19 +394,67 @@ const kindLabel = kind => {
 function recordDetail(catalog, r) {
   const rid = r['request-id'];
   const fromKafka = Number(r.partition) >= 0;
+  // A row that says which server run logged it can be found in that run's chain (backlog 272).
+  const placed = r.chain && (r.chain.status === 'verified' || r.chain.status === 'unverified');
+  const link = placed ? h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button',
+    onclick: () => load(link, () => chainLink(r))}, 'Check this record')) : null;
   const o = r.object;
   return h('div', {class: 'rec'},
     h('dl', {class: 'facts rec-facts'},
       h('dt', null, 'Request'), h('dd', null, rid ? [code(rid), ' ', copyButton(rid)] : muted('none recorded')),
       // A record the audit table writer took from the log has no place in Kafka, and no link in the archive (backlog 205).
       h('dt', null, 'Read from'), h('dd', {'data-read-from': fromKafka ? 'kafka' : 'log'}, fromKafka
-        ? [`Kafka, partition ${r.partition}, offset `, code(String(r.offset))] : ['the log ', code('nuna.audit')]),
-      // Each server run's records are chained apart (backlog 262); the table does not say which run a row came from yet.
-      h('dt', null, 'Hash chain'), h('dd', null, r.chain && r.chain.status === 'no-archive' ? 'no archive is configured'
-        : 'in its server run\'s chain in the archive; this page cannot place it there yet'),
+        ? [`Kafka, partition ${r.partition}, offset `, code(String(r.offset))] : ['the log ', code('nuna.audit'),
+          r['log-run'] ? [`, record ${fmt(r['log-seq'])} of server run `, code(r['log-run']), ' ',
+            copyButton(r['log-run'])] : null]),
+      h('dt', null, 'Hash chain'), h('dd', null, chainLine(r, fromKafka)),
+      link ? [h('dt', null, 'Archive'), link] : null,
       o && o.path && o.path.length ? [h('dt', null, kindLabel(o.kind)),
         h('dd', null, objectLink(catalog, o.kind, o.path, null))] : null,
       r.reason ? [h('dt', null, 'Reason'), h('dd', null, r.reason)] : null),
     r.event ? jsonPre(r.event) : h('p', {class: 'muted'}, 'This server does not know this record\'s type; its columns are above.'));
+}
+
+/** What the archive check says of the row's place in its server run's chain. */
+function chainLine(r, fromKafka) {
+  const status = r.chain && r.chain.status;
+  const checked = r.chain && r.chain['checked-at'];
+  if (status === 'no-archive') return 'no archive is configured';
+  if (status === 'verified') {
+    return `verified by the check at ${at(checked)}, with every earlier record of its server run`;
+  }
+  if (status === 'unverified') {
+    const gap = gapOf(r);
+    const m = r.chain.missing;
+    if (gap === 'own') return 'the archive is missing this record; see Hash chain';
+    if (gap === 'below') {
+      return m.from === m.to
+        ? `not verified: record ${fmt(m.from)} of its server run is missing from the archive; see Hash chain`
+        : `not verified: records ${fmt(m.from)} to ${fmt(m.to)} of its server run are missing from the archive; see Hash chain`;
+    }
+    return checked ? `not verified yet: the check at ${at(checked)} had not verified its server run up to it`
+      : 'not verified yet: no check has reached its server run';
+  }
+  // Each server run's records are chained apart (backlog 262): a row must say which run logged it to be placed.
+  return fromKafka ? 'cannot be checked from this page: the Kafka copy does not say which server run logged it'
+    : 'cannot be checked from this page: an older server logged it without numbering it';
+}
+
+/** A record's place in its server run's hash chain, read from the archive's segment that holds it. */
+async function chainLink(r) {
+  const c = await api.auditChain(r['log-run'], r['log-seq'], r['event-id']);
+  if (!c.archived) return h('span', null, pill('', icon('clock'), 'Not archived yet'), ' the archive has not received it');
+  // The place can differ from the number: the chain holds records as they arrived, repeats and all.
+  const moved = Number(c.position) !== Number(c['log-seq']);
+  return h('span', null,
+    c['link-holds'] ? pill('ok', icon('check'), 'Hash matches') : pill('bad', icon('x'), 'Hash does not match'),
+    ` place ${fmt(c.position)} in its server run's chain`,
+    c.verified ? `; the check at ${at(c['checked-at'])} verified the chain through it` : '; the check has not reached it yet',
+    moved ? [h('br'), h('span', {class: 'fine'},
+      'its place differs from its number in the run because records before it were repeated or lost')] : null,
+    h('br'), h('span', {class: 'fine'}, 'previous ', code(String(c['previous-hash'] || '').slice(0, 16) + '…'),
+      ' · this ', code(String(c.hash || '').slice(0, 16) + '…'),
+      c['next-hash'] ? [' · next ', code(String(c['next-hash']).slice(0, 16) + '…')] : ' · the newest in its chain'),
+    h('br'), h('span', {class: 'fine'}, 'segment ', code(c.segment ? c.segment.key : '')));
 }
 

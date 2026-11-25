@@ -403,6 +403,10 @@ export const auditSummary = catalog => call(`/management/v1/catalogs/${enc(catal
 /** The archive check's status: this server's last run, its checkpoints and what it found wrong. */
 export const auditArchive = () => call('/management/v1/audit/archive');
 
+/** A logged record's place in its server run's hash chain, from the archive (backlog 272). */
+export const auditChain = (run, number, eventId) =>
+  call(`/management/v1/audit/chains/${enc(run)}/records/${enc(number)}?event-id=${enc(eventId)}`);
+
 // ---- the catalog's branches and tags (item 26, D33; item 109) ----
 
 const refsPath = catalog => `/management/v1/catalogs/${enc(catalog)}/refs`;

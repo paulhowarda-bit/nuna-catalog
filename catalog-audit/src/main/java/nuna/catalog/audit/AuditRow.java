@@ -3,12 +3,14 @@ package nuna.catalog.audit;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * One audit record as a row of the queryable audit table {@code events} (D23, amended 2026-11-20): the envelope's
  * attributes, who made the request, what it was about, the type's operation, privilege and reason where it has them,
- * the whole payload as JSON, and the record's place in the audit topic, which ties the row to its archive chain.
- * Plain Java values: the Iceberg side lives in {@code catalog-audit-tables}, not here (D2).
+ * the whole payload as JSON, the record's place in the audit topic, and, for a record from the log, the server run that
+ * logged it and its number there, which place the row in the run's archive chain (backlog 272). Plain Java values: the Iceberg side lives in {@code catalog-audit-tables}, not here (D2).
  *
  * @param eventId        the CloudEvents id
  * @param time           when it happened
@@ -26,13 +28,16 @@ import java.util.Objects;
  * @param privilege      the privilege granted, revoked or missing, where the type names one
  * @param reason         why: a denial's, an authentication failure's or a hold's reason
  * @param data           the payload, as the topic carries it under {@code data}
- * @param topicPartition the audit topic's partition the record came from: its archive chain
+ * @param topicPartition the audit topic's partition the record came from
  * @param topicOffset    its offset there
+ * @param logRun         the server run that logged it ({@link LogStamp#run}), or null: a record from the topic, or
+ *                       from a server that stamped none
+ * @param logSequence    its number in that run ({@link LogStamp#sequence}), or null when {@code logRun} is
  */
 public record AuditRow(String eventId, Instant time, String type, String source, String principal, String endUser,
                        String engine, String requestId, String catalog, String objectKind, String objectId,
                        List<String> objectPath, String operation, String privilege, String reason, String data,
-                       int topicPartition, long topicOffset) {
+                       int topicPartition, long topicOffset, String logRun, Long logSequence) {
 
     public AuditRow {
         Objects.requireNonNull(eventId, "eventId");
@@ -41,5 +46,13 @@ public record AuditRow(String eventId, Instant time, String type, String source,
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(data, "data");
         objectPath = objectPath == null ? null : List.copyOf(objectPath);
+        if ((logRun == null) != (logSequence == null)) {
+            throw new IllegalArgumentException("a row carries both its log run and its number in it, or neither");
+        }
+    }
+
+    /** Where the record was logged, if the row says. */
+    public Optional<LogStamp> logStamp() {
+        return logRun == null ? Optional.empty() : Optional.of(new LogStamp(UUID.fromString(logRun), logSequence));
     }
 }

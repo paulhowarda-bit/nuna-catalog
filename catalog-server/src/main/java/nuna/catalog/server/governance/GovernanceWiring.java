@@ -9,6 +9,8 @@ import nuna.catalog.server.rest.RestSettings;
 import nuna.catalog.server.storage.StorageSettings;
 import nuna.catalog.server.tracing.ObservedPublisher;
 import nuna.catalog.store.CatalogStore;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.time.Clock;
@@ -111,6 +113,20 @@ class GovernanceWiring {
     @Bean
     AuditTrail auditTrail(AuditRuntime runtime) {
         return runtime.trail();
+    }
+
+    /**
+     * The records this server has logged in its run, as a gauge tagged with the run (backlog 272): beside the archive's
+     * highest number for the run ({@link AuditArchiveCheck#ARCHIVED}), it shows a tail that has not reached the
+     * archive while the server still runs.
+     */
+    @Bean
+    MeterBinder auditLoggedMeter(AuditTrail trail) {
+        return registry -> Gauge.builder(AuditArchiveCheck.LOGGED, trail, AuditTrail::logged)
+                .description("The audit records this server has logged in its run, the number of the last")
+                .tag(AuditArchiveCheck.RUN, trail.run().toString())
+                .strongReference(true)
+                .register(registry);
     }
 
     /**

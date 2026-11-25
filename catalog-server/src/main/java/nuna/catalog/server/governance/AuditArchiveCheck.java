@@ -2,10 +2,18 @@ package nuna.catalog.server.governance;
 
 import nuna.catalog.audit.archive.ArchiveCheck;
 import nuna.catalog.audit.archive.ObjectLockArchive;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.MultiGauge;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,9 +26,20 @@ import org.springframework.stereotype.Component;
  * chain is verified up to the newest head they gave it ({@link ArchiveCheck}). What it verified is kept in the bucket,
  * so every server shares it and a restart reads only what was archived since. Every server checks; two checking at once
  * read the same segments and record the same heads.
+ *
+ * <p>After each check it gives, as the gauge {@value #ARCHIVED} tagged with the run, the highest number the check
+ * verified in each run's chain not yet done (backlog 272): set beside a server's own count ({@value #LOGGED}), it shows
+ * a running server's records that never reached the archive.
  */
 @Component
-class AuditArchiveCheck implements SmartLifecycle {
+class AuditArchiveCheck implements SmartLifecycle, MeterBinder {
+
+    /** The highest number verified in each run's chain not yet done, by {@value #RUN}. */
+    static final String ARCHIVED = "nuna.audit.archive.highest";
+    /** The records a server has logged in its run, by {@value #RUN} ({@link AuditTrail#logged}). */
+    static final String LOGGED = "nuna.audit.logged";
+    /** The label naming a server run, as its records' stamp does. */
+    static final String RUN = "run";
 
     private static final Logger LOG = LoggerFactory.getLogger(AuditArchiveCheck.class);
     static final Duration FIRST_RUN = Duration.ofMinutes(1);
@@ -31,6 +50,9 @@ class AuditArchiveCheck implements SmartLifecycle {
     private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean();
     private volatile Optional<ArchiveCheck.Result> last = Optional.empty();
+    /** What the bucket said was verified, read before this server's first check; null until read. */
+    private volatile Map<String, ArchiveCheck.Verified> kept;
+    private volatile MultiGauge archived;
     private Thread thread;
 
     @Autowired
@@ -59,10 +81,80 @@ class AuditArchiveCheck implements SmartLifecycle {
         return last;
     }
 
+    /**
+     * How far each chain is verified, by chain: as this server's last check left it, or before its first, as the bucket
+     * keeps it from any server's, read once. Empty without an archive, or while the bucket cannot be read.
+     */
+    Map<String, ArchiveCheck.Verified> verified() {
+        Optional<ArchiveCheck.Result> result = last();
+        if (result.isPresent()) {
+            return result.get().chains().stream()
+                    .collect(Collectors.toMap(ArchiveCheck.ChainResult::chain, ArchiveCheck.ChainResult::verified));
+        }
+        if (archive.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ArchiveCheck.Verified> read = kept;
+        if (read == null) {
+            try {
+                read = Map.copyOf(new ArchiveCheck(archive.get(), clock).verified());
+                kept = read;
+            } catch (RuntimeException e) {
+                LOG.warn("what the audit archive check verified could not be read from the bucket: {}", e.toString());
+                return Map.of();
+            }
+        }
+        return read;
+    }
+
+    /**
+     * The numbers of each run the last check reported missing from its chain: gaps older than two checkpoint intervals,
+     * so no longer on their way (backlog 272). Empty before this server's first check.
+     */
+    Map<String, List<ArchiveCheck.Range>> missing() {
+        return last().map(result -> result.chains().stream().filter(c -> !c.missing().isEmpty())
+                        .collect(Collectors.toMap(ArchiveCheck.ChainResult::chain, ArchiveCheck.ChainResult::missing)))
+                .orElse(Map.of());
+    }
+
+    /**
+     * Where record {@code number} of server run {@code run}, with the event id {@code eventId}, lies in the run's chain
+     * (backlog 272): looked for in the segment its number puts it in and the one on each side, and in the whole chain
+     * when the check has verified every number up to it. Empty when it is not found.
+     */
+    Optional<ObjectLockArchive.Placement> place(UUID run, long number, UUID eventId) {
+        ObjectLockArchive store = archive.orElseThrow();
+        String chain = run.toString();
+        Optional<ObjectLockArchive.Placement> near = store.place(chain, number, eventId.toString(), 1);
+        if (near.isPresent()) {
+            return near;
+        }
+        ArchiveCheck.Verified verified = verified().get(chain);
+        return verified != null && number <= verified.through()
+                ? store.place(chain, number, eventId.toString(), Integer.MAX_VALUE) : Optional.empty();
+    }
+
+    @Override
+    public void bindTo(MeterRegistry registry) {
+        archived = MultiGauge.builder(ARCHIVED)
+                .description("The highest number the archive check verified in each server run's chain not yet done")
+                .register(registry);
+        last().ifPresent(this::gauge);
+    }
+
+    private void gauge(ArchiveCheck.Result result) {
+        MultiGauge gauge = archived;
+        if (gauge != null) {
+            gauge.register(result.chains().stream().filter(c -> c.run() && !c.verified().done())
+                    .map(c -> MultiGauge.Row.of(Tags.of(RUN, c.chain()), c.verified().highest())).toList(), true);
+        }
+    }
+
     /** Runs the check once now, as the hourly run does, and keeps its outcome. */
     ArchiveCheck.Result runOnce() {
         ArchiveCheck.Result result = new ArchiveCheck(archive.orElseThrow(), clock).run();
         last = Optional.of(result);
+        gauge(result);
         if (!result.intact()) {
             LOG.error("audit archive check: the archive is not intact: checkpoints {}, chains {}",
                     result.checkpoints(), result.chains().stream()
