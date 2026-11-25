@@ -1,0 +1,16 @@
+Breaks: A rule change has no kind of its own on the Audit page or in a table's trail.
+Module: catalog-server
+Test: ConsoleFlaggedTableBrowserTest#aRuleChangeHasItsOwnKindAndASentenceInTheTablesTrail+theAuditPageCountsAndFiltersRuleChangesAsTheirOwnKind
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index 7b424743..174115a4 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -643,7 +643,6 @@ export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'row-column-rul
+ export const AUDIT_KINDS = [
+   ['all', 'All', null, null],
+   ['grant', 'Grants', 'Grant', ['grant']],
+-  ['rule', 'Row and column rules', 'Rule', ['row-column-rule']],
+   ['hold', 'Governance', 'Governance', ['hold', 'governance']],
+   ['ref', 'Branches and tags', 'Branch or tag', ['ref']],
+   ['commit', 'Commits', 'Commit', ['commit']],

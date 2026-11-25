@@ -1,0 +1,16 @@
+Breaks: a table's governance answer reports a row-column-policy flag set above it as in force there (backlog 239).
+Module: catalog-server
+Test: FlagOnTablesOnlyTest#aTableNeverReportsAFlagFromAboveAsItsOwn
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+index 36eb43fb..bd531846 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+@@ -167,7 +167,7 @@ class GovernanceRoutes {
+         for (GovernanceAttribute attribute : target.chain().attributes()) {
+             attributes.add(attribute(attribute));
+             // The row/column-policy flag counts only on the table it is set on (D20, backlog 239): none is inherited.
+-            if (attribute.kind() != GovernanceAttribute.Kind.ROW_COLUMN_POLICY
++            if (true || attribute.kind() != GovernanceAttribute.Kind.ROW_COLUMN_POLICY
+                     || attribute.target().equals(target.securable())) {
+                 effective.putIfAbsent(name(attribute.kind()), effective.stringNode(attribute.value()));
+             }

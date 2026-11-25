@@ -522,6 +522,56 @@ class SecurityGateTest {
         }
     }
 
+    /**
+     * What the console's rules panel reads (backlog 242), on the wire: the flagged table's schema for a reader whose
+     * load of it is refused, their own view without the expressions, the steward's rule count and groups, the
+     * summary's flagged tables, and the export, with the expressions for the grant admin alone.
+     */
+    @Test
+    void theConsoleReadsAFlaggedTablesSchemaRuleCountsAndEachCallersOwnView() throws Exception {
+        String rules = "/management/v1/catalogs/gate/row-column-rules";
+        String table = "{\"type\":\"table\",\"namespace\":[\"sales\",\"eu\"],\"name\":\"pii\"}";
+        String pii = "/management/v1/catalogs/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii";
+        noContent(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","row-filter":"id > 10","column-masks":{"id":"NULL"}}"""
+                .formatted(table)));
+        try {
+            assertDenied(send(ANN, "GET", "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii", null),
+                    "loadTable", "flagged_table");
+            HttpResponse<String> schema = send(ANN, "GET", pii + "/schema", null);
+            ok(schema);
+            assertThat(JsonPath.<List<String>>read(schema.body(), "$.schema.fields[*].name")).containsExactly("id");
+            assertThat(schema.body()).doesNotContain("s3://", "manifest");
+
+            HttpResponse<String> mine = send(ANN, "GET", pii + "/row-column-rules/mine", null);
+            ok(mine);
+            assertThat(JsonPath.<String>read(mine.body(), "$.rows")).isEqualTo("filtered");
+            assertThat(JsonPath.<List<String>>read(mine.body(), "$.masked-columns")).containsExactly("id");
+            assertThat(mine.body()).doesNotContain("id > 10", "NULL");
+
+            HttpResponse<String> governance = send(SAM, "GET", pii + "/governance", null);
+            ok(governance);
+            assertThat(JsonPath.<Integer>read(governance.body(), "$.row-column-rules.count")).isEqualTo(1);
+            assertThat(JsonPath.<List<String>>read(governance.body(), "$.row-column-rules.groups"))
+                    .containsExactly("analysts");
+            assertThat(send(ANN, "GET", pii + "/governance", null).body()).doesNotContain("row-column-rules");
+
+            HttpResponse<String> summary = send(GINA, "GET", "/management/v1/catalogs/gate/governance/summary", null);
+            ok(summary);
+            assertThat(JsonPath.<List<Integer>>read(summary.body(), "$.flagged[?(@.on.id == '"
+                    + table("sales/eu/pii").id() + "')].rules")).containsExactly(1);
+
+            HttpResponse<String> export = send(GINA, "GET", rules + "/export", null);
+            ok(export);
+            assertThat(JsonPath.<List<String>>read(export.body(), "$.rules[?(@.group == 'analysts')]['row-filter']"))
+                    .containsExactly("id > 10");
+            assertDenied(send(ANN, "GET", rules + "/export", null), "exportRowColumnRules", "no_privilege");
+        } finally {
+            noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
+                    .formatted(table)));
+        }
+    }
+
     private static String opaRowFilters(String catalog, String token) {
         return """
                 {"input":{"context":{"identity":{"user":"anyone","groups":["grant-admins"],
