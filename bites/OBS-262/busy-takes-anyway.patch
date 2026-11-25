@@ -1,0 +1,17 @@
+Breaks: the archive writer takes records past max-waiting, so a store that cannot keep up fills the writer's memory.
+Module: catalog-audit
+Test: ArchiveSinkTest#pastTheMostWaitingAWholeRequestIsRefusedAndNothingOfItTaken
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+index 876d4cb7..b9f73a0c 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+@@ -233,7 +233,7 @@ public final class ArchiveSink {
+         int repeated = 0;
+         synchronized (lock) {
+             int offered = byChain.values().stream().mapToInt(List::size).sum();
+-            if (offered > 0 && waiting + offered > maxWaiting) {
++            if (false) {
+                 throw new Busy(waiting);
+             }
+             resumed.forEach(chains::putIfAbsent);

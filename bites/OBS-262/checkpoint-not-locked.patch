@@ -1,0 +1,18 @@
+Breaks: checkpoints are written without Object Lock or If-None-Match, so the anchors of every chain's head can be replaced.
+Module: catalog-audit
+Test: LockedArchiveTest#writerLocksSegmentsAndCheckpoints
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+index fdccf1d2..0c126bbe 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+@@ -266,7 +266,8 @@ public final class ObjectLockArchive {
+     public Stored writeCheckpoint(Instant at, byte[] json) {
+         String key = prefix + "/" + CHECKPOINTS + "/" + CHECKPOINT_TIME.format(at) + ".json";
+         Instant now = clock.instant();
+-        return new Stored(key, locked(key, "application/json", Map.of(), json, now), now);
++        return new Stored(key, s3.putObject(b -> b.bucket(bucket).key(key).contentType("application/json"),
++                RequestBody.fromBytes(json)).versionId(), now);
+     }
+ 
+     /** The checkpoints after the one keyed {@code afterKey}, oldest first; every checkpoint when it is null. */

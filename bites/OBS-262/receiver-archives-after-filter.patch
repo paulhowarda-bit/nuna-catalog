@@ -1,0 +1,18 @@
+Breaks: the receiver archives only the records that look like events, so the archive misses what the table leaves out.
+Module: catalog-audit-tables
+Test: OtlpLogsReceiverTest#archivesEveryAuditRecordAsItCameEvenThoseTheTableLeavesOut
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+index 10f1e2c5..4cdc0f0f 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+@@ -141,7 +141,8 @@ final class OtlpLogsReceiver implements AutoCloseable {
+                 answer(exchange, 400, null);
+                 return;
+             }
+-            if (archive.isPresent() && !archived(exchange, records)) {
++            if (archive.isPresent() && !archived(exchange, records.stream().filter(r -> r.startsWith("{"))
++                    .toList())) {
+                 return;
+             }
+             List<CatalogEvent> events = new ArrayList<>();

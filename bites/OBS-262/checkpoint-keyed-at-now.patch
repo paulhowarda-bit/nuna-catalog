@@ -1,0 +1,17 @@
+Breaks: a checkpoint is keyed at the clock's time even when the one before it has that time or a later one, so it cannot be written, or sorts before the one it names.
+Module: catalog-audit
+Test: ArchiveSinkTest#aRestartedWriterContinuesTheChainAndItsFirstCheckpointLinksToTheLastOneInTheBucket
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+index 876d4cb7..ed350bc6 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveSink.java
+@@ -365,7 +365,7 @@ public final class ArchiveSink {
+         // Keyed to the millisecond and never at or before the last: two checkpoints in one millisecond, or a clock
+         // behind its predecessor's, would otherwise share a key or sort out of order.
+         Instant at = now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+-        if (!at.isAfter(lastCheckpoint)) {
++        if (false) {
+             at = lastCheckpoint.truncatedTo(java.time.temporal.ChronoUnit.MILLIS).plusMillis(1);
+         }
+         List<Chain> anchored;

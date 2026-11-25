@@ -1,0 +1,17 @@
+Breaks: a run that stopped without its run-end record is never reported, so a server's lost last lines never show.
+Module: catalog-audit
+Test: ArchiveCheckTest#aRunThatEndsWithEveryNumberIsDoneAndOneThatStopsWithoutItsEndIsUnendedAfterADay
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+index 74d071bc..19fd402b 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+@@ -317,7 +317,7 @@ public final class ArchiveCheck {
+                 read.missing(), read.repeats(), read.ended(), read.advancedAt(), done);
+         List<Range> missing = kept.missing().stream().filter(m -> !m.since().isAfter(stale))
+                 .map(m -> new Range(m.from(), m.to())).toList();
+-        boolean unended = ofARun && !kept.ended() && kept.highest() > 0
++        boolean unended = false && ofARun && !kept.ended() && kept.highest() > 0
+                 && kept.advancedAt().plus(UNENDED_AFTER).isBefore(now);
+         return new ChainResult(chain, kept, records, missing, unended, List.copyOf(problems), Optional.empty());
+     }

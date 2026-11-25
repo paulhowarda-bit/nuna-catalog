@@ -1,17 +1,17 @@
-Breaks: A record the audit tables took from the log shows a Kafka partition of -1 and offers an archive link it cannot have.
+Breaks: A record the audit tables took from the log shows a Kafka partition of -1.
 Module: catalog-server
 Test: ConsoleBrowserTest#aRecordSaysWhetherItWasReadFromKafkaOrTheLog
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
-index f14f9e10..a952b46a 100644
+index df2979b5..d421514a 100644
 --- a/catalog-server/src/main/resources/nuna/ui/audit.js
 +++ b/catalog-server/src/main/resources/nuna/ui/audit.js
-@@ -352,7 +352,7 @@ const kindLabel = kind => {
+@@ -370,7 +370,7 @@ const kindLabel = kind => {
  
  function recordDetail(catalog, r) {
    const rid = r['request-id'];
 -  const fromKafka = Number(r.partition) >= 0;
 +  const fromKafka = true;
-   // Without an archive (backlog 216), or for a record read from the log (backlog 205), there is no link to check, so
-   // none is offered.
-   const archived = !(r.chain && r.chain.status === 'no-archive');
+   const o = r.object;
+   return h('div', {class: 'rec'},
+     h('dl', {class: 'facts rec-facts'},

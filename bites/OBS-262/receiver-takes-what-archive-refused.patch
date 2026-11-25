@@ -1,0 +1,19 @@
+Breaks: when the archive cannot take a request's records the receiver answers 200 and the table takes them, so the exporter never sends them again and the archive never has them.
+Module: catalog-audit-tables
+Test: OtlpLogsReceiverTest#anArchiveThatCannotTakeTheRecordsTurnsTheRequestAwayAndTheTableTakesNoneOfThem
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+index 10f1e2c5..215b2389 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+@@ -187,9 +187,7 @@ final class OtlpLogsReceiver implements AutoCloseable {
+             return false;
+         } catch (RuntimeException e) {
+             LOG.error("The audit archive could not take {} records; answered 503", records.size(), e);
+-            exchange.getResponseHeaders().set("Retry-After", "10");
+-            answer(exchange, 503, null);
+-            return false;
++            return true;
+         }
+         if (taken.refused() > 0) {
+             LOG.error("{} log records of {} are not whole audit records and are not archived", taken.refused(),

@@ -1,0 +1,17 @@
+Breaks: the archive check does not check that each checkpoint names the one before it, so a checkpoint replaced, removed or written by another writer passes.
+Module: catalog-audit
+Test: ArchiveCheckTest#aCheckpointThatDoesNotFollowTheOneBeforeOrGivesAChainAShorterHeadIsReported
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+index 74d071bc..7a1f1084 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+@@ -188,7 +188,7 @@ public final class ArchiveCheck {
+                     link = Optional.of(new Checkpoint.Link(stored.key(), Checkpoint.sha256(bytes)));
+                     continue;
+                 }
+-                if (!checkpoint.previous().equals(link)) {
++                if (false) {
+                     checkpointProblems.add(stored.key() + " names " + checkpoint.previous().map(Checkpoint.Link::key)
+                             .orElse("no checkpoint") + " as the one before it, but the one before it is "
+                             + link.map(l -> l.key() + " (" + l.sha256() + ")").orElse("none")

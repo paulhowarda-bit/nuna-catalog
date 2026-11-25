@@ -1,18 +1,17 @@
-Breaks: the archive check trusts each segment's stated heads and never reads its records, so a changed record passes.
+Breaks: the archive check takes a chain whose hashes do not link as verified, so a changed record passes.
 Module: catalog-audit
 Test: ArchiveCheckTest#aChangedRecordIsFoundAndTheVerifiedHeadStaysWhereItWas
+
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
-index 19664aa..ae761c5 100644
+index 74d071bc..dbd9dd07 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
-@@ -176,10 +176,6 @@ public final class ArchiveCheck {
-             return broken(chain, partition, was, "segment " + run.getFirst().key() + " starts from "
-                     + run.getFirst().start() + ", but the chain was verified to " + from);
-         }
--        Verification verification = archive.verify(run, from);
--        if (!(verification instanceof Verification.Intact)) {
--            return broken(chain, partition, was, "after record " + from.sequence() + ": " + verification);
--        }
-         if (!run.getLast().end().equals(to)) {
-             return broken(chain, partition, was, "the chain ends at " + run.getLast().end()
-                     + ", but the archive consumer anchored " + to);
+@@ -291,7 +291,7 @@ public final class ArchiveCheck {
+                 Verification verification = archive.verify(run, was.head(),
+                         body -> reading.read(chain, body, now, recordProblems));
+                 if (!(verification instanceof Verification.Intact intact)) {
+-                    problems.add("after record " + was.head().sequence() + ": " + verification);
++                    verified = new Verified(to, run.getLast().key(), now, 0, 0, List.of(), 0, false, now, false);
+                 } else if (!run.getLast().end().equals(to)) {
+                     problems.add("the chain ends at " + run.getLast().end() + ", but a checkpoint gives it " + to);
+                 } else {

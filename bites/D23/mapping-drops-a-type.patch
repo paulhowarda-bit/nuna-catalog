@@ -1,16 +1,17 @@
 Breaks: the audit table has no mapping for maintenance exemptions, so the writer stops at the first one.
 Module: catalog-audit
 Test: AuditRowsTest#everyEventTypeHasARow
+
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java b/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
-index 4a26f27..33347f9 100644
+index 3c16997c..a3e3d46d 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
-@@ -46,8 +46,6 @@ public final class AuditRows {
+@@ -49,8 +49,6 @@ public final class AuditRows {
              case LabelChange e -> on(e.actor(), e.target());
              case PurgeClaim e -> on(e.actor(), e.object());
              case FileDeletion e -> on(e.actor(), e.object());
 -            case MaintenanceExemption e -> new Parts(e.actor(), e.actor().requestId(), e.object(), e.operation(), null,
 -                    null);
+             // A server's own record: no one asked for it, and it is about no object.
+             case RunEnd e -> new Parts(null, null, null, null, null, null);
              // A type added without a mapping fails here and in AuditRowsTest, never written with empty columns.
-             default -> throw new IllegalArgumentException("no audit table mapping for " + event.type().typeName());
-         };

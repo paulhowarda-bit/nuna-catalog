@@ -1,0 +1,17 @@
+Breaks: the run-end record is logged in the default phase, before the relay and other parts that still log have stopped, so records can follow the run's end.
+Module: catalog-server
+Test: AuditTrailTest#theRunEndIsLoggedInTheLastPhaseOfStopping
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
+index 6a74f7e4..89a70d72 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
+@@ -140,7 +140,7 @@ class GovernanceWiring {
+ 
+             @Override
+             public int getPhase() {
+-                return Integer.MIN_VALUE;
++                return 0;
+             }
+         };
+     }

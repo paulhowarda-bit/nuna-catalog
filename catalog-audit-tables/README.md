@@ -103,8 +103,8 @@ and any it cannot map (`ArchiveSink`). If the archive cannot take a request's re
 docs/observability/audit-log.md, "The archive", says what the catalog stamps on each line, how the check finds a
 record that never arrived, and what the archive can miss.
 
-- **Chains.** One hash chain per catalog server run, `<prefix>/runs/<run>/<first number, 19 digits>.log`, named by the
-  run id each line carries (`nunarun`); records with no stamp go to `<prefix>/runs/unstamped-<writer>/`, a chain of
+- **Chains.** One hash chain per catalog server run, `<prefix>/runs/<run>/<n>.log`, named by the run id each line
+  carries (`nunarun`), `<n>` being the segment's first record's place in the chain, 19 digits; records with no stamp go to `<prefix>/runs/unstamped-<writer>/`, a chain of
   this writer process's own. A record whose run and number this writer has already taken is left out; one taken
   before a restart is archived again, and the check counts it as a repeat.
 - **Segments.** A chain's records wait in memory until `segment-events` of them wait, the first has waited

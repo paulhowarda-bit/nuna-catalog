@@ -1,0 +1,16 @@
+Breaks: the archive check does not look for delete markers or second versions on a chain's keys.
+Module: catalog-audit
+Test: ArchiveCheckTest#aDeleteMarkerAndASecondVersionOnASegmentKeyAreReported
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+index 74d071bc..a4b10c04 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveCheck.java
+@@ -257,7 +257,6 @@ public final class ArchiveCheck {
+             return new ChainResult(chain, was, 0, List.of(), false, List.of(), Optional.empty());
+         }
+         List<String> problems = new ArrayList<>();
+-        archive.strays(chain).forEach(s -> problems.add(describe(s)));
+         List<ObjectLockArchive.Segment> segments = archive.segmentsAfter(chain, was.segment());
+         long anchoredTo = anchor.map(a -> a.head().sequence()).orElse(0L);
+         Instant stale = now.minus(interval.multipliedBy(2));
