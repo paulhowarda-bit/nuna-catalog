@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**50 open:** 12 S, 19 M, 14 L, 5 XL.
+**54 open:** 15 S, 20 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,8 +60,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [243](backlog/243.md) | M | Console: the Row filters and column masks panel and its dialog | a new panel with a list, an add-and-edit dialog, a remove confirm, a reader's note and a Governance page panel, with browser tests; after backlog 240 and 242 | 2026-11-24 |
 | [244](backlog/244.md) | M | Row and column rules: check expressions when set, and If-Match on set | an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites | 2026-11-24 |
+| [245](backlog/245.md) | S | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js) | 2026-11-24 |
+| [246](backlog/246.md) | S | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | one route running the checks the grant route already runs, without the write, with route tests and a bite | 2026-11-24 |
+| [247](backlog/247.md) | M | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests | 2026-11-24 |
+| [248](backlog/248.md) | M | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | one dialog replacing two forms, with browser tests; waits on items 246 and 247 | 2026-11-24 |
+| [249](backlog/249.md) | S | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | a paragraph in the demo's README | 2026-11-24 |
 
 ## Open items in full
 
@@ -3052,40 +3056,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 243. Console: the Row filters and column masks panel and its dialog
-
-- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: M, a new panel with a list, an add-and-edit dialog, a remove confirm, a reader's note and a Governance page panel, with browser tests; after backlog 240 and 242
-
-## What is missing
-
-Row filters and column masks (backlog 115) can be set only through the management API. Atelier's design,
-2026-11-24:
-
-- **Where:** a table's Access tab, a panel "Row filters and column masks" between Governance and Grants.
-- **Grant admin (manage-grants):** the list (Group | Rows | Masked columns | Set by, when | Edit, Remove) and
-  "Add a rule for a group". A rule for one of their own groups is read only: "Another grant admin sets this group's
-  rule."
-- **The dialog:** a group; Rows, either "Every row" or "Only rows where" with a predicate; one line per masked
-  column, a column picked from the schema (backlog 242) and NULL, '***' or a custom expression. It checks the
-  fields, the 4,000-character limit and that each column is in the schema before saving ("Save the rule"). Edit
-  opens with the group fixed. The first rule warns: "Groups without a rule will see no rows."
-- **Remove:** the confirm says what follows: "demo-analysts will see no rows" while other rules stand, "Everyone
-  with select will see every row through Trino" for the last.
-- **Flagged with no rules:** "Flagged. No rules yet: Trino shows every row to anyone who may select; other tools get
-  no files." **Not flagged:** "Rules need the flag. A steward sets it, so only trusted engines read the files."
-- **Steward:** the rule count and groups, no expressions (backlog 242).
-- **Reader:** "Your view of this table" under What you may do: "Read through Trino only. Your rows are filtered.
-  Masked for you: trader." Never the expressions.
-- **Governance page:** a "Flagged tables" figure and a panel of flagged tables with their rule counts.
-- **Refusals in words:** not flagged (409), "You belong to {group}", and the rest the routes give.
-
-## Done when
-
-The panel, dialog, reader's note and Governance panel work as above in the demo for the grant admin, the steward
-and a reader of `markets.desks.positions`, with browser tests for each role.
-
 ### 244. Row and column rules: check expressions when set, and If-Match on set
 
 - Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
@@ -3116,6 +3086,137 @@ table (`desk IN (SELECT desk FROM entitlements WHERE ...)`): "Allow subqueries".
   it) and refuses one that does not parse, saying where. Subqueries and references to other tables parse and are accepted (D20).
 - Each rule carries a version, the list gives it, and a set or remove with a stale If-Match answers 412.
 - Route tests and a bite for each.
+
+### 245. Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/route.js, catalog-server/src/test/
+- Effort: S, a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js)
+
+## What is wrong
+
+Paul asked on 2026-11-24 how to add grants from the console. It already can, in two places, and he had not found
+either (Atelier's answer, 2026-11-24):
+
+- Governance, then its Grants tab: "Grant a privilege" (`governance.js`, `grantsPage`).
+- A namespace's, table's or view's Access tab: "Grant on this <kind>" (`panels.js:579`, `grantsTab`).
+
+No rail item names either. Governance opens on Summary. On Access the form is the third block. A table opens on
+Overview, which refuses a grant admin such as `gary`, who holds no data access, so he reaches the tab that would let
+him grant only by knowing it is there. Branches were missed the same way on 2026-11-23.
+
+## Done when
+
+- Those who may manage grants in the catalog (`may(catalog, 'manage-grants')`) see a "Grants" rail item after
+  Governance, opening the Grants page; Governance keeps Summary and Holds and freezes. Everyone else does not see it.
+- A table or view opens on Access for a caller who may manage its grants but may not read it.
+- Console tests show both, as `gary` and as `ana`.
+
+### 246. Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java, catalog-server/src/test/, bites/
+- Effort: S, one route running the checks the grant route already runs, without the write, with route tests and a bite
+
+## What is missing
+
+The console learns that a grant is refused only after the grant is sent: the self-grant refusal ("no one grants to a
+group they belong to", `GrantRoutes.java:289`), the separation-of-duties refusals, and a privilege that means
+nothing on its object (the server accepts `create` on a table). Atelier's grant dialog (item 248) shows, before
+Grant is pressed, one line saying what the grant will do, that it is already held, or why it would be refused, with
+Grant disabled (Atelier, 2026-11-24).
+
+## Done when
+
+- `POST /management/v1/catalogs/{catalog}/grants/preview` takes a grant's body and answers `admitted`, `unchanged`
+  (already held, with who granted it and when) or `refused` with the reason the grant route would give, writing
+  nothing. Like the existing `/check` route it is not audited.
+- It refuses callers who may not manage grants on the object as the grant route does.
+- Route tests cover each answer, and a bite shows the self-grant refusal is checked.
+- A privilege that means nothing on its object (`create` on a table or view) is refused by both preview and grant.
+
+### 247. Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-store-api/, catalog-store-sql/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java, catalog-server/src/test/, catalog-tests-conformance/
+- Effort: M, a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests
+
+## What is missing
+
+The console's Group field is free text; its suggestions are only the groups already listed on the page
+(`governance.js`, the `grant-groups` datalist). No route lists the groups a catalog knows, so a grant admin types a
+group name from memory, and a misspelling grants to a group no one is in. Atelier's grant dialog (item 248) needs a
+group picker, each group with its duties: Reading, Data, Tags, Grants (Atelier, 2026-11-24).
+
+`GrantStore` lists the grants of named groups or on one object (`listGrantsOfGroups`, `listGrantsOn`), never the
+distinct groups.
+
+## Done when
+
+- `GET /management/v1/catalogs/{catalog}/grants/groups`, for those who manage the catalog's grants, lists each group
+  holding a grant in the catalog with its duties, plus the deployment's grant-admin and operator groups, marked as
+  such. The catalog cannot list the directory's groups, and the answer says so.
+- Every store answers it, checked by the conformance suite on all four databases; route tests show the refusal for
+  others.
+
+### 248. Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-server/src/main/resources/nuna/ui/panels.js, catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/dom.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/
+- Effort: M, one dialog replacing two forms, with browser tests; waits on items 246 and 247
+
+## What is wrong
+
+The two grant forms (Governance's Grants tab and each Access tab, item 245) fall short (Atelier, 2026-11-24):
+
+- The Governance form's On list holds only the catalog and its top-level namespaces: no nested namespace, table or
+  view.
+- All seven privileges are offered on every object, under their wire names.
+- Group is free text (item 247).
+- A refusal shows only after Grant is pressed (item 246).
+
+## Atelier's design
+
+One "Grant access" dialog, opened from the Grants page head and from a "Grant access" button at the top of every
+Access tab, beside item 243's rules button.
+
+- **Group:** a picker of the groups the catalog knows (item 247), each with its duty chips. A new name is allowed,
+  with the line "The catalog can't list your directory's groups; check the spelling."
+- **Access:** plain words, only those that fit the object, each followed by its wire name in small mono: See it ·
+  Read its data · Read and write rows · Change it (schema, properties, maintenance) · Create tables, views and
+  namespaces in it (catalog and namespace only) · Set labels and holds · Manage grants.
+- **On:** fixed on an Access tab; on the Grants page, a path search on the names route behind "Go to a path".
+- **Before Grant,** one live line from the preview (item 246) and `/effective`: "demo-analysts will read every table
+  and view in markets, now and later."; or "Already held: select on markets, granted by gary on 12 Nov."; or the
+  refusal, with Grant disabled: "You belong to demo-analysts. No one grants to their own group: ask another grant
+  admin." A grant on a namespace reaches everything beneath it, now and later, so there is no bulk grant.
+- **After:** "Granted select on markets to demo-analysts. It is in the audit trail.", a "See the record" link opening
+  Audit on the Grants chip, and the new row highlighted in the list.
+
+## Done when
+
+The dialog replaces both forms and does each of the above. Browser tests, signed in as `gary`, show a grant made,
+one already held and one refused.
+
+### 249. Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: demo/README.md
+- Effort: S, a paragraph in the demo's README
+
+## What is wrong
+
+The obvious first try at showing a grant in the demo is refused, so the feature looks broken (Atelier, 2026-11-24).
+The catalog refuses a grant to a group the caller belongs to ("no one grants to a group they belong to",
+`GrantRoutes.java:289`). `presenter` belongs to all five demo groups, so every grant to one of them is refused, and
+`gary` meets the same refusal for `demo-grant-admins` and `demo-auditors`. `demo/README.md` says the catalog does not
+refuse one person in every group, but not that this person can then grant to none of them.
+
+## Done when
+
+`demo/README.md`, beside the users table, says that `presenter` and `gary` cannot grant to their own groups. To show a
+grant, they grant to `demo-loaders` or to a new group name such as `demo-readers`. Grants go to group names, so
+Keycloak needs no change.
 
 ## Done and dropped
 
@@ -3311,3 +3412,4 @@ table (`desk IN (SELECT desk FROM entitlements WHERE ...)`): "Allow subqueries".
 | [240](backlog/240.md) | Column masks fail open when a column is renamed, dropped or misspelled | done | 2026-11-24 |
 | [241](backlog/241.md) | Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes | done | 2026-11-24 |
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
+| [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |
