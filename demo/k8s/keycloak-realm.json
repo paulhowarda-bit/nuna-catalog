@@ -301,6 +301,47 @@
       ]
     },
     {
+      "clientId": "grafana",
+      "name": "Grafana (metrics and traces)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["https://${DEMO_HOST}:8188/login/generic_oauth"],
+      "webOrigins": ["https://${DEMO_HOST}:8188"],
+      "attributes": {"pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://${DEMO_HOST}:8188/login"},
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "access.token.claim": "false",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups",
+            "full.path": "false"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "access.token.claim": "false",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
       "clientId": "cloudbeaver",
       "name": "CloudBeaver",
       "enabled": true,

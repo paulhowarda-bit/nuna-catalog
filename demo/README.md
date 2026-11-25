@@ -3,7 +3,7 @@
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Silo, the catalog server
 (with the console), Keycloak for signing in by username and password, and Trino with CloudBeaver as its UI. `up`
 starts that core, writes sample Iceberg tables, makes a branch and a tag of the catalog, and prints how to sign in.
-Four switches add the rest, each on with `demo/demo.sh <switch>` and off with `demo/demo.sh <switch> stop` (D50):
+Five switches add the rest, each on with `demo/demo.sh <switch>` and off with `demo/demo.sh <switch> stop` (D50):
 
 - `gen`: the brokerage world, a live generator whose data reaches Iceberg through Kafka, SingleStore or both, as
   `kafka` and `ss` say. It needs one of them, not both (Paul, 2026-11-24): with neither on, it turns `kafka` on.
@@ -11,9 +11,11 @@ Four switches add the rest, each on with `demo/demo.sh <switch>` and off with `d
 - `kafka`: the generator writes through Kafka, Kafka Connect and kafbat. `kafka stop` leaves `gen` on through
   SingleStore if `ss` is on, and turns it off if not; it is refused while the CDC leg runs.
 - `cdc`: changes in PostgreSQL, Oracle and CockroachDB, captured into Iceberg through Debezium and Kafka Connect.
+- `metrics`: Grafana with nuna's dashboards, Prometheus and Tempo, which the catalog and the maintenance worker send
+  their metrics and traces to (below, "Metrics and traces").
 
 Kafka runs only while the generator writes through it or `cdc` is on: the catalog audits to its log, not to Kafka
-(D23, amended 2026-11-23). `up` turns `gen`, `ss` and `kafka` back on if they were on (`~/.nuna-demo/switches`;
+(D23, amended 2026-11-23). `up` turns `gen`, `ss`, `kafka` and `metrics` back on if they were on (`~/.nuna-demo/switches`;
 all off on a new machine), and keeps a running CDC leg. `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's ingest against the same stack,
 with `gen`, `kafka` and `ss` on. Everything is local and uses test keys; nothing here is fit for production.
 
@@ -84,8 +86,8 @@ demo/demo.sh up
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free and CockroachDB.
 - Ports on localhost, from Docker Desktop's LoadBalancer Services, all HTTPS: **8180** (Keycloak), **8181**
   (catalog and console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185**
-  (CloudBeaver), **8186** (Kafka Connect's REST API) and **8187** (Silo's S3 API, for
-  engines on other machines). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
+  (CloudBeaver), **8186** (Kafka Connect's REST API), **8187** (Silo's S3 API, for
+  engines on other machines) and **8188** (Grafana, while `metrics` is on). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
   An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
   `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
   `s3.endpoint` to `https://<host>:8187`: the catalog vends one address per profile (D21, amended 2026-11-20).
@@ -887,14 +889,58 @@ the catalog's audit and change topics, the brokerage world's `brokerage.*` topic
 `brokerage-lake-control`, Kafka Connect's own `connect-*` topics, and once the engines have run, the engine
 matrix's Kafka Connect source topic `m8-kafka-events` and its sink's control topic. While the CDC leg runs:
 Debezium's change topics, the sinks' control topics and Oracle's schema history.
+## Metrics and traces
+
+```bash
+demo/demo.sh metrics          # on
+demo/demo.sh metrics stop     # off
+```
+
+The switch `metrics` (backlog 233; D50, amended 2026-11-25) runs four pods (`k8s/metrics.yaml`) and points the
+catalog's and the maintenance worker's `telemetry.endpoint` at the first:
+
+```
+catalog, worker --OTLP--> OpenTelemetry collector --metrics--> Prometheus --> Grafana (https://localhost:8188)
+                                                  --traces---> Tempo -------> Grafana
+```
+
+- **Grafana** on <https://localhost:8188>: the people above sign in through Keycloak with no second password. oscar
+  and presenter administer it; ana, gary and stella view. The home page is the catalog's dashboard; folder `nuna`
+  holds all three from `deploy/grafana/dashboards`, and Explore, with data source Tempo, searches the traces. A
+  chart's exemplar points (Prometheus keeps the ones Boot sends) open the trace of that request. Grafana's own admin
+  signs in at <https://localhost:8188/login?disableAutoLogin=true> as `admin` / `nuna-test`.
+- **Prometheus** takes the metrics over OTLP, as item 43 says work's should: `translation_strategy:
+  UnderscoreEscapingWithSuffixes`, native histograms off, a 30-minute out-of-order window, exemplars kept. It loads
+  the alert rules in `deploy/grafana/rules`; no Alertmanager runs, so they show in Grafana's Alerting page and in
+  `ALERTS`, and page no one.
+- **Tempo** keeps the traces. While the switch is on the catalog and the worker record every trace (sampling 1,
+  against the chart's 0.1), and a worker's scan is one trace with the catalog's calls in it.
+- The catalog's logs still go to the audit table writer; the worker's copy of its logs reaches the collector and is
+  dropped (`kubectl logs` has them).
+- The data stays: Prometheus keeps 7 days of series and Tempo 2 days of traces, each on a volume, and Grafana its own
+  database on a third; `metrics stop` and `down` keep them, `wipe` deletes them.
+- Memory: the four pods ask for 704 MB (collector 64 MB, Prometheus 256 MB, Tempo 128 MB, Grafana 256 MB, which
+  stalled for minutes at a 384 MB limit and now has 768 MB). Turning the switch on rolls the catalog, so `metrics`
+  checks that Docker Desktop has 1.5 GB no pod asks for, and refuses otherwise. It fits beside `gen` and `kafka`
+  (1.7 GB free before it, measured 2026-11-25) or beside `ss`, not beside `gen`, `kafka` and `ss` together; `ss`
+  refuses to start beside it when SingleStore's 1.5 GB is not free. Windows itself had about 700 MB free with
+  `gen`, `kafka` and `metrics` on, and paged: the demo answers slowly then, and the SLO burn-rate alerts fire.
+- What the dashboards show in the demo, checked against live series on 2026-11-25: every panel has data but these.
+  The failure panels (failed loads, commits and vends, requirement failures, failed scans and jobs) stay empty until
+  something fails; a load of a missing table shows in "Failed loads". The audit's Kafka acknowledgement row reads
+  `nuna_audit_publish_*`, which the demo never makes: its catalog audits to the log, not to Kafka (D23). "Records
+  logged and archived" reads `nuna_audit_logged`, which a catalog built from 2026-11-25 on exports (backlog 272).
+  Records removed and delete files added stay empty in the client reports: the demo's engines only append, and
+  Iceberg leaves out of a report what did not happen.
+
 ## Stop
 
 ```bash
 demo/demo.sh down
 ```
 
-This stops and deletes everything in the namespace but the data: the volume claims of PostgreSQL, Silo, Kafka and
-SingleStore stay, with configmap `demo-seeded`, and so does the namespace that holds them. The compaction Jobs'
+This stops and deletes everything in the namespace but the data: the volume claims of PostgreSQL, Silo, Kafka,
+SingleStore and the metrics stack stay, with configmap `demo-seeded`, and so does the namespace that holds them. The compaction Jobs'
 namespace `nuna-demo-compaction` goes. A running CDC leg is deleted as `cdc stop` deletes it. The next `up` carries
 on from the data: the lake, its branch and tag, the governance, the audit table, SingleStore's databases and the
 brokerage world as they were.
