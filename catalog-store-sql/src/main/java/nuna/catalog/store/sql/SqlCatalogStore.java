@@ -13,6 +13,7 @@ import nuna.catalog.store.CompactionRun;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
 import nuna.catalog.store.IdempotencyResult;
@@ -33,6 +34,7 @@ import nuna.catalog.store.PendingDeletion;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Ref;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.RefLimits;
@@ -56,6 +58,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -81,6 +84,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlNamespaces namespaces;
     private final SqlObjects objects;
     private final SqlGrants grants;
+    private final SqlRules rules;
     private final SqlIdempotency idempotency;
     private final SqlOutbox outbox;
     private final SqlGovernance governance;
@@ -111,6 +115,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.namespaces = new SqlNamespaces(transactions);
         this.objects = new SqlObjects(transactions);
         this.grants = new SqlGrants(transactions);
+        this.rules = new SqlRules(transactions);
         this.idempotency = new SqlIdempotency(transactions);
         this.outbox = new SqlOutbox(transactions);
         this.governance = new SqlGovernance(transactions);
@@ -525,6 +530,28 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {
         return grants.listOn(securable, page);
+    }
+
+    @Override
+    public Page<GrantGroup> listGrantGroups(UUID catalogId, PageRequest page) {
+        return grants.listGroups(catalogId, page);
+    }
+
+    // ---- row filters and column masks ----
+
+    @Override
+    public WriteResult putRule(RowColumnRule rule, OptionalLong expected, String setBy, Change change) {
+        return rules.put(rule, expected, setBy, change);
+    }
+
+    @Override
+    public WriteResult removeRule(UUID catalogId, UUID tableId, String group, OptionalLong expected, Change change) {
+        return rules.remove(catalogId, tableId, group, expected, change);
+    }
+
+    @Override
+    public List<RowColumnRule.Stored> rulesOn(UUID tableId) {
+        return rules.on(tableId);
     }
 
     // ---- idempotency ----

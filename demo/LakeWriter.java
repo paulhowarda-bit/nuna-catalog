@@ -40,6 +40,9 @@ import org.apache.iceberg.types.Types;
  * LakeWriter rate   one more EURUSD rate, appended to markets.fx.rates
  * LakeWriter dev    the next day, 2026-11-11, on the catalog's branch dev (D33): two trades and two rates,
  *                   committed through the warehouse lakehouse@dev, so main has neither until dev is merged
+ * LakeWriter positions markets.desks.positions, each desk's positions, for the row filters and column masks
+ *                   (D20, backlog 115); written before the table is flagged, since then only a trusted engine
+ *                   reaches its files
  * </pre>
  */
 public class LakeWriter {
@@ -62,8 +65,9 @@ public class LakeWriter {
                 case "seed" -> seed(catalog);
                 case "rate" -> rate(catalog);
                 case "dev" -> dev(catalog);
+                case "positions" -> positions(catalog);
                 default -> {
-                    System.err.println("usage: LakeWriter seed | rate | dev");
+                    System.err.println("usage: LakeWriter seed | rate | dev | positions");
                     System.exit(2);
                 }
             }
@@ -196,6 +200,31 @@ public class LakeWriter {
                 row(rates, "GBPUSD", 1.2731, utc("2026-11-11T16:00:00"), "ECB"));
         System.out.println("committed 2026-11-11 on lakehouse@dev: trades 9 and 10 to markets.equities.eu.xetra.trades,"
                 + " EURUSD and GBPUSD to markets.fx.rates");
+    }
+
+    /** Two desks' positions, each row a trader's, for the row filters and column masks on it (demo.sh). */
+    static void positions(RESTCatalog catalog) {
+        Namespace desks = Namespace.of("markets", "desks");
+        if (!catalog.namespaceExists(desks)) {
+            catalog.createNamespace(desks);
+        }
+        TableIdentifier id = TableIdentifier.of(desks, "positions");
+        if (catalog.tableExists(id)) {
+            return;
+        }
+        Table positions = create(catalog, id, 2, new Schema(
+                Types.NestedField.optional(1, "desk", Types.StringType.get()),
+                Types.NestedField.optional(2, "trader", Types.StringType.get()),
+                Types.NestedField.optional(3, "symbol", Types.StringType.get()),
+                Types.NestedField.optional(4, "quantity", Types.LongType.get()),
+                Types.NestedField.optional(5, "pnl", Types.DecimalType.of(14, 2))), null);
+        append(positions,
+                row(positions, "EQ", "Mia Novak", "SAP", 1200L, dec("18250.00")),
+                row(positions, "EQ", "Mia Novak", "ASML", 300L, dec("-4100.50")),
+                row(positions, "EQ", "Leo Brandt", "SIE", 800L, dec("9120.25")),
+                row(positions, "FX", "Ida Moreau", "EURUSD", 5000000L, dec("31400.00")),
+                row(positions, "FX", "Ida Moreau", "GBPUSD", 2000000L, dec("-12800.75")),
+                row(positions, "RATES", "Tom Okafor", "BUND-10Y", 150L, dec("2210.00")));
     }
 
     static Table create(RESTCatalog catalog, TableIdentifier id, int formatVersion, Schema schema, String partition) {

@@ -68,14 +68,17 @@ class PrivateCaCompactionTest {
         URI forPods = catalog.twinForPods();
         // A profile with a ca-bundle, so the chart's Role grants create on ConfigMaps; the path is where a deployed
         // worker finds the bundle (storageCaConfigMap), which this one, in the test JVM, reads from the CA's folder.
-        try (CompactionCluster cluster = CompactionCluster.start(serviceAccount, forPods, catalog.bucket,
+        try (CompactionCluster cluster = CompactionCluster.start(serviceAccount, forPods,
                 "--set", "config.nuna.maintenance.storage.test.ca-bundle=/etc/nuna/storage-ca/ca.pem")) {
             String jobs = cluster.jobs;
-            Map<String, WorkerSettings.StorageProfile> storage = catalog.storageProfiles();
-            assertThat(storage.get("test").caBundle()).as("the worker's profile names the bundle").isEqualTo(ca.bundle);
+            Map<String, WorkerSettings.Store> storage = catalog.stores();
+            assertThat(storage.get("test").caBundle()).as("the worker's store names the bundle").isEqualTo(ca.bundle);
             FakeClock clock = new FakeClock();
+            // The worker finds the table's store by the prefixes the catalog gives it, as at a scan.
+            OwnStorage own = Storage.of(storage);
+            own.reach(catalog.management().storageProfiles());
             KubernetesJobs compactor = new KubernetesJobs(cluster.settings, catalog.uri, catalog.workerTokens(),
-                    storage, clock);
+                    storage, own::store, clock);
             CleanupWindow window = TestCatalog.allDay(clock);
             CleanupWindow.Night night = window.night(clock.instant()).orElseThrow();
 
@@ -94,7 +97,7 @@ class PrivateCaCompactionTest {
 
                 // The control: the Job without the bundle, on another night, so under another name.
                 KubernetesJobs untrusting = new KubernetesJobs(cluster.settings, catalog.uri, catalog.workerTokens(),
-                        Map.of(), clock);
+                        Map.of(), location -> java.util.Optional.empty(), clock);
                 CleanupWindow.Night lastNight = new CleanupWindow.Night(night.date().minusDays(1), night.opens(),
                         night.closes());
                 CompactionNeed need = new CompactionNeed(6, 6, 0, 0, 5, 0.3, 536870912);

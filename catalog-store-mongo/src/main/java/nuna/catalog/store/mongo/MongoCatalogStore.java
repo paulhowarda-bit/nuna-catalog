@@ -27,6 +27,7 @@ import nuna.catalog.store.CompactionRun;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
 import nuna.catalog.store.IdempotencyResult;
@@ -53,6 +54,7 @@ import nuna.catalog.store.RefLock;
 import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.StoreException;
@@ -69,6 +71,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -118,6 +121,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String DR_WATERMARK = "dr_watermark";
     static final String REF = "ref";
     static final String REF_ENTRY = "ref_entry";
+    static final String RULE = "row_column_rule";
 
     /** Projections longer than this are stored in pieces (section 7). */
     public static final int PIECE_BYTES = Pointers.PIECE_BYTES;
@@ -139,6 +143,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoNamespaces namespaces;
     private final MongoObjects objects;
     private final MongoGrants grants;
+    private final MongoRules rules;
     private final MongoIdempotency idempotency;
     private final MongoOutbox outbox;
     private final MongoGovernance governance;
@@ -173,6 +178,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.namespaces = new MongoNamespaces(transactions);
         this.objects = new MongoObjects(transactions);
         this.grants = new MongoGrants(transactions);
+        this.rules = new MongoRules(transactions);
         this.idempotency = new MongoIdempotency(transactions);
         this.outbox = new MongoOutbox(transactions);
         this.governance = new MongoGovernance(transactions);
@@ -604,6 +610,28 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {
         return grants.listOn(securable, page);
+    }
+
+    @Override
+    public Page<GrantGroup> listGrantGroups(UUID catalogId, PageRequest page) {
+        return grants.listGroups(catalogId, page);
+    }
+
+    // ---- row filters and column masks ----
+
+    @Override
+    public WriteResult putRule(RowColumnRule rule, OptionalLong expected, String setBy, Change change) {
+        return rules.put(rule, expected, setBy, change);
+    }
+
+    @Override
+    public WriteResult removeRule(UUID catalogId, UUID tableId, String group, OptionalLong expected, Change change) {
+        return rules.remove(catalogId, tableId, group, expected, change);
+    }
+
+    @Override
+    public List<RowColumnRule.Stored> rulesOn(UUID tableId) {
+        return rules.on(tableId);
     }
 
     // ---- idempotency ----

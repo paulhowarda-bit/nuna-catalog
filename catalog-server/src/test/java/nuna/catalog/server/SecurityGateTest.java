@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -60,7 +61,8 @@ import org.springframework.test.context.ContextConfiguration;
         "nuna.security.maintenance-principals=svc-maintenance,svc-trino",
         "nuna.storage.catalogs.gate.profile=" + S3ForTests.PROFILE,
         "nuna.storage.catalogs.gate.kms-key-set=test-keys",
-        "nuna.storage.catalogs.gate.legal-entity=Test Entity"})
+        "nuna.storage.catalogs.gate.legal-entity=Test Entity",
+        "nuna.opa.catalogs.trino_gate=gate"})
 @Tag("heavy")
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
@@ -464,6 +466,157 @@ class SecurityGateTest {
         assertThat(denial.actor().principal()).isEqualTo("svc-trino");
         assertThat(denial.actor().endUser()).as("the engine's end user is the one decided for").isEqualTo("ann");
         assertThat(denial.actor().engine()).isEqualTo("trino-prod");
+    }
+
+    @Test
+    void anEngineHeaderVouchesForTheUsersOwnToken() throws Exception {
+        String pii = "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii";
+        String header = "X-Nuna-Engine-Authorization";
+
+        ok(send(ANN, "GET", pii, null, header, ENGINE));
+        assertHidden(send(ANN, "GET", "/v1/gate/namespaces/hr/tables/staff", null, header, ENGINE),
+                "NoSuchTableException", "loadTable");
+        Denial denial = audit.denials().getLast();
+        assertThat(denial.actor().principal()).isEqualTo("svc-trino");
+        assertThat(denial.actor().endUser()).as("the user the Authorization token names").isEqualTo("ann");
+        assertThat(denial.actor().engine()).isEqualTo("trino-prod");
+
+        assertError(send(ANN, "GET", pii, null, header, ROGUE), 403, "ForbiddenException");
+        assertThat(audit.authFailures().getLast().clientId()).as("the engine refused").isEqualTo("rogue-app");
+        assertError(send(ANN, "GET", pii, null, header, ENGINE, "X-Nuna-End-User", "ann"), 401,
+                "NotAuthorizedException");
+        assertError(send(ANN, "GET", pii, null, header, "Basic x"), 401, "NotAuthorizedException");
+        ok(send(ENGINE, "GET", "/v1/config?warehouse=gate", null, header, ENGINE));
+    }
+
+    @Test
+    void trinoGetsEachUsersRowFilterAndColumnMasksThroughOpa() throws Exception {
+        String rules = "/management/v1/catalogs/gate/row-column-rules";
+        String table = "{\"type\":\"table\",\"namespace\":[\"sales\",\"eu\"],\"name\":\"pii\"}";
+        assertDenied(send(GINA, "POST", rules, """
+                {"table":%s,"group":"grant-admins","row-filter":"true"}""".formatted(table)),
+                "setRowColumnRule", "separation-of-duties");
+        noContent(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","row-filter":"id > 10","column-masks":{"id":"NULL"}}"""
+                .formatted(table)));
+        try {
+            String ann = ANN.substring(7);
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate", ann)).body())
+                    .isEqualTo("{\"result\":[{\"expression\":\"id > 10\"}]}");
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate",
+                    IssuerForTests.bearer("wendy", "maintainers").substring(7))).body())
+                    .as("a user whose groups have no rule").isEqualTo("{\"result\":[{\"expression\":\"false\"}]}");
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate", "forged")).body())
+                    .isEqualTo("{\"result\":[{\"expression\":\"false\"}]}");
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("system", ann)).body())
+                    .isEqualTo("{\"result\":[]}");
+            assertThat(send(null, "POST", "/opa/v1/column-masks", """
+                    {"input":{"context":{"identity":{"user":"ann","extraCredentials":{"token":"%s"}}},
+                     "action":{"operation":"GetColumnMask","filterResources":[{"column":{"catalogName":"trino_gate",
+                      "schemaName":"sales.eu","tableName":"pii","columnName":"id","columnType":"bigint"}}]}}}"""
+                    .formatted(ann)).body())
+                    .isEqualTo("{\"result\":[{\"index\":0,\"viewExpression\":{\"expression\":\"NULL\"}}]}");
+            assertThat(send(null, "POST", "/opa/v1/allow", "{\"input\":{}}").body()).isEqualTo("{\"result\":true}");
+        } finally {
+            noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
+                    .formatted(table)));
+        }
+    }
+
+    /**
+     * A rule names only columns pii has: a misspelt mask or a filter on a column it lacks is refused, and a mask is kept
+     * under the schema's spelling; a commit that renames or drops a column a rule names is refused and audited, so a
+     * rename never unmasks it (backlog 240).
+     */
+    @Test
+    void aRuleNamesOnlyColumnsTheTableHasAndNoSchemaChangeTakesThemAway() throws Exception {
+        String rules = "/management/v1/catalogs/gate/row-column-rules";
+        String table = "{\"type\":\"table\",\"namespace\":[\"sales\",\"eu\"],\"name\":\"pii\"}";
+        HttpResponse<String> typo = send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","column-masks":{"idd":"NULL"}}""".formatted(table));
+        assertError(typo, 400, "BadRequestException");
+        assertThat(JsonPath.<String>read(typo.body(), "$.error.message")).startsWith("column-masks names idd,");
+        assertError(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","row-filter":"desk = 'EQ'"}""".formatted(table)),
+                400, "BadRequestException");
+
+        noContent(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","column-masks":{"ID":"NULL"}}""".formatted(table)));
+        try {
+            HttpResponse<String> listed = send(GINA, "GET", rules + "?namespace=sales&namespace=eu&name=pii", null);
+            ok(listed);
+            assertThat(JsonPath.<Map<String, String>>read(listed.body(), "$.rules[0].column-masks"))
+                    .containsExactly(Map.entry("id", "NULL"));
+
+            String pii = "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii";
+            assertDenied(send(ENGINE, "POST", pii, """
+                    {"requirements":[{"type":"assert-current-schema-id","current-schema-id":0}],"updates":[
+                     {"action":"add-schema","schema":{"type":"struct","schema-id":1,"fields":[
+                      {"id":1,"name":"pii_id","required":true,"type":"long"}]}},
+                     {"action":"set-current-schema","schema-id":-1}]}"""), "updateTable", "row_column_rule");
+            assertThat(audit.denials().getLast().reason()).contains("group analysts's rule names id");
+        } finally {
+            noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
+                    .formatted(table)));
+        }
+    }
+
+    /**
+     * What the console's rules panel reads (backlog 242), on the wire: the flagged table's schema for a reader whose
+     * load of it is refused, their own view without the expressions, the steward's rule count and groups, the
+     * summary's flagged tables, and the export, with the expressions for the grant admin alone.
+     */
+    @Test
+    void theConsoleReadsAFlaggedTablesSchemaRuleCountsAndEachCallersOwnView() throws Exception {
+        String rules = "/management/v1/catalogs/gate/row-column-rules";
+        String table = "{\"type\":\"table\",\"namespace\":[\"sales\",\"eu\"],\"name\":\"pii\"}";
+        String pii = "/management/v1/catalogs/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii";
+        noContent(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","row-filter":"id > 10","column-masks":{"id":"NULL"}}"""
+                .formatted(table)));
+        try {
+            assertDenied(send(ANN, "GET", "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii", null),
+                    "loadTable", "flagged_table");
+            HttpResponse<String> schema = send(ANN, "GET", pii + "/schema", null);
+            ok(schema);
+            assertThat(JsonPath.<List<String>>read(schema.body(), "$.schema.fields[*].name")).containsExactly("id");
+            assertThat(schema.body()).doesNotContain("s3://", "manifest");
+
+            HttpResponse<String> mine = send(ANN, "GET", pii + "/row-column-rules/mine", null);
+            ok(mine);
+            assertThat(JsonPath.<String>read(mine.body(), "$.rows")).isEqualTo("filtered");
+            assertThat(JsonPath.<List<String>>read(mine.body(), "$.masked-columns")).containsExactly("id");
+            assertThat(mine.body()).doesNotContain("id > 10", "NULL");
+
+            HttpResponse<String> governance = send(SAM, "GET", pii + "/governance", null);
+            ok(governance);
+            assertThat(JsonPath.<Integer>read(governance.body(), "$.row-column-rules.count")).isEqualTo(1);
+            assertThat(JsonPath.<List<String>>read(governance.body(), "$.row-column-rules.groups"))
+                    .containsExactly("analysts");
+            assertThat(send(ANN, "GET", pii + "/governance", null).body()).doesNotContain("row-column-rules");
+
+            HttpResponse<String> summary = send(GINA, "GET", "/management/v1/catalogs/gate/governance/summary", null);
+            ok(summary);
+            assertThat(JsonPath.<List<Integer>>read(summary.body(), "$.flagged[?(@.on.id == '"
+                    + table("sales/eu/pii").id() + "')].rules")).containsExactly(1);
+
+            HttpResponse<String> export = send(GINA, "GET", rules + "/export", null);
+            ok(export);
+            assertThat(JsonPath.<List<String>>read(export.body(), "$.rules[?(@.group == 'analysts')]['row-filter']"))
+                    .containsExactly("id > 10");
+            assertDenied(send(ANN, "GET", rules + "/export", null), "exportRowColumnRules", "no_privilege");
+        } finally {
+            noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
+                    .formatted(table)));
+        }
+    }
+
+    private static String opaRowFilters(String catalog, String token) {
+        return """
+                {"input":{"context":{"identity":{"user":"anyone","groups":["grant-admins"],
+                  "extraCredentials":{"token":"%s"}}},
+                 "action":{"operation":"GetRowFilters","resource":{"table":{"catalogName":"%s",
+                  "schemaName":"sales.eu","tableName":"pii"}}}}}""".formatted(token, catalog);
     }
 
     @Test

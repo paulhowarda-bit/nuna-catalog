@@ -4,6 +4,7 @@ import io.micrometer.common.KeyValues;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -92,19 +93,20 @@ final class HealthReports {
         this.window = window;
     }
 
-    void scanStarted(UUID scan, Instant at, ScanReport report) {
+    /** Reports the scan's start, with what the store let the worker list beneath each prefix (backlog 250). */
+    void scanStarted(UUID scan, Instant at, List<Storage.Reach> storage, ScanReport report) {
         send("scan-start", "reporting the start of scan " + scan, report, () -> {
-            management.reportScan(scan, at, Optional.empty(), Optional.empty(), Map.of(), Optional.empty());
+            management.reportScan(scan, at, Optional.empty(), Optional.empty(), Map.of(), Optional.empty(), storage);
             return true;
         });
     }
 
     /**
-     * Reports the scan's end: how it ended, its failures so far by kind, and for a failed scan, why (its first failed
-     * work list read, else {@code error}).
+     * Reports the scan's end: how it ended, its failures so far by kind, for a failed scan, why (its first failed
+     * work list read, else {@code error}), and what the store let the worker list and delete beneath each prefix.
      */
     void scanEnded(UUID scan, Instant started, Instant ended, boolean succeeded, Optional<String> error,
-                   ScanReport report) {
+                   List<Storage.Reach> storage, ScanReport report) {
         Map<String, Integer> failures = new TreeMap<>();
         report.failuresByKind.forEach((kind, count) -> failures.put(kind.label, count));
         Optional<String> why = succeeded ? Optional.empty()
@@ -113,7 +115,7 @@ final class HealthReports {
                         .filter(message -> !message.isEmpty());
         send("scan-end", "reporting the end of scan " + scan, report, () -> {
             management.reportScan(scan, started, Optional.of(ended), Optional.of(succeeded ? "succeeded" : "failed"),
-                    failures, why);
+                    failures, why, storage);
             return true;
         });
     }

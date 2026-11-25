@@ -7,13 +7,13 @@
 {{- fail "config.nuna.maintenance.compaction.namespace must not be the release's namespace: a pod may run as any service account and mount any Secret of its namespace, the worker's included" -}}
 {{- end -}}
 {{- $storageCa := false -}}
-{{- range $name, $profile := dig "nuna" "maintenance" "storage" (dict) .Values.config -}}
-{{- if get $profile "ca-bundle" }}{{ $storageCa = true }}{{ end -}}
+{{- range $name, $store := dig "nuna" "maintenance" "storage" (dict) .Values.config -}}
+{{- if get $store "ca-bundle" }}{{ $storageCa = true }}{{ end -}}
 {{- end }}
 # Compaction (D30 (3)) runs in a namespace of its own, never the worker's nor the catalog's: a pod may run as any
 # service account and mount any Secret of its namespace, so Jobs there could run as the worker. The worker creates
 # one Job per table and night there and a Secret, owned by the Job, holding its sign-in for the Job's Spark; where a
-# storage profile names a ca-bundle, also a ConfigMap, owned by the Job, holding that CA for the Job's Spark to trust
+# store in its storage names a ca-bundle, also a ConfigMap, owned by the Job, holding that CA for the Job's Spark to trust
 # (backlog 88), since a pod mounts only ConfigMaps of its own namespace. It reads a Job to see whether tonight's is
 # there, and whether it finished or stopped at the window's end. Nothing else: it never lists, updates or deletes, and
 # never reads a pod, a Secret or a ConfigMap.

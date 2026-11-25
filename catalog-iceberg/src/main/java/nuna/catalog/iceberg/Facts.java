@@ -1,5 +1,6 @@
 package nuna.catalog.iceberg;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -16,10 +17,18 @@ public sealed interface Facts {
 
     Map<String, String> properties();
 
-    /** @param snapshotTimestamps snapshot ID to timestamp-ms, in metadata order */
+    /**
+     * @param snapshotTimestamps snapshot ID to timestamp-ms, in metadata order
+     * @param columns            the current schema's top-level columns, by name, in schema order: what a column mask
+     *                           or row filter names (D20, backlog 240)
+     */
     record TableFacts(String uuid, int formatVersion, String location, Map<String, String> properties,
-                      int currentSchemaId, int defaultSpecId, Map<Long, Long> snapshotTimestamps)
-            implements Facts {
+                      int currentSchemaId, int defaultSpecId, Map<Long, Long> snapshotTimestamps,
+                      List<String> columns) implements Facts {
+
+        public TableFacts {
+            columns = List.copyOf(columns);
+        }
     }
 
     record ViewFacts(String uuid, int formatVersion, String location, Map<String, String> properties,

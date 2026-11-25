@@ -19,6 +19,7 @@ import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.TableAssessment;
 import nuna.catalog.store.TableHealth;
+import nuna.catalog.store.WorkerStorage;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
@@ -33,6 +34,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -98,8 +100,12 @@ class HealthRoutes {
 
     /**
      * A scan's start, or its end: {@code {"started-at": ..., "ended-at": ..., "outcome": "succeeded"|"failed",
-     * "failures": {"kind": n, ...}, "error": ...}}, all but {@code started-at} only once it has ended. The worker is
-     * the caller. A scan that has ended keeps its end. Answers 204.
+     * "failures": {"kind": n, ...}, "error": ..., "storage": [...]}}, all but {@code started-at} and {@code storage}
+     * only once it has ended. {@code storage} is what the worker's own storage identities reach (backlog 250): for each,
+     * its {@code kind} and {@code endpoint}, and its {@code prefixes}, each with {@code listed} ({@code ok},
+     * {@code refused} or {@code failed}) and its {@code list-code}, and the {@code deleted}, {@code delete-refused}
+     * and {@code delete-failed} counts with the first such delete's {@code delete-code}. The worker is the caller, and
+     * the catalog keeps the groups its token carries with the scan. A scan that has ended keeps its end. Answers 204.
      */
     @PutMapping(path = SCAN)
     ResponseEntity<Void> reportScan(@PathVariable String id, @RequestBody(required = false) String body,
@@ -113,7 +119,8 @@ class HealthRoutes {
             scan = new MaintenanceScan(scanId, request.caller().principal().id(), instant(json, "started-at"),
                     optionalInstant(json, "ended-at"), optionalText(json, "outcome").map(outcome ->
                             MaintenanceScan.Outcome.valueOf(constant(outcome))), failures(json),
-                    optionalText(json, "error"));
+                    optionalText(json, "error"), Optional.of(new TreeSet<>(request.caller().principal().groups())),
+                    storage(json));
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("Not a scan report: " + e.getMessage());
         }
@@ -236,7 +243,10 @@ class HealthRoutes {
         return GovernanceRoutes.json(200, body);
     }
 
-    /** The worker's last scans, the last started first, and the last that succeeded; for platform operators. */
+    /**
+     * The worker's last scans, the last started first, and the last that succeeded, each with the groups its token
+     * carried and the storage it reached (backlog 250); for platform operators.
+     */
     @GetMapping(path = SCANS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> scans(HttpServletRequest http) {
         guard.requireOperator(management.request(http), null, "listMaintenanceScans");
@@ -362,7 +372,72 @@ class HealthRoutes {
         ObjectNode failures = node.putObject("failures");
         scan.failures().forEach(failures::put);
         scan.error().ifPresent(error -> node.put("error", error));
+        scan.groups().ifPresent(groups -> {
+            ArrayNode names = node.putArray("groups");
+            groups.forEach(names::add);
+        });
+        scan.storage().ifPresent(stores -> {
+            ArrayNode storage = node.putArray("storage");
+            stores.forEach(store -> {
+                ObjectNode identity = storage.addObject();
+                identity.put("kind", store.kind());
+                store.endpoint().ifPresent(endpoint -> identity.put("endpoint", endpoint));
+                ArrayNode prefixes = identity.putArray("prefixes");
+                store.prefixes().forEach(prefix -> {
+                    ObjectNode covered = prefixes.addObject();
+                    covered.put("prefix", prefix.location());
+                    covered.put("listed", label(prefix.listed()));
+                    prefix.listCode().ifPresent(code -> covered.put("list-code", code));
+                    covered.put("deleted", prefix.deleted());
+                    covered.put("delete-refused", prefix.deleteRefused());
+                    covered.put("delete-failed", prefix.deleteFailed());
+                    prefix.deleteCode().ifPresent(code -> covered.put("delete-code", code));
+                });
+            });
+        });
         return node;
+    }
+
+    /**
+     * What the worker's storage identities reach, as a scan report gives it (backlog 250); empty when it gives none, as
+     * a worker of an earlier release does. Counts it leaves out are 0.
+     */
+    private static Optional<List<WorkerStorage>> storage(JsonNode json) {
+        JsonNode value = json.get("storage");
+        if (value == null || value.isNull()) {
+            return Optional.empty();
+        }
+        if (!value.isArray()) {
+            throw new IllegalArgumentException("storage is not an array");
+        }
+        List<WorkerStorage> stores = new ArrayList<>();
+        for (JsonNode store : value) {
+            JsonNode prefixes = store.get("prefixes");
+            if (!store.isObject() || prefixes == null || !prefixes.isArray()) {
+                throw new IllegalArgumentException("a store is an object with an array of prefixes: " + store);
+            }
+            List<WorkerStorage.Prefix> covered = new ArrayList<>();
+            for (JsonNode prefix : prefixes) {
+                if (!prefix.isObject()) {
+                    throw new IllegalArgumentException("a prefix is an object: " + prefix);
+                }
+                covered.add(new WorkerStorage.Prefix(requiredText(prefix, "prefix"),
+                        WorkerStorage.Listed.valueOf(constant(requiredText(prefix, "listed"))),
+                        optionalText(prefix, "list-code"), countOrNone(prefix, "deleted"),
+                        countOrNone(prefix, "delete-refused"), countOrNone(prefix, "delete-failed"),
+                        optionalText(prefix, "delete-code")));
+            }
+            stores.add(new WorkerStorage(requiredText(store, "kind"), optionalText(store, "endpoint"), covered));
+        }
+        return Optional.of(stores);
+    }
+
+    private static String requiredText(JsonNode json, String field) {
+        return optionalText(json, field).orElseThrow(() -> new IllegalArgumentException("missing " + field));
+    }
+
+    private static long countOrNone(JsonNode json, String field) {
+        return json.has(field) ? count(json, field) : 0;
     }
 
     /** An enum constant as the routes write it: {@code CUT_OFF} is {@code cut-off}. */

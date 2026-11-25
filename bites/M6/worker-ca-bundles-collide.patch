@@ -1,17 +1,17 @@
-Breaks: two worker profiles name different CA bundles for one endpoint, and the last is trusted (backlog 21).
+Breaks: two worker stores name different CA bundles for one endpoint, and the last is trusted (backlog 21).
 Module: catalog-maintenance
 Test: TrustedS3ClientsTest#bundlesBelongToOneEndpoint
 
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java b/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java
-index 317d2b6..459d8a6 100644
+index 52eb4180..bcdaa2c4 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java
 @@ -53,7 +53,7 @@ public final class TrustedS3Clients implements S3FileIOAwsClientFactory {
              String setting = "nuna.maintenance.storage." + name + ".ca-bundle: ";
-             String endpoint = endpoint(profile.endpoint().toString());
-             Path other = files.putIfAbsent(endpoint, profile.caBundle());
--            if (other != null && !other.equals(profile.caBundle())) {
+             String endpoint = endpoint(store.endpoint().toString());
+             Path other = files.putIfAbsent(endpoint, store.caBundle());
+-            if (other != null && !other.equals(store.caBundle())) {
 +            if (other != null && other == null) {
-                 throw new IllegalArgumentException(setting + "another profile names " + other + " for the endpoint "
+                 throw new IllegalArgumentException(setting + "another store names " + other + " for the endpoint "
                          + endpoint);
              }

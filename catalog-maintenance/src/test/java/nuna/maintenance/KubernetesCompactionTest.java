@@ -56,12 +56,12 @@ class KubernetesCompactionTest {
 
     @Test
     void compactionRunsAsAJobPerTable() throws Exception {
-        try (CompactionCluster cluster = CompactionCluster.start(serviceAccount, forPods, catalog.bucket)) {
+        try (CompactionCluster cluster = CompactionCluster.start(serviceAccount, forPods)) {
             String jobs = cluster.jobs;
             WorkerSettings.Compaction settings = cluster.settings;
             FakeClock clock = new FakeClock();
             KubernetesJobs compactor = new KubernetesJobs(settings, catalog.uri, catalog.workerTokens(), Map.of(),
-                    clock);
+                    location -> java.util.Optional.empty(), clock);
             CleanupWindow window = TestCatalog.allDay(clock);
             CleanupWindow.Night night = window.night(clock.instant()).orElseThrow();
 

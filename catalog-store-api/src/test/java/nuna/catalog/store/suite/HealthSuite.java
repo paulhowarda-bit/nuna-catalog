@@ -11,6 +11,8 @@ import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.TableAssessment;
 import nuna.catalog.store.TableHealth;
+import nuna.catalog.store.WorkerStorage;
+import nuna.catalog.store.WorkerStorage.Listed;
 import nuna.catalog.store.WriteResult;
 import java.time.Instant;
 import java.util.Comparator;
@@ -18,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -330,6 +334,69 @@ public abstract class HealthSuite extends GroupSuite {
     private static MaintenanceScan ended(MaintenanceScan scan, Instant endedAt, MaintenanceScan.Outcome outcome,
                                          Map<String, Integer> failures, Optional<String> error) {
         return new MaintenanceScan(scan.id(), scan.worker(), scan.startedAt(), Optional.of(endedAt),
-                Optional.of(outcome), failures, error);
+                Optional.of(outcome), failures, error, scan.groups(), scan.storage());
+    }
+
+    @Test
+    @DisplayName("Health: a scan keeps the worker's groups and what its storage identities reach, a refused listing as"
+            + " refused, the end's deletes in place of the start's, and nothing for a worker that reports none")
+    void aScanKeepsWhatTheWorkerReaches() {
+        // An hour back, so this test's scans are never the last started that another test's assertions look for.
+        Instant base = now().minusSeconds(3600);
+        UUID id = UUID.randomUUID();
+        SortedSet<String> groups = new TreeSet<>(Set.of("maintainers", "platform-workers"));
+        WorkerStorage.Prefix lake = prefix("s3://lake/tables", Listed.OK, null, 0, 0, 0, null);
+        WorkerStorage.Prefix ledger = prefix("s3://ledger-warehouse/tables", Listed.REFUSED, "AccessDenied", 0, 0, 0,
+                null);
+        WorkerStorage.Prefix gone = prefix("s3://gone/tables", Listed.FAILED, "SdkClientException", 0, 0, 0, null);
+        MaintenanceScan started = new MaintenanceScan(id, "svc-maintenance", base, Optional.empty(), Optional.empty(),
+                Map.of(), Optional.empty(), Optional.of(groups), Optional.of(List.of(
+                        new WorkerStorage("s3", Optional.of("https://silo.example:9000"), List.of(lake, ledger)),
+                        new WorkerStorage("s3", Optional.empty(), List.of(gone)))));
+
+        store.recordScan(started, 50);
+
+        assertThat(kept(id)).isEqualTo(started);
+        assertThat(kept(id).covering("s3a://ledger-warehouse/tables/ns/t/data/f.parquet")).get()
+                .satisfies(covering -> {
+                    assertThat(covering.store().endpoint()).contains("https://silo.example:9000");
+                    assertThat(covering.prefix().listed()).as("a refused listing is kept refused")
+                            .isEqualTo(Listed.REFUSED);
+                    assertThat(covering.prefix().listCode()).contains("AccessDenied");
+                });
+        assertThat(kept(id).covering("s3://ledger-warehouse/other")).isEmpty();
+
+        MaintenanceScan ended = new MaintenanceScan(id, "svc-maintenance", base, Optional.of(base.plusSeconds(1)),
+                Optional.of(MaintenanceScan.Outcome.SUCCEEDED), Map.of("deletion", 1), Optional.empty(),
+                Optional.of(groups), Optional.of(List.of(
+                        new WorkerStorage("s3", Optional.of("https://silo.example:9000"), List.of(
+                                prefix("s3://lake/tables", Listed.OK, null, 12, 0, 0, null),
+                                prefix("s3://ledger-warehouse/tables", Listed.REFUSED, "AccessDenied", 0, 3, 1,
+                                        "AccessDenied"))),
+                        new WorkerStorage("s3", Optional.empty(), List.of(gone)))));
+        store.recordScan(ended, 50);
+        assertThat(kept(id)).as("the end's report in place of the start's").isEqualTo(ended);
+        store.recordScan(started, 50);
+        assertThat(kept(id)).as("an ended scan keeps its end").isEqualTo(ended);
+
+        UUID earlier = UUID.randomUUID();
+        store.recordScan(MaintenanceScan.started(earlier, "svc-maintenance", base.plusSeconds(2)), 50);
+        assertThat(kept(earlier).groups()).as("kept before the catalog recorded groups").isEmpty();
+        assertThat(kept(earlier).storage()).as("reported by a worker that reports no storage").isEmpty();
+        UUID none = UUID.randomUUID();
+        store.recordScan(new MaintenanceScan(none, "svc-maintenance", base.plusSeconds(3), Optional.empty(),
+                Optional.empty(), Map.of(), Optional.empty(), Optional.of(new TreeSet<>()), Optional.of(List.of())), 50);
+        assertThat(kept(none).groups()).contains(new TreeSet<>());
+        assertThat(kept(none).storage()).contains(List.of());
+    }
+
+    private MaintenanceScan kept(UUID id) {
+        return store.listScans().stream().filter(scan -> scan.id().equals(id)).findFirst().orElseThrow();
+    }
+
+    private static WorkerStorage.Prefix prefix(String location, Listed listed, String listCode, long deleted,
+                                               long refused, long failed, String deleteCode) {
+        return new WorkerStorage.Prefix(location, listed, Optional.ofNullable(listCode), deleted, refused, failed,
+                Optional.ofNullable(deleteCode));
     }
 }

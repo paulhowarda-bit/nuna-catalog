@@ -116,9 +116,15 @@ export function estateCounts(rows) {
 
 /**
  * The estate's shape in one sentence, from its counts (`estateCounts`), for at least one table: a table the worker
- * has not assessed yet is counted apart, never as in shape or out of it.
+ * has not assessed yet is counted apart, never as in shape or out of it. With the catalog's readiness (backlog 252),
+ * once a worker has reported, none is said to wait for its report: the worker assesses only where compaction is on.
  */
-export function shapeWords(c) {
+export function shapeWords(c, ready) {
+  if (c.unassessed === c.total && ready && ready['reported-at']) {
+    return ((ready.policy || {}).jobs || []).includes('compaction') ? `${plural(c.total, 'table')} not assessed yet.`
+      : `${plural(c.total, 'table')} not assessed yet: the worker assesses only where compaction is on, and `
+        + `${ready.catalog}'s policy turns it off.`;
+  }
   if (c.unassessed === c.total) return `${plural(c.total, 'table')} not assessed yet: the maintenance worker has not reported.`;
   if (!c.unassessed) return `${fmt(c.inShape)} of ${plural(c.total, 'table')} in shape.`;
   return `${fmt(c.inShape)} of ${plural(c.total - c.unassessed, 'assessed table')} in shape; ${fmt(c.unassessed)} not assessed yet.`;

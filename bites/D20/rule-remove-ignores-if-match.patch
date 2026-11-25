@@ -1,0 +1,16 @@
+Breaks: a removal never passes its If-Match to the store, so it removes a rule another grant admin changed since.
+Module: catalog-server
+Test: RuleRoutesTest#aRemovalWithAStaleVersionAnswers412AndOneWithTheCurrentVersionRemoves
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
+index 761fbd21..0dfaaa55 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
+@@ -161,7 +161,7 @@ class RuleRoutes {
+         Change change = change(new RowColumnRuleChange(RowColumnRuleChange.Action.REMOVED, on.named(), group, null,
+                 Map.of(), request.actor()));
+         WriteResult result = write("removing the rule", () -> store.removeRule(record.id(), on.stored().id(), group,
+-                expected, change));
++                OptionalLong.empty(), change));
+         return switch (result) {
+             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
+             case WriteResult.Missing missing -> throw CatalogError.of(404, "NotFoundException",

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**49 open:** 12 S, 17 M, 15 L, 5 XL.
+**60 open:** 18 S, 22 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,7 +33,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
-| [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
@@ -61,6 +60,18 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
+| [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
+| [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
+| [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
+| [261](backlog/261.md) | M | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's) | 2026-11-24 |
+| [262](backlog/262.md) | L | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | waits on Paul's answer below, which sets the size: (a) is S, a ledger amendment and the doc; (b) M to L, a field on every record and a reconciling check; (c) L, the archive moved off Kafka onto the log path with (b)'s field and a checkpoint of its own | 2026-11-24 |
+| [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
+| [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
+| [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
+| [268](backlog/268.md) | S | Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest | two assertions to bring up to the PostgreSQL schema's latest version, and a look at whether RollingUpgradeTest's v9-to-v15 path should name v17 | 2026-11-25 |
+| [269](backlog/269.md) | S | MutatingRoutesAuditTest: the OPA routes (item 115) have no case | the test's route discovery counts the three OPA query routes as mutating; exclude them, or give them cases, in one test class | 2026-11-25 |
+| [270](backlog/270.md) | M | SecurityGateTest: the grant and engine routes' audit lines never reach the log capture | the cause is not known yet: finding whether the grant and engine routes no longer write their audit records or the capture misses them, then the fix | 2026-11-25 |
+| [271](backlog/271.md) | M | ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch | the cause is not known yet: finding whether the console or the test changed (items 109, 212 to 217, 254 touched the header), then the fix | 2026-11-25 |
 
 ## Open items in full
 
@@ -638,8 +649,52 @@ After 38, at work, and before the dashboards (44):
   HttpClient; if so, the OpenTelemetry agent in Spark adds no `traceparent`, and traces start at the catalog. Not
   verified at home.
 
+**Added 2026-11-24, from the observability-audit research report** (in that agent's home,
+`research/reports/Nuna observability and audit grounding.md`, "Audit lines outlive the pod only if the collector is
+built to keep them" and "Nuna's series names land as drafted, with four corrections"):
+
+- **The record of audit rides on work's collector.** Since D23's amendment of 2026-11-23 the log `nuna.audit` on
+  stdout is the record of audit, and nuna ships no collector configuration (`deploy/` has no `filelog`,
+  `sending_queue` or `file_storage`), so whether a record survives past stdout is a property of work's collector. Its
+  defaults are at most once: the exporter's queue is in memory, acknowledges on admission and drops when full; the
+  `batch` processor reports success before anything is sent (deprecated 2026-11-11); filelog without `storage`
+  restarts at the end of each file and skips what was written while it was down; and OpenTelemetry's Helm
+  `logsCollection` preset sets `storeCheckpoints: false`. Find what work's collector does with pods' stdout, and write
+  into `docs/observability/` the recipe the `nuna.audit` lines need, asking the platform team for what it lacks:
+  - filelog with `storage: file_storage` on a PersistentVolume or hostPath, `retry_on_failure` on, and the `container`
+    operator, which rejoins the lines containerd splits above 16 KiB, with a deliberate `max_log_size` (1 MiB by
+    default);
+  - no `batch` processor; the exporter's `sending_queue` with `storage: file_storage`, sized in bytes or items,
+    `block_on_overflow: true`, `retry_on_failure.max_elapsed_time: 0` (or long), and `fsync: true` if a node's power
+    loss counts;
+  - where the records go on to the audit table writer, `X-Nuna-Audit-Token` as a static exporter header: what an auth
+    extension sets does not cross a persistent queue;
+  - the end of a pod: the chart's `preStop` sleep (5 s, `deploy/helm/nuna-catalog/templates/deployment.yaml:92`) runs
+    before shutdown, so it does not cover the lines written during the graceful shutdown that follows, the relay's
+    last drain among them. Find whether work's collector reads a terminated container's file before the pod is
+    removed, and whether Boot closes its `SdkLoggerProvider`, flushing the OTLP copy, at shutdown (neither verified).
+  - how long a collector outage the node's files cover at the catalog's log rate: the kubelet keeps 5 rotated files of
+    10 MiB per container, and eviction removes a pod's logs with it.
+  Each at-least-once setting brings duplicates after a crash, some hours late; item 263 makes the writer leave them out
+  however late they come.
+- **Names.** Prometheus 3.16 and both collector Prometheus exporters name OTLP metrics with one library
+  (`prometheus/otlptranslator` v1.0.0), so the drafted names should hold. Check four corrections here and write them
+  into `docs/observability/dashboards-and-alerts.md`:
+  - `translation_strategy` (default `UnderscoreEscapingWithSuffixes`) governs naming, not `add_metric_suffixes`, which
+    the doc names (line 28) and the exporters now ignore or deprecate: pin it in Prometheus' `otlp:` block and in any
+    collector Prometheus exporter.
+  - Micrometer 1.17 (Boot 4.1.2's) publishes a `.max` gauge for every timer, which lands as, for one,
+    `nuna_catalog_requests_max_milliseconds` (inferred) and is not in the doc's series list: list them, or set
+    `management.otlp.metrics.export.publish-max-gauge-for-histograms=false`.
+  - Native-histogram conversion (`otlp.convert_histograms_to_nhcb`) must stay off, or every `_bucket` query returns
+    nothing, silently; item 261's absence alerts catch it.
+  - Pushed series have no `up` and no staleness marker: item 261's absence alerts stand in for `up`.
+  Prometheus needs `--web.enable-otlp-receiver`, version 3.15 or later (3.10 to 3.16 fixed OTLP losses and a doubled
+  `+Inf` bucket), `out_of_order_time_window: 30m`, and `--enable-feature=exemplar-storage` to keep the exemplars Boot
+  already sends.
+
 Done when a load from a work engine shows as a trace and as metrics in work's Grafana, and the findings above are in
-`docs/observability/`.
+`docs/observability/`, the audit path's collector recipe and the four name checks included.
 
 ### 44. Grafana dashboards and Prometheus alert rules for nuna (at work)
 
@@ -2168,42 +2223,6 @@ main's files with them. A grant that names a branch needs credentials scoped to 
 whole prefix; the catalog marks only a branch's metadata files (`<version>-<uuid>.branch-<ref id>.metadata.json`), so
 the engines' data and manifest files would need a place of the branch's own too.
 
-### 115. Row filters and column masks stored in the catalog, served to Trino (D20)
-
-- Decided: 2026-11-20, D20
-- Added: 2026-11-20 by Paul
-- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-security/ catalog-server/ demo/
-- Effort: L, a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites
-
-Paul chose row-level security through trusted engines on 2026-11-20 (D20, amended): nuna holds the row filters and
-column masks, and Trino applies them. Today nuna has only half of it. A table flagged with a row/column policy gives
-storage access only to registered trusted engines (`Authorizer`, rule D20, in `catalog-security`), but the rules
-themselves are nowhere in nuna, and the demo's Trino sets none (`demo/k8s/trino.yaml` configures no access control).
-
-What is missing:
-
-1. **The rules, in nuna.** A row filter (an SQL predicate) and column masks (an SQL expression per column) on a table,
-   for a group, stored on all four stores beside the grants, set, listed and removed through the management API, and
-   audited as grants are (D23). Who may set them under D18's separation of duties (the grant admin, the tag steward,
-   or a duty of its own) is Paul's to decide; ask before building the routes.
-2. **A route Trino asks.** Trino's OPA access control asks an outside service for each table's row filters and column
-   masks (`opa.policy.row-filters-uri`, `opa.policy.column-masking-uri`; check both against the demo's Trino version).
-   nuna answers that request itself, or feeds an OPA server that does; the work picks one and says why.
-3. **Trino reaching nuna as a trusted engine.** The demo's Trino sends each user's own token
-   (`iceberg.rest-catalog.session=USER`, `demo/k8s/trino.yaml`), so nuna sees the user, not the engine, and a flagged
-   table refuses storage access through Trino. Trino must come as itself and name the end user (`X-Nuna-End-User`,
-   `catalog-server/.../security/Authentication.java`), or nuna must accept another form Trino can send, such as a
-   token exchange with Trino as the actor. Not checked by running.
-
-Out of scope: SingleStore. Its pipelines read as their own principal (`demo/singlestore/load.sql`), copy whole tables
-into SingleStore, and have no hook to fetch rules from nuna, so registering it as a trusted engine would hand every
-row of a flagged table to SingleStore's own access control.
-
-Done when a group's row filter and column masks on a table are stored on all four stores and managed and audited
-through the management API; in the demo, two users in different groups run the same Trino query on a flagged table
-and get different rows and masked columns; a client that is no trusted engine still gets 403 on that table's storage
-access; and a bite that drops the filter from nuna's answer to Trino makes a test fail.
-
 ### 118. Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20)
 
 - Decided: 2026-11-21, D20
@@ -2952,6 +2971,7 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\met
 Done when the test bounds its paging and fails on an assertion under this break, `bites/run.sh` on the bite reports
 BITES in under a few minutes, the judge no longer reports NO BITE for an executor crash (with a case in
 `bites/test-run.sh`), and the overnight run shows the bite biting.
+Seen again in the overnight run of 2026-11-25: NO BITE (1 passed), restored.
 
 ### 227. Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot
 
@@ -2969,6 +2989,7 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\mon
 
 Done when the test (or a new one in the shared refs suite) lands a drop between the two reads every time, fails
 on an assertion with the patch applied, and the overnight run shows the bite biting.
+Seen again in the overnight run of 2026-11-25: NO BITE (1 passed), restored.
 
 ### 228. Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only
 
@@ -3054,6 +3075,14 @@ meter names as Prometheus' default OTLP translation names them, and have never r
   leaves about 200 MB of Docker Desktop's 7.5 GB, so measure the switch's requests and say in `demo/README.md` which
   switches it fits beside; if it does not fit beside `gen` and `ss`, `demo.sh metrics` says so and refuses, as
   `engines` and `sql` refuse today.
+- The collector and Prometheus as work should set them (item 43, added 2026-11-24 from the observability-audit
+  research report): pin `translation_strategy: UnderscoreEscapingWithSuffixes` in Prometheus' `otlp:` block (and in
+  any collector Prometheus exporter), keep native-histogram conversion off, run Prometheus 3.15 or later with
+  `--web.enable-otlp-receiver` and `out_of_order_time_window: 30m`, and load item 261's availability and absence
+  rules if it has landed. If the demo also sends the catalog's logs through this collector to the audit table writer,
+  build that leg with item 43's recipe for the audit path (filelog `storage`, a `file_storage` sending queue, no
+  `batch` processor, the token as a static header); a demo whose logs go straight to the writer, as today, needs none
+  of it.
 
 **Done when** `demo.sh metrics` brings up the three pods, Grafana opens signed in through Keycloak, and each of the
 three dashboards shows live series from the demo's catalog and maintenance worker. Every panel that shows nothing
@@ -3086,6 +3115,382 @@ Done looks like:
 - A restart, and a change of route, resumes where the world stopped: each feed's records sent are those on its live
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
+
+### 258. Grants: refuse write on a view, which gives only select there yet counts as a data duty
+
+- Added: 2026-11-24 by catalog-security review of backlog 246
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java, catalog-server/src/test/, bites/
+- Effort: S, one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite
+
+## What is wrong
+
+`write` on a view means nothing there: no route needs it on a view (loading needs `select`; replace, drop and
+rename need `modify`), so it gives only `select`, through the ladder. Yet separation of duties counts it as a data
+duty (`Separation.Duty.of`), so a group granted it is kept from `manage-tags` anywhere in the catalog, and the
+certification export lists it as a right to write data. The grant route and its preview accept it.
+
+Backlog 246 refuses `create` on a table or view the same way (400 at the grant route, `refused` with
+`privilege-not-on-object` at the preview, revoke still removing one granted before: `GrantRoutes.refusal`). Its
+done-when named only `create`, so `write` on a view was left for this item (catalog-security's review of 246,
+2026-11-24). Every other privilege means something on every kind of securable: `manage-tags` on a view sets its
+labels and holds, and anything on a namespace or catalog reaches what is below.
+
+## Done when
+
+- The grant route answers 400 to `write` on a view and the preview `refused` with `privilege-not-on-object`; a
+  revoke still removes one.
+- `GrantPreviewTest` covers it at both, and a bite shows the refusal is checked.
+
+### 259. Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete?
+
+- Added: 2026-11-24 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
+- Touches: catalog-objectstore/src/test/java/nuna/catalog/objectstore/DeletePolicyAwsTest.java, deploy/README.md, status/
+- Effort: S, one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails
+
+## What is missing
+
+Item 256 makes the store the only limit on where the maintenance worker deletes, and `deploy/README.md` ("Delete
+rights") tells operators to give the worker role no S3 policy of its own in the bucket's account, since the delete
+policy's bucket-policy allow is enough there. catalog-security did not check that claim (backlog 256, "Not checked by
+catalog-security"). Item 256 wrote the test, `DeletePolicyAwsTest#theBucketPolicyAloneLetsTheWorkerDelete`: a role the
+test makes with a trust policy only, the catalog's bucket policy for it, then list and delete beneath the prefix, and
+refusals outside it and in a second bucket. It has never run: the machine it was written on has no AWS profile, and the
+overnight run has no AWS leg.
+
+## Done when
+
+- `./gradlew :catalog-objectstore:test --tests 'nuna.catalog.objectstore.DeletePolicyAwsTest' -Pheavy -Ps3=aws
+  -Pnuna.aws.profile=<profile>` passes, both tests, and the run leaves no `nuna-test-bare-worker-*` role behind (the
+  test prints one it had to keep).
+- If the role is refused beneath the prefix, the README's AWS rule changes to what works (the role's own policy
+  limited to the generated prefixes) and the test with it; if it is let in outside the prefix, the delete policy is
+  wrong and that is a new item.
+- The run is recorded in `status/`.
+
+### 260. Console: the Grants page lists the catalog's groups with their duties when no group is named
+
+- Added: 2026-11-24 by local_9b8172ac-1f35-4ea0-90fc-0f76b2383ffd
+- Touches: catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, one panel on the Grants page drawn from a route that exists (item 247), with a browser test
+
+## What is wrong
+
+Atelier, walking backlog 248's Grant access dialog on 2026-11-24, found the Grants page's first view empty for the
+people who use it most. With nothing typed in "List the grants of", the page lists the caller's own groups' grants. A
+grant admin's group holds no grant by configuration (D18), so `gary` sees only "Your groups hold no grant in trading",
+and must already know a group's name to see anything.
+
+## What done looks like
+
+With no group named, a grant admin (whoever may list the catalog's groups: manage-grants on the catalog, asked with
+the unaudited `/grants/check` first, as the dialog does) sees the catalog's groups from `GET .../grants/groups`, each
+with its duties as the dialog shows them, and each opening its grants (`g=<group>`, as the field does now). Someone
+who may not list them keeps today's view of their own groups' grants. A browser test signed in as `gary` opens the
+page, sees `stewards` with "Tags", and opens its grants from it.
+
+### 261. Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone
+
+- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
+- Touches: deploy/grafana/rules/nuna-catalog.rules.yaml deploy/grafana/dashboards/nuna-catalog.json docs/observability/dashboards-and-alerts.md
+- Effort: M, about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's)
+
+**What is wrong.** The catalog's alert rules (item 44, drafted at home under D43) have two blind spots.
+
+- **Errors.** Every SLI in `deploy/grafana/rules/nuna-catalog.rules.yaml` filters `outcome="2xx"` (or `"3xx"`) in its
+  numerator and its denominator (lines 18 and 19, and every pair after). A catalog answering every call 500 gives
+  0/0, no ratio, and fires nothing; a partial error rate is invisible; and requests that slow until they fail as 5xx
+  leave the latency SLI looking better. `docs/observability/dashboards-and-alerts.md` says so under "Not covered"
+  ("No alert on errors", line 142). D43 decided the drafting and the 500-commits panel, nothing about errors, so
+  adding error alerts needs no ruling.
+- **Absence.** A burn-rate expression returns nothing once its input series stop, so a catalog that dies or stops
+  pushing fires nothing, and a page already firing resolves itself when its short window empties. Pushed OTLP series
+  have no `up` and no staleness marker (Prometheus' OTLP converter writes one only for a point flagged
+  NoRecordedValue), so nothing else notices. The worker's rules already use `absent_over_time`
+  (`deploy/grafana/rules/nuna-maintenance.rules.yaml`, line 27); the catalog's have none. If work's Prometheus or
+  collector turns on native-histogram conversion (`convert_histograms_to_nhcb`), every `_bucket` selector goes empty
+  in the same silent way.
+
+**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
+`research/reports/Nuna observability and audit grounding.md`), "Burn-rate windows match the Workbook, but an all-500
+catalog pages no one". The windows themselves are the SRE Workbook's Table 5-8 exactly. Its worked example counts
+5xx against availability (https://sre.google/workbook/implementing-slos/); Sloth and Pyrra pair each latency SLO with
+an availability SLO, and Pyrra generates an `SLOMetricAbsent` alert by default, on the threshold bucket too
+(https://github.com/pyrra-dev/pyrra/blob/main/slo/rules.go); Prometheus' `keep_firing_for` exists for resolutions
+caused by lost data (https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/).
+
+**What to build.**
+
+- **Availability SLOs**, in a group of their own, with the latency SLOs' windows, factors and severities (14.4 and 6
+  page, 1 warns): loads (`loadTable`), commits (`updateTable` and `commitTransaction`), and every route the request
+  timer times, each per `job`. A `5xx` answer is bad; `2xx` and `3xx` are good (a 304 is a good answer); `4xx` is
+  left out of both, 409 commit conflicts included, since a client's mistake or a lost race is not the catalog
+  failing. nuna's own 503s are outages, not load shedding (the store unreachable, `ErrorResponses.java:54`; a record
+  that had to be audited first and was not, `AuditUnavailableResponses.java`), so they count bad. Its one 429 is the
+  audit read routes' per-caller limit (`AuditReadRoutes.java:504`), a 4xx and left out. `outcome` carries the status
+  class (`docs/observability/catalog-metrics.md`, `nuna.catalog.requests`), so none of this needs `error.type`.
+  Target 99.9 %, a draft to set at work as D43's names are. The R7 latency SLOs stay as written.
+- **Absence alerts**, severity `page`: `absent_over_time` per `job` over about 10 minutes on
+  `nuna_catalog_requests_milliseconds_count`, and on each SLO's `_bucket{le=...}` series, so a renamed or converted
+  bucket pages instead of going quiet. An idle catalog still pushes its unchanged cumulative counts, so this tells a
+  dead process from a quiet one (inferred). `absent_over_time` per `job` cannot see a job that never reported: say in
+  the doc how a deployment names the jobs it expects, or alert on the number of jobs reporting.
+- **`keep_firing_for: 10m`** on every page rule, so a page does not resolve because its data stopped.
+- **The page rules' `for: 2m`.** The Workbook advises against `for` on burn-rate alerts. Drop it, or keep it and write
+  the detection time in the doc: at a total latency failure the 1 h window crosses 14.4 % after about 8.6 minutes, so
+  with `for: 2m`, a push and an evaluation the page comes 11 to 12 minutes after the onset (the report's arithmetic).
+- **A panel for each availability SLO** on the catalog dashboard's "SLOs" row, beside the latency ones.
+
+**Done when** the rules are in the rule file and the doc's alert table, "No alert on errors" is gone from "Not
+covered", and `promtool test rules` unit tests (the `prom/prometheus` image carries promtool) show that: every call
+answered 500 for 15 minutes pages; 409s alone do not; no series for 10 minutes pages; and a firing page whose series
+stop keeps firing for `keep_firing_for`. Item 233's demo is where the rules first meet live series; item 44 renames
+them at work with the rest.
+
+### 262. Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises)
+
+- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
+- Touches: catalog-audit/ catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/test/java/nuna/catalog/server/governance/ deploy/helm/nuna-catalog/ docs/observability/audit-log.md decision-ledger.md bites/
+- Effort: L, waits on Paul's answer below, which sets the size: (a) is S, a ledger amendment and the doc; (b) M to L, a field on every record and a reconciling check; (c) L, the archive moved off Kafka onto the log path with (b)'s field and a checkpoint of its own
+
+**What is wrong.**
+
+- **The archive misses what Kafka misses.** Since D23's amendment of 2026-11-23 (item 195) the log `nuna.audit` is the
+  record of audit and Kafka a best-effort copy: after one failed send, every record skips Kafka for the 10 s probe
+  interval (`docs/observability/audit-log.md`, "What can be lost"). The Object Lock archive still reads only the audit
+  topic (`catalog-audit/.../archive/ArchiveConsumer.java`), so records from a Kafka outage are in the log and never in
+  the archive; D23 says so itself. The archive's check cannot see the hole: its sequence follows the topic's offsets,
+  which run without a gap across records that never reached the topic (inferred). So the copy that carries tamper
+  evidence is the incomplete one, and the log, which D23 names the record, carries none.
+- **The archiver anchors its own head.** Each chain's head goes into the archiver's own Kafka offset commit, as the
+  commit's metadata (`ArchiveConsumer.java:176`), and `ArchiveCheck` verifies each chain up to that anchor
+  (`ArchiveCheck.java`, lines 123 to 185). The archiver writes the anchor, into a system the same operators run and
+  that D23 now makes optional. COMPLIANCE mode and the archive's earliest-version reads (`ObjectLockArchive.java:308`)
+  stop a locked segment being deleted or replaced, so the exposure is narrower than the report puts it (inferred):
+  an archiver that stops, or is stopped, leaves a shorter chain that still verifies, and nothing outside the archiver
+  says how long the chain should be.
+- **The archive still needs Kafka.** The server refuses to start with an archive and no Kafka (audit-log.md).
+
+**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
+`research/reports/Nuna observability and audit grounding.md`), "Object Lock proves nothing changed, not that nothing
+is missing" and "The tamper-evident copy is the incomplete one". Tamper-evident structures vouch only for what was
+appended to them (Crosby and Wallach, USENIX Security 2009,
+https://www.usenix.org/legacy/event/sec09/tech/full_papers/crosby.pdf); Certificate Transparency catches an omission
+only because the submitter holds a promise of inclusion, and its log re-signs its head on a schedule even when idle
+(RFC 9162). Object Lock protects stored versions, not completeness (AWS, Object Lock). Were the archive ever to hold
+required records, 17a-4(f)(2)(ii) asks the system to verify that each record was completely captured. build-plan.md's
+SEC-9 ("whether notarisation is required beyond hash chaining") is still open.
+
+**Paul decides: what does D23 promise about the archive, now that Kafka is best effort?**
+
+- **(a)** Keep the archive on Kafka and say what it is: D23 and audit-log.md state that the archive proves nothing it
+  holds was changed, not that it holds every record, and a Kafka outage's records stay out of it unseen.
+- **(b)** Keep it on Kafka and make the gaps visible: every record carries a sequence stamped where it is made, with no
+  gaps (per server instance and boot for the records written before an answer, the outbox row's id for changes), and
+  a scheduled check reconciles the archive against the audit table (which can take the log over OTLP) and reports the
+  missing ranges.
+- **(c) Recommended:** feed the archive from the log path, as the audit table writer can already take it
+  (`nuna.audit-tables.source: otlp`), with (b)'s sequence on every record, and anchor each chain's head in a
+  checkpoint of its own: the chain's length and head hash, written as a locked object in the bucket on a fixed
+  schedule and again when idle, so a chain that stops or falls short shows. The archive then needs no Kafka, misses
+  only what the log path loses (a dying pod's last lines, which Paul accepted in D23), and those losses show as gaps
+  instead of passing the check. It follows D23's direction ("People use Prometheus and otel not kafka for this"), and
+  the one sequence also gives item 263's dedup and any reconciliation between stdout and the table a key.
+
+**Done when**, for (c): the archive takes the `nuna.audit` records from the log path; every record carries its source
+sequence (a new field of the versioned record schema, D23); the check reports a missing sequence range, a delete marker
+or a second version on a segment key, and a checkpoint that is late or does not match the chain; the server starts
+with an archive and no Kafka; audit-log.md's "What can be lost" says what the archive can miss and how a miss shows;
+tests, and bites in `bites/OBS-262/`; D23 amended with Paul's answer. One design point to settle in the work: a
+sequence per instance and boot shows a gap inside a run, but a pod whose last lines are lost leaves a run that just
+stops early; say whether that is accepted or how it shows (a boot's final count logged at shutdown, for one).
+For (a) or (b), the matching subset.
+
+### 263. Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer
+
+- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
+- Touches: catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java catalog-audit-tables/src/test/ catalog-audit-tables/README.md deploy/helm/nuna-audit-tables/values.yaml docs/observability/audit-log.md bites/
+- Effort: M, the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing
+
+**What is wrong.** With `nuna.audit-tables.source: otlp` the writer takes the catalog's `nuna.audit` records over
+OTLP/HTTP (D23, amended 2026-11-23). Two things in it are weaker than the delivery in front of it will be.
+
+- **The dedup window is shorter than a late copy.** `LogWriter` leaves out a record whose CloudEvent id it saw in the
+  last `nuna.audit-tables.otlp.dedup-window` (15 minutes: `AuditTablesSettings.java:136`,
+  `deploy/helm/nuna-audit-tables/values.yaml:39`), counted from when the id arrived (`forget`, `LogWriter.java:149`).
+  After a restart or a failed commit it reloads only the ids of rows whose record time is in the last 15 minutes
+  (`reload`, and `EventsTable.eventIdsSince`, `EventsTable.java:172`). A copy that comes later is written again: a
+  collector's persistent queue re-sending its in-flight batches after a crash, or draining a backlog hours after an
+  outage (the at-least-once collector item 43 asks for); a filelog receiver that lost its storage and reads its files
+  again; or the outbox relay logging a change a second time after a fleet outage longer than 15 minutes.
+- **The writer answers before it commits.** Records wait in memory for up to `commit-interval` (1 minute) and the
+  sender is answered at once (`LogWriter`'s class comment; audit-log.md, "The audit table writer's source `otlp`"), so
+  a writer that dies before its commit loses rows the sender was told were taken. The collector project now calls
+  this acknowledge-on-admission pattern a loss window. The records are still on the catalog's stdout, so the record of
+  audit is whole; the console's Audit page is not, and nothing says which rows it lacks.
+
+What already holds: a partial success names only records that are no catalog event, and a writer too far behind
+answers 503, which exporters retry (`OtlpLogsReceiver.java`, lines 42 to 148), as OTLP asks.
+
+**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
+`research/reports/Nuna observability and audit grounding.md`), "Audit lines outlive the pod only if the collector is
+built to keep them": a persistent queue re-sends after a crash
+(https://github.com/open-telemetry/opentelemetry-collector/blob/main/exporter/exporterhelper/internal/queue/persistent_queue.go),
+`file_storage`'s `recreate` can replay, and OTLP accepts duplicates by design
+(https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md).
+
+**What to build.**
+
+- **Dedup by the record's own time, not its arrival.** Look each incoming id up among the table's rows of the
+  record's own day (the table is partitioned by the day of `time`, `EventsTable.java:85`), so a copy is found however
+  late it comes; keep the in-memory set for the common case. If that read costs too much at the writer's rate, make
+  the window at least the longest outage a collector's queue will hold plus its retry horizon, and say so in the doc;
+  measure which.
+- **Answer after the commit.** Hold each request's answer until the commit that holds its records. Boot caps the
+  catalog's own export at 10 s, retries included, so where the catalog sends straight to the writer the `otlp`
+  source's commit interval has to come under that (a few seconds), and behind a collector its exporter's `timeout`
+  has to exceed it. Measure the files a day that makes at the demo's rate and say whether the audit table's
+  compaction keeps up. If it does not, keep answering at once and say in audit-log.md which rows the table can lack
+  and how to find them (by item 262's sequence, if Paul chooses it).
+
+**Done when** `LogWriterTest` shows a copy arriving an hour after the first, and one arriving after a restart, left
+out; a writer killed before its commit loses nothing its sender was told was taken (or audit-log.md states the window,
+as above); the chart's values, `catalog-audit-tables/README.md` and audit-log.md say the new behaviour; bites in
+`bites/OBS-263/`.
+
+### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR
+
+- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
+- Touches: catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java catalog-server/src/test/ deploy/helm/nuna-catalog/values.yaml deploy/helm/nuna-maintenance/values.yaml docs/observability/README.md docs/observability/spans.md bites/
+- Effort: M, at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43
+
+**What is wrong.**
+
+- **Head sampling drops most error traces.** The charts keep 10 % of new traces (`telemetry.sampling: "0.1"`,
+  `deploy/helm/nuna-catalog/values.yaml:105` and `deploy/helm/nuna-maintenance/values.yaml:135`;
+  `parentbased_traceidratio`, `docs/observability/README.md`, "Sampling"). The decision is made before the request
+  runs, so about 90 % of failing requests leave no trace (inferred). Keeping every error trace at about today's volume
+  takes a decision at the tail, in the collector: the SDK samples 100 %, a `loadbalancing` exporter tier routes spans
+  by trace ID, and a `tail_sampling` tier keeps a trace with status ERROR, one slower than its SLO bound, and 10 % of
+  the rest. The tail-sampling processor is Beta and holds traces in memory for `decision_wait` (30 s) up to
+  `num_traces` (50,000), so traces show about 30 s late and every span crosses the network.
+- **A 5xx answer may not mark its span ERROR.** Micrometer marks a span ERROR only when an exception is recorded on
+  the observation (`TracingObservationHandler`), so a tail policy on ERROR misses a 5xx answered without one. nuna's
+  own child spans end ERROR on a failed call (`docs/observability/spans.md`, line 40), but the request's server span
+  is Spring's, and nuna's 5xx answers are built by exception handlers (`ErrorResponses`, `@ExceptionHandler`) or
+  directly (`AuditUnavailableResponses`' 503). Whether those server spans end ERROR is not verified.
+
+The sampler itself is right for now: the spec deprecates `TraceIdRatioBased` but forbids SDKs to change it before
+2027-01-01, and Boot 4.1 and 4.2 offer no property for its successor. Metrics and logs are never sampled, so the audit
+records never depend on it.
+
+**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
+`research/reports/Nuna observability and audit grounding.md`), "Spring's HTTP conventions and 10% head sampling
+trail OpenTelemetry": the tail-sampling processor
+(https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/tailsamplingprocessor/README.md),
+the load-balancing exporter
+(https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/loadbalancingexporter/README.md)
+and Micrometer's handler
+(https://github.com/micrometer-metrics/tracing/blob/main/micrometer-tracing/src/main/java/io/micrometer/tracing/handler/TracingObservationHandler.java).
+
+**What to build.**
+
+- **At home:** a test that every 5xx answer's server span has status ERROR, those built without a throw included,
+  with the exception's class and never its message, as spans.md requires. Where it does not, set it in one place:
+  the filter that times each request already knows the status (`RequestMetrics`). Then a tail policy on ERROR alone
+  keeps them, whatever the collector; an OTTL condition on the status code (`http.response.status_code >= 500`, or
+  Spring's `status` tag) is the fallback. A bite in `bites/OBS-265/`.
+- **At work, with item 43:** if work's collector can run the two tiers, set them up, put the deployment's
+  `telemetry.sampling` at 1.0, and say in `docs/observability/README.md`, "Sampling", which mode a deployment runs and
+  which traces each keeps. If work's platform has no tail-sampling tier, keep 10 % at the head and say there that most
+  error traces are not kept, and that the request ID in the log line and the audit record is the way back to a failed
+  call.
+
+**Done when** the test and its bite are in and the doc says which traces each mode keeps; at work, a forced 5xx shows
+as a trace in work's Grafana under tail sampling, or the doc says why the deployment keeps head sampling.
+
+### 266. Overview says a catalog's worker has not reported while the worker reports every scan
+
+- Added: 2026-11-24 by Paul, via item 252
+- Touches: catalog-server/src/main/resources/nuna/ui/overview.js, catalog-server/src/test/
+- Effort: S, one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest`
+
+## What is wrong
+
+Item 252 fixed the Maintenance page's head: when no table of a catalog is assessed, it reads item 251's readiness
+route and says what is missing ("The worker can't maintain ledger yet: 2 of 4 steps left.", `readiness.js`
+`stepsWords`), or, once every step is done, why nothing is assessed (`queue.js` `shapeWords(c, ready)`). Overview
+still says the worker "has not reported" on the same grounds, whenever no table is assessed, though the worker reports
+at every scan: the usual reason is that it cannot reach the catalog (no `write` grant, no storage for the catalog's
+profile), which readiness says and Overview does not.
+
+- `catalog-server/src/main/resources/nuna/ui/overview.js:35-36`: the head calls `shapeWords(c)` without readiness,
+  so it falls through to "{n} tables not assessed yet: the maintenance worker has not reported." (`queue.js:128`).
+- `overview.js:54-55`: the In shape KPI's line, "{n} not assessed yet: the maintenance worker has not reported".
+- `overview.js:72`: the queue panel, "Nothing queued: the maintenance worker has not assessed any table you may read
+  yet."
+
+## Done when
+
+- Overview reads item 251's readiness route as the Maintenance page does (`readinessOf`), and while no table is
+  assessed its head, KPI line and queue line say what readiness says, in Atelier's words from item 252 where they fit:
+  `stepsWords` while a step is left, `shapeWords(c, ready)` once all four are done, with a link to the Maintenance
+  page's "What the worker needs to maintain <catalog>" panel in place of the panel itself. "Has not reported" stays
+  only for a catalog no worker has reported on (`reported-at` absent), and for a caller readiness refuses.
+- A browser test, as `ConsoleReadinessBrowserTest` does on a catalog with no grant and no storage, shows Overview's
+  head and KPI line say steps are left, not "has not reported", as a caller who may read readiness, and the old words
+  for one who may not.
+
+### 268. Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/test/java/nuna/catalog/server/SchemaAtStartupTest.java, catalog-tests-load/src/test/java/nuna/catalog/load/RollingUpgradeTest.java
+- Effort: S, two assertions to bring up to the PostgreSQL schema's latest version, and a look at whether RollingUpgradeTest's v9-to-v15 path should name v17
+
+PostgreSQL's migrations now end at V17 (`V16__row_column_rule_version.sql`, item 244; `V17__worker_reach.sql`, item 250), but two tests still expect version 15. Neither runs in the fast build, so the landings did not see it.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5:
+- Heavy build: `SchemaAtStartupTest#theJournalIsPartitionedWithMonthsAhead`: expected: 15 but was: 17 (`SchemaAtStartupTest.java:29`).
+- Nightly: `RollingUpgradeTest#upgradingOneServerAtATimeAcrossV9ToV15LosesNothing`: [the schema once a server of this release started] expected: "15" but was: "17" (`RollingUpgradeTest.java:91`).
+- Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server, nightly.log, nightly-results\catalog-tests-load.
+- The overnight agents for catalog-server and catalog-tests-load both ended at once with an expired OAuth session and claimed nothing.
+
+Done when both tests pass in the overnight run, and they read the latest version from the migrations rather than a number that every new migration breaks.
+
+### 269. MutatingRoutesAuditTest: the OPA routes (item 115) have no case
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/MutatingRoutesAuditTest.java
+- Effort: S, the test's route discovery counts the three OPA query routes as mutating; exclude them, or give them cases, in one test class
+
+`MutatingRoutesAuditTest#everyMutatingRouteEmitsItsAuditRecord` finds every POST, PUT and DELETE route and wants a case for each. Item 115 added `OpaRoutes` (`POST /opa/v1/allow`, `/opa/v1/row-filters`, `/opa/v1/column-masks`), which are Trino's access-control queries, POSTed but changing nothing, and the test has no case for them. It is heavy, so the landing's fast build did not run it.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5: heavy build, `[a case for every mutating route] ... could not find the following elements: ["POST /opa/v1/allow", "POST /opa/v1/column-masks", "POST /opa/v1/row-filters"]`. Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server. Bites `D30/pending-deletions-complete-open` and `D30/pending-deletions-open` were not run because of it. The catalog-server agent ended at once with an expired OAuth session.
+
+Done when the test passes in the overnight run, with the OPA routes named as non-mutating (or audited, if catalog-security says they should be), and the two D30 bites bite.
+
+### 270. SecurityGateTest: the grant and engine routes' audit lines never reach the log capture
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/test/java/nuna/catalog/server/SecurityGateTest.java, catalog-server/src/test/java/nuna/catalog/server/governance/AuditLogCapture.java, catalog-server/src/main/java/nuna/catalog/server/ (if the routes really emit nothing)
+- Effort: M, the cause is not known yet: finding whether the grant and engine routes no longer write their audit records or the capture misses them, then the fix
+
+Two `SecurityGateTest` tests wait 30 s for audit lines that never come: `grantsAreListedByPrincipalAndByObjectCheckedInBatchAndExported` (`0 audit lines, not 3, hold all of ["type":"nuna.catalog.grant"]`, line 724) and `theEngineRegistryIsForPlatformOperatorsOnly` (`0 audit lines, not 1, hold all of ["type":"nuna.catalog.engine"]`, line 683). Item 224 fixed this class the night before for item 195's move of audit to logs; these two still fail, so either those routes no longer write their records or `AuditLogCapture` misses them.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5: heavy build; logs C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server\build\test-results\test\TEST-nuna.catalog.server.SecurityGateTest.xml. 22 bites (D13, D15, D20, D30, M5) were not run because of the class's failures. The catalog-server agent ended at once with an expired OAuth session.
+
+Done when both tests pass in the overnight run and the 22 SecurityGateTest bites run and bite.
+
+### 271. ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/main/resources/ (the console), catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: M, the cause is not known yet: finding whether the console or the test changed (items 109, 212 to 217, 254 touched the header), then the fix
+
+`ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged` times out waiting for `#top #reading-slot [data-main-only]` while the console reads branch `dev_6be71299` on catalog trading's governance page: the header shows "Reading @ dev_6be71299" but no displayed main-only control.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5: heavy build, `org.openqa.selenium.TimeoutException: Expected condition failed: no displayed By.cssSelector: #top #reading-slot [data-main-only]`. Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server. Bite `D33/ref-page-delete-counts-nothing` was not run because of it. The catalog-server agent ended at once with an expired OAuth session.
+
+Done when the test passes in the overnight run and the D33 bite runs and bites.
 
 ## Done and dropped
 
@@ -3184,6 +3589,7 @@ Done looks like:
 | [103](backlog/103.md) | Branch commits and the merge transaction in the store (item 26) | done | 2026-11-22 |
 | [110](backlog/110.md) | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | done | 2026-11-23 |
 | [114](backlog/114.md) | Run a table's maintenance now, from the console, outside the cleanup window too | done | 2026-11-22 |
+| [115](backlog/115.md) | Row filters and column masks stored in the catalog, served to Trino (D20) | done | 2026-11-24 |
 | [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |
 | [117](backlog/117.md) | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | done | 2026-11-22 |
 | [119](backlog/119.md) | Atelier, a UX expert agent (agent-forge home) | done | 2026-11-21 |
@@ -3276,3 +3682,24 @@ Done looks like:
 | [234](backlog/234.md) | Demo SingleStore refuses order writes once its pipelines' extractors fill the table-memory cap | done | 2026-11-24 |
 | [236](backlog/236.md) | Presenter, who holds every duty, lands on Overview | done | 2026-11-24 |
 | [237](backlog/237.md) | The demo keeps its data across down and up: volumes for PostgreSQL, Silo, Kafka and SingleStore; demo.sh wipe | done | 2026-11-24 |
+| [239](backlog/239.md) | Governance flag only on tables: a flag above a table shows but is not enforced | done | 2026-11-24 |
+| [240](backlog/240.md) | Column masks fail open when a column is renamed, dropped or misspelled | done | 2026-11-24 |
+| [241](backlog/241.md) | Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes | done | 2026-11-24 |
+| [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
+| [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |
+| [244](backlog/244.md) | Row and column rules: check expressions when set, and If-Match on set | done | 2026-11-24 |
+| [245](backlog/245.md) | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | done | 2026-11-24 |
+| [246](backlog/246.md) | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | done | 2026-11-24 |
+| [247](backlog/247.md) | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | done | 2026-11-24 |
+| [248](backlog/248.md) | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | done | 2026-11-24 |
+| [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
+| [250](backlog/250.md) | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | done | 2026-11-24 |
+| [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
+| [252](backlog/252.md) | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | done | 2026-11-24 |
+| [253](backlog/253.md) | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | done | 2026-11-24 |
+| [254](backlog/254.md) | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | done | 2026-11-24 |
+| [255](backlog/255.md) | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | done | 2026-11-24 |
+| [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
+| [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
+| [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
+| [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |

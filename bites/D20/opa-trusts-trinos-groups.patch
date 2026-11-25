@@ -1,0 +1,25 @@
+Breaks: the user's groups come from what Trino says, not from the user's own token.
+Module: catalog-server
+Test: OpaAnswersTest#aUserGetsTheirGroupsFilter+aUserNoneOfWhoseGroupsHasARuleGetsNoRows
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+index b2f4d4cf..1060928b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+@@ -123,10 +123,16 @@ final class OpaAnswers {
+             return Answer.CLOSED;
+         }
+         return rules.on(warehouse, List.of(table.schema().split("\\.", -1)), table.table(), user.get())
+-                .map(found -> Answer.of(RowColumnPolicy.forUser(found, user.get().subject().groups())))
++                .map(found -> Answer.of(RowColumnPolicy.forUser(found, groupsTrinoSays(input))))
+                 .orElse(Answer.CLOSED);
+     }
+ 
++    private static java.util.Set<String> groupsTrinoSays(JsonNode input) {
++        java.util.Set<String> groups = new java.util.HashSet<>();
++        input.path("context").path("identity").path("groups").forEach(group -> groups.add(group.asString()));
++        return groups;
++    }
++
+     private static Named named(JsonNode column) {
+         return new Named(text(column, "catalogName"), text(column, "schemaName"), text(column, "tableName"));
+     }

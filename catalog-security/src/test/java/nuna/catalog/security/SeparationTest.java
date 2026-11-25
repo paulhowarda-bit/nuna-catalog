@@ -64,6 +64,16 @@ class SeparationTest {
     }
 
     @Test
+    void theReasonNamesTheSameConflictWhateverOrderTheGrantsAreReadIn() {
+        String reason = "group g holds describe in this catalog, a read duty that manage-grants (grants) must stay"
+                + " separate from";
+        assertThat(separation.refusal("g", Privilege.MANAGE_GRANTS, List.of(Privilege.MANAGE_TAGS,
+                Privilege.SELECT, Privilege.DESCRIBE))).hasValue(reason);
+        assertThat(separation.refusal("g", Privilege.MANAGE_GRANTS, List.of(Privilege.DESCRIBE,
+                Privilege.MANAGE_TAGS, Privilege.SELECT))).hasValue(reason);
+    }
+
+    @Test
     void aDataAdminMayHoldTheWholeLadderAndCreate() {
         assertThat(separation.refusal("g", Privilege.CREATE, List.of(Privilege.MODIFY, Privilege.SELECT))).isEmpty();
         assertThat(separation.refusal("g", Privilege.MODIFY, List.of(Privilege.CREATE))).isEmpty();

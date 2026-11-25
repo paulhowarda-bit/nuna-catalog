@@ -1,0 +1,17 @@
+Breaks: Maintenance's Grant write is offered to every caller who may see names, a platform operator with no grant among them, so pressing it draws an audited refusal.
+Module: catalog-server
+Test: ConsoleReadinessBrowserTest#oscarIsSentToServiceForTheStoreStepsAndAskedForTheRest
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/readiness.js b/catalog-server/src/main/resources/nuna/ui/readiness.js
+index b6e6f963..dda8c47f 100644
+--- a/catalog-server/src/main/resources/nuna/ui/readiness.js
++++ b/catalog-server/src/main/resources/nuna/ui/readiness.js
+@@ -115,7 +115,7 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
+   // Item 248's dialog, filled in: the worker's one group, or none when it carries several, since the first may be a broad
+   // one (Atelier, 2026-11-24); "Read and write rows" on the catalog. The person still presses Grant.
+   const grantTo = groups.length === 1 ? groups[0].group : null;
+-  const grantAction = grant.state === 'missing' ? (!names ? askNames() : rights.grant
++  const grantAction = grant.state === 'missing' ? (!names ? askNames() : true
+     ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'grant-write', onclick: () => grantAccess(
+       {catalog, kind: 'catalog', namespace: []}, {group: grantTo, privilege: 'write', closed: reload})},
+     grantTo ? `Grant write to ${grantTo}` : `Grant write on ${catalog}`)

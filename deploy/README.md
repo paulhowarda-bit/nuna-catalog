@@ -252,10 +252,44 @@ telemetry:
 
   The catalog does not apply them itself: its own credentials would then need the right to undo them. Apply
   them again after changing a profile's prefixes. A profile with no `maintenance-principal` is listed as
-  `unprotected`. Each form has a heavy test, and each ran on 2026-11-20 (backlog 4): `DeletePolicyAwsTest`
-  on real S3 (`-Ps3=aws`), `DeletePolicyMinioTest` on Silo with non-root users, and `DeletePolicyCephTest`
+  `unprotected`. `GET /management/v1/maintenance/storage-setup` gives the same policies per profile, each with the
+  commands that apply it, the worker's settings for a store its last report shows it does not reach, and for an
+  unprotected profile the setting to add (docs/observability/table-health.md, "Storage setup"). Each form has a
+  heavy test, and each ran on 2026-11-20 (backlog 4): `DeletePolicyAwsTest` on real S3 (`-Ps3=aws`), `DeletePolicyMinioTest` on Silo with non-root users, and `DeletePolicyCephTest`
   (`-Ps3=ceph`, in the heavy pass's Ceph leg). `local/run.sh up` applies the MinIO form to Silo, and its `smoke`
   tries a delete as each user ("Trying it locally").
+
+  The worker reads its prefixes from the catalog (item 256; D30, amended 2026-11-24). At each scan it reads
+  `GET /management/v1/maintenance/storage-prefixes`, which lists each profile that names a
+  `maintenance-principal` (its name, kind, endpoint and allowed prefixes, never a credential) and answers only a
+  maintenance principal acting as itself; any other caller gets an audited 403. The worker's own settings hold
+  one storage identity per store (`nuna.maintenance.storage.<store>`: kind, endpoint, region, keys or role, CA
+  bundle), and it serves a profile with the one store whose kind and endpoint are the profile's, so write each
+  store's endpoint as the catalog's profile writes it. It refuses a profile that no store, or two, serve, and a
+  prefix that does not parse as the catalog's own (a bare `s3://`, a `:` in a bucket, an empty or dot segment, a
+  wildcard), and lists and deletes only strictly beneath a prefix, never at one. A scan whose read fails, or
+  names no prefix, lists and deletes nothing. It logs the set at start and whenever it changes, each new prefix
+  at WARN: the one record of a new prefix that the catalog cannot suppress.
+
+  So the catalog says where the worker looks, and only the store limits where it deletes: the worker deletes
+  wherever the store lets its identity. That holds only if:
+  - AWS: the worker role's own policies allow no `s3:DeleteObject`, `s3:DeleteObjectVersion` or
+    `s3:ListBucket` outside the generated prefixes, best none at all in the bucket's own account, where the
+    bucket policy's allow is enough; and none names a wildcard bucket (`arn:aws:s3:::*`, `arn:aws:s3:::nuna-*`).
+    `DeletePolicyAwsTest` checks a worker role with no S3 policy of its own (added by item 256, not yet run on
+    AWS).
+  - MinIO: the worker's user is not root, is in no group, holds only the `to` policies, and uses keys of its
+    own, not a service account of a broader user (a service account holds its parent's rights).
+    `DeletePolicyMinioTest` checks a user holding only `to`.
+  - Ceph: the worker's user owns no bucket, and no bucket ACL or user policy grants it, or all authenticated
+    users, write.
+  - Every store: one worker identity per nuna install, granted by nothing else (no other install's policy, no
+    other team's grant). The DR replica keys (`nuna.maintenance.dr.replicas`) read only the same prefixes in
+    the DR store.
+
+  If the console ever sets a catalog profile's prefixes (no item does today), that write is for platform
+  operators only and audited, refusals included: a prefix the catalog gives is where the worker lists and
+  deletes, as far as the store lets it.
 - **Compaction Jobs [D30].** With `config.nuna.maintenance.compaction.image` set, the maintenance worker
   launches its compaction Jobs in `config.nuna.maintenance.compaction.namespace`. Create that namespace
   first, for the Jobs alone: never the catalog's nor the worker's, since a pod there may run as any service
@@ -302,12 +336,14 @@ platform operator. Its routes, the DR watermark and the verifier are in `docs/ob
 bucket naming per region and the replication SLA come from PLT-4 at work; until then the DR store is the same buckets
 and paths on another endpoint (Paul, 2026-11-20).
 
-**Before a disaster.** Run the maintenance worker's DR verifier in the primary region: name each storage profile's
-DR replica, read-only keys on the DR store, under `nuna.maintenance.dr.replicas.<profile>` (endpoint, region,
-path-style access, keys, CA bundle); `nuna.maintenance.dr.verify-interval` sets how often it passes (1 minute by
-default). In the worker chart they go under `config.nuna.maintenance.dr`, the secret key under `secrets.values` as
-`nuna.maintenance.dr.replicas.<profile>.secret-access-key` and a CA bundle in `storageCaConfigMap`, as a storage
-profile's do; the chart's `values.yaml` comments them.
+**Before a disaster.** Run the maintenance worker's DR verifier in the primary region: name each store's DR replica,
+read-only keys on the DR store, under `nuna.maintenance.dr.replicas.<store>`, `<store>` being the name of the worker's
+store identity under `nuna.maintenance.storage` (endpoint, region, keys, CA bundle; the kind is the store's);
+`nuna.maintenance.dr.verify-interval` sets how often it passes (1 minute by default). The verifier reads beneath the
+prefixes the catalog gives the worker, as the worker's own storage does ("Delete rights"). In the worker chart they go
+under `config.nuna.maintenance.dr`, the secret key under `secrets.values` as
+`nuna.maintenance.dr.replicas.<store>.secret-access-key` and a CA bundle in `storageCaConfigMap`, as a store's do; the
+chart's `values.yaml` comments them.
 The verifier keeps each table's DR watermark, the newest version whose every file the DR store holds, in the catalog
 database, so it reaches DR with the database. `GET /management/v1/dr/watermarks` lists the tables behind and their
 lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes.

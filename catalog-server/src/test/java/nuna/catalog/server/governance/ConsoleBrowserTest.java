@@ -31,7 +31,6 @@ import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.remote.RemoteWebDriver;
-import org.openqa.selenium.support.ui.Select;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -222,7 +221,7 @@ class ConsoleBrowserTest {
                 .as("the testers' create and modify on the catalog, in words")
                 .containsExactly("Read and write its data, and change it: its schema, properties and maintenance.");
         browser.await(By.cssSelector("#access-tab [data-grants='own']"));
-        assertThat(driver.findElements(By.cssSelector(".nc-main form.grant-form"))).isEmpty();
+        assertThat(driver.findElements(By.cssSelector(".nc-main [data-act='grant-access']"))).isEmpty();
         browser.open("/ui/#p=audit&c=trading");
         assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
                 .isEqualTo("Audit is open to auditors and to those who manage trading's grants.");
@@ -231,7 +230,7 @@ class ConsoleBrowserTest {
         browser.open("/ui/");
         browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
         // The home comes first in the rail (Atelier's re-walk after phase 2, backlog 217).
-        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance");
+        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance", "grants");
 
         signIn(api.operator());
         browser.open("/ui/");
@@ -254,7 +253,66 @@ class ConsoleBrowserTest {
         browser.open("/ui/");
         browser.await("the caller with every duty did not land on the overview",
                 d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
-        assertThat(rail()).containsExactly("overview", "catalog", "refs", "maintenance", "governance", "audit", "service");
+        assertThat(rail())
+                .containsExactly("overview", "catalog", "refs", "maintenance", "governance", "grants", "audit", "service");
+    }
+
+    /**
+     * Grants have a place in the rail, after Governance, for those who manage them, and a table or view opens on
+     * Access for one who may manage its grants but not read it (Paul, 2026-11-24: how to add grants from the console;
+     * backlog 245). As the demo's people: gary, a grant admin who reads no data, and ana, who reads and changes it and
+     * manages no grants.
+     */
+    @Test
+    void grantsHaveARailItemAndAGrantAdminOpensATableOrViewOnAccess() {
+        signIn(gary());
+        browser.open("/ui/#c=trading");
+        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance", "grants");
+        browser.await(By.cssSelector("#nav a[data-k='grants']")).click();
+        browser.await("the rail did not open Grants", d -> d.getCurrentUrl().endsWith("#p=grants&c=trading"));
+        browser.await(By.cssSelector("#nav a[data-k='grants'][aria-current='page']"));
+        assertThat(textContent(browser.await(By.cssSelector("#governance-grants h1")))).isEqualTo("Grants in trading");
+        assertThat(textContent(browser.await(By.cssSelector("#governance-grants .ph button[data-act='grant-access']"))))
+                .isEqualTo("Grant access");
+        assertThat(driver.findElements(By.cssSelector("#governance-grants nav.tabs"))).isEmpty();
+        // Governance keeps Summary and Holds and freezes.
+        browser.await(By.cssSelector("#nav a[data-k='governance']")).click();
+        browser.await(By.cssSelector("#governance-summary nav.tabs a[data-tab]"));
+        assertThat(driver.findElements(By.cssSelector("#governance-summary nav.tabs a[data-tab]")))
+                .extracting(ConsoleBrowser::textContent).containsExactly("Summary", "Holds and freezes");
+        // A link to Governance's old Grants tab opens the rail's Grants.
+        browser.open("/ui/#p=governance&c=trading&tab=grants");
+        browser.await(By.cssSelector("#nav a[data-k='grants'][aria-current='page']"));
+        browser.awaitText(By.cssSelector("#governance-grants h1"), "Grants in trading");
+
+        // A table opens on Access, where he grants on it; Overview, which refuses him, is a tab away by its own link.
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='access'][aria-current='page']"));
+        browser.await(By.cssSelector("#access-tab > .access-acts button[data-act='grant-access']"));
+        WebElement overview = driver.findElement(By.cssSelector("#table-page nav.tabs a[data-tab='overview']"));
+        assertThat(overview.getDomAttribute("href")).isEqualTo("#" + at("table", eu, "trades", "overview"));
+        overview.click();
+        browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='overview'][aria-current='page']"));
+        refusal("#table-page .tab-body");
+        // So does a view.
+        browser.open("/ui/#" + at("view", equities, "daily", null));
+        browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='access'][aria-current='page']"));
+        browser.await(By.cssSelector("#access-tab > .access-acts button[data-act='grant-access']"));
+
+        // ana manages no grants: no Grants in her rail, a link to it says why, and a table and a view open on Overview.
+        signIn(ana());
+        browser.open("/ui/#c=trading");
+        assertThat(rail()).containsExactly("overview", "catalog", "refs", "maintenance", "governance");
+        browser.open("/ui/#p=grants&c=trading");
+        assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                .isEqualTo("Grants in trading are open to those who manage its grants.");
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='overview'][aria-current='page']"));
+        assertThat(driver.findElement(By.cssSelector("#table-page nav.tabs a[data-tab='overview']"))
+                .getDomAttribute("href")).isEqualTo("#" + at("table", eu, "trades", null));
+        browser.await(By.cssSelector("#overview-tab"));
+        browser.open("/ui/#" + at("view", equities, "daily", null));
+        browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='overview'][aria-current='page']"));
     }
 
     /**
@@ -684,22 +742,29 @@ class ConsoleBrowserTest {
         assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab='audit']"))).isEmpty();
         expect(api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null, AUTH, tester()), 403);
 
-        // Grant administrators are kept away from the data itself (D18).
+        // Grant administrators are kept away from the data itself (D18): a table opens on Access for them (backlog
+        // 245), and its Overview shows the refusal.
         signIn(api.grantAdmin());
-        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.open("/ui/#" + at("table", eu, "trades", "overview"));
         assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
                 + "/tables/trades?snapshots=all", null, AUTH, api.grantAdmin(), "X-Iceberg-Access-Delegation", "none"));
     }
 
     @Test
-    void grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownVerbatim() {
+    void grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownBeforeGrant() {
         String group = "console-readers-" + Api.suffix();
         signIn(api.grantAdmin());
         browser.open("/ui/#" + at("namespace", equities, null, "grants"));
         grant("select", group);
-        browser.awaitText(By.cssSelector("#grant-result .granted"), "Granted select to " + group + ".");
+        assertThat(liveLine()).isEqualTo(group + " will read every table and view in " + dotted(equities)
+                + ", now and later.");
+        grantButton().click();
+        browser.awaitText(By.cssSelector("dialog.dlg #grant-result .granted"),
+                "Granted select on " + dotted(equities) + " to " + group + ".");
+        closeDialog();
         WebElement row = browser.await(grantRow(group, "select"));
         assertThat(row.getDomAttribute("data-on")).isEqualTo("here");
+        assertThat(row.getDomAttribute("class")).as("the grant just made is marked").isEqualTo("is-new");
         assertThat(cell(row, 1)).isEqualTo(group);
         assertThat(cell(row, 2)).isEqualTo("select");
         assertThat(cell(row, 3)).isEqualTo("here");
@@ -724,13 +789,17 @@ class ConsoleBrowserTest {
                 && d.findElements(By.cssSelector("dialog.dlg")).isEmpty());
         browser.await(group + " may still read", d -> !d.findElement(whoMay("Read")).getText().contains(group));
 
-        // Stewards hold manage-tags, a duty that write must stay apart from (D18).
+        // Stewards hold manage-tags, a duty that write must stay apart from (D18): refused before Grant, said in the
+        // duty the group already holds, and Grant cannot be pressed.
         grant("write", GovernanceServer.STEWARDS);
-        WebElement refusal = browser.await(By.cssSelector("#grant-result .refusal"));
-        assertShownVerbatim(refusal, api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\","
-                + "\"namespace\":" + json(equities) + "},\"group\":\"" + GovernanceServer.STEWARDS
-                + "\",\"privilege\":\"write\"}", AUTH, api.grantAdmin()));
-        assertThat(textContent(refusal)).contains("separate");
+        WebElement refusal = browser.await(By.cssSelector("dialog.dlg .grant-line[data-answer='refused'] "
+                + ".refusal[data-refusal='separation-of-duties']"));
+        assertThat(textContent(refusal.findElement(By.cssSelector(".refusal-h")))).isEqualTo(GovernanceServer.STEWARDS
+                + " sets labels and holds in trading, and data and tags never share a group.");
+        assertThat(refusal.findElements(By.cssSelector(".fine"))).as("the catalog's reason, needed only when the "
+                + "dialog cannot say which duty").isEmpty();
+        assertThat(grantButton().isEnabled()).isFalse();
+        closeDialog();
 
         // Grants by group, on the governance page, from a link that names the group.
         browser.open("/ui/#p=governance&c=trading&tab=grants&g=" + GovernanceServer.STEWARDS);
@@ -739,6 +808,134 @@ class ConsoleBrowserTest {
         assertThat(browser.await(By.cssSelector("#governance-grants input[aria-label='Group']")).getDomProperty("value"))
                 .isEqualTo(GovernanceServer.STEWARDS);
         assertThat(browser.await(By.cssSelector(".duty[data-duty='tags']")).getText()).contains("granted");
+    }
+
+    /**
+     * The Grant access dialog (Atelier, 2026-11-24; backlog 248), as the demo's gary, a grant admin: the groups the
+     * catalog knows, each with its duties, and the configured grant admins marked, not offered; the access in words, only
+     * what means something on the object; a path found from the Grants page; and the live line before Grant, from the
+     * grant's preview: one already held, one refused (his own group, and tags for a group that holds data), and one made,
+     * marked in the list with its record a link away. On an Access tab the object is fixed, and a grant from above that
+     * already gives the access is named.
+     */
+    @Test
+    void theGrantAccessDialogShowsAGrantMadeOneAlreadyHeldAndOneRefused() {
+        String group = "console-dialog-" + Api.suffix();
+        signIn(gary());
+        browser.open("/ui/#p=grants&c=trading");
+        WebElement dialog = openGrantAccess("#governance-grants .ph");
+        assertThat(driver.findElement(By.cssSelector("dialog.dlg #dlg-h")).getText()).isEqualTo("Grant access in trading");
+        assertThat(liveLine()).isEqualTo("Pick a group and the access to grant.");
+        assertThat(grantButton().isEnabled()).isFalse();
+        assertThat(textContent(dialog.findElement(By.cssSelector(".on-now")))).isEqualTo("trading · the whole catalog");
+        assertThat(dialog.findElements(By.cssSelector(".acc span"))).extracting(ConsoleBrowser::textContent).containsExactly(
+                "See it", "Read its data", "Read and write rows", "Change it (schema, properties, maintenance)",
+                "Create tables, views and namespaces in it", "Set labels and holds", "Manage grants");
+        assertThat(dialog.findElements(By.cssSelector(".acc code"))).extracting(ConsoleBrowser::textContent).containsExactly(
+                "describe", "select", "write", "modify", "create", "manage-tags", "manage-grants");
+
+        // The groups that hold a grant here, each with its duties; the grant admins hold theirs by configuration and
+        // can be granted nothing, so they are marked, not offered.
+        WebElement stewards = browser.await(groupChoice(GovernanceServer.STEWARDS));
+        assertThat(stewards.findElements(By.cssSelector(".grp-d .pill"))).extracting(ConsoleBrowser::textContent)
+                .containsExactly("Tags");
+        assertThat(driver.findElement(groupChoice(IssuerForTests.GROUP)).findElements(By.cssSelector(".grp-d .pill")))
+                .extracting(ConsoleBrowser::textContent).contains("Data");
+        WebElement admins = driver.findElement(By.cssSelector("dialog.dlg .grp.cfg[data-group='"
+                + GovernanceServer.GRANT_ADMINS + "']"));
+        assertThat(admins.getTagName()).isEqualTo("span");
+        assertThat(admins.getDomAttribute("aria-disabled")).isEqualTo("true");
+        assertThat(admins.findElements(By.cssSelector(".pill"))).extracting(ConsoleBrowser::textContent)
+                .containsExactly("Manages grants on every catalog", "Yours");
+        assertThat(textContent(dialog.findElement(By.cssSelector(".grp-cfg-h"))))
+                .isEqualTo("Set by the deployment: these hold no grant.");
+
+        // Already held: stewards' manage-tags on the catalog. Grant would change nothing.
+        stewards.click();
+        assertThat(browser.await(By.cssSelector("dialog.dlg input[aria-label='Group']")).getDomProperty("value"))
+                .isEqualTo(GovernanceServer.STEWARDS);
+        browser.await(By.cssSelector("dialog.dlg input[name='pv'][value='manage-tags']")).click();
+        assertThat(answer()).isEqualTo("unchanged");
+        assertThat(liveLine()).startsWith("Already held: manage-tags on trading, granted by ");
+        assertThat(grantButton().isEnabled()).isFalse();
+
+        // Refused: his own group, and tags for the testers, who hold data (D18). Grant stays off.
+        grant("select", GovernanceServer.GRANT_ADMINS);
+        assertThat(answer()).isEqualTo("refused");
+        WebElement self = browser.await(By.cssSelector("dialog.dlg .refusal[data-refusal='self-grant']"));
+        assertThat(textContent(self.findElement(By.cssSelector(".refusal-h"))))
+                .isEqualTo("You belong to grant-admins. No one grants to their own group: ask another grant admin.");
+        assertThat(self.findElements(By.cssSelector(".fine"))).isEmpty();
+        assertThat(grantButton().isEnabled()).isFalse();
+        grant("manage-tags", IssuerForTests.GROUP);
+        assertThat(answer()).isEqualTo("refused");
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg .refusal[data-refusal='separation-of-duties'] "
+                + ".refusal-h")))).isEqualTo(IssuerForTests.GROUP
+                + " changes data in trading, and data and tags never share a group.");
+        assertThat(grantButton().isEnabled()).isFalse();
+
+        // Made: a group the catalog does not know yet, on a namespace found by its path.
+        grant("select", group);
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg [data-new-group]")))).isEqualTo(group
+                + " holds no grant in trading yet. The catalog can't list your directory's groups, so check the spelling.");
+        driver.findElement(By.cssSelector("dialog.dlg input[aria-label='Find a namespace, table or view']"))
+                .sendKeys(top + " equities");
+        browser.await(By.cssSelector("dialog.dlg button.on-hit[data-path='" + dotted(equities) + "']")).click();
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg .on-now code")))).isEqualTo(dotted(equities));
+        assertThat(answer()).isEqualTo("admitted");
+        assertThat(liveLine()).isEqualTo(group + " will read every table and view in " + dotted(equities)
+                + ", now and later.");
+        grantButton().click();
+        WebElement made = browser.awaitText(By.cssSelector("dialog.dlg #grant-result .granted"),
+                "Granted select on " + dotted(equities) + " to " + group + ".");
+        assertThat(made.getText()).contains("It is in the audit trail.");
+        assertThat(made.findElement(By.cssSelector("a[data-act='see-record']")).getDomAttribute("href"))
+                .isEqualTo("#p=audit&c=trading&kind=grant");
+        assertThat(textContent(driver.findElement(By.cssSelector("dialog.dlg .dlg-acts button.ghost"))))
+                .as("nothing is left to cancel").isEqualTo("Close");
+        closeDialog();
+        browser.await("the list is not of " + group, d -> d.getCurrentUrl().endsWith("#p=grants&c=trading&g=" + group));
+        WebElement row = browser.await(By.cssSelector("#grants-list tr[data-group='" + group
+                + "'][data-privilege='select'][data-path='" + dotted(equities) + "']"));
+        assertThat(row.getDomAttribute("class")).isEqualTo("is-new");
+
+        // A table's Access tab: the object is fixed, and create, which means nothing there, is not offered.
+        browser.open("/ui/#" + at("table", eu, "trades", "access"));
+        dialog = openGrantAccess("#access-tab > .access-acts");
+        assertThat(driver.findElement(By.cssSelector("dialog.dlg #dlg-h")).getText())
+                .isEqualTo("Grant access on " + dotted(eu) + ".trades");
+        assertThat(textContent(dialog.findElement(By.cssSelector(".on-now")))).isEqualTo(dotted(eu) + ".trades · table");
+        assertThat(dialog.findElements(By.cssSelector("input[aria-label='Find a namespace, table or view']"))).isEmpty();
+        assertThat(dialog.findElements(By.cssSelector(".acc code"))).extracting(ConsoleBrowser::textContent)
+                .containsExactly("describe", "select", "write", "modify", "manage-tags", "manage-grants");
+        closeDialog();
+
+        // A view's: neither create nor write. The group reads it already through the namespace's grant, which the
+        // line names; the grant made here is marked among those that reach the view.
+        browser.open("/ui/#" + at("view", equities, "daily", "access"));
+        dialog = openGrantAccess("#access-tab > .access-acts");
+        assertThat(dialog.findElements(By.cssSelector(".acc code"))).extracting(ConsoleBrowser::textContent)
+                .containsExactly("describe", "select", "modify", "manage-tags", "manage-grants");
+        assertThat(dialog.findElements(By.cssSelector(".acc span"))).extracting(ConsoleBrowser::textContent)
+                .contains("Change it (definition, properties)");
+        grant("select", group);
+        assertThat(answer()).isEqualTo("admitted");
+        assertThat(liveLine()).isEqualTo(group + " will read " + dotted(equities) + ".daily.");
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg .grant-line [data-through]"))))
+                .startsWith("It already has this through select on " + dotted(equities) + ", granted by gary ")
+                .endsWith(". A grant here stands if that one is revoked.");
+        grantButton().click();
+        browser.awaitText(By.cssSelector("dialog.dlg #grant-result .granted"),
+                "Granted select on " + dotted(equities) + ".daily to " + group + ".");
+        closeDialog();
+        WebElement here = browser.await(By.cssSelector(".grants-reach tr[data-group='" + group
+                + "'][data-privilege='select'][data-on='here']"));
+        assertThat(here.getDomAttribute("class")).isEqualTo("is-new");
+        browser.await("the grant made is not brought into view", d -> (Boolean) driver.executeScript(
+                "const r = document.querySelector('.grants-reach tr.is-new').getBoundingClientRect();"
+                        + " return r.top >= 0 && r.bottom <= window.innerHeight;"));
+        assertThat(driver.findElement(By.cssSelector(".grants-reach tr[data-group='" + group
+                + "'][data-privilege='select'][data-on='namespace']")).getDomAttribute("class")).isNull();
     }
 
     @Test
@@ -1401,8 +1598,23 @@ class ConsoleBrowserTest {
 
     /** The tester: create and modify on the catalog, so may read everything but the audit trail. */
     private String tester() {
+        return person("tester", IssuerForTests.GROUP);
+    }
+
+    /** The demo's ana (demo/README.md): create and modify on the catalog, and no grant to manage. */
+    private String ana() {
+        return person("ana", IssuerForTests.GROUP);
+    }
+
+    /** The demo's gary (demo/README.md): a grant admin, who reads no data (D18). */
+    private String gary() {
+        return person("gary", GovernanceServer.GRANT_ADMINS);
+    }
+
+    /** A console sign-in's token for {@code name} in {@code groups}. */
+    private String person(String name, String... groups) {
         Instant now = clock.instant();
-        return IssuerForTests.sign(IssuerForTests.claims("tester", "nuna-console", IssuerForTests.GROUP)
+        return IssuerForTests.sign(IssuerForTests.claims(name, "nuna-console", groups)
                 .issueTime(Date.from(now.minusSeconds(5)))
                 .expirationTime(Date.from(now.plus(Duration.ofHours(1))))
                 .build());
@@ -1555,14 +1767,63 @@ class ConsoleBrowserTest {
         return By.cssSelector(".nc-main tr[data-group='" + group + "'][data-privilege='" + privilege + "']");
     }
 
+    /**
+     * Opens Grant access from the page's button unless it is open, types the group, picks the access and waits for the
+     * live line to answer (backlog 248).
+     */
     private void grant(String privilege, String group) {
-        WebElement input = browser.await(By.cssSelector(".nc-main form input[aria-label='Group']"));
+        if (driver.findElements(By.cssSelector("dialog.dlg form.grant-dlg")).isEmpty()) {
+            openGrantAccess(".nc-main");
+        }
+        WebElement input = browser.await(By.cssSelector("dialog.dlg input[aria-label='Group']"));
         input.clear();
         input.sendKeys(group);
-        new Select(driver.findElement(By.cssSelector(".nc-main form select[aria-label='Privilege']")))
-                .selectByValue(privilege);
-        driver.findElement(By.xpath("//div[contains(@class,'nc-main')]//form//button[@type='submit']"
-                + "[normalize-space()='Grant']")).click();
+        browser.await(By.cssSelector("dialog.dlg input[name='pv'][value='" + privilege + "']")).click();
+        answer();
+    }
+
+    /**
+     * Opens Grant access from its button within {@code within}, scrolled to the middle of the window first: at the top
+     * of an Access tab, scrolling it just into view leaves it under the sticky header.
+     */
+    private WebElement openGrantAccess(String within) {
+        WebElement button = browser.await(By.cssSelector(within + " [data-act='grant-access']"));
+        driver.executeScript("arguments[0].scrollIntoView({block: 'center'})", button);
+        button.click();
+        return browser.await(By.cssSelector("dialog.dlg form.grant-dlg"));
+    }
+
+    /** The Grant access dialog's live line, once the grant's preview has answered: admitted, unchanged or refused. */
+    private String answer() {
+        return browser.await("the live line did not answer", d -> {
+            String answer = d.findElement(By.cssSelector("dialog.dlg .grant-line")).getDomAttribute("data-answer");
+            return List.of("admitted", "unchanged", "refused", "error").contains(answer) ? answer : null;
+        });
+    }
+
+    /** The live line's first sentence. */
+    private String liveLine() {
+        return textContent(browser.await(By.cssSelector("dialog.dlg .grant-line > p")));
+    }
+
+    private WebElement grantButton() {
+        return driver.findElement(By.cssSelector("dialog.dlg .dlg-acts button[type='submit']"));
+    }
+
+    /** A group the dialog offers, by name. */
+    private static By groupChoice(String group) {
+        return By.cssSelector("dialog.dlg button.grp[data-group='" + group + "']");
+    }
+
+    private void closeDialog() {
+        driver.findElement(By.cssSelector("dialog.dlg button.dlg-x")).click();
+        browser.await("the dialog did not close", d -> d.findElements(By.cssSelector("dialog.dlg")).isEmpty());
+    }
+
+
+    /** A dotted path, as the console writes one for people. */
+    private static String dotted(List<String> levels) {
+        return String.join(".", levels);
     }
 
     /** The audit tab once its records and the window it read are shown. */

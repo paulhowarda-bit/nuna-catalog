@@ -11,7 +11,7 @@ D13 keeps out of the database (the catalog turns them into meters, catalog-metri
 
 ## The reads
 
-Four routes, all answering JSON. Times are ISO-8601 instants, kept to the millisecond.
+Six routes, all answering JSON. Times are ISO-8601 instants, kept to the millisecond.
 
 | Route | Who may call | Returns |
 |---|---|---|
@@ -19,10 +19,13 @@ Four routes, all answering JSON. Times are ISO-8601 instants, kept to the millis
 | `GET /management/v1/maintenance/estate` | Anyone; each table is shown only to a caller with `select` on it | Every table, one row each, a page at a time |
 | `GET /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health` | `select` on the table | One table's health |
 | `GET /management/v1/maintenance/scans` | Platform operators (`nuna.security.platform-operator-groups`) | The worker's recent scans and its last successful one |
+| `GET /management/v1/catalogs/{catalog}/maintenance/readiness` | `describe` on the catalog, or a platform operator; names only to those who may `modify` it or manage its grants, and platform operators | Whether the worker can maintain the catalog, step by step |
+| `GET /management/v1/maintenance/storage-setup` | Platform operators | For each storage profile, what to set up outside the catalog so the worker can maintain its catalogs |
 
 A refusal is 403 `ForbiddenException`, except on a table's health to a caller that holds nothing on the table: that is
-404 `NoSuchTableException`, the answer for a table that does not exist (D18, backlog 73). Every refusal is audited, as on
-every management route.
+404 `NoSuchTableException`, the answer for a table that does not exist (D18, backlog 73), and on readiness to a caller
+that holds nothing in the catalog: 404 `NoSuchWarehouseException`, as for a catalog that does not exist (item 68).
+Every refusal is audited, as on every management route; a read that is answered is not.
 
 ### The neediest tables
 
@@ -209,7 +212,19 @@ kept even when 50 failed scans have come since.
       "started-at": "2027-03-28T01:00:00Z",
       "ended-at": "2027-03-28T01:00:04Z",
       "outcome": "succeeded",
-      "failures": { "orphan-scan": 1 }
+      "failures": { "orphan-scan": 1 },
+      "groups": ["nuna-maintenance"],
+      "storage": [
+        {
+          "kind": "minio",
+          "endpoint": "https://silo.example:9000",
+          "prefixes": [
+            { "prefix": "s3://lake/tables", "listed": "ok", "deleted": 12, "delete-refused": 0, "delete-failed": 0 },
+            { "prefix": "s3://ledger-warehouse/tables", "listed": "refused", "list-code": "AccessDenied",
+              "deleted": 0, "delete-refused": 3, "delete-failed": 0, "delete-code": "AccessDenied" }
+          ]
+        }
+      ]
     }
   ],
   "last-success": { ... }
@@ -217,6 +232,24 @@ kept even when 50 failed scans have come since.
 ```
 
 - `worker` is the maintenance principal that ran it.
+- `groups` are the groups its token carried when it reported (backlog 250): the groups its grants are held by. Absent
+  for a scan kept before the catalog recorded them.
+- `storage` is what the worker's own storage identity reached in that scan (backlog 250), one entry for each of its
+  stores (`nuna.maintenance.storage`), by kind (`s3`, `minio`, `ceph`) and endpoint as the worker's settings name
+  them, with the prefixes the catalog gave it there at that scan (item 256; none when the worker could not read them).
+  `endpoint` is absent from a scan an earlier release reported for AWS S3's own. Each prefix has:
+  - `listed`: at the scan's start the worker lists at most one key beneath the prefix, as its delete policy reads it
+    (`<prefix>/`). `ok` when the store let it, `refused` when the store answered with an error, whose code is
+    `list-code` (`AccessDenied`, `NoSuchBucket`, ...), and `failed` when the store did not answer, `list-code` then
+    naming the client's failure (`SdkClientException`).
+  - `deleted`, `delete-refused` and `delete-failed`: the objects beneath it the worker deleted in that scan, the store
+    refused it (each key of a DeleteObjects answered with an error), and those it could not reach the store to delete;
+    `delete-code` is the code of the first not deleted. The start's report carries 0s; the end's replaces it.
+
+  A report names prefixes and the store's codes, never an object key, a credential or the store's message. `storage`
+  is absent for a scan reported by a worker of an earlier release, and for a scan kept before the catalog recorded it.
+  The deletes beneath a prefix since a given time are the sum over the scans since; the first scan in the list with
+  `storage` holds what the worker last reached.
 - `outcome` is `succeeded` when the scan read the whole work list, as the worker's meters judge it, even if some jobs
   in it failed; `failed` when it could not. Absent while the scan runs, as is `ended-at`; a worker that died
   mid-scan leaves its scan that way.
@@ -225,6 +258,150 @@ kept even when 50 failed scans have come since.
 - A scan the worker could not report at all, because it could not reach the catalog, is not there. The worker's
   meters still count it.
 
+### Readiness
+
+`GET /management/v1/catalogs/{catalog}/maintenance/readiness` says, for each of the four steps the worker needs before
+it maintains a catalog, whether it is done (backlog 251; the console's checklist is backlog 252). Each step is `done`,
+`missing`, `refused` or `unknown`.
+
+```json
+{
+  "catalog": "ledger",
+  "names": true,
+  "reported-at": "2026-11-24T14:05:31.204Z",
+  "grant": { "state": "missing", "groups": [ { "group": "nuna-maintenance", "write": false } ] },
+  "storage": {
+    "state": "done",
+    "profile": "ledger-s3",
+    "endpoint": "https://silo.example:9000",
+    "prefixes": [
+      { "prefix": "s3://ledger-warehouse/tables",
+        "covered-by": { "kind": "s3", "endpoint": "https://silo.example:9000", "prefix": "s3://ledger-warehouse" } }
+    ]
+  },
+  "store": {
+    "state": "refused",
+    "code": "AccessDenied",
+    "deletes-since": "2026-11-24T14:00:02.117Z",
+    "prefixes": [
+      { "prefix": "s3://ledger-warehouse/tables", "listed": "refused", "list-code": "AccessDenied",
+        "deleted": 0, "delete-refused": 0, "delete-failed": 0 }
+    ]
+  },
+  "policy": { "state": "done", "jobs": ["snapshot-expiry", "compaction"] }
+}
+```
+
+The first three steps come from the newest scan that reported `storage` ("The scans"); before any has, they are
+`unknown`.
+
+| Step | `done` when | Otherwise |
+|---|---|---|
+| `grant` | A group the worker's token carried holds a grant on the catalog itself whose privilege gives `write` (`write` or `modify`), as the authorizer reads it: a grant on one namespace does not count | `missing` |
+| `storage` | Every allowed prefix of the catalog's storage profile is, or lies beneath, a prefix the worker reported, matched as the worker matches the locations it lists and deletes (`s3a://` and `s3n://` read as `s3://`, whole segments) | `missing` |
+| `store` | The store let the worker list beneath each allowed prefix, and refused none of its deletes there | `refused`, with the store's `code`, when it refused a listing or a delete; `unknown` while a prefix is not covered (no `code`), or when the store did not answer the listing (`code` names the client's failure) |
+| `policy` | The catalog's resolved maintenance policy turns at least one job on; `jobs` names them (`snapshot-expiry`, `orphan-removal`, `compaction`, `manifest-rewrite`) | `missing` |
+
+- `reported-at` is when the worker last reported what it reaches: the end of that scan, or its start while it runs.
+  Absent before any report.
+- The listing is judged by the newest scan with `storage`, the deletes by the newest such scan that has ended: a scan
+  reports its deletes only at its end, so one under way does not hide the refusals of the one before.
+- A `refused` anywhere outweighs an `unknown` elsewhere. `code` is the first such code among the allowed prefixes.
+- **Who reads it.** Those who may `describe` the catalog, and platform operators, who need no grant: they read it for
+  every catalog, as they read the worker's scans and the delete policies, unaudited (catalog-security, 2026-11-24,
+  backlog 252). D18 lets operators see every catalog's name, and the answer names no namespace, table or view; no
+  field of it ever may.
+- **Names.** `names` is true for a caller who may `modify` the catalog or manage its grants, and for platform
+  operators. Only then does the answer carry the worker's `groups` (each with whether it holds `write`), the profile's
+  name, its `endpoint` (absent for AWS S3's own), the allowed `prefixes`, what covers each (`covered-by`), what the
+  store answered beneath each (from the scans as above) and `deletes-since`, when the scan whose deletes are counted
+  started (absent before one has ended). Anyone else who may `describe` the catalog gets each step's `state`, the
+  store's `code` and the policy's `jobs`.
+
+### Storage setup
+
+`GET /management/v1/maintenance/storage-setup` says, for each catalog storage profile, what a platform operator does
+outside the catalog so the worker can maintain its catalogs (backlog 253; the console's "What to set up" is backlog
+254): the worker's settings for a store it does not reach yet, and the store's delete policies with the commands that
+apply them. The catalog writes all of it and applies none of it (D21, D30), and it never holds or gives a key of the
+worker's. Platform operators only (`StorageSetupRoutes`); a refusal is audited (D18), the read is not.
+
+Two MinIO profiles, by name: `ledger`, a new bucket on a store the worker does not reach yet, and `s3`, on the store it
+does. The policy texts are shortened here.
+
+```json
+{
+  "reported-at": "2026-11-24T14:05:31.204Z",
+  "profiles": [
+    {
+      "name": "ledger",
+      "catalogs": ["ledger"],
+      "kind": "minio",
+      "endpoint": "https://silo.example:9000",
+      "prefixes": ["s3://ledger-warehouse/tables"],
+      "maintenance-principal": "nuna-maintenance",
+      "worker": { "state": "not-reported" },
+      "worker-settings": {
+        "store": "ledger",
+        "yaml": "ledger:\n  kind: minio\n  endpoint: https://silo.example:9000\n  region: us-east-1\n  access-key-id: <the worker's access key on this store>\n",
+        "secret": "nuna.maintenance.storage.ledger.secret-access-key"
+      },
+      "store": {
+        "state": "generated",
+        "policies": [
+          { "apply-as": "user-policy", "except": "nuna-maintenance", "name": "nuna-no-delete-ledger",
+            "file": "nuna-no-delete-ledger.json", "policy": "{\"Version\":\"2012-10-17\",…}",
+            "commands": ["mc admin policy create <alias> nuna-no-delete-ledger nuna-no-delete-ledger.json",
+                         "mc admin policy attach <alias> nuna-no-delete-ledger --user <user>"] },
+          { "apply-as": "user-policy", "to": "nuna-maintenance", "name": "nuna-worker-ledger",
+            "file": "nuna-worker-ledger.json", "policy": "{\"Version\":\"2012-10-17\",…}",
+            "commands": ["mc admin policy create <alias> nuna-worker-ledger nuna-worker-ledger.json",
+                         "mc admin policy attach <alias> nuna-worker-ledger --user nuna-maintenance"] }
+        ]
+      }
+    },
+    {
+      "name": "s3",
+      "catalogs": ["sales", "warehouse"],
+      "kind": "minio",
+      "endpoint": "http://s3:9000",
+      "prefixes": ["s3://warehouse/tables"],
+      "maintenance-principal": "nuna-maintenance",
+      "worker": {
+        "state": "reported",
+        "prefixes": [
+          { "prefix": "s3://warehouse/tables", "listed": "ok", "deleted": 12, "delete-refused": 0, "delete-failed": 0 }
+        ]
+      },
+      "store": { "state": "generated", "policies": [ … ] }
+    }
+  ]
+}
+```
+
+| Field | What it holds |
+|---|---|
+| `reported-at` | When the worker last reported what it reaches, as for readiness; absent before any report |
+| `name`, `kind`, `endpoint`, `prefixes` | The profile: its kind (`s3` for AWS S3, `minio`, `ceph`), its endpoint as the catalog's settings write it, its allowed prefixes |
+| `catalogs` | The catalogs bound to the profile (`nuna.storage.catalogs`), by name; never a namespace, table or view (D18) |
+| `maintenance-principal` | The worker's identity on the store, as the profile names it; absent when it names none |
+| `worker` | `state` `reported` when the newest scan that reported storage shows an identity of the worker's of the profile's kind at its endpoint, compared as the worker compares them (scheme, host and port); then `prefixes`, what the store answered beneath each of the profile's prefixes, with the fields readiness gives beneath each (the listing from the newest scan with storage, the deletes from the newest such scan that has ended). A prefix with only `prefix` is one the worker has not reached: it takes a new profile's prefixes at its next scan, and only from a profile that names a maintenance principal. Otherwise `not-reported` |
+| `worker-settings` | Only while `worker` is `not-reported`: `store`, the name to give the store in the worker's settings (the profile's; any the settings do not use yet will do); `yaml`, to paste under `nuna.maintenance.storage`, with the store's kind, endpoint (as the profile writes it, so the worker matches them) and region, `access-key-id` marked `<the worker's access key on this store>` and, for a profile with a CA bundle, `ca-bundle` marked too; `secret`, the name its secret key takes in the release's secrets; and on AWS S3, `note`: with a role for the worker (IRSA, Pod Identity), leave the keys out. Then upgrade the nuna-maintenance release: the worker reads its settings only when it starts |
+| `store` | `state` `generated` with `policies`, the profile's delete policies, the texts `GET /management/v1/maintenance/delete-policies` gives, each with `commands` to run as an identity that may; or, for a profile naming no maintenance principal, `state` `unprotected` with `setting`, the catalog setting to add, `nuna.storage.profiles.<name>.maintenance-principal` |
+
+- **AWS S3 and Ceph:** one `bucket-policy` per bucket the profile's prefixes lie in: `bucket`, `profiles` (every
+  profile with prefixes in it: a bucket holds one policy, so each gets the same one, and it is merged into any policy
+  the bucket already has), `policy` and the command `aws s3api put-bucket-policy --bucket <bucket> --policy
+  '<policy>'`, with `--endpoint-url <endpoint>` on Ceph.
+- **MinIO:** two `user-policy` entries: `except`, attached to every user of the store but the worker, the catalog's
+  own included, and `to`, attached to the worker's user. Each has `name` (`nuna-no-delete-<profile>`,
+  `nuna-worker-<profile>`: one per profile, so two profiles on one store keep both), `file` (where to save `policy`)
+  and the commands `mc admin policy create <alias> <name> <file>` and `mc admin policy attach <alias> <name> --user
+  <user>`. `<alias>` is the operator's `mc` alias for the store, and `<user>` each other user.
+- The worker reports a store only once it reaches a prefix there, so a store whose profiles all name no maintenance
+  principal is never `reported`: its settings are given until a profile there names one and the worker has scanned.
+- Nothing in the answer is a key, a secret, the catalog's own role or keys, a KMS key or a CA bundle's path.
+
 ## The worker's reports
 
 The worker reports as a maintenance principal acting as itself (`nuna.security.maintenance-principals`), as with its
@@ -232,7 +409,7 @@ other management calls; anyone else gets 403. Each answers 204.
 
 | Route | Body |
 |---|---|
-| `PUT /management/v1/maintenance/scans/{scan id}` | `started-at`; once it has ended, `ended-at`, `outcome`, `failures` and for a failed scan `error` |
+| `PUT /management/v1/maintenance/scans/{scan id}` | `started-at` and `storage` (above, "The scans"); once it has ended, `ended-at`, `outcome`, `failures` and for a failed scan `error`. The catalog keeps the groups of the worker's token with it. |
 | `PUT /management/v1/maintenance/tables/{table id}/assessment` | The table's `catalog`, `namespace` and `name`, then `assessed-at`, `data-files`, `small-files`, `position-delete-files`, `deletion-vectors`, `equality-delete-files`, `reasons` and `score` |
 | `PUT /management/v1/maintenance/tables/{table id}/compaction` | The table's `catalog`, `namespace` and `name`, then `started-at`, `outcome` and once it has ended `ended-at` |
 | `PUT /management/v1/maintenance/jobs/{job id}` | A job of the night (maintenance-nights.md); for a job run on request, `requested-at` too, which marks the request started |
@@ -271,12 +448,27 @@ the waiting ones in the order the work list reads them.
 | Oracle | `V14__maintenance_requests.sql` | `maintenance_request`, and an index over the time asked |
 | MongoDB | step 12 (`MongoSchema`) | the `maintenance_request` collection, unique by table and job, and an index over the time asked |
 
+What a scan reaches (backlog 250) is two more columns of `maintenance_scan`, nullable and without a default, so the
+step changes only the table's definition and a server of the previous release goes on writing scans without them:
+`worker_groups` (one group a line) and `worker_storage` (a line for each store, then one for each of its prefixes,
+fields separated by tabs; `WorkerStorage.write`). MongoDB keeps them as arrays in the scan's document, with no step.
+
+| Store | Step | What it adds |
+|---|---|---|
+| PostgreSQL | `V17__worker_reach.sql` | `worker_groups`, `worker_storage` (`TEXT`) |
+| CockroachDB | `V16__worker_reach.sql` | `worker_groups`, `worker_storage` (`TEXT`) |
+| Oracle | `V18__worker_reach.sql` | `worker_groups`, `worker_storage` (`CLOB`) |
+
 ## Tests and bites
 
 | Test | Shows |
 |---|---|
-| `HealthSuite` (catalog-store-api, run on each store) | The latest assessment kept; reports for gone tables refused; the last compaction kept; the neediest order and paging; a purge deletes the health; recent scans and the last success kept. |
-| `catalog-server` `HealthRoutesTest` | The worker's reports make a table's health; only the worker reports; a report for a table gone or now another is refused; a reader sees only the neediest tables they may select; operators read the scans. |
+| `HealthSuite` (catalog-store-api, run on each store) | The latest assessment kept; reports for gone tables refused; the last compaction kept; the neediest order and paging; a purge deletes the health; recent scans and the last success kept; a scan's groups and storage kept, a refused listing as refused, the end's in place of the start's. |
+| `catalog-server` `HealthRoutesTest` | The worker's reports make a table's health; only the worker reports; a report for a table gone or now another is refused; a reader sees only the neediest tables they may select; operators read the scans, with the groups and storage each kept; a storage report holding a code where nothing was refused, a message for a code, or an unknown listing is a bad request. |
+| `catalog-store-api` `WorkerStorageTest` (fast) | What a storage report may hold, the text the SQL and Oracle stores keep it as, and the reported prefix that covers a location. |
+| `catalog-server` `ReadinessRoutesTest` (heavy) | Readiness: the first three steps unknown before a scan reports storage; every step done; write on a namespace or select on the catalog leaves the grant missing, a policy with every job off leaves the policy missing; a reported prefix beneath, beside or in another bucket leaves the storage missing and the store unknown; a refused listing or delete is refused with the store's code, a scan under way keeps the last ended scan's refused deletes, no answer is unknown with the client's failure, and `deletes-since` is when the counted deletes' scan started; names only to the tester (modify), the grant admin and an operator, states without names to a describer and a tag steward; an operator with no grant reads it with names, unaudited; refused to an outsider (404) and a bystander (403), the refusal audited and the read not. |
+| `catalog-server` `StorageSetupRoutesTest` (fast) | Storage setup, through the real route and guard over profiles as configured and a stand-in store of scans: refused to an analyst, a grant admin and the worker, each refusal audited, read by an operator unaudited; profiles by name with their catalogs, kind, endpoint, prefixes and principal; a new bucket on a MinIO or AWS S3 store the worker reaches (its endpoint spelled otherwise) gets no worker settings, a Ceph store behind a private CA, another AWS region and a MinIO store it does not reach get them, with the key's place marked, the secret's name and on AWS the note; before any report every store gets them, and an identity of another kind at the endpoint serves none; the listing from the newest report, the deletes from the newest ended one; MinIO's two policies named per profile with their `mc` commands, AWS S3's and Ceph's bucket policies (one shared by two profiles) with `put-bucket-policy`, `--endpoint-url` on Ceph; an unprotected profile's setting; no key, secret, role, KMS key or CA path. |
+| `catalog-maintenance` `StorageReportTest` (fast) | Through `Storage.of` and stand-in stores: each scan reports, by kind and endpoint, a listing let, refused (AccessDenied, NoSuchBucket) or failed, and the deletes done and refused with the store's code, counted afresh each scan; no key, credential or store message in any report. |
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
 | `catalog-server` `MaintenanceEstateTest` (fast) | Every table: a row for each table the caller may select and none for another; its assessment; a hold or freeze from any level above; a closed table counted only for a caller whose grants give select; fixed last night only by a compaction that succeeded; paging, the 500-row page and the 2,000 tables a page looks at. |
 | `catalog-server` `MaintenanceEstateRoutesTest` (heavy) | Every table through the server, with real reports, holds, freezes, grants and classifications; a caller who may select nothing gets no row. |
@@ -301,3 +493,28 @@ Maintenance on request has four bites in `bites/D30/`:
 - `requested-job-window-deadline` (`RequestedWorkTest`): a requested Job stops at the window's end, not the request's
   deadline.
 - `requested-job-waits-for-window` (`RequestedWorkTest`): a requested job waits for the cleanup window.
+
+What the worker reaches (backlog 250) has eight bites in `bites/D30/`:
+
+- `worker-refused-listing-reported-ok` (`StorageReportTest`): a refused listing is reported as let, with no code.
+- `worker-refused-deletes-counted-deleted` (`StorageReportTest`): keys the store refuses are counted as deleted.
+- `worker-storage-code-takes-a-message` (`WorkerStorageTest`): any text is kept as a store's code, a message naming a
+  key among them.
+- `worker-storage-text-swaps-delete-counts` (`WorkerStorageTest`): the SQL and Oracle stores read refused deletes as
+  failed and failed as refused.
+- `scan-end-keeps-start-storage-sql`, `scan-end-keeps-start-storage-oracle`, `scan-end-drops-storage-mongo`
+  (`HealthSuite` on each store): the end's report does not replace the start's storage.
+- `scan-groups-not-recorded` (`HealthRoutesTest`): a scan is kept without the groups of the worker's token.
+
+Readiness (backlog 251) has one bite in `bites/D30/`: `readiness-uncovered-prefix-done`
+(`ReadinessRoutesTest#aPrefixNoReportedPrefixCoversIsMissingAndItsStoreUnknown`), the storage step done whenever the
+worker has reported any storage, so an allowed prefix no reported prefix covers is never `missing`. Who reads it
+(backlog 252) has one in `bites/D18/`: `readiness-admits-every-caller`
+(`ReadinessRoutesTest#aCallerWhoMayNotDescribeTheCatalogIsRefusedAndAudited`), the `describe` check dropped with the
+platform operator's way past it, so a bystander reads the readiness and no refusal is audited.
+
+Storage setup (backlog 253) has two bites, each against `StorageSetupRoutesTest`:
+
+- `bites/D18/storage-setup-open`: anyone signed in reads it, and no refusal is audited.
+- `bites/D30/storage-setup-settings-for-a-reached-store`: every profile gets the worker's settings, a bucket on a store
+  the worker already reaches among them.

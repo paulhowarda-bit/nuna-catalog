@@ -36,7 +36,7 @@ public sealed interface WriteResult {
     record Refused(Reason reason) implements WriteResult {
     }
 
-    enum Subject { CATALOG, NAMESPACE, OBJECT, GRANT, STORAGE_PROFILE, ATTRIBUTE, HOLD, ENGINE, KEY, REF }
+    enum Subject { CATALOG, NAMESPACE, OBJECT, GRANT, STORAGE_PROFILE, ATTRIBUTE, HOLD, ENGINE, KEY, REF, RULE }
 
     enum Reason {
         /** The namespace still has child namespaces or active objects. */
@@ -69,6 +69,16 @@ public sealed interface WriteResult {
          * a table or view of the namespace, so the namespace and its governance stay ({@link
          * NamespaceStore#dropNamespace}, backlog 157).
          */
-        REFERENCED
+        REFERENCED,
+        /**
+         * The table does not carry the row/column-policy flag set to true, which a rule needs
+         * ({@link RowColumnRuleStore#putRule}, D20, backlog 115).
+         */
+        NOT_FLAGGED,
+        /**
+         * The table has row filters or column masks, so its row/column-policy flag stays until they are removed
+         * ({@link GovernanceStore#removeAttribute}, D20, backlog 115).
+         */
+        HAS_RULES
     }
 }

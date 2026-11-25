@@ -56,6 +56,14 @@ class ManagementGuard {
         }
     }
 
+    /**
+     * Whether the caller holds {@code privilege} on the target, asked to decide what an answer holds rather than
+     * whether to give it: nothing is refused, so nothing is audited.
+     */
+    boolean allows(Request request, Target target, String operation, Privilege privilege) {
+        return authorizer.decide(request.caller(), on(target), new Operation(operation, privilege, false)).allowed();
+    }
+
     /** {@code privilege} on {@code on}, which audit records name {@code named}; a refusal is 403. */
     void require(Request request, Authorizer.Target on, nuna.catalog.audit.Securable named, String operation,
                  Privilege privilege) {
@@ -111,7 +119,8 @@ class ManagementGuard {
         return denials.refuse(request.actor(), operation, target, null, "dr_freeze", message);
     }
 
-    private boolean operator(Request request) {
+    /** Whether the caller is a platform operator (D18), asked to decide what an answer holds: nothing is audited. */
+    boolean operator(Request request) {
         return request.caller().subject().groups().stream().anyMatch(separation.platformOperatorGroups()::contains);
     }
 

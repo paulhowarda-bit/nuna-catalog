@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.net.httpserver.HttpServer;
+import nuna.catalog.objectstore.StoreKind;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -110,8 +111,8 @@ class TokenSourceTest {
     private static WorkerSettings settings(WorkerSettings.Token token, WorkerSettings.Compaction compaction) {
         return new WorkerSettings(URI.create("http://nuna-catalog:8181/"), Duration.ofMinutes(10),
                 new CleanupWindow(LocalTime.of(1, 0), LocalTime.of(5, 0), ZoneId.of("Europe/London")),
-                Duration.ofDays(1), 100, token, Map.of("s3", new WorkerSettings.StorageProfile(
-                        List.of("s3://lake/tables"), null, "us-east-1", false, null, null, null)), compaction,
+                Duration.ofDays(1), 100, token, Map.of("s3", new WorkerSettings.Store(StoreKind.S3,
+                        URI.create("https://s3.us-east-1.amazonaws.com"), "us-east-1", null, null, null)), compaction,
                 Duration.ofHours(2));
     }
 

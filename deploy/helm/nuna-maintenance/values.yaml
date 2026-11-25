@@ -34,12 +34,23 @@ config:
         # endpoint: https://idp.example.internal/oauth2/token
         # client-id: nuna-maintenance
         audience: nuna-catalog
-      # Its own storage identity, per store: the only identity the stores' delete policy lets delete (D21, D30).
-      # Each: prefixes (every table location the catalog lists must lie under one), endpoint (none for AWS S3),
-      # region, path-style-access, access-key-id (secret-access-key in `secrets`); no keys means the AWS SDK's
-      # default chain, e.g. IRSA through serviceAccount.annotations. For a store whose certificate a private CA
-      # signed, ca-bundle: a PEM file of that CA, mounted from storageCaConfigMap, e.g.
-      # /etc/nuna/storage-ca/ceph.crt; it needs the endpoint, written as the catalog's profile writes it.
+      # Its own storage identity, one per store, by a name of your choosing: the only identity the stores' delete
+      # policy lets delete (D21, D30). Where on each store it lists and deletes is not set here: at every scan the
+      # worker reads the prefixes of every catalog storage profile that names a maintenance-principal, and serves
+      # a profile with the store whose kind and endpoint are the profile's (item 256; deploy/README.md, "Delete
+      # rights"). A profile no store matches, or two do, is skipped and logged. Each store: kind (s3, minio or
+      # ceph, as the catalog's profiles name it), endpoint (required, written exactly as the catalog's profiles
+      # write it; the regional endpoint on AWS S3, e.g. https://s3.us-east-1.amazonaws.com), region,
+      # access-key-id (secret-access-key in `secrets`); no keys means the AWS SDK's default chain, e.g. IRSA
+      # through serviceAccount.annotations. For a store whose certificate a private CA signed, ca-bundle: a PEM
+      # file of that CA, mounted from storageCaConfigMap, e.g. /etc/nuna/storage-ca/ceph.crt.
+      # storage:
+      #   ceph:
+      #     kind: ceph
+      #     endpoint: https://rgw.example.internal:7480
+      #     region: us-east-1
+      #     access-key-id: nuna-maintenance
+      #     ca-bundle: /etc/nuna/storage-ca/ceph.crt
       storage: {}
       # The DR verifier (D37, amended 2026-11-20; docs/observability/dr-watermark.md), off unless a replica is
       # named. Every verify-interval it reads the catalog's DR work list, checks each table's and view's newer
@@ -48,17 +59,16 @@ config:
       # replicas naming the DR store itself (deploy/README.md, "Recovering in the DR region").
       dr:
         verify-interval: PT1M
-        # A replica per storage profile, under the profile's name in storage: the same buckets and paths on the DR
-        # region's endpoint. Each: endpoint (none for AWS S3), region, path-style-access, access-key-id of keys that
-        # may only read the DR store (its secret-access-key in `secrets`, as
-        # nuna.maintenance.dr.replicas.<profile>.secret-access-key); no keys means the AWS SDK's default chain. For a
-        # DR store whose certificate a private CA signed, ca-bundle: a PEM file of that CA, mounted from
-        # storageCaConfigMap, e.g. /etc/nuna/storage-ca/ceph-dr.crt.
+        # A replica per store, under the store's name in storage: the same buckets and paths, those the catalog's
+        # prefixes give for that store, on the DR region's endpoint of the same kind. Each: endpoint (none for AWS
+        # S3), region, access-key-id of keys that may only read those prefixes in the DR store (its
+        # secret-access-key in `secrets`, as nuna.maintenance.dr.replicas.<store>.secret-access-key); no keys means
+        # the AWS SDK's default chain. For a DR store whose certificate a private CA signed, ca-bundle: a PEM file
+        # of that CA, mounted from storageCaConfigMap, e.g. /etc/nuna/storage-ca/ceph-dr.crt.
         # replicas:
         #   ceph:
         #     endpoint: https://ceph-dr.example.internal:7480
         #     region: us-east-1
-        #     path-style-access: true
         #     access-key-id: nuna-dr-reader
         #     ca-bundle: /etc/nuna/storage-ca/ceph-dr.crt
       # Compaction as Kubernetes Jobs (D30 (3), amended 2026-11-15): in the cleanup window, one Job per table that
@@ -67,7 +77,7 @@ config:
       # named: the repo's Spark image, catalog-tests-engines/images/spark. It needs the client-credentials grant
       # and token.scope (the Job signs in itself), and a namespace for the Jobs alone, created beforehand: never the
       # release's nor the catalog's. The chart grants the worker's service account get and create on Jobs and
-      # create on Secrets there, and create on ConfigMaps when a storage profile names a ca-bundle (each Job's copy
+      # create on Secrets there, and create on ConfigMaps when a store in storage names a ca-bundle (each Job's copy
       # of its store's CA), and makes job-service-account there, an account with no rights that the Jobs' pods run
       # as.
       compaction:
@@ -83,7 +93,7 @@ config:
 
 # Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
 # the property's value, e.g. nuna.maintenance.token.client-secret,
-# nuna.maintenance.storage.<profile>.secret-access-key or nuna.maintenance.dr.replicas.<profile>.secret-access-key.
+# nuna.maintenance.storage.<store>.secret-access-key or nuna.maintenance.dr.replicas.<store>.secret-access-key.
 secrets:
   # A Secret you manage in the release's namespace. Takes precedence over `values`.
   existingSecret: ""
@@ -91,9 +101,9 @@ secrets:
   values: {}
 
 # A ConfigMap in the release's namespace holding the CA bundles of on-prem stores whose certificates a private CA
-# signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A storage profile or DR replica names its file as
-# ca-bundle; the worker's S3 clients to that endpoint trust it, beside the JVM's CAs. A compaction Job for a table in that
-# profile gets a copy, in a ConfigMap of its own in the Jobs' namespace, and its Spark trusts it beside the image's
+# signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A store in storage or a DR replica names its file as
+# ca-bundle; the worker's S3 clients to that endpoint trust it, beside the JVM's CAs. A compaction Job for a table on that
+# store gets a copy, in a ConfigMap of its own in the Jobs' namespace, and its Spark trusts it beside the image's
 # JDK CAs (backlog 88). The catalog's chart takes the same ConfigMap (docs/install-at-work.md).
 storageCaConfigMap:
   name: ""

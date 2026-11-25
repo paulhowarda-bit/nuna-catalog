@@ -13,12 +13,12 @@ import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, f
 import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {policyKey, sourceWords, tableHealthTab} from './health.js';
-import {accessTab, actionWords, auditTab, exportDialog, governanceSummary} from './panels.js';
+import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceSummary, TRINO_WORDS} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
 import {readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
-import {closedNote, trailOpen, trailWords} from './access.js';
+import {closedNote, openingTab, trailOpen, trailWords} from './access.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
 
@@ -56,6 +56,15 @@ function refusedLoad(error, others, ref) {
 }
 
 /**
+ * A table flagged for row and column rules refuses the console's load, which is storage access, to everyone (D20): its
+ * Overview, Schema and History say why instead of the refusal (Atelier, 2026-11-24; backlog 241).
+ */
+async function flaggedLoad(error, target) {
+  if (error.status !== 403 || !(await api.governance(target).then(flaggedHere, () => false))) return null;
+  return h('div', {class: 'notice', id: 'read-through-trino'}, icon('info'), h('span', null, TRINO_WORDS));
+}
+
+/**
  * A tab of main's that a page read through a ref still shows (item 109): with the note `what` on what is main's, or
  * nothing when the ref is not live, as `loaded` (the object's load through the ref) answers.
  */
@@ -88,12 +97,20 @@ function addCount(tabs, key, n) {
 const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['history', 'History'], ['access', 'Access'], ['maintenance', 'Maintenance'],
   ['audit', 'Audit']];
 
+/**
+ * The tab a link to a table or view opens: the one it names, tab=overview for Overview, else the one the caller opens
+ * on (openingTab). Overview's own link names it when the caller opens elsewhere, so it is a tab away (backlog 245).
+ */
+const openedTab = (target, tab) => tab === 'overview' ? '' : tab ?? openingTab(target.catalog);
+const tabHref = target => k => objectHref(target, k || (openingTab(target.catalog) ? 'overview' : null));
+
 export function tablePage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'table-page'});
-  const key = tab === 'settings' ? tab : TABLE_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
+  const want = openedTab(target, tab);
+  const key = want === 'settings' ? want : TABLE_TABS.some(([k]) => k === want) ? want : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('table')), h('h1', {tabindex: '-1'}, target.name));
   const tabs = tabsNav('Table', TABLE_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key === 'settings' ? '' : key,
-    k => objectHref(target, k || null));
+    tabHref(target));
   // The export is main's metadata and journal, so a page read through a ref offers none (item 109; item 172).
   const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(),
     h('a', {class: 'btn sm', href: objectHref(target, 'settings'), 'data-act': 'settings'}, 'Settings'), target.ref ? null
@@ -137,7 +154,7 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
-          return refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
+          return await flaggedLoad(error, target) || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
         const shown = {'': overviewTab, schema: (x, y) => h('div', {class: 'stack'}, schemaTab(x, y), partitionTab(x, y)),
@@ -741,10 +758,10 @@ const VIEW_TABS = [['', 'Overview'], ['versions', 'Versions'], ['access', 'Acces
 
 export function viewPage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'view-page'});
-  const key = VIEW_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
+  const want = openedTab(target, tab);
+  const key = VIEW_TABS.some(([k]) => k === want) ? want : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('view')), h('h1', {tabindex: '-1'}, target.name));
-  const tabs = tabsNav('View', VIEW_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key,
-    k => objectHref(target, k || null));
+  const tabs = tabsNav('View', VIEW_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key, tabHref(target));
   const side = h('div', {class: 'side'}, copyLinkButton());
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, side);
   main.append(head, tabs);

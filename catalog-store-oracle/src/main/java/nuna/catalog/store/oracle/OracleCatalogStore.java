@@ -13,6 +13,7 @@ import nuna.catalog.store.CompactionRun;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
 import nuna.catalog.store.IdempotencyResult;
@@ -38,6 +39,7 @@ import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.StoreException;
@@ -63,6 +65,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -98,6 +101,7 @@ public final class OracleCatalogStore implements CatalogStore {
     private final OracleNamespaces namespaces;
     private final OracleObjects objects;
     private final OracleGrants grants;
+    private final OracleRules rules;
     private final OracleIdempotency idempotency;
     private final OracleOutbox outbox;
     private final OracleGovernance governance;
@@ -125,6 +129,7 @@ public final class OracleCatalogStore implements CatalogStore {
         this.namespaces = new OracleNamespaces(transactions);
         this.objects = new OracleObjects(transactions);
         this.grants = new OracleGrants(transactions);
+        this.rules = new OracleRules(transactions);
         this.idempotency = new OracleIdempotency(transactions);
         this.outbox = new OracleOutbox(transactions);
         this.governance = new OracleGovernance(transactions);
@@ -586,6 +591,28 @@ public final class OracleCatalogStore implements CatalogStore {
     @Override
     public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {
         return grants.listOn(securable, page);
+    }
+
+    @Override
+    public Page<GrantGroup> listGrantGroups(UUID catalogId, PageRequest page) {
+        return grants.listGroups(catalogId, page);
+    }
+
+    // ---- row filters and column masks ----
+
+    @Override
+    public WriteResult putRule(RowColumnRule rule, OptionalLong expected, String setBy, Change change) {
+        return rules.put(rule, expected, setBy, change);
+    }
+
+    @Override
+    public WriteResult removeRule(UUID catalogId, UUID tableId, String group, OptionalLong expected, Change change) {
+        return rules.remove(catalogId, tableId, group, expected, change);
+    }
+
+    @Override
+    public List<RowColumnRule.Stored> rulesOn(UUID tableId) {
+        return rules.on(tableId);
     }
 
     // ---- idempotency ----

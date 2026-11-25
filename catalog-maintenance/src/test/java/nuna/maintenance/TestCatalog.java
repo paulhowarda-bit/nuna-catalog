@@ -125,6 +125,8 @@ final class TestCatalog {
     final nuna.catalog.store.CatalogStore store;
     /** The server's database, as its JDBC URL. */
     private final String database;
+    /** The store's endpoint as the server's storage profile names it, which the worker's store identity names too. */
+    final URI storeEndpoint;
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
 
     /** The containers and the issuer every server here shares. */
@@ -159,8 +161,10 @@ final class TestCatalog {
         Map<String, Object> properties = new LinkedHashMap<>(s3.serverProperties(PROFILE, bucket));
         if (!host.equals("localhost") && s3.kind != TestS3.Kind.AWS) {
             URI endpoint = s3.endpoint;
-            properties.put("nuna.storage.profiles." + PROFILE + ".endpoint", URI.create(endpoint.getScheme() + "://"
-                    + host + ":" + endpoint.getPort()).toString());
+            storeEndpoint = URI.create(endpoint.getScheme() + "://" + host + ":" + endpoint.getPort());
+            properties.put("nuna.storage.profiles." + PROFILE + ".endpoint", storeEndpoint.toString());
+        } else {
+            storeEndpoint = s3.endpoint;
         }
         properties.put("spring.datasource.url", database);
         properties.put("spring.datasource.username", shared.postgres().getUsername());
@@ -365,14 +369,13 @@ final class TestCatalog {
     }
 
     /**
-     * The worker's own storage identity on the run's store (D30) as its settings give it: the only one a delete policy
-     * lets delete. On AWS it names no keys, so it is the SDK's default chain, in a test JVM the run's sign-in: storage
-     * as the worker is {@link #workerStorage}. On a store serving TLS ({@link #onStore}) it names the store's CA
-     * bundle.
+     * The worker's own storage identity on the run's store (D30) as its settings give it, {@code nuna.maintenance
+     * .storage.test}: the only one a delete policy lets delete. Its kind and endpoint are those of the server's storage
+     * profile, so the worker serves the prefixes the server gives it (item 256) with it. On AWS it names no keys, so it
+     * is the SDK's default chain, in a test JVM the run's sign-in: storage as the worker is {@link #workerStorage}. On a
+     * store serving TLS ({@link #onStore}) it names the store's CA bundle.
      */
-    Map<String, WorkerSettings.StorageProfile> storageProfiles() {
-        URI endpoint = s3.kind == TestS3.Kind.AWS ? null
-                : URI.create(s3.endpoint.getScheme() + "://" + uri.getHost() + ":" + s3.endpoint.getPort());
+    Map<String, WorkerSettings.Store> stores() {
         String key = null;
         String secret = null;
         if (s3.kind == TestS3.Kind.CEPH) {
@@ -382,8 +385,8 @@ final class TestCatalog {
             key = TestS3.ACCESS_KEY;
             secret = TestS3.SECRET_KEY;
         }
-        return Map.of("test", new WorkerSettings.StorageProfile(List.of("s3://" + bucket + "/tables"), endpoint,
-                TestS3.REGION, s3.kind != TestS3.Kind.AWS, key, secret, s3.caBundle().orElse(null)));
+        return Map.of("test", new WorkerSettings.Store(StoreKind.valueOf(s3.profileKind()), storeEndpoint,
+                TestS3.REGION, key, secret, s3.caBundle().orElse(null)));
     }
 
     /** The worker, with its own clock, deciding nothing by the server's. */
@@ -393,11 +396,14 @@ final class TestCatalog {
 
     /**
      * The worker's storage as its own identity (D30), the only one the delete policy lets delete beneath
-     * {@code tables/}: {@link Storage#of} on {@link #storageProfiles} on Silo and Ceph, the run's maintenance role on
-     * AWS ({@link #asRole}). Every test that lists or deletes as the worker uses this, never {@link Storage#of} itself.
+     * {@code tables/}: {@link Storage#of} on {@link #stores} on Silo and Ceph, the run's maintenance role on AWS
+     * ({@link #asRole}). Every test that lists or deletes as the worker uses this, never {@link Storage#of} itself. It
+     * reaches the prefixes the server gives the worker, as at a scan.
      */
     Storage workerStorage() {
-        return s3.kind == TestS3.Kind.AWS ? asRole(s3.maintenancePrincipal()) : Storage.of(storageProfiles());
+        Storage storage = s3.kind == TestS3.Kind.AWS ? asRole(s3.maintenancePrincipal()) : Storage.of(stores());
+        storage.reach(management().storageProfiles());
+        return storage;
     }
 
     /**
@@ -405,7 +411,8 @@ final class TestCatalog {
      * SDK's default chain (its pod's identity), which is all {@link Storage#of} uses there; in a test JVM that chain is
      * the run's sign-in, the catalog's own identity, which the delete policy refuses. So the same S3FileIO is opened
      * here with Iceberg's AssumeRoleAwsClientFactory, which assumes the role from that sign-in, and the worker lists
-     * and deletes through it as {@link Storage#of}'s does: listPrefix and deleteFiles. A child JVM's worker
+     * and deletes through it: listPrefix as {@link Storage#of}'s does, and deleteFiles, which sends the same
+     * DeleteObjects calls {@link StorePrefix} sends without keeping each refused key's code. A child JVM's worker
      * ({@link ChildJvm#storage}) opens it too.
      */
     static Storage asRole(String role) {
@@ -422,6 +429,11 @@ final class TestCatalog {
             @Override
             public void delete(Collection<String> locations) {
                 io.deleteFiles(locations);
+            }
+
+            @Override
+            public Prefixes reach(List<Management.StorageProfile> profiles) {
+                return TestReach.everyProfile(profiles);
             }
 
             @Override
@@ -491,7 +503,7 @@ final class TestCatalog {
         properties.put(CatalogProperties.FILE_IO_IMPL, "org.apache.iceberg.aws.s3.S3FileIO");
         properties.put("http-client.type", "apache");
         properties.put("header.X-Iceberg-Access-Delegation", "vended-credentials");
-        properties.putAll(TrustedS3Clients.register(storageProfiles()));
+        properties.putAll(TrustedS3Clients.register(stores()));
         RESTCatalog client = new RESTCatalog();
         client.initialize("writer", properties);
         return client;

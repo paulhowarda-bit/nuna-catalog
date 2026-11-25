@@ -1,0 +1,16 @@
+Breaks: the worker's storage lists and deletes at a location equal to a prefix, as Storage.java did before item 256, so a purge or orphan scan rooted at the prefix could empty the profile.
+Module: catalog-maintenance
+Test: PrefixesTest#theWorkersStorageRefusesALocationAtAPrefix
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+index 6563050e..579ac9e4 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+@@ -116,7 +116,7 @@ final class Prefixes {
+         String normalized = Storage.normalize(location);
+         for (Prefix prefix : prefixes) {
+             String under = prefix.location() + "/";
+-            if (normalized.startsWith(under) && normalized.length() > under.length()) {
++            if ((normalized + "/").startsWith(under)) {
+                 return Optional.of(prefix);
+             }
+         }

@@ -37,9 +37,9 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * The archive of D23 on the run's S3 store ({@link TestS3}) with Object Lock, fed from Kafka: segments locked
- * for at least five years, written once, chained across segments, and archived exactly once per partition
+ * for at least seven years, written once, chained across segments, and archived exactly once per partition
  * across consumer restarts. Segments are locked in COMPLIANCE mode, as the server always locks them, except on
- * real AWS: there a COMPLIANCE lock would leave objects and a bucket nobody can delete for five years, so the
+ * real AWS: there a COMPLIANCE lock would leave objects and a bucket nobody can delete for seven years, so the
  * test locks in GOVERNANCE mode and the run deletes them at the end.
  */
 @Tag("heavy")
@@ -91,7 +91,7 @@ class LockedArchiveTest {
     }
 
     @Test
-    @DisplayName("a bucket without Object Lock is refused, and so is a retention under five years")
+    @DisplayName("a bucket without Object Lock is refused, and so is a retention under seven years")
     void refusesUnlockedBucketAndShortRetention() {
         assertThatThrownBy(() -> archive(newBucket(false)).checkBucket())
                 .isInstanceOf(IllegalStateException.class);
@@ -99,11 +99,11 @@ class LockedArchiveTest {
         assertThatThrownBy(() -> new ObjectLockArchive(s3, "b", "audit",
                 ObjectLockArchive.MINIMUM_RETENTION.minusDays(1), Clock.systemUTC()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("five-year floor");
+                .hasMessageContaining("seven-year floor");
     }
 
     @Test
-    @DisplayName("a segment is locked in COMPLIANCE mode for at least five years: it can be neither deleted nor replaced"
+    @DisplayName("a segment is locked in COMPLIANCE mode for at least seven years: it can be neither deleted nor replaced"
             + " (GOVERNANCE on AWS: not deleted without the bypass)")
     void segmentsAreLocked() throws IOException {
         String bucket = newBucket(true);
@@ -114,7 +114,7 @@ class LockedArchiveTest {
         var retention = s3.getObjectRetention(b -> b.bucket(bucket).key(segment.key())
                 .versionId(segment.versionId())).retention();
         assertThat(retention.mode()).isEqualTo(ObjectLockRetentionMode.fromValue(mode.toString()));
-        assertThat(retention.retainUntilDate()).isAfterOrEqualTo(before.plus(Duration.ofDays(5 * 365)));
+        assertThat(retention.retainUntilDate()).isAfterOrEqualTo(before.plus(Duration.ofDays(7 * 365)));
 
         assertThatThrownBy(() -> s3.deleteObject(b -> b.bucket(bucket).key(segment.key())
                 .versionId(segment.versionId()))).isInstanceOf(S3Exception.class);

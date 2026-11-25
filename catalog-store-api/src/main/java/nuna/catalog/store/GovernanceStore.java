@@ -24,7 +24,13 @@ public interface GovernanceStore {
 
     Optional<StorageProfile> readStorageProfile(UUID profileId);
 
-    /** Sets the attribute, replacing the target's earlier value of that kind. @return {@code Applied} or {@code Missing} naming the target's kind */
+    /**
+     * Sets the attribute, replacing the target's earlier value of that kind.
+     *
+     * @return {@code Applied}; {@code Missing} naming the target's kind; or {@code Refused(HAS_RULES)} when it would
+     *         set a table's row/column-policy flag to anything but true while the table has rules
+     *         ({@link RowColumnRuleStore})
+     */
     WriteResult putAttribute(GovernanceAttribute attribute, Change change);
 
     /**
@@ -32,7 +38,8 @@ public interface GovernanceStore {
      * with who removed it and when ({@link #liftedIn}); the other kinds leave no record but the change's.
      *
      * @param removedBy who removes it, as audit records name the principal
-     * @return {@code Applied} or {@code Missing(ATTRIBUTE)}
+     * @return {@code Applied}; {@code Missing(ATTRIBUTE)}; or {@code Refused(HAS_RULES)} when it is a table's
+     *         row/column-policy flag and the table has rules ({@link RowColumnRuleStore})
      */
     WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, String removedBy, Change change);
 

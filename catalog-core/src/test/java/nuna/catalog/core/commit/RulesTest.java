@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,7 +66,7 @@ class RulesTest {
     }
 
     private static TableFacts table(String location, Map<String, String> properties, Map<Long, Long> snapshots) {
-        return new TableFacts(ID.toString(), 2, location, properties, 0, 0, snapshots);
+        return new TableFacts(ID.toString(), 2, location, properties, 0, 0, snapshots, List.of());
     }
 
     private static TableFacts table(Map<String, String> properties) {

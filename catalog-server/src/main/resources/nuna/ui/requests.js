@@ -29,7 +29,7 @@ function reaches(on, target) {
 const grantsKept = new Map();
 
 /** The caller's own groups' grants in the catalog, asked once a minute at most; none when the catalog refuses. */
-function ownGrants(catalog) {
+export function ownGrants(catalog) {
   const hit = grantsKept.get(catalog);
   if (hit && Date.now() - hit.at < 60_000) return hit.promise;
   const promise = api.grantsOfGroups(catalog, []).catch(() => []);

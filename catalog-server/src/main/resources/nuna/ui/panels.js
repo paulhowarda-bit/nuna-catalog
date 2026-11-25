@@ -1,26 +1,27 @@
 // The tabs every catalog object shares, each one its own render function on its own route: governance (with
-// holds, the four labels people set here and a DR freeze), grants (every grant that reaches the object, made and revoked here,
-// and who may use it), the audit trail, and the dialogs those open; and the catalog's holds, freezes and regulated
-// areas as marks on the tree and in Contents (item 128). The catalog-wide audit feed with its hash chain is the Audit
+// holds, the four labels people set here and a DR freeze), grants (every grant that reaches the object, revoked here
+// and made in the Grant access dialog, grant.js, and who may use it), the audit trail, and the dialogs those open; and
+// the catalog's holds, freezes and regulated areas as marks on the tree and in Contents (item 128). The catalog-wide audit feed with its hash chain is the Audit
 // page (audit.js, item 125).
 
 import * as api from './api.js';
 import {may, operates} from './access.js';
-import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
+import {$$, badge, code, dialogForm, facts, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
   muted, openDialog, panel, pill, plural, select, tbl, techDetails, text, when, at, copyButton} from './dom.js';
 import {dotted, objectHref} from './route.js';
 import {liveRefLink, refWords} from './refs.js';
 import {heldHere} from './requests.js';
+import {rulesPanel, yourView} from './rules.js';
+import {grantAccess} from './grant.js';
 
-export const PRIVILEGES = ['describe', 'select', 'write', 'modify', 'create', 'manage-tags', 'manage-grants'];
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
 const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', 'row-column-policy'];
 /** Each attribute in words, its key one hover away (Atelier's words table, T10). */
 const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'retention-class': 'Retention class',
-  regulated: 'Regulated area', 'row-column-policy': 'Row and column policy'};
+  regulated: 'Regulated area', 'row-column-policy': 'Flagged for row and column rules'};
 const attributeLabel = name => ATTRIBUTE_LABELS[name] ? h('span', {title: name}, ATTRIBUTE_LABELS[name]) : name;
-/** An attribute's value in words: the regulated flag is Yes or No, not true or false (backlog 213). */
-const attributeValue = (name, v) => name === 'regulated' && /^(true|false)$/i.test(String(v))
+/** An attribute's value in words: the two flags are Yes or No, not true or false (backlog 213; Atelier, 2026-11-24). */
+const attributeValue = (name, v) => (name === 'regulated' || name === 'row-column-policy') && /^(true|false)$/i.test(String(v))
   ? (String(v).toLowerCase() === 'true' ? 'Yes' : 'No') : String(v);
 
 const what = target => target.kind === 'catalog' ? target.catalog : dotted(target);
@@ -103,6 +104,16 @@ export async function governanceOf(target) {
   return {g, levels};
 }
 
+/**
+ * Whether the table itself is flagged for row and column rules (D20): only its own flag set true closes its storage to
+ * all but a trusted engine, so a flag on a level above does not count.
+ */
+export const flaggedHere = g => (g.attributes || []).some(a => a.attribute === 'row-column-policy'
+  && String(a.level).endsWith(':' + g.target.id) && String(a.value).toLowerCase() === 'true');
+
+/** What a flagged table's Overview, Schema and History say in place of the refused load (Atelier, 2026-11-24; backlog 241). */
+export const TRINO_WORDS = 'Its data is read through Trino, which applies each group\'s rule. The console shows no rows.';
+
 /** The governance facts on a table's overview: its holds, a DR freeze, its classification and owner, with where each was set. */
 export async function governanceSummary(target) {
   const {g, levels} = await governanceOf(target);
@@ -130,8 +141,10 @@ export async function governanceTab(target, reload) {
   const holds = g.holds || [];
   const attrs = g.attributes || [];
   const view = target.kind === 'view';
-  const nearest = name => attrs.find(a => a.attribute === name);
+  // The row and column policy counts only on the table it is set on, never from a level above (backlog 239).
+  const nearest = name => attrs.find(a => a.attribute === name && (name !== 'row-column-policy' || String(a.level).endsWith(':' + here)));
   const ownRegulated = attrs.some(a => a.attribute === 'regulated' && String(a.level).endsWith(':' + here) && a.value === 'true');
+  const flagged = flaggedHere(g);
   const valueWithSource = name => {
     const a = nearest(name);
     const v = effective[name];
@@ -161,7 +174,10 @@ export async function governanceTab(target, reload) {
       effective['retention-class'] ? 'Change the retention class' : 'Set a retention class') : null,
       target.kind === 'catalog' || target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'regulated',
         onclick: () => setRegulated(target, ownRegulated, effective.regulated === 'true', reload)},
-      ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null),
+      ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null,
+      // The row and column flag is a table's own (backlog 239): set and removed here, on the table only (backlog 241).
+      target.kind === 'table' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'row-column-policy',
+        onclick: () => setFlag(target, flagged, reload)}, flagged ? 'Remove the flag' : 'Flag for row and column rules') : null),
     !tags && !freezes ? null : h('div', {class: 'refusal-acts'},
       tags ? h('button', {class: 'btn sm', type: 'button', onclick: () => placeHold(target, reload)}, icon('lock'),
         target.kind === 'namespace' ? 'Place a hold here' : 'Place a hold') : null,
@@ -294,6 +310,34 @@ function setRegulated(target, marked, inherited, reload) {
       const answer = await api.setAttribute(target, 'regulated', marked ? 'false' : 'true', reason);
       forgetMarks(target.catalog);
       fill(out, granted(marked ? `${what(target)} is no longer a regulated area` : `${what(target)} is a regulated area`, answer));
+      reload();
+    })));
+}
+
+/**
+ * Flags a table for row and column rules, or removes its flag (D20; backlog 241). The catalog refuses the removal while
+ * the grant admin's rules stand on the table, which the dialog says in words.
+ */
+function setFlag(target, flagged, reload) {
+  openDialog(flagged ? `Remove the flag on ${lastWord(target)}` : `Flag ${lastWord(target)} for row and column rules`, h('div', null,
+    h('p', null, flagged
+      ? 'Removing the flag lets any client that may read this table read its files again. While rules stand it is '
+        + 'refused: the grant admin removes them first.'
+      : 'Once flagged, only a trusted engine reads or writes its files, and the console shows no rows. Until the grant '
+        + 'admin sets rules, Trino shows every row to anyone who may select.'),
+    h('p', {class: 'fine'}, RECORDED),
+    dialogForm(null, flagged ? 'Remove the flag' : 'Flag for row and column rules', async (form, out) => {
+      let answer;
+      try {
+        answer = flagged ? await api.removeAttribute(target, 'row-column-policy')
+          : await api.setAttribute(target, 'row-column-policy', 'true', 'console');
+      } catch (error) {
+        if (error.status !== 409 || error.type !== 'RowColumnRulesExistException') throw error;
+        fill(out, h('div', {class: 'refusal compact', role: 'alert', 'data-rules-stand': ''},
+          h('p', {class: 'refusal-h'}, icon('x'), 'Rules stand: the grant admin removes them first.')));
+        return;
+      }
+      fill(out, granted(flagged ? `${what(target)} is no longer flagged` : `${what(target)} is flagged for row and column rules`, answer));
       reload();
     })));
 }
@@ -445,17 +489,32 @@ async function youMay(target) {
       'The catalog decides each request; this is what your grants allow.'));
 }
 
-/** A table's, view's or namespace's Access tab: what the caller may do, then its governance, then its grants. */
+/**
+ * A table's, view's or namespace's Access tab: Grant access at its top for those who manage the catalog's grants
+ * (backlog 248), what the caller may do, a reader's view of a flagged table, then its governance, a table's row
+ * filters and column masks (backlog 243), then its grants.
+ */
 export function accessTab(target, reload) {
   const you = h('div');
   const gov = h('div');
   load(you, () => youMay(target));
   load(gov, () => governanceTab(target, reload));
-  return h('div', {class: 'stack', id: 'access-tab'}, you, gov, grantsTab(target));
+  const [grants, listAgain] = grantsPart(target);
+  // Once the dialog closes after a grant, the grant's row is brought to the middle of the view, once the list has it.
+  let listed = Promise.resolve(null);
+  const showMade = () => listed.then(reach => {
+    const row = reach && reach.querySelector('tr.is-new');
+    if (row && row.isConnected) row.scrollIntoView({block: 'center',
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  });
+  const acts = may(target.catalog, 'manage-grants') ? h('div', {class: 'refusal-acts access-acts'},
+    h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target,
+      {after: made => { listed = listAgain(made); }, closed: showMade})}, icon('key'), 'Grant access')) : null;
+  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grants);
 }
 
-export function grantsTab(target) {
-  const out = h('div', {class: 'dlg-out', 'aria-live': 'polite', id: 'grant-result'});
+/** The Access tab's grants, and what lists them again once the dialog makes one, marking it. */
+function grantsPart(target) {
   const reach = h('div');
   const who = h('div');
   const mine = h('div');
@@ -471,21 +530,23 @@ export function grantsTab(target) {
   });
   if (!manages) {
     ownGrants();
-    return h('div', {class: 'stack grants-here', 'data-grants': 'own'}, panel('Your groups\' grants', `in ${target.catalog}`, mine,
+    return [h('div', {class: 'stack grants-here', 'data-grants': 'own'}, panel('Your groups\' grants', `in ${target.catalog}`, mine,
       h('p', {class: 'fine'}, `Who else holds what on this ${target.kind}, and granting, are open to those who manage `
-        + `${target.catalog}'s grants.`)));
+        + `${target.catalog}'s grants.`))), () => {}];
   }
-  const refresh = () => {
+  /** Lists the grants again; `made`, a grant the dialog just made here, is marked. Answers the reach list once drawn. */
+  const refresh = made => {
     const effective = api.effectiveGrants(target);
-    load(reach, async () => {
+    const drawn = load(reach, async () => {
       const list = (await effective).grants || [];
       return panel(`Grants that reach this ${target.kind}`, `${plural(list.length, 'grant')} · from the catalog down`,
         list.length ? tbl('stack-line grants-reach', ['Group', 'Privilege', 'Granted on', 'Granted', ''], list.map(g => {
           const [on, words] = grantedOn(target, g.securable);
-          return h('tr', {'data-group': g.group, 'data-privilege': g.privilege, 'data-on': on},
+          const isMade = !!made && on === 'here' && g.group === made.group && g.privilege === made.privilege;
+          return h('tr', {'data-group': g.group, 'data-privilege': g.privilege, 'data-on': on, class: isMade ? 'is-new' : null},
             h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege), h('td', null, words),
             h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])),
-            h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(target.catalog, g, refresh)}, 'Revoke')));
+            h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(target.catalog, g, () => refresh())}, 'Revoke')));
         })) : h('p', {class: 'muted'}, `No grant reaches this ${target.kind}.`),
         h('p', {class: 'fine'}, 'A grant on the catalog or a namespace reaches everything beneath it. The ladder is describe, '
           + 'select, write, modify: each gives the ones before it. Revoke takes a grant away where it was made.'));
@@ -506,37 +567,12 @@ export function grantsTab(target) {
       ], 'who-may'));
     });
     ownGrants();
+    return drawn;
   };
   refresh();
-  const group = h('input', {name: 'g', type: 'text', placeholder: 'A group, such as demo-analysts', 'aria-label': 'Group',
-    autocomplete: 'off', spellcheck: 'false', required: true});
-  const form = h('form', {class: 'grant-form here', novalidate: true},
-    h('p', {class: 'fine on-here'}, 'On ', code(target.kind === 'catalog' ? target.catalog : dotted(target)), ` (${target.kind})`),
-    h('label', null, h('span', null, 'Group'), h('span', {class: 'field mono'}, group)),
-    h('label', null, h('span', null, 'Privilege'), select('pv', PRIVILEGES, 'select', {'aria-label': 'Privilege'})),
-    h('button', {class: 'btn primary', type: 'submit'}, 'Grant'));
-  form.addEventListener('submit', async e => {
-    e.preventDefault();
-    const g = group.value.trim();
-    const pv = form.elements.pv.value;
-    if (!g) {
-      fill(out, h('p', {class: 'fine grant-hint'}, 'Name the group.'));
-      return;
-    }
-    try {
-      const answer = await api.grant(target, g, pv);
-      fill(out, granted(`Granted ${pv} to ${g}.`, answer));
-      refresh();
-    } catch (error) {
-      fill(out, failure(error));
-    }
-  });
-  return h('div', {class: 'grid-21 grants-here'}, reach,
+  return [h('div', {class: 'grid-21 grants-here'}, reach,
     h('div', {class: 'stack'}, who,
-      panel(`Grant on this ${target.kind}`, null, form, out,
-        h('p', {class: 'fine'}, 'A group that manages grants holds no other duty, and data and tags never share a group: the '
-          + 'catalog refuses a grant that would break that.')),
-      panel('Your groups\' grants', `in ${target.catalog}`, mine)));
+      panel('Your groups\' grants', `in ${target.catalog}`, mine))), refresh];
 }
 
 // ---- the audit trail ----
@@ -582,12 +618,14 @@ export function describe(type, d, catalog) {
     case 'rename': return `renamed from ${(d.fromPath || []).join('.')}`;
     case 'namespace': return `namespace ${String(d.action).toLowerCase()}`;
     case 'audit-read': return `read ${d.returned} audit records`;
+    // Who and which table are on the row already; the sentence names the group, as a grant's does (Atelier, 2026-11-24).
+    case 'row-column-rule': return `${String(d.action).toUpperCase() === 'REMOVED' ? 'removed' : 'set'} the rule for ${d.group}`;
     default: return '';
   }
 }
 
 /** Every record type that changes something, for the Audit page's Changes figure. */
-export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
+export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'row-column-rule', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
   'purge-claim', 'file-deletion', 'maintenance-exemption', 'unregister', 'storage-setup', 'engine', 'break-glass'];
 
 /**
@@ -599,10 +637,11 @@ export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'label', 'drop'
 export const AUDIT_KINDS = [
   ['all', 'All', null, null],
   ['grant', 'Grants', 'Grant', ['grant']],
+  ['rule', 'Row and column rules', 'Rule', ['row-column-rule']],
   ['hold', 'Governance', 'Governance', ['hold', 'governance']],
   ['ref', 'Branches and tags', 'Branch or tag', ['ref']],
   ['commit', 'Commits', 'Commit', ['commit']],
-  ['change', 'Other changes', 'Change', CHANGES.filter(t => !['grant', 'hold', 'governance', 'ref', 'commit'].includes(t))],
+  ['change', 'Other changes', 'Change', CHANGES.filter(t => !['grant', 'row-column-rule', 'hold', 'governance', 'ref', 'commit'].includes(t))],
   ['read', 'Reads', 'Read', ['read', 'audit-read']],
   ['cred', 'Credentials', 'Credential', ['credential-issue']],
   ['refusal', 'Refusals', 'Refusal', ['denial', 'auth-failure']],
@@ -708,6 +747,6 @@ export function auditTab(target, {title} = {}) {
         h('div', {class: 'refusal-acts'}, h('button', {class: 'btn sm', type: 'button', onclick: run}, 'Refresh')),
         status, feed)),
     h('div', {class: 'stack'}, windowBox,
-      panel('Archive', null, h('p', {class: 'fine'}, 'Changes reach a hash-chained archive kept at least five years. '
+      panel('Archive', null, h('p', {class: 'fine'}, 'Changes reach a hash-chained archive kept at least seven years. '
         + 'Each record\'s place in the chain is on the Audit page.'))));
 }

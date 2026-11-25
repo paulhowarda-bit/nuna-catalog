@@ -20,6 +20,7 @@ import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitOutcomeUnknownException;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.OutboxEvent;
@@ -32,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,8 +54,9 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Grant administration (D18, D19): grant and revoke to groups, list by principal (its groups), list by object,
- * the effective grants on an object (D45), the batch check, and the export for access certification. Every refusal is audited; one on a namespace, table
+ * Grant administration (D18, D19): grant and revoke to groups, a grant's preview (backlog 246), list by principal (its
+ * groups), list by object, the effective grants on an object (D45), the groups that hold grants (backlog 247), the
+ * batch check, and the export for access certification. Every refusal is audited; one on a namespace, table
  * or view the caller holds nothing on is answered as if it did not exist (D18, item 73), as is every route on a
  * catalog the caller holds nothing on ({@link Holdings#catalog}, item 68). Every grant change goes
  * through the outbox in the same transaction (D23). The separation-of-duties check runs inside the store's write
@@ -70,9 +73,30 @@ class GrantRoutes {
     private static final Operation LIST = new Operation("listGrants", Privilege.MANAGE_GRANTS, false);
     private static final Operation EXPORT = new Operation("exportGrants", Privilege.MANAGE_GRANTS, false);
     private static final Operation EFFECTIVE = new Operation("listEffectiveGrants", Privilege.MANAGE_GRANTS, false);
+    private static final Operation LIST_GROUPS = new Operation("listGrantGroups", Privilege.MANAGE_GRANTS, false);
+    private static final Operation PREVIEW = new Operation("previewGrant", Privilege.MANAGE_GRANTS, false);
     private static final int EXPORT_PAGE = 500;
+    private static final String GROUPS_NOTE = "Only groups that hold a grant in this catalog are listed, and the"
+            + " deployment's grant-admin and platform-operator groups: the catalog knows groups from its grants and"
+            + " does not read the directory, so a group that holds nothing here is not listed.";
 
     record GrantSpec(Securables.Spec securable, String group, String privilege) {
+    }
+
+    /** A grant's body, read and resolved, on a securable the caller may manage grants on. */
+    private record Asked(Securables securables, Securables.Resolved on, String group, Privilege privilege) {
+    }
+
+    /** Why a grant is refused: the grant route's answer and the preview's {@code refusal} and {@code reason}. */
+    private record Refusal(Kind kind, String reason) {
+
+        enum Kind {
+            PRIVILEGE_NOT_ON_OBJECT, SELF_GRANT, SEPARATION_OF_DUTIES;
+
+            String wireName() {
+                return name().toLowerCase(java.util.Locale.ROOT).replace('_', '-');
+            }
+        }
     }
 
     record CheckSpec(Securables.Spec securable, String privilege) {
@@ -104,7 +128,9 @@ class GrantRoutes {
 
     /**
      * Grants a privilege to a group. Needs {@code manage-grants} on the securable or above it; refused when the
-     * caller is in the group (no self-grant) or the group would hold two separated duties in the catalog.
+     * caller is in the group (no self-grant) or the group would hold two separated duties in the catalog, and
+     * answered 400 for a privilege that means nothing on the securable ({@code create} on a table or view, backlog
+     * 246). {@link #preview} answers what this would do, through the same checks.
      */
     @PostMapping(GRANTS)
     ResponseEntity<String> grant(@PathVariable String catalog, @RequestBody(required = false) String body,
@@ -193,6 +219,35 @@ class GrantRoutes {
     }
 
     /**
+     * The groups that hold a grant in the catalog, for the console's group picker (backlog 247), paged by group:
+     * each with its duties (D18: {@code read}, {@code data}, {@code grants}, {@code tags}, as {@link Separation.Duty}
+     * names them) and the privileges it holds anywhere in the catalog, by wire name; a privilege this version does
+     * not know is listed but gives no duty. With them, on every page, the deployment's grant-admin and
+     * platform-operator groups, which hold their duty by configuration, not by a grant, and may be granted nothing.
+     * The catalog knows groups only from its grants, never the directory's, and {@code note} says so. Needs
+     * {@code manage-grants} on the catalog, as the export does; a refusal is answered as there.
+     */
+    @GetMapping(GRANTS + "/groups")
+    ResponseEntity<String> listGroups(@PathVariable String catalog,
+                                      @RequestParam(required = false) String pageToken,
+                                      @RequestParam(required = false) String pageSize,
+                                      HttpServletRequest http) {
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), LIST_GROUPS.name(),
+                LIST_GROUPS.privilege());
+        Securables securables = new Securables(store, record);
+        require(request, securables.catalogItself(), LIST_GROUPS);
+        Page<GrantGroup> page = paged(() -> store.listGrantGroups(record.id(), page(pageToken, pageSize)));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("groups", page.items().stream().map(GrantRoutes::render).toList());
+        out.put("grant-admin-groups", separation.grantAdminGroups().stream().sorted().toList());
+        out.put("platform-operator-groups", separation.platformOperatorGroups().stream().sorted().toList());
+        out.put("note", GROUPS_NOTE);
+        page.nextToken().ifPresent(token -> out.put("next-page-token", token));
+        return json(out);
+    }
+
+    /**
      * The batch check: may the caller do each of these? Answers for the caller's own subject, with every
      * governance rule applied. A check is a question, not a refused request, so its answers are not audited. A
      * no on a namespace, table or view the caller holds nothing on reads as the answer for one that does not
@@ -272,29 +327,76 @@ class GrantRoutes {
         return json(out);
     }
 
+    /**
+     * What a grant would do, writing nothing (backlog 246), for the console's grant dialog to show before Grant is
+     * pressed. It takes the grant route's body and asks the grant route's checks, in its order and through the same
+     * code: {@code admitted}; {@code unchanged}, already held, with {@code granted-by} and {@code granted-at}; or
+     * {@code refused}, with {@code refusal} ({@code privilege-not-on-object}, {@code self-grant} or
+     * {@code separation-of-duties}) and {@code reason}, the message the grant route would answer. A caller that may
+     * not manage grants on the securable is refused as the grant route refuses it, audited. The answers are a
+     * question, not a refused request, so they are not audited, as the batch check's are not. The separation of
+     * duties is read here, not inside a write, so a grant made meanwhile may still change the grant's own answer.
+     * What that tells: a caller that may manage grants on any one securable learns, for any group it names, which
+     * duties the group holds anywhere in the catalog, and one privilege giving each, never where. The grant route's
+     * 403 says the same, but each try there leaves a {@code Denial} or a grant; a preview leaves nothing (the
+     * security review of backlog 246, 2026-11-24).
+     */
+    @PostMapping(GRANTS + "/preview")
+    ResponseEntity<String> preview(@PathVariable String catalog, @RequestBody(required = false) String body,
+                                   HttpServletRequest http) {
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), PREVIEW.name(),
+                PREVIEW.privilege());
+        Asked asked = asked(record, body, request, PREVIEW);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("securable", asked.securables().render(asked.on().stored()));
+        out.put("group", asked.group());
+        out.put("privilege", asked.privilege().wireName());
+        Optional<Refusal> refusal = refusal(request.caller(), asked);
+        Optional<GrantRecord> held = Optional.empty();
+        if (refusal.isEmpty()) {
+            List<GrantRecord> grants = all(page -> store.listGrantsOfGroups(record.id(), Set.of(asked.group()), page));
+            AtomicReference<String> separated = new AtomicReference<>();
+            if (!admits(asked.group(), asked.privilege(), grants.stream().map(g -> g.grant().privilege()).toList(),
+                    separated)) {
+                refusal = Optional.of(new Refusal(Refusal.Kind.SEPARATION_OF_DUTIES, separated.get()));
+            } else {
+                held = grants.stream().filter(g -> g.grant().securable().equals(asked.on().stored())
+                        && g.grant().privilege().equals(asked.privilege().wireName())).findFirst();
+            }
+        }
+        if (refusal.isPresent()) {
+            out.put("answer", "refused");
+            out.put("refusal", refusal.get().kind().wireName());
+            out.put("reason", refusal.get().reason());
+        } else if (held.isPresent()) {
+            out.put("answer", "unchanged");
+            out.put("granted-by", held.get().grantedBy());
+            out.put("granted-at", held.get().grantedAt().toString());
+        } else {
+            out.put("answer", "admitted");
+        }
+        return json(out);
+    }
+
     private ResponseEntity<String> change(String catalog, String body, HttpServletRequest http, boolean grant) {
         RequestContext request = RequestContext.of(http, callers);
         Operation operation = grant ? GRANT : REVOKE;
         CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), operation.name(),
                 operation.privilege());
-        GrantSpec spec = read(body, GrantSpec.class);
-        if (spec.group() == null || spec.group().isBlank()) {
-            throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals (D19)");
-        }
-        Privilege privilege = privilege(spec.privilege());
-        Securables securables = new Securables(store, record);
-        Securables.Resolved on = securables.resolve(spec.securable());
-        require(request, on, operation);
+        Asked asked = asked(record, body, request, operation);
+        Securables.Resolved on = asked.on();
+        Privilege privilege = asked.privilege();
         if (grant) {
-            if (request.caller().subject().groups().contains(spec.group())) {
-                throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
-                        "separation-of-duties", "no one grants to a group they belong to: " + spec.group());
+            Optional<Refusal> refusal = refusal(request.caller(), asked);
+            if (refusal.isPresent()) {
+                throw refused(request, operation, asked, refusal.get());
             }
         }
-        Grant stored = new Grant(record.id(), on.stored(), spec.group(), privilege.wireName());
+        Grant stored = new Grant(record.id(), on.stored(), asked.group(), privilege.wireName());
         Instant now = clock.instant();
         CatalogEvent event = CatalogEvent.create(settings.auditSource(), now, new GrantChange(
-                grant ? GrantChange.Action.GRANTED : GrantChange.Action.REVOKED, on.named(), spec.group(),
+                grant ? GrantChange.Action.GRANTED : GrantChange.Action.REVOKED, on.named(), asked.group(),
                 privilege.wireName(), request.actor()));
         Change change = new Change(UUID.randomUUID(), now, List.of(new OutboxEvent(event.type().typeName(),
                 new String(EventCodec.encode(event), StandardCharsets.UTF_8))), Optional.empty());
@@ -302,7 +404,7 @@ class GrantRoutes {
         WriteResult result;
         try {
             result = grant ? store.putGrantIf(stored, request.caller().subject().id(), change,
-                    held -> admits(spec.group(), privilege, held, separated))
+                    held -> admits(asked.group(), privilege, held, separated))
                     : store.revokeGrant(stored, change);
         } catch (CommitOutcomeUnknownException e) {
             // Both are safe to repeat: a repeated grant answers unchanged, a repeated revoke not found.
@@ -313,15 +415,63 @@ class GrantRoutes {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
             case WriteResult.Unchanged unchanged -> ResponseEntity.noContent().build();
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_ADMITTED ->
-                    throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
-                            "separation-of-duties", separated.get());
+                    throw refused(request, operation, asked,
+                            new Refusal(Refusal.Kind.SEPARATION_OF_DUTIES, separated.get()));
             case WriteResult.Missing missing when missing.subject() == WriteResult.Subject.GRANT ->
                     throw CatalogError.of(404, "NotFoundException", "No such grant: " + privilege.wireName()
-                            + " to " + spec.group());
+                            + " to " + asked.group());
             case WriteResult.Missing missing -> throw CatalogError.of(404, "NotFoundException",
                     "The securable no longer exists: " + missing.subject());
             default -> throw new IllegalStateException((grant ? "putGrant" : "revokeGrant") + " answered " + result);
         };
+    }
+
+    /**
+     * A grant, revoke or preview as its body asks it, on a securable the caller may manage grants on: a caller that
+     * may not is refused, audited, as {@link #require} answers it.
+     */
+    private Asked asked(CatalogRecord record, String body, RequestContext request, Operation operation) {
+        GrantSpec spec = read(body, GrantSpec.class);
+        if (spec.group() == null || spec.group().isBlank()) {
+            throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals (D19)");
+        }
+        Privilege privilege = privilege(spec.privilege());
+        Securables securables = new Securables(store, record);
+        Securables.Resolved on = securables.resolve(spec.securable());
+        require(request, on, operation);
+        return new Asked(securables, on, spec.group(), privilege);
+    }
+
+    /**
+     * Why a grant is refused before the store's write, in the order the grant route asks: a privilege that means
+     * nothing on the securable ({@code create} on a table or view, which has nothing inside it to create), then a
+     * grant to one of the caller's own groups. Empty when only the separation of duties is left, which the store
+     * asks inside its write ({@link #admits}).
+     */
+    private static Optional<Refusal> refusal(Caller caller, Asked asked) {
+        Securable.Kind kind = asked.on().stored().kind();
+        if (asked.privilege() == Privilege.CREATE && (kind == Securable.Kind.TABLE || kind == Securable.Kind.VIEW)) {
+            return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT, "create means nothing on a "
+                    + kind.name().toLowerCase(java.util.Locale.ROOT)
+                    + ": it creates namespaces, tables and views in a catalog or namespace"));
+        }
+        if (caller.subject().groups().contains(asked.group())) {
+            return Optional.of(new Refusal(Refusal.Kind.SELF_GRANT,
+                    "no one grants to a group they belong to: " + asked.group()));
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The grant route's answer to a refusal: a privilege that means nothing on its securable is a mistake in the
+     * request, 400; a self-grant and a separation conflict are refused requests, 403 and audited.
+     */
+    private RuntimeException refused(RequestContext request, Operation operation, Asked asked, Refusal refusal) {
+        if (refusal.kind() == Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT) {
+            return CatalogError.badRequest(refusal.reason());
+        }
+        return denials.refuse(request.actor(), operation.name(), asked.on().named(), asked.privilege().wireName(),
+                "separation-of-duties", refusal.reason());
     }
 
     /**
@@ -402,6 +552,22 @@ class GrantRoutes {
         out.put("privilege", grant.grant().privilege());
         out.put("granted-by", grant.grantedBy());
         out.put("granted-at", grant.grantedAt().toString());
+        return out;
+    }
+
+    private static Map<String, Object> render(GrantGroup group) {
+        Set<Separation.Duty> duties = EnumSet.noneOf(Separation.Duty.class);
+        for (String name : group.privileges()) {
+            try {
+                duties.add(Separation.Duty.of(Privilege.fromWireName(name)));
+            } catch (IllegalArgumentException e) {
+                // A privilege from a newer version: listed, but no duty this version knows.
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("group", group.group());
+        out.put("duties", duties.stream().map(Separation.Duty::wireName).toList());
+        out.put("privileges", group.privileges());
         return out;
     }
 

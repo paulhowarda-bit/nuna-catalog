@@ -168,7 +168,7 @@ class WorkerTraceTest {
      */
     private ConfigurableApplicationContext worker(TestCatalog traced, OtlpReceiver receiver) throws IOException {
         Path token = Files.writeString(folder.resolve("token"), catalog.workerTokens().token());
-        WorkerSettings.StorageProfile store = catalog.storageProfiles().get("test");
+        WorkerSettings.Store store = traced.stores().get("test");
         List<String> args = new ArrayList<>(List.of(
                 "--nuna.maintenance.catalog-uri=" + traced.uri,
                 "--nuna.maintenance.scan-interval=PT1H",
@@ -176,18 +176,15 @@ class WorkerTraceTest {
                 "--nuna.maintenance.cleanup-window.end=04:00",
                 "--nuna.maintenance.cleanup-window.zone=Europe/London",
                 "--nuna.maintenance.token.file=" + token,
-                "--nuna.maintenance.storage.test.prefixes[0]=" + store.prefixes().getFirst(),
+                "--nuna.maintenance.storage.test.kind=" + store.kind(),
+                "--nuna.maintenance.storage.test.endpoint=" + store.endpoint(),
                 "--nuna.maintenance.storage.test.region=" + store.region(),
-                "--nuna.maintenance.storage.test.path-style-access=" + store.pathStyleAccess(),
                 "--management.opentelemetry.tracing.export.otlp.endpoint=" + receiver.url("traces"),
                 "--management.opentelemetry.tracing.export.schedule-delay=100ms",
                 "--management.tracing.sampling.probability=1.0",
                 // The server, on this module's test class path only, brings JDBC; the worker has no database.
                 "--spring.autoconfigure.exclude="
                         + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration"));
-        if (store.endpoint() != null) {
-            args.add("--nuna.maintenance.storage.test.endpoint=" + store.endpoint());
-        }
         if (store.accessKeyId() != null) {
             args.add("--nuna.maintenance.storage.test.access-key-id=" + store.accessKeyId());
             args.add("--nuna.maintenance.storage.test.secret-access-key=" + store.secretAccessKey());

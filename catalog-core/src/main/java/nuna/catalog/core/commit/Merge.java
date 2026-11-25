@@ -416,7 +416,7 @@ public final class Merge {
         Map<Long, Long> kept = new LinkedHashMap<>(main.snapshotTimestamps());
         kept.keySet().retainAll(cut.snapshotTimestamps().keySet());
         return new TableFacts(main.uuid(), main.formatVersion(), main.location(), main.properties(),
-                main.currentSchemaId(), main.defaultSpecId(), kept);
+                main.currentSchemaId(), main.defaultSpecId(), kept, main.columns());
     }
 
     private static Table conflict(RefEntry entry, List<String> namespace, Optional<CatalogObject> object, Pointer cut,

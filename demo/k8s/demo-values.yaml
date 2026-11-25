@@ -17,6 +17,9 @@ config:
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
           access-key-id: nunatest
+          # The maintenance worker's own Silo user (maintenance-values.yaml): the worker reads this profile's
+          # prefixes only because it names one (item 256).
+          maintenance-principal: nuna-maintenance
       # The audit catalog of the queryable audit tables (D23): the audit table writer (audit-tables-values.yaml)
       # fills nuna_audit.audit.events from the audit topic, and the console's Audit page reads it back.
       catalogs:
@@ -56,6 +59,13 @@ config:
           user-id-claim: preferred_username
           groups-claim: groups
           client-id-claim: azp
+    # Trino's catalogs (trino.yaml), each to the warehouse it reads, so nuna can answer Trino's OPA access control
+    # with each user's row filter and column masks (D20, backlog 115).
+    opa:
+      catalogs:
+        lakehouse: lakehouse
+        lakehouse_dev: lakehouse@dev
+        engines: engines
     ui:
       oidc:
         issuer: https://${DEMO_HOST}:8180/realms/nuna

@@ -1,29 +1,24 @@
 // Governance in one catalog: the summary (tables classified, closed, held and frozen; the holds and freezes
-// standing; each regulated area), grants (made, listed by group, revoked and exported for an access review), and
-// every hold and freeze, standing and lifted, with the catalog's own governance (item 128).
+// standing; each regulated area), and every hold and freeze, standing and lifted, with the catalog's own governance
+// (item 128). Grants (listed by group, revoked and exported for an access review, and made in the Grant access dialog,
+// backlog 248) are the rail's own page for those who manage them (backlog 245).
 
 import * as api from './api.js';
-import {at, code, failure, fill, fmt, frozenPill, granted, h, heldPill, icon, load, muted, openDialog, pageHead, panel,
+import {at, code, fill, fmt, frozenPill, h, heldPill, icon, load, muted, openDialog, pageHead, panel,
   pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre, opensRow} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
-import {drFreeze, governanceTab, PRIVILEGES, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
-import {closedNote, may, operates} from './access.js';
+import {drFreeze, governanceTab, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
+import {may, operates} from './access.js';
+import {DUTY, grantAccess} from './grant.js';
 
-const DUTY = {describe: 'read', select: 'read', write: 'data', modify: 'data', create: 'data', 'manage-grants': 'grants', 'manage-tags': 'tags'};
 const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write, modify, create'], ['grants', 'Grants', 'manage-grants'],
   ['tags', 'Tags', 'manage-tags']];
 
-export function governancePage(catalog, tab, group) {
-  const key = tab === 'holds' || tab === 'grants' ? tab : '';
-  const grants = may(catalog, 'manage-grants');
-  const tabs = tabsNav('Governance', [['', 'Summary'], ['grants', 'Grants'], ['holds', 'Holds and freezes']]
-    .filter(([k]) => k !== 'grants' || grants), key, k => pageHref('governance', catalog, k || null));
+export function governancePage(catalog, tab) {
+  const key = tab === 'holds' ? tab : '';
+  const tabs = tabsNav('Governance', [['', 'Summary'], ['holds', 'Holds and freezes']], key,
+    k => pageHref('governance', catalog, k || null));
   if (key === 'holds') return holdsPage(catalog, tabs);
-  if (key === 'grants' && !grants) {
-    return h('div', {class: 'nc-main', id: 'governance-page'}, pageHead({eyebrow: `${catalog} · governance`, title: 'Grants'}), tabs,
-      closedNote(`Grants in ${catalog} are open to those who manage its grants.`));
-  }
-  if (key === 'grants') return grantsPage(catalog, tabs, group);
   return summaryPage(catalog, tabs);
 }
 
@@ -45,7 +40,8 @@ const pct = (n, of) => of ? Math.floor(100 * n / of) + '%' : '–';
 export function governanceFigures(sum) {
   const t = sum.tables || {};
   return {classified: t.classified || 0, total: t.total || 0, closed: t.closed || 0, held: t.held || 0, frozen: t.frozen || 0,
-    holds: sum.holds || 0, freezes: sum.freezes || 0, regulated: (sum.regulated || []).length};
+    holds: sum.holds || 0, freezes: sum.freezes || 0, regulated: (sum.regulated || []).length, flagged: t.flagged || 0,
+    rules: (sum.flagged || []).reduce((n, x) => n + (x.rules || 0), 0)};
 }
 
 function summaryPage(catalog, tabs) {
@@ -56,6 +52,7 @@ function summaryPage(catalog, tabs) {
     const standing = hf.standing || [];
     const regulated = sum.regulated || [];
     const closed = sum.closed || [];
+    const flagged = sum.flagged || [];
     const kpi = (key, ic, label, value, more) => h('div', {class: 'kpi', 'data-kpi': key}, h('p', {class: 'kpi-l'}, icon(ic), label),
       h('p', {class: 'kpi-v'}, value), h('p', {class: 'kpi-d'}, more));
     return [
@@ -69,12 +66,14 @@ function summaryPage(catalog, tabs) {
           + 'them, with holds and freezes, on every load, commit and maintenance job.',
       }),
       tabs,
-      h('div', {class: 'kpis', id: 'governance-kpis'},
+      h('div', {class: 'kpis five', id: 'governance-kpis'},
         kpi('classified', 'check', 'Classified', pct(f.classified, f.total), [h('b', null, fmt(f.classified)), ` of ${plural(f.total, 'table')}`]),
         kpi('holds', 'lock', 'Legal holds', String(f.holds), f.holds ? `on ${plural(f.held, 'table')} · nothing may be removed` : 'nothing held'),
         kpi('freezes', 'snow', 'DR freezes', String(f.freezes), f.freezes ? `${plural(f.frozen, 'table')} beneath` : 'none standing'),
         kpi('regulated', 'reg', 'Regulated areas', String(f.regulated), f.regulated
-          ? `${plural(regulated.reduce((n, r) => n + (r.tables || 0), 0), 'table')}, ${fmt(f.closed)} closed` : 'none in this catalog')),
+          ? `${plural(regulated.reduce((n, r) => n + (r.tables || 0), 0), 'table')}, ${fmt(f.closed)} closed` : 'none in this catalog'),
+        // Tables flagged for row and column rules, read through Trino (D20; Atelier, 2026-11-24; backlog 243).
+        kpi('flagged', 'table', 'Flagged tables', String(f.flagged), f.flagged ? plural(f.rules, 'rule') : 'none in this catalog')),
       h('div', {class: 'grid-2'},
         panel('Holds and freezes', 'standing now', standingTable(catalog, standing, show),
           h('p', {class: 'fine'}, 'A hold stops snapshot expiry, orphan removal, drops and purges. A freeze stops every cleanup and write '
@@ -91,6 +90,11 @@ function summaryPage(catalog, tabs) {
           closed.length ? [h('h3', null, 'Closed until classified'), h('ul', {class: 'stack closed-list'}, closed.map(on =>
             h('li', {'data-on': (on.path || []).join('.')}, onLink(catalog, on))))] : null,
           h('p', {class: 'fine'}, 'Until a table in a regulated area has its own classification, people can find it but not read or change it.'))),
+      h('div', {class: 'panel', id: 'flagged'}, h('h2', null, 'Flagged tables ', h('span', {class: 'meta'}, 'read through Trino')),
+        flagged.length ? tbl('stack-line', ['Table', ['Rules', 'num']], flagged.map(x => h('tr', {class: 'opens', onclick: opensRow,
+          'data-on': (x.on.path || []).join('.')},
+        h('td', {class: 'name'}, onLink(catalog, x.on)), h('td', {class: 'num'}, fmt(x.rules || 0)))))
+          : h('p', {class: 'muted'}, 'No table in this catalog is flagged.')),
     ];
   });
   show();
@@ -137,36 +141,34 @@ function historyWords(history) {
 
 // ---- grants ----
 
+const pathOf = securable => [...(securable.namespace || []), ...(securable.name ? [securable.name] : [])].join('.');
+
 function onWords(securable) {
-  const path = [...(securable.namespace || []), ...(securable.name ? [securable.name] : [])].join('.');
+  const path = pathOf(securable);
   return path ? [code(path), ' ', muted('· ' + securable.type)] : muted('the whole catalog');
 }
 
-function grantsPage(catalog, tabs, group) {
+/**
+ * The rail's Grants, for those who manage the catalog's grants; it was Governance's tab until backlog 245. Grants are
+ * made in the Grant access dialog (backlog 248); the page lists a group's grants, or the caller's own groups'.
+ */
+export function grantsPage(catalog, group) {
   const main = h('div', {class: 'nc-main', id: 'governance-grants'});
-  const result = h('div', {'aria-live': 'polite', id: 'grant-result'});
-  const hint = h('p', {class: 'fine grant-hint', hidden: true});
-  const list = h('div', {class: 'panel', id: 'grants-list'});
+  const list = h('div');
   const duties = h('div', {class: 'duties'});
   const dutiesH = h('h2', null, 'Duties');
-  const groupIn = h('input', {name: 'g', type: 'text', placeholder: 'A group, such as demo-analysts', 'aria-label': 'Group',
+  const groupIn = h('input', {name: 'g', type: 'search', placeholder: 'A group, such as demo-analysts', 'aria-label': 'Group',
     autocomplete: 'off', spellcheck: 'false', value: group || null, list: 'grant-groups'});
   const groups = h('datalist', {id: 'grant-groups'});
-  const on = h('select', {name: 'on', 'aria-label': 'On'}, h('option', {value: ''}, catalog + ' (the whole catalog)'));
-  const pv = h('select', {name: 'pv', 'aria-label': 'Privilege'}, h('option', {value: '', disabled: true, selected: true}, 'Choose a privilege'),
-    PRIVILEGES.map(p => h('option', {value: p}, p)));
-  const btn = h('button', {class: 'btn primary', type: 'submit'}, 'Grant');
-  const form = h('form', {class: 'grant-form', novalidate: true},
-    h('label', null, h('span', null, 'Group'), h('span', {class: 'field mono'}, groupIn), groups),
-    h('label', null, h('span', null, 'Privilege'), h('span', {class: 'field mono select'}, pv)),
-    h('label', null, h('span', null, 'On'), h('span', {class: 'field mono select'}, on)),
-    btn);
-  api.namespaces(catalog, []).then(ns => on.append(...ns.map(n => h('option', {value: n.join('\u001f')}, n.join('.')))), () => {});
-  const targetOf = () => on.value ? {catalog, kind: 'namespace', namespace: on.value.split('\u001f')} : {catalog, kind: 'catalog', namespace: []};
-  pv.addEventListener('change', () => { btn.textContent = 'Grant ' + pv.value; });
+  const filter = h('form', {class: 'grants-filter', role: 'search'},
+    h('label', null, h('span', null, 'List the grants of'), h('span', {class: 'field mono'}, groupIn)), groups);
+  // The catalog's groups fill the field's suggestions when the caller may list them; asking first writes no denial.
+  api.mayOnCatalog(catalog, 'manage-grants').then(yes => yes ? api.grantGroups(catalog) : null).then(known => {
+    if (known) for (const g of known.groups) groups.append(h('option', {value: g.group}));
+  }, () => {});
 
-  /** The grants of the group in the field, or the caller's own groups' when it is empty. */
-  const showList = () => {
+  /** The grants of the group in the field, or the caller's own groups' when it is empty; `made` is a grant to mark. */
+  const showList = made => {
     const g = groupIn.value.trim();
     load(list, async () => {
       const grants = await api.grantsOfGroups(catalog, g ? [g] : []);
@@ -174,58 +176,48 @@ function grantsPage(catalog, tabs, group) {
       fill(dutiesH, g ? `Duties of ${g} in ${catalog}` : `Duties of your groups in ${catalog}`);
       fill(duties, DUTIES.map(([k, w, ps]) => h('div', {class: 'duty' + (held.has(k) ? ' held' : ''), 'data-duty': k},
         h('h4', null, w + (held.has(k) ? ' · granted' : '')), h('p', null, ps))));
-      for (const x of grants) if (![...groups.children].some(o => o.value === x.group)) groups.append(h('option', {value: x.group}));
+      const isMade = x => made && x.group === made.group && x.privilege === made.privilege && x.securable.type === made.target.kind
+        && pathOf(x.securable) === pathOf(api.securable(made.target));
       return [h('h2', null, g ? `Grants to ${g} ` : 'Your groups\' grants ', h('span', {class: 'meta'}, `in ${catalog}`)),
         grants.length ? tbl('stack-line', ['Group', 'Privilege', 'On', 'Granted', ''], grants.map(x => h('tr', {'data-group': x.group,
-          'data-privilege': x.privilege},
+          'data-privilege': x.privilege, 'data-path': pathOf(x.securable), class: isMade(x) ? 'is-new' : null},
         h('td', {class: 'name'}, x.group), h('td', {class: 'name'}, x.privilege), h('td', null, onWords(x.securable)),
         h('td', null, h('span', {class: 'tnum'}, at(x['granted-at'])), ' ', muted(x['granted-by'])),
-        h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(catalog, x, showList)}, 'Revoke')))))
-          : h('p', {class: 'muted'}, g ? `${g} holds no grant in ${catalog}.` : `Your groups hold no grant in ${catalog}.`),
-        h('p', {class: 'fine'}, 'Type a group in the form to list its grants.')];
+        h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(catalog, x, () => showList())}, 'Revoke')))))
+          : h('p', {class: 'muted'}, g ? `${g} holds no grant in ${catalog}.` : `Your groups hold no grant in ${catalog}.`)];
     });
   };
-  groupIn.addEventListener('change', () => {
-    const want = pageHref('governance', catalog, 'grants', groupIn.value.trim() || null);
+  /** Lists the grants of the group now in the field, kept in the link. */
+  const listGroup = made => {
+    const want = pageHref('grants', catalog, null, groupIn.value.trim() || null);
     if (location.hash !== want) history.replaceState(null, '', want);
-    fill(result);
-    showList();
-  });
-  form.addEventListener('submit', async e => {
+    showList(made);
+  };
+  groupIn.addEventListener('change', () => listGroup());
+  filter.addEventListener('submit', e => {
     e.preventDefault();
-    const g = groupIn.value.trim();
-    const missing = [[g, 'a group'], [pv.value, 'a privilege']].filter(([v]) => !v).map(x => x[1]);
-    hint.hidden = !missing.length;
-    if (missing.length) {
-      hint.textContent = 'Choose ' + missing.join(' and ') + '.';
-      return;
-    }
-    btn.disabled = true;
-    try {
-      const answer = await api.grant(targetOf(), g, pv.value);
-      fill(result, granted(`Granted ${pv.value} on ${on.value ? on.value.split('\u001f').join('.') : catalog} to ${g}`, answer));
-    } catch (error) {
-      fill(result, failure(error));
-    } finally {
-      btn.disabled = false;
-    }
-    showList();
+    listGroup();
   });
   showList();
+  // A grant made in the dialog is shown in the list of its group, marked.
+  const made = x => {
+    groupIn.value = x.group;
+    listGroup(x);
+  };
   main.append(pageHead({
-    eyebrow: `${catalog} · governance`,
+    eyebrow: `${catalog} · grants`,
     title: `Grants in ${catalog}`,
     sub: 'Grants go to groups, never to people. A group that manages grants holds no other duty, and data and tags never share a group: '
       + 'the catalog refuses a grant that would break that.',
-    side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-grants', onclick: () => exportGrants(catalog)}, icon('down'), 'Export every grant'),
-  }), tabs, h('div', {class: 'grid-21'},
+    side: [h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access',
+      onclick: () => grantAccess({catalog, kind: 'catalog', namespace: []}, {pick: true, after: made})}, icon('key'), 'Grant access'),
+    h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-grants', onclick: () => exportGrants(catalog)}, icon('down'), 'Export every grant')],
+  }), h('div', {class: 'grid-21'},
+    h('div', {class: 'panel', id: 'grants-list'}, filter, list),
     h('div', {class: 'stack'},
-      h('div', {class: 'panel'}, h('h2', null, 'Grant a privilege'), form, hint),
-      result,
       h('div', {class: 'panel'}, dutiesH, duties, h('p', {class: 'fine duties-note'}, 'Grants stand alone: a group that manages grants is '
         + 'granted nothing else. Data and tags exclude each other; reading goes with either. So no group can both change data and decide '
-        + 'how it is labelled or who may see it.'))),
-    list));
+        + 'how it is labelled or who may see it.')))));
   return main;
 }
 

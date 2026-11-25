@@ -1,0 +1,21 @@
+Breaks: a store that refuses the worker's listing beneath a prefix (AccessDenied, NoSuchBucket) is reported as letting it list there, with no code (backlog 250).
+Module: catalog-maintenance
+Test: StorageReportTest#eachScanReportsWhatTheStoreLetTheWorkerListAndDeleteBeneathEachPrefix
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java b/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java
+index 792e8f8f..f3f5a0af 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java
+@@ -62,9 +62,9 @@ final class StorePrefix {
+             result = Storage.Listed.OK;
+             code = Optional.empty();
+         } catch (S3Exception e) {
+-            result = Storage.Listed.REFUSED;
+-            code = Optional.of(code(e));
+-            LOG.warn("The store refused the worker's listing of {}: {}", location, code.get());
++            result = Storage.Listed.OK;
++            code = Optional.empty();
++            LOG.warn("The store refused the worker's listing of {}: {}", location, code(e));
+         } catch (RuntimeException e) {
+             result = Storage.Listed.FAILED;
+             code = Optional.of(e.getClass().getSimpleName());

@@ -1,0 +1,17 @@
+Breaks: a rule dialog's Save comes back on after its version is spent, so a second click reports one's own edit as another admin's (backlog 257).
+Module: catalog-server
+Test: ConsoleRowColumnRulesBrowserTest#theGrantAdminAddsEditsAndRemovesRulesAndIsToldWhatFollows
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/dom.js b/catalog-server/src/main/resources/nuna/ui/dom.js
+index 37d2aeaa..73f329fa 100644
+--- a/catalog-server/src/main/resources/nuna/ui/dom.js
++++ b/catalog-server/src/main/resources/nuna/ui/dom.js
+@@ -347,7 +347,7 @@ export function dialogForm(fields, okLabel, onOk) {
+     } catch (error) {
+       fill(out, failure(error));
+     } finally {
+-      ok.disabled = form.hasAttribute('data-done');
++      ok.disabled = false;
+     }
+   });
+   return form;

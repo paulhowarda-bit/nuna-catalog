@@ -7,8 +7,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.NamespaceRecord;
+import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import java.util.ArrayList;
@@ -24,7 +26,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Grants to groups: put and revoke with their outbox rows, conditional puts (the separation-of-duties check inside
- * the write, backlog 13), the batch check, and both listings.
+ * the write, backlog 13), the batch check, both grant listings, and the listing of groups (backlog 247).
  */
 public abstract class GrantSuite extends GroupSuite {
 
@@ -162,6 +164,58 @@ public abstract class GrantSuite extends GroupSuite {
         assertThat(byGroups).doesNotHaveDuplicates().containsExactlyInAnyOrderElementsOf(expected).doesNotContain(other);
         assertThat(byGroups).extracting(Grant::group).isSorted();
         assertThat(bySecurable).containsExactlyElementsOf(onNamespace);
+    }
+
+    @Test
+    @DisplayName("Grant groups: every group holding a grant in the catalog once, in order, with each privilege it holds"
+            + " there once, page by page")
+    void groupListingPagesThroughEachGroupOnce() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        Securable onCatalog = new Securable(Securable.Kind.CATALOG, catalog);
+        Securable onNamespace = new Securable(Securable.Kind.NAMESPACE, namespace.id());
+        List<Grant> grants = new ArrayList<>(List.of(
+                new Grant(catalog, onCatalog, "analysts", "describe"),
+                new Grant(catalog, onNamespace, "loaders", "write"),
+                new Grant(catalog, onNamespace, "loaders", "create"),
+                new Grant(catalog, onCatalog, "stewards", "manage-tags"),
+                new Grant(catalog, onNamespace, "stewards", "select")));
+        for (int i = 0; i < 3; i++) {
+            CatalogObject table = newTable(namespace, "t" + i);
+            grants.add(new Grant(catalog, table.securable(), "analysts", "select"));
+            grants.add(new Grant(catalog, table.securable(), "analysts", "describe"));
+            grants.add(new Grant(catalog, table.securable(), "group-" + i, "select"));
+        }
+        for (Grant grant : grants) {
+            assertThat(store.putGrant(grant, "admin", change())).isEqualTo(WriteResult.APPLIED);
+        }
+        UUID otherCatalog = newCatalog();
+        assertThat(store.putGrant(new Grant(otherCatalog, new Securable(Securable.Kind.CATALOG, otherCatalog),
+                "outsiders", "select"), "admin", change())).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.putGrant(new Grant(otherCatalog, new Securable(Securable.Kind.CATALOG, otherCatalog),
+                "analysts", "manage-grants"), "admin", change())).isEqualTo(WriteResult.APPLIED);
+        List<GrantGroup> expected = List.of(
+                new GrantGroup("analysts", List.of("describe", "select")),
+                new GrantGroup("group-0", List.of("select")),
+                new GrantGroup("group-1", List.of("select")),
+                new GrantGroup("group-2", List.of("select")),
+                new GrantGroup("loaders", List.of("create", "write")),
+                new GrantGroup("stewards", List.of("manage-tags", "select")));
+
+        for (int size : List.of(1, 2, 4, 100)) {
+            assertThat(allPages(size, page -> store.listGrantGroups(catalog, page))).as("pages of %d", size)
+                    .containsExactlyElementsOf(expected);
+        }
+        assertThat(store.listGrantGroups(catalog, PageRequest.first(6)).nextToken()).as("exactly one page")
+                .isEmpty();
+
+        for (Grant grant : grants.stream().filter(g -> g.group().equals("loaders")).toList()) {
+            assertThat(store.revokeGrant(grant, change())).isEqualTo(WriteResult.APPLIED);
+        }
+        assertThat(allPages(2, page -> store.listGrantGroups(catalog, page))).as("a group whose grants are all revoked")
+                .extracting(GrantGroup::group).containsExactly("analysts", "group-0", "group-1", "group-2", "stewards");
+        assertThat(allPages(2, page -> store.listGrantGroups(newCatalog(), page))).as("a catalog with no grant")
+                .isEmpty();
     }
 
     @Test

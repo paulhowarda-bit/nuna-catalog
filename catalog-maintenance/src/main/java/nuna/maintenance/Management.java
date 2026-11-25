@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,7 +26,7 @@ import java.util.regex.Pattern;
 
 /**
  * The catalog's management routes the worker uses (D30), as a maintenance principal acting as itself: the work list,
- * the purge claim and its completion, the pending deletions it records and completes, the branches it warns of and
+ * the storage prefixes it lists and deletes beneath (item 256), the purge claim and its completion, the pending deletions it records and completes, the branches it warns of and
  * ends (D33), its reports of its own work (D38), and the DR verifier's work list and watermark reports (D37).
  */
 final class Management {
@@ -140,6 +141,14 @@ final class Management {
     record Page<T>(List<T> items, Optional<String> nextToken) {
     }
 
+    /**
+     * A catalog storage profile that names a maintenance principal, as the worker reads it at each scan (item 256):
+     * its name, its store's kind and endpoint, by which the worker finds its own identity there, and the prefixes it
+     * lists and deletes beneath, each as the catalog wrote it.
+     */
+    record StorageProfile(String name, String kind, String endpoint, List<String> prefixes) {
+    }
+
     /** What the catalog answered a purge claim. */
     enum Claim {
         /** The caller holds the claim, newly or again. */
@@ -177,6 +186,19 @@ final class Management {
 
     Page<TableWork> tables(Optional<String> token) {
         return page(Section.TABLES, token, Management::table);
+    }
+
+    /**
+     * The catalog's storage profiles that name a maintenance principal (item 256), from
+     * {@code GET /management/v1/maintenance/storage-prefixes}; none when it names none.
+     */
+    List<StorageProfile> storageProfiles() {
+        JsonNode body = read(expect("the storage prefixes", send("GET", "management/v1/maintenance/storage-prefixes",
+                null), 200).body());
+        List<StorageProfile> profiles = new ArrayList<>();
+        body.path("profiles").forEach(node -> profiles.add(new StorageProfile(node.path("name").asText(),
+                node.path("kind").asText(), node.path("endpoint").asText(), strings(node.path("prefixes")))));
+        return List.copyOf(profiles);
     }
 
     Page<RequestWork> requests(Optional<String> token) {
@@ -307,10 +329,12 @@ final class Management {
 
     /**
      * Reports a scan's start, or with {@code outcome} ({@code succeeded} or {@code failed}) its end: the failed jobs
-     * by kind, and why a failed scan failed. A scan that has ended keeps its end.
+     * by kind, and why a failed scan failed. A scan that has ended keeps its end. And what the store let the worker
+     * do beneath each prefix (backlog 250), by storage identity, its kind and endpoint, the prefixes under it: never a
+     * key, an object or the store's message.
      */
     void reportScan(UUID id, Instant started, Optional<Instant> ended, Optional<String> outcome,
-                    Map<String, Integer> failures, Optional<String> error) {
+                    Map<String, Integer> failures, Optional<String> error, List<Storage.Reach> storage) {
         ObjectNode body = JSON.createObjectNode();
         body.put("started-at", started.toString());
         ended.ifPresent(at -> body.put("ended-at", at.toString()));
@@ -318,6 +342,24 @@ final class Management {
         ObjectNode kinds = body.putObject("failures");
         failures.forEach(kinds::put);
         error.ifPresent(message -> body.put("error", message));
+        ArrayNode stores = body.putArray("storage");
+        Map<List<Object>, ArrayNode> byIdentity = new LinkedHashMap<>();
+        storage.forEach(reach -> {
+            ArrayNode prefixes = byIdentity.computeIfAbsent(List.of(reach.kind(), reach.endpoint()), identity -> {
+                ObjectNode store = stores.addObject();
+                store.put("kind", reach.kind());
+                reach.endpoint().ifPresent(endpoint -> store.put("endpoint", endpoint.toString()));
+                return store.putArray("prefixes");
+            });
+            ObjectNode prefix = prefixes.addObject();
+            prefix.put("prefix", reach.prefix());
+            prefix.put("listed", reach.listed().name().toLowerCase(Locale.ROOT));
+            reach.listCode().ifPresent(code -> prefix.put("list-code", code));
+            prefix.put("deleted", reach.deleted());
+            prefix.put("delete-refused", reach.deleteRefused());
+            prefix.put("delete-failed", reach.deleteFailed());
+            reach.deleteCode().ifPresent(code -> prefix.put("delete-code", code));
+        });
         expect("the report of scan " + id, send("PUT", "management/v1/maintenance/scans/" + id, body), 204);
     }
 

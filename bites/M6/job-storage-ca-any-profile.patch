@@ -1,17 +1,17 @@
-Breaks: a compaction Job gets a storage profile's CA bundle whichever profile its table lies in (backlog 88).
+Breaks: a compaction Job gets a store's CA bundle whichever store its table lies on (backlog 88; stores since item 256).
 Module: catalog-maintenance
 Test: KubernetesJobsTest#aStorageCaBundleIsMountedIntoTheJobAndSparkTrustsIt
 
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
-index 002efc8..30a7374 100644
+index cc0cd867..dd86d21b 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
-@@ -239,7 +239,7 @@ final class KubernetesJobs implements Compactor {
-         String location = Storage.normalize(table.location());
-         for (Map.Entry<String, Optional<CaBundle>> prefix : storageCas.entrySet()) {
-             String under = prefix.getKey().endsWith("/") ? prefix.getKey() : prefix.getKey() + "/";
--            if (location.startsWith(under) || location.equals(prefix.getKey())) {
-+            if (prefix.getValue().isPresent()) {
-                 return prefix.getValue();
-             }
-         }
+@@ -249,7 +249,7 @@ final class KubernetesJobs implements Compactor {
+      * ({@link OwnStorage#store}): by the catalog's prefix it lies beneath. None for a table beneath no prefix.
+      */
+     private Optional<CaBundle> storageCa(Management.TableWork table) {
+-        return storeOf.apply(table.location()).flatMap(store -> storageCas.getOrDefault(store, Optional.empty()));
++        return storageCas.values().stream().flatMap(Optional::stream).findFirst();
+     }
+ 
+     private static Map<String, Optional<CaBundle>> storageCas(Map<String, WorkerSettings.Store> storage) {

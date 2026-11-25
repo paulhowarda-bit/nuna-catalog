@@ -171,7 +171,7 @@ The console offers two ways in:
 | `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks: the brokerage world's `brokerage-lake`, and the CDC leg's |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 | `service-account-nuna-audit-tables` | Keycloak client `nuna-audit-tables`, client-credentials grant | `demo-audit-writers` | create and write on `nuna_audit` only: the audit table writer |
-| `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them |
+| `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them, which Trino's own vouches for, so they read flagged tables with their row filter and column masks (D20) |
 
 Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
 plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
@@ -191,6 +191,15 @@ checked on grants to groups, so nothing in the catalog refuses one person in eve
 the directory's to prevent. In kafbat `presenter` administers, as `demo-operators`. Studio and CloudBeaver
 have no `presenter`: Keycloak signs them in, and both refuse them; use `oscar` there. CloudBeaver shows its
 administrator every person's connections, so `oscar` can show each person's view there without changing user.
+
+No one grants to a group they belong to: the catalog refuses it as separation of duties ("no one grants to a
+group they belong to"). So `presenter`, in all five groups, can grant to none of them, and `gary` cannot grant to
+`demo-grant-admins` or `demo-auditors`. To show a grant, sign in as `gary` or `presenter` and grant to a new group
+name, such as `select` on a namespace to `demo-readers`: grants go to group names, and the catalog does not check
+that the directory has the group, so Keycloak needs no change. To show the separation-of-duties refusal itself,
+sign in as `gary` and grant `manage-tags` to `demo-analysts`: data and tags never share a group. In the console,
+Grant access (on the Grants page, and at the top of every Access tab) says each of these before Grant is pressed:
+what the grant will give, that it is held already, or why it is refused, and a refused grant cannot be sent.
 
 ### The same people in the other UIs
 
@@ -435,8 +444,20 @@ nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`,
 - Its identity: Keycloak's service account of client `nuna-maintenance`, `service-account-nuna-maintenance`, the
   catalog's maintenance principal (`demo-values.yaml`), in group `demo-maintenance`, which holds `write` on
   `lakehouse`. Its compaction Jobs sign in the same way. It deletes from Silo as its own user, `nuna-maintenance`,
-  which may only list and delete beneath the tables (`silo-maintenance.json`); `up` makes it again each time,
-  which leaves one already on Silo's volume as it was.
+  which may only list and delete beneath the tables: the catalog's profile `s3` names it as its
+  `maintenance-principal` (`demo-values.yaml`), so the catalog generates its delete policies, and `up`, once the
+  catalog serves, reads them as `oscar` from `GET /management/v1/maintenance/storage-setup` and applies the `to`
+  policy, `nuna-worker-s3`, to the user, as a platform operator would at work (`deploy/README.md`, "Delete
+  rights"). `up` makes the user and the policy again each time, so a changed key or prefix takes effect; if the
+  policy cannot be read or applied, `up` says so and carries on, and the worker's scans are refused until the next
+  `up`.
+- The `except` policy, which denies delete beneath the prefixes to every other user, is not applied in the demo:
+  the demo's catalog signs in to Silo as its root user, `nunatest`, whom no policy binds. At work the catalog has a
+  user of its own, which the `except` policy must hold (`deploy/README.md`).
+- A second catalog's bucket is set up the same way, from the console as `oscar`: Maintenance's "What the worker
+  needs to maintain <catalog>" panel says which step is missing, and What to set up, on it and on Service's Worker
+  storage panel, gives the worker's settings for a new store and the policies with the commands that apply them
+  (items 252, 254).
 - A file it queues for deletion waits out the 7-day PITR window first, so the first deletions come a week after
   the data was written. The database outlives `down` and the overnight run's rebuild, so the 30-night trends
   build up; `wipe` starts them again.
@@ -529,7 +550,21 @@ storage credentials the catalog vends them:
 - `stella` reads. `gary` and `oscar` see the namespaces and tables listed, but every read fails with
   "Failed to load table", since the catalog refuses them: they hold no grant (D18).
 - Each query is in the catalog's audit trail as the person: a read, a refusal, the credentials vended. Its
-  engine reads `nuna-console`, the client that `demo/Mint.java` names in the people's tokens.
+  record names the person as the end user, and Trino (principal `trino`, engine `trino-demo`) as acting for them:
+  every request also carries Trino's own token in `X-Nuna-Engine-Authorization`, which vouches for the person's.
+- Row filters and column masks (D20): `markets.desks.positions` is flagged, and each group has a rule on it. Run
+  the same query as `ana` and as `stella`:
+
+  ```sql
+  SELECT * FROM lakehouse."markets.desks".positions;
+  ```
+
+  `ana` (`demo-analysts`) gets the equity desk's three rows, each trader's name `***`; `stella` (`demo-stewards`)
+  gets all six rows with `pnl` empty. Trino asks the catalog for them as its OPA access control
+  (`access-control.properties` in `trino.yaml`), forwarding the person's token; the catalog answers from the rules
+  `gary` set. Read without Trino (Spark, say, with the person's own token), the table's data answers 403: only a
+  trusted engine gets a flagged table's files. `gary` lists and changes the rules with
+  `/management/v1/catalogs/lakehouse/row-column-rules`.
 
 - The navigator lists every namespace at every depth, as a schema named by its dotted path; quote it in SQL:
 
@@ -554,7 +589,8 @@ storage credentials the catalog vends them:
   ```
 
 - A query without a token fails: Trino then asks the catalog to exchange one, and the catalog answers that
-  it issues none (D13). Trino's own token, as user `trino`, only reads the catalogs' config. It holds no
+  it issues none (D13). Trino's own token, as user `trino`, reads the catalogs' config and vouches for each
+  query's person, never reading as itself. It holds no
   grant; `demo.sh up` registers its client, `trino-demo`, as a trusted engine (D17), which sees every catalog
   and nothing in it (D18).
 - The user name in a connection names the query in Trino; Trino checks no password.

@@ -1,0 +1,17 @@
+Breaks: the catalog keeps a scan without the groups the worker's token carried, so operators cannot see which groups its grants are held by (backlog 250).
+Module: catalog-server
+Test: HealthRoutesTest#aScanKeepsWhatTheWorkerReachesAndTheGroupsItsTokenCarried
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java
+index 00e55da5..2ec76a23 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java
+@@ -119,7 +119,7 @@ class HealthRoutes {
+             scan = new MaintenanceScan(scanId, request.caller().principal().id(), instant(json, "started-at"),
+                     optionalInstant(json, "ended-at"), optionalText(json, "outcome").map(outcome ->
+                             MaintenanceScan.Outcome.valueOf(constant(outcome))), failures(json),
+-                    optionalText(json, "error"), Optional.of(new TreeSet<>(request.caller().principal().groups())),
++                    optionalText(json, "error"), Optional.of(new TreeSet<>()),
+                     storage(json));
+         } catch (IllegalArgumentException e) {
+             throw CatalogError.badRequest("Not a scan report: " + e.getMessage());

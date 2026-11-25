@@ -82,6 +82,11 @@ class GrantReplayTest {
         public Page<GrantRecord> listGrantsOn(nuna.catalog.store.Securable securable, PageRequest page) {
             throw new UnsupportedOperationException();
         }
+
+        @Override
+        public Page<nuna.catalog.store.GrantGroup> listGrantGroups(UUID catalogId, PageRequest page) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     private static CatalogEvent change(GrantChange.Action action, Securable on, String group, int n) {

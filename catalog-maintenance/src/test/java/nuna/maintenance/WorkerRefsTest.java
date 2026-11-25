@@ -254,6 +254,8 @@ class WorkerRefsTest {
         if (path.equals(WORK)) {
             String section = query.replaceAll(".*section=([a-z]+).*", "$1");
             answer = new Answer(200, sections.getOrDefault(section, "{}"));
+        } else if (path.equals(TestReach.ROUTE)) {
+            answer = new Answer(200, TestReach.ONE_PROFILE);
         } else if (path.equals("/v1/config")) {
             answer = new Answer(200, "{\"defaults\":{},\"overrides\":{}}");
         } else if (path.equals("/v1/namespaces/ns/tables/t")) {
@@ -354,6 +356,11 @@ class WorkerRefsTest {
         @Override
         public void delete(Collection<String> locations) {
             deleted.addAll(locations);
+        }
+
+        @Override
+        public Prefixes reach(List<Management.StorageProfile> profiles) {
+            return TestReach.everyProfile(profiles);
         }
 
         @Override

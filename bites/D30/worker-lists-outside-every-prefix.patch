@@ -1,0 +1,19 @@
+Breaks: the worker's storage lists and deletes a location beneath none of the catalog's prefixes with its first store's identity instead of refusing it, the refusal Storage.io made before item 256 with no test.
+Module: catalog-maintenance
+Test: PrefixesTest#theWorkersStorageRefusesALocationOutsideEveryPrefix
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java b/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
+index c115eb5b..11214cbd 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
+@@ -111,9 +111,7 @@ final class OwnStorage implements Storage {
+     /** The account of the prefix a location lies strictly beneath at this scan. */
+     private StorePrefix account(String location) {
+         Reached now = reached;
+-        return now.prefixes().holding(location).map(now.accounts()::get).orElseThrow(() ->
+-                new IllegalStateException(location + " lies strictly beneath none of the storage prefixes the catalog"
+-                        + " gives the worker at this scan, " + now.prefixes() + ": the worker lists and deletes"
+-                        + " nothing there"));
++        return now.prefixes().holding(location).map(now.accounts()::get)
++                .orElseGet(() -> new StorePrefix(location, "s3", Optional.empty(), byStore.values().iterator().next()));
+     }
+ }

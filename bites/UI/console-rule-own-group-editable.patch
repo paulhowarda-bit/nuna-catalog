@@ -1,0 +1,17 @@
+Breaks: A rule for the grant admin's own group gets Edit and Remove, not the read-only words.
+Module: catalog-server
+Test: ConsoleRowColumnRulesBrowserTest#theGrantAdminAddsEditsAndRemovesRulesAndIsToldWhatFollows
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/rules.js b/catalog-server/src/main/resources/nuna/ui/rules.js
+index ad76c4a9..59015452 100644
+--- a/catalog-server/src/main/resources/nuna/ui/rules.js
++++ b/catalog-server/src/main/resources/nuna/ui/rules.js
+@@ -70,7 +70,7 @@ function grantAdminPanel(target, rules, show) {
+     h('td', {class: 'wrap', 'data-rows': ''}, everyRow(rule['row-filter']) ? 'Every row' : ['Only rows where ', code(rule['row-filter'])]),
+     h('td', {class: 'wrap', 'data-masks': ''}, maskWords(rule['column-masks'])),
+     h('td', null, h('span', {class: 'tnum'}, at(rule['set-at'])), ' ', muted(rule['set-by'])),
+-    h('td', null, mine.has(rule.group) ? h('span', {class: 'fine', 'data-own': ''}, OWN_GROUP) : h('span', {class: 'refusal-acts'},
++    h('td', null, false ? h('span', {class: 'fine', 'data-own': ''}, OWN_GROUP) : h('span', {class: 'refusal-acts'},
+       h('button', {class: 'btn sm ghost', type: 'button', 'data-act': 'edit-rule', onclick: () => ruleDialog(target, rule, rules, show)}, 'Edit'),
+       h('button', {class: 'btn sm ghost', type: 'button', 'data-act': 'remove-rule', onclick: () => removeDialog(target, rule, rules, show)}, 'Remove')))));
+   return panel(TITLE, rules.length ? plural(rules.length, 'rule') : null,

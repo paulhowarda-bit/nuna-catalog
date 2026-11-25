@@ -41,6 +41,7 @@ import org.apache.iceberg.rest.requests.CreateTableRequest;
 import org.apache.iceberg.rest.requests.CreateViewRequest;
 import org.apache.iceberg.rest.requests.UpdateTableRequest;
 import org.apache.iceberg.rest.requests.UpdateTableRequestParser;
+import org.apache.iceberg.types.Types;
 import org.apache.iceberg.view.ImmutableViewVersion;
 import org.apache.iceberg.view.SQLViewRepresentation;
 import org.apache.iceberg.view.ViewMetadata;
@@ -270,6 +271,14 @@ public final class Metadata {
                 log.isEmpty() ? Optional.empty() : Optional.of(log.getLast().file()));
     }
 
+    /**
+     * The top-level columns of a table's current schema, by name, in schema order: what a row filter or column mask
+     * names (D20, backlog 240). Throws on anything that is not table metadata.
+     */
+    public static List<String> columns(String metadataJson) {
+        return facts(TableMetadataParser.fromJson(metadataJson)).columns();
+    }
+
     /** Reads a view metadata file's facts, for the DR rewind (D37); throws on anything that is not view metadata. */
     public static ViewFacts viewFacts(String metadataJson, String metadataLocation) {
         return facts(ViewMetadataParser.fromJson(metadataLocation, metadataJson));
@@ -284,7 +293,8 @@ public final class Metadata {
         metadata.snapshots().forEach(s -> snapshots.put(s.snapshotId(), s.timestampMillis()));
         return new TableFacts(metadata.uuid(), metadata.formatVersion(), metadata.location(),
                 Map.copyOf(metadata.properties()), metadata.currentSchemaId(), metadata.defaultSpecId(),
-                Collections.unmodifiableMap(snapshots));
+                Collections.unmodifiableMap(snapshots),
+                metadata.schema().columns().stream().map(Types.NestedField::name).toList());
     }
 
     private static ViewFacts facts(ViewMetadata metadata) {

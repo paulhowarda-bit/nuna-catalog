@@ -465,8 +465,9 @@ SQL
 # Trino's own client, trino-demo (Mint.java), registered as a trusted engine (D17) by oscar, a platform operator.
 # Its group holds no grant, so only as a registered engine does its own token see the catalogs and read their
 # config (D18, item 84); it still sees nothing in them. On every up, before Trino starts: the registry goes with
-# PostgreSQL's pod, and registering it again leaves the registry as it was. Registered, it could also name an end
-# user; the demo never has it do so, as each query carries the token of whoever runs it (trino.yaml).
+# PostgreSQL's pod, and registering it again leaves the registry as it was. Registered, it vouches for the user of
+# each query, whose own token the query carries (trino.yaml), so a flagged table's data reaches them through Trino
+# with their row filter and column masks applied (D20, backlog 115).
 trusted_engines() {
   say "registering Trino's client, trino-demo, as a trusted engine (as oscar, the platform operator)"
   api oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
@@ -485,20 +486,46 @@ audit_writer() {
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-audit-tables:demo)" --wait --timeout 5m >/dev/null
 }
 
+# The worker's Silo policy, as a platform operator applies it at work (deploy/README.md, "Delete rights"; backlog 255):
+# the `to` policy the catalog generates for each profile naming nuna-maintenance as its maintenance principal
+# (demo-values.yaml's s3), read as oscar from GET /management/v1/maintenance/storage-setup, made under its own name
+# (nuna-worker-<profile>) and attached to user nuna-maintenance. Making it again replaces it with the catalog's text,
+# so changed prefixes take effect. The `except` policy, for every other user, is not applied: the demo's catalog signs
+# in as Silo's root, nunatest, whom no policy binds (demo/README.md, "Maintenance"). Returns at its first failure.
+worker_policy() {
+  local setup entries entry name policy
+  setup=$(tls_curl -fsS -H "Authorization: Bearer $(token_of oscar)" "$URL/management/v1/maintenance/storage-setup") \
+    || return 1
+  # Compact JSON (Jackson), each MinIO `to` entry's fields in this order; the policy texts hold no backslash but the
+  # quotes' escapes (DeletePolicy).
+  entries=$(grep -oE '"to":"nuna-maintenance","name":"nuna-worker-[A-Za-z0-9._-]+","file":"[^"]+","policy":"([^"\\]|\\.)*"' \
+    <<<"$setup") || { echo "the catalog generates no Silo policy for nuna-maintenance: $setup" >&2; return 1; }
+  while IFS= read -r entry; do
+    name=$(sed -E 's/^.*"name":"([^"]+)".*$/\1/' <<<"$entry")
+    policy=$(sed -E -e 's/^.*"policy":"(.*)"$/\1/' -e 's/\\"/"/g' <<<"$entry")
+    k exec -i deployment/s3 -c silo -- sh -c "cat > /tmp/$name.json &&
+      mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+      mc admin policy create l $name /tmp/$name.json >/dev/null &&
+      { mc admin policy attach l $name --user nuna-maintenance >/dev/null 2>&1 || true; }" <<<"$policy" || return 1
+  done <<<"$entries"
+  # The hand-written policy up attached before backlog 255, still on a Silo volume kept since: the worker holds only
+  # the `to` policies (deploy/README.md).
+  k exec deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+    { mc admin policy detach l nuna-maintenance --user nuna-maintenance >/dev/null 2>&1 || true; } &&
+    { mc admin policy rm l nuna-maintenance >/dev/null 2>&1 || true; }'
+}
+
 # The maintenance worker (D30; chart deploy/helm/nuna-maintenance, maintenance-values.yaml), installed or brought up to
-# date, with its compaction Jobs' namespace (maintenance-jobs.yaml) and its own Silo user, which may list and delete
-# beneath the tables (silo-maintenance.json); Silo keeps the user on its volume, and every up makes it again with
-# its key and policy, so a changed file or key takes effect. It
+# date, with its compaction Jobs' namespace (maintenance-jobs.yaml) and its own Silo user, nuna-maintenance, holding the
+# policy the catalog generates (worker_policy). Silo keeps the user on its volume, and every up makes it again with its
+# key, so a changed key takes effect. The catalog must be serving: up starts the worker after wait_for_console. It
 # signs in to Keycloak as client nuna-maintenance, with the secret publish_keycloak_keys made. The image's id as a pod
 # annotation, as for the catalog. One replica: an upgrade also starts it again after cdc stopped it.
 maintenance_worker() {
   say "starting the maintenance worker (chart deploy/helm/nuna-maintenance), its compaction Jobs in namespace $NS-compaction"
-  k exec -i deployment/s3 -c silo -- sh -c 'cat > /tmp/nuna-maintenance.json &&
-    mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
-    mc admin user add l nuna-maintenance nuna-maintenance-secret-key >/dev/null &&
-    mc admin policy create l nuna-maintenance /tmp/nuna-maintenance.json >/dev/null &&
-    { mc admin policy attach l nuna-maintenance --user nuna-maintenance >/dev/null 2>&1 || true; }' \
-    < "$STACK/silo-maintenance.json"
+  k exec deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+    mc admin user add l nuna-maintenance nuna-maintenance-secret-key >/dev/null'
+  worker_policy || say "the worker's Silo policy was not applied (see above): its scans may be refused, and readiness says so; the next up tries again (backlog 255)"
   fill maintenance-jobs.yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
   fill maintenance-values.yaml > "$RUN/maintenance-values.yaml"
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-maintenance "$REPO/deploy/helm/nuna-maintenance" \
@@ -681,6 +708,29 @@ seed() {
   api gary POST "$m/grants" '{"securable":{"type":"namespace","namespace":["markets"]},"group":"demo-quants","privilege":"describe"}'
   api gary POST "$m/grants" "{\"securable\":{\"type\":\"table\",\"namespace\":[\"markets\",\"equities\",\"eu\",\"xetra\"],\"name\":\"trades\"},\"group\":\"demo-quants\",\"privilege\":\"select\"}"
   k create configmap demo-seeded >/dev/null
+}
+
+# Row filters and column masks (D20, backlog 115), on markets.desks.positions, which the lake writer makes once (its
+# files are written before the flag, which then lets only a trusted engine reach them). stella flags it and gary,
+# the grant admin, sets each group's rule: ana's demo-analysts see the equity desk's rows with each trader's name
+# masked, and stella's demo-stewards every desk's rows with the P&L hidden. In CloudBeaver each runs
+#   SELECT * FROM lakehouse."markets.desks".positions
+# through Trino and gets their own answer; read without Trino, its data answers 403. Every up, after seed: setting
+# them again changes nothing.
+row_column_rules() {
+  local m=/management/v1/catalogs/$CATALOG ns='markets%1Fdesks'
+  local table='{"type":"table","namespace":["markets","desks"],"name":"positions"}'
+  if ! api ana HEAD "/v1/$CATALOG/namespaces/$ns/tables/positions" '' 204 2>/dev/null; then
+    say "writing markets.desks.positions, the sample for row filters and column masks (demo/LakeWriter.java)"
+    lake positions
+  fi
+  say "row filters and column masks on markets.desks.positions: flagged by stella, each group's rule set by gary (D20)"
+  api stella PUT "$m/namespaces/$ns/tables/positions/attributes/row-column-policy" \
+    '{"value":"true","provenance":"demo-seed: data catalogue"}' &&
+  api gary POST "$m/row-column-rules" \
+    "{\"table\":$table,\"group\":\"demo-analysts\",\"row-filter\":\"desk = 'EQ'\",\"column-masks\":{\"trader\":\"'***'\"}}" &&
+  api gary POST "$m/row-column-rules" \
+    "{\"table\":$table,\"group\":\"demo-stewards\",\"column-masks\":{\"pnl\":\"NULL\"}}"
 }
 
 # SingleStore's databases, once per volume (done when ops exists; a new or wiped volume starts empty, and seed
@@ -1061,9 +1111,12 @@ Silo:         its console on $web:8184: "Keycloak" signs ana and presenter in to
               secret nunatest-secret-key
 Kubernetes:   namespace $NS, context $CONTEXT
 
-Switches:     $(switches_line). demo/demo.sh gen, ss or cdc turns one on, and demo/demo.sh <switch> stop off:
-  gen         the brokerage world: its tables, Kafka, Kafka Connect and its live generator (turns ss on too)
-  ss          SingleStore, with its sample databases and change feeds
+Switches:     $(switches_line). demo/demo.sh gen, ss, kafka or cdc turns one on, and demo/demo.sh <switch> stop
+              off:
+  gen         the brokerage world: its tables and its live generator, through Kafka or SingleStore or both, as
+              kafka and ss say (turns kafka on if neither is)
+  ss          SingleStore, with its sample databases and change feeds; the generator's orders go to it
+  kafka       Kafka and Kafka Connect; every feed of the generator but the orders goes through them
   cdc         PostgreSQL, Oracle and CockroachDB into Iceberg history tables (starts Kafka; stops Trino and
               the generator while it runs)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines;
@@ -1071,7 +1124,7 @@ Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and Single
 EOF
   if running brokerage; then
     cat <<EOF
-Brokerage:    the brokerage world writes lakehouse.brokerage live, through Kafka and SingleStore;
+Brokerage:    the brokerage world writes lakehouse.brokerage live, route $(world_route) (kafka, singlestore or both);
               demo/demo.sh brokerage logs follows its generator
 EOF
   fi
@@ -1105,7 +1158,8 @@ build_connect() {
 }
 
 # A call to Kafka Connect's REST API, with the body of a PUT on stdin; prints the answer, fails the script on
-# anything but 2xx.
+# anything but 2xx. While the front door answers 502, 503 or 504 (Connect stalled, as when Windows pages it out) or
+# Connect 409 (its workers rebalancing), it tries again every 2 s for about a minute (backlog 267).
 connect_api() {
   local method=$1 path=$2 out in status
   out=$(mktemp)
@@ -1116,7 +1170,11 @@ connect_api() {
     cat > "$in"
     args+=(-H 'Content-Type: application/json' --data-binary "@$in")
   fi
-  status=$(tls_curl "${args[@]}")
+  for try in $(seq 1 30); do
+    (( try == 1 )) || sleep 2
+    status=$(tls_curl "${args[@]}") || true
+    [[ "$status" =~ ^(409|502|503|504)$ ]] || break
+  done
   rm -f "$in"
   if [[ "$status" != 2* ]]; then
     echo "Kafka Connect $method $path answered $status: $(cat "$out")" >&2
@@ -1435,6 +1493,7 @@ up() {
   seed
   refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
   maintenance_policy || say "maintenance was not turned on in $CATALOG's policy (see the answer above); the next up tries again (backlog 230)"
+  row_column_rules || say "the row filters and column masks on markets.desks.positions were not set (see the answer above); the next up tries again (backlog 115)"
 
   # The switches (D50) as they were: SingleStore, then Kafka for the generator or the CDC leg.
   if is_on ss; then

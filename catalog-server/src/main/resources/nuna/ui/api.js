@@ -183,6 +183,9 @@ export const governance = target => call(managed(target) + '/governance');
 export const setAttribute = (target, attribute, value, provenance) =>
   send(managed(target) + '/attributes/' + enc(attribute), {method: 'PUT', body: {value, provenance}});
 
+/** Removes an attribute set on the target itself; the levels above keep theirs. */
+export const removeAttribute = (target, attribute) => send(managed(target) + '/attributes/' + enc(attribute), {method: 'DELETE'});
+
 export const placeHold = (target, reason) => send(managed(target) + '/holds', {method: 'POST', body: {reason}});
 
 /** Releases a hold on the level it was placed on. */
@@ -251,9 +254,74 @@ export function grantsOfGroups(catalog, groups) {
 export const grant = (target, group, privilege) => send(`/management/v1/catalogs/${enc(target.catalog)}/grants`,
   {method: 'POST', body: {securable: securable(target), group, privilege}});
 
+/**
+ * What a grant would do, writing nothing (backlog 246): {securable, group, privilege, answer}, the answer `admitted`,
+ * `unchanged` (with granted-by and granted-at) or `refused` (with refusal and reason). Not audited; a caller who may
+ * not manage grants there is refused as the grant is, audited.
+ */
+export const previewGrant = (target, group, privilege) => call(`/management/v1/catalogs/${enc(target.catalog)}/grants/preview`,
+  {method: 'POST', body: {securable: securable(target), group, privilege}});
+
+/** Whether the caller's groups hold `privilege` on the catalog itself, from the batch check, which is not audited. */
+export const mayOnCatalog = (catalog, privilege) => call(`/management/v1/catalogs/${enc(catalog)}/grants/check`,
+  {method: 'POST', body: {checks: [{securable: {type: 'catalog'}, privilege}]}})
+  .then(body => !!((body.results || [])[0] || {}).allowed);
+
+/**
+ * The groups holding a grant in a catalog, every page, each with its duties and privileges (backlog 247), and the
+ * deployment's grant-admin and platform-operator groups: {groups, grantAdmins, operators}. Needs manage-grants on the
+ * catalog itself.
+ */
+export async function grantGroups(catalog) {
+  const out = {groups: [], grantAdmins: [], operators: []};
+  let pageToken = null;
+  for (let page = 0; page < 100; page++) {
+    const body = await call(`/management/v1/catalogs/${enc(catalog)}/grants/groups`
+      + (pageToken ? '?pageToken=' + enc(pageToken) : ''));
+    out.groups.push(...(body.groups || []));
+    out.grantAdmins = body['grant-admin-groups'] || [];
+    out.operators = body['platform-operator-groups'] || [];
+    pageToken = body['next-page-token'];
+    if (!pageToken) break;
+  }
+  return out;
+}
+
 export const revoke = (catalog, securableSpec, group, privilege) =>
   send(`/management/v1/catalogs/${enc(catalog)}/grants/revoke`,
     {method: 'POST', body: {securable: securableSpec, group, privilege}});
+
+// ---- row filters and column masks (D20, backlog 115; the console's, backlog 243) ----
+
+const rulesPath = catalog => `/management/v1/catalogs/${enc(catalog)}/row-column-rules`;
+
+/** Every group's rule on a table, with its filter and masks: {table, rules}. Needs manage-grants on the table or above. */
+export function rules(target) {
+  const query = new URLSearchParams();
+  for (const level of target.namespace) query.append('namespace', level);
+  query.set('name', target.name);
+  return call(`${rulesPath(target.catalog)}?${query}`);
+}
+
+/** If-Match for the rule's version as the list gave it, so a rule changed since answers 412 (backlog 244); none for a new rule. */
+const ifMatch = version => version === undefined || version === null ? {} : {'If-Match': `"${version}"`};
+
+/**
+ * Sets a group's rule on a table, replacing the one it had: `rule` is {group, row-filter, column-masks}; `version`, the
+ * listed rule's version when it edits one.
+ */
+export const setRule = (target, rule, version) => send(rulesPath(target.catalog),
+  {method: 'POST', body: Object.assign({table: securable(target)}, rule), headers: ifMatch(version)});
+
+/** Removes a group's rule from a table, only if it is still at the listed `version`. */
+export const removeRule = (target, group, version) => send(rulesPath(target.catalog) + '/remove',
+  {method: 'POST', body: {table: securable(target), group}, headers: ifMatch(version)});
+
+/** A table's current schema and properties, flagged or not, for anyone who may describe it (backlog 242). */
+export const tableSchema = target => call(managed(target) + '/schema');
+
+/** What the caller's own rules do to them on a table: {flagged, rows, masked-columns}; needs select (backlog 242). */
+export const myRuleView = target => call(managed(target) + '/row-column-rules/mine');
 
 /** Every grant in a catalog, for an access review; needs manage-grants on the catalog. */
 export const exportGrants = catalog => call(`/management/v1/catalogs/${enc(catalog)}/grants/export`);
@@ -284,6 +352,19 @@ export async function drBehind(pageSize, maxPages) {
 
 /** The maintenance worker's recent scans and its last successful one; platform operators only. */
 export const scans = () => call('/management/v1/maintenance/scans');
+
+/**
+ * Whether the maintenance worker can maintain a catalog, step by step (backlog 251): grant, storage, store and policy,
+ * each with its state, and names for those who may modify the catalog or manage its grants and platform operators.
+ * Needs describe on the catalog, or a platform operator.
+ */
+export const readiness = catalog => call(`/management/v1/catalogs/${enc(catalog)}/maintenance/readiness`);
+
+/**
+ * What an operator sets up outside the catalog for each storage profile (backlog 253): the worker's reach, its settings
+ * for a store it does not reach, and the delete policies with their commands. Platform operators only.
+ */
+export const storageSetup = () => call('/management/v1/maintenance/storage-setup');
 
 /** One page of the neediest tables the caller may read, in every catalog, neediest first. */
 export const neediest = pageToken => call('/management/v1/maintenance/tables?pageSize=200'
