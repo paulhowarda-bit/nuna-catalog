@@ -4,7 +4,8 @@
 #
 #   demo/demo.sh up       build the jars and images, start the core stack, load sample data once, with the
 #                         catalog's branch dev and tag sample, turn gen, ss and kafka back on if they were, print
-#                         tokens
+#                         tokens; run in the main checkout, it builds that checkout's HEAD as it was at the start,
+#                         from a worktree of its own (backlog 274), and names the commit
 #   demo/demo.sh gen      turn on the brokerage world: its tables and its live generator, which writes through
 #                         Kafka (with Kafka Connect) or SingleStore or both, as the switches kafka and ss say
 #                         (turns kafka on if neither is)
@@ -1629,7 +1630,8 @@ refuse_while_cdc() {
 }
 
 # The engine matrix's tests against this stack: its engines run as Jobs here, into catalog engines, and the
-# stack stays as it is. Results are in catalog-tests-engines/build/engines-run. Trino, CloudBeaver, Kafka Connect
+# stack stays as it is. Results are in catalog-tests-engines/build/engines-run, of $RUN/checkout when started in the
+# main checkout. Trino, CloudBeaver, Kafka Connect
 # and the brokerage world's generator stop for the run: Spark's Job asks for 2 GiB, which an 8 GB Docker Desktop
 # has only without them.
 engines() {
@@ -1674,7 +1676,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") gen_start; print_access ;;
       stop) gen_stop ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   ss)
@@ -1682,7 +1684,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") ss_on; print_access ;;
       stop) ss_stop ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   kafka)
@@ -1690,7 +1692,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") kafka_on ;;
       stop) kafka_off ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   token)
@@ -1724,7 +1726,7 @@ case "${1:-}" in
   brokerage)
     case "${2:-}" in
       logs) k logs deployment/brokerage --tail=100 -f ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   cdc)
@@ -1732,7 +1734,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -1782,7 +1784,7 @@ case "${1:-}" in
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,34p' "$0"
+    sed -n '2,35p' "$0"
     exit 2
     ;;
 esac
