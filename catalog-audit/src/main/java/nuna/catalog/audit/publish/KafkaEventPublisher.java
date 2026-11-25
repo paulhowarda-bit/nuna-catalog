@@ -2,8 +2,8 @@ package nuna.catalog.audit.publish;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.StampedEvent;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -26,11 +26,12 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
  * that is not acknowledged within the delivery timeout throws; the catalog's audit trail then has the record in its
  * log only (D23, amended 2026-11-23).
  *
- * <p>Each record is a CloudEvents structured-mode message: the encoded event as the value, its
- * subject as the key (so one object's events keep their order), and the CloudEvents media type
- * as the {@code content-type} header. Safe for concurrent use.
+ * <p>Each record is a CloudEvents structured-mode message: the record as the log {@code nuna.audit} holds it, its
+ * run and number included ({@link StampedEvent#encode}, item 276), as the value, its subject as the key (so one
+ * object's events keep their order), and the CloudEvents media type as the {@code content-type} header. Safe for
+ * concurrent use.
  */
-public final class KafkaEventPublisher implements EventPublisher, RelayTarget, AutoCloseable {
+public final class KafkaEventPublisher implements EventPublisher, StampedTarget, AutoCloseable {
 
     static final String CONTENT_TYPE_HEADER = "content-type";
 
@@ -77,36 +78,38 @@ public final class KafkaEventPublisher implements EventPublisher, RelayTarget, A
     }
 
     /**
-     * Returns once Kafka has acknowledged the event.
+     * Returns once Kafka has acknowledged the record.
      *
      * @throws AuditUnavailableException if it was not acknowledged within the delivery timeout
      */
     @Override
-    public void publish(CatalogEvent event) {
+    public void publish(StampedEvent stamped) {
         long deadline = System.nanoTime() + deliveryTimeoutNanos;
         try {
-            producer.send(record(event)).get(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
+            producer.send(record(topic, stamped)).get(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
         } catch (ExecutionException e) {
-            throw new AuditUnavailableException(event, e.getCause());
+            throw new AuditUnavailableException(stamped.event(), e.getCause());
         } catch (TimeoutException | KafkaException e) {
-            throw new AuditUnavailableException(event, e);
+            throw new AuditUnavailableException(stamped.event(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AuditUnavailableException(event, e);
+            throw new AuditUnavailableException(stamped.event(), e);
         }
     }
 
-    /** Publishes one event at a time, so nothing after a failed event is sent. */
+    /** Publishes one record at a time, so nothing after a failed record is sent. */
     @Override
-    public void deliver(List<CatalogEvent> orderedBatch) {
-        for (CatalogEvent event : orderedBatch) {
-            publish(event);
+    public void deliver(List<StampedEvent> orderedBatch) {
+        for (StampedEvent stamped : orderedBatch) {
+            publish(stamped);
         }
     }
 
-    private ProducerRecord<byte[], byte[]> record(CatalogEvent event) {
-        byte[] key = event.subject() == null ? null : event.subject().getBytes(UTF_8);
-        ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topic, key, EventCodec.encode(event));
+    /** The Kafka record for one audit record on {@code topic}: the log's line as the value, keyed by its subject. */
+    static ProducerRecord<byte[], byte[]> record(String topic, StampedEvent stamped) {
+        String subject = stamped.event().subject();
+        byte[] key = subject == null ? null : subject.getBytes(UTF_8);
+        ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topic, key, stamped.encode());
         record.headers().add(CONTENT_TYPE_HEADER, EventCodec.MEDIA_TYPE.getBytes(UTF_8));
         return record;
     }

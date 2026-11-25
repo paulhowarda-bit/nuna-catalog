@@ -1,17 +1,18 @@
 package nuna.catalog.server.governance;
 
 import nuna.catalog.audit.CatalogEvent;
-import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.EventData;
 import nuna.catalog.audit.LogStamp;
 import nuna.catalog.audit.RunEnd;
+import nuna.catalog.audit.StampedEvent;
 import nuna.catalog.audit.publish.EventPublisher;
-import nuna.catalog.audit.publish.RelayTarget;
+import nuna.catalog.audit.publish.StampedTarget;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,7 +30,8 @@ import org.slf4j.LoggerFactory;
  * <p>Each record logged carries this trail's run, a UUID made when the server starts, and its number in the run, from 1
  * ({@link LogStamp}, D23, amended 2026-11-25): the archive keeps each run's records in a chain of its own, and a number
  * the archive never received shows as missing. The run's last record is its run end ({@link #end}), so a run that
- * stopped without one shows too. Only the log's line carries them; the copy on the audit topic does not.
+ * stopped without one shows too. Kafka's copy carries them too, byte for byte the log's line (D23, amended
+ * 2026-11-25; item 276), so a row the audit tables take from the topic is placed in its chain as one from the log.
  *
  * <p>Where Kafka is configured, each record also goes to the audit topic, and a relayed batch's object changes to the
  * change stream, best effort: a record Kafka does not acknowledge is in the log all the same, nothing throws, and for
@@ -46,7 +48,7 @@ public final class AuditTrail {
     private static final Logger LOG = LoggerFactory.getLogger(AuditTrail.class);
 
     private final Optional<EventPublisher> topic;
-    private final Optional<RelayTarget> stream;
+    private final Optional<StampedTarget> stream;
     private final URI source;
     private final Clock clock;
     private final Duration probeInterval;
@@ -64,7 +66,7 @@ public final class AuditTrail {
      * @param topic  the audit topic's publisher for the synchronous records; empty when Kafka is not configured
      * @param stream where a relayed batch's copy goes: the audit topic and the change stream; empty without Kafka
      */
-    public AuditTrail(Optional<EventPublisher> topic, Optional<RelayTarget> stream, URI source, Clock clock,
+    public AuditTrail(Optional<EventPublisher> topic, Optional<StampedTarget> stream, URI source, Clock clock,
                       Duration probeInterval) {
         this.topic = topic;
         this.stream = stream;
@@ -121,10 +123,10 @@ public final class AuditTrail {
 
     /** {@link #record(EventData)} for an event another seam built. */
     public void record(CatalogEvent event) {
-        log(event);
+        StampedEvent logged = log(event);
         if (topic.isPresent() && kafkaTried()) {
             try {
-                topic.get().publish(event);
+                topic.get().publish(logged);
             } catch (RuntimeException e) {
                 kafkaFailed(1, e);
             }
@@ -137,19 +139,24 @@ public final class AuditTrail {
      * Never throws for Kafka, so the relay marks the batch relayed once it is in the log.
      */
     public void deliver(List<CatalogEvent> orderedBatch) {
-        orderedBatch.forEach(this::log);
+        List<StampedEvent> logged = new ArrayList<>(orderedBatch.size());
+        for (CatalogEvent event : orderedBatch) {
+            logged.add(log(event));
+        }
         if (stream.isPresent() && kafkaTried()) {
             try {
-                stream.get().deliver(orderedBatch);
+                stream.get().deliver(logged);
             } catch (RuntimeException e) {
                 kafkaFailed(orderedBatch.size(), e);
             }
         }
     }
 
-    private void log(CatalogEvent event) {
-        AUDIT.info("{}", new String(EventCodec.encode(event, new LogStamp(run, logged.incrementAndGet())),
-                StandardCharsets.UTF_8));
+    /** Writes the record to the log with the next number of the run, and returns it as logged. */
+    private StampedEvent log(CatalogEvent event) {
+        StampedEvent stamped = new StampedEvent(event, new LogStamp(run, logged.incrementAndGet()));
+        AUDIT.info("{}", new String(stamped.encode(), StandardCharsets.UTF_8));
+        return stamped;
     }
 
     private boolean kafkaTried() {

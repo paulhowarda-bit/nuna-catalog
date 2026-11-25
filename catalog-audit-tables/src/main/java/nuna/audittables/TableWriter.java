@@ -106,7 +106,7 @@ final class TableWriter implements AutoCloseable {
             AuditRow row;
             try {
                 CatalogEvent event = EventCodec.decode(record.value());
-                row = AuditRows.of(event, record.partition(), record.offset());
+                row = AuditRows.of(event, EventCodec.envelope(record.value()).stamp(), record.partition(), record.offset());
             } catch (IllegalArgumentException e) {
                 stale = true;
                 throw new IllegalStateException("audit record " + record.topic() + "-" + record.partition() + "@"

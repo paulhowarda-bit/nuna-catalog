@@ -3,9 +3,10 @@ package nuna.catalog.audit.publish;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.LogStamp;
 import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.SampleEvents;
+import nuna.catalog.audit.StampedEvent;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,8 @@ class BrokerOutageTest {
     private static final Duration DELIVERY = Duration.ofSeconds(4);
     private static final Duration SLACK = Duration.ofMillis(1500);
 
+    private static final UUID RUN = UUID.randomUUID();
+
     private static KafkaBroker broker;
 
     @BeforeAll
@@ -35,16 +38,16 @@ class BrokerOutageTest {
         broker.close();
     }
 
-    private static CatalogEvent event(int index, int n) {
-        return SampleEvents.event(SampleEvents.oneOfEachType().get(index), n);
+    private static StampedEvent event(int index, int n) {
+        return new StampedEvent(SampleEvents.event(SampleEvents.oneOfEachType().get(index), n), new LogStamp(RUN, n));
     }
 
     @Test
     void credentialIssueFailsClosedWhileTheBrokerIsDownAndPublishingResumesAfter() {
         String topic = broker.newTopic();
-        CatalogEvent before = event(4, 1);
-        CatalogEvent credentialIssue = event(7, 2);
-        CatalogEvent after = event(4, 3);
+        StampedEvent before = event(4, 1);
+        StampedEvent credentialIssue = event(7, 2);
+        StampedEvent after = event(4, 3);
         AtomicBoolean handedOut = new AtomicBoolean();
         try (KafkaEventPublisher publisher = new KafkaEventPublisher(new PublisherSettings(broker.direct(), topic,
                 DELIVERY, Duration.ofSeconds(1), Map.of()))) {
@@ -65,9 +68,9 @@ class BrokerOutageTest {
 
         assertThat(handedOut).isFalse();
         List<UUID> ids = broker.readAll(topic).stream().map(r -> EventCodec.decode(r.value()).id()).toList();
-        assertThat(ids).startsWith(before.id()).endsWith(after.id());
+        assertThat(ids).startsWith(before.event().id()).endsWith(after.event().id());
         // The refused event may still land once, from a request the frozen broker had buffered.
-        assertThat(ids.stream().filter(credentialIssue.id()::equals).count()).isLessThanOrEqualTo(1);
+        assertThat(ids.stream().filter(credentialIssue.event().id()::equals).count()).isLessThanOrEqualTo(1);
     }
 
     @Test

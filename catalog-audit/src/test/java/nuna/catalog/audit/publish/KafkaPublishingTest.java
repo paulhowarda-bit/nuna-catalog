@@ -7,7 +7,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import nuna.catalog.audit.BreakGlass;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.LogStamp;
 import nuna.catalog.audit.SampleEvents;
+import nuna.catalog.audit.StampedEvent;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +27,8 @@ import org.junit.jupiter.api.Test;
 
 @Tag("heavy")
 class KafkaPublishingTest {
+
+    private static final UUID RUN = UUID.randomUUID();
 
     private static KafkaBroker broker;
 
@@ -47,15 +51,26 @@ class KafkaPublishingTest {
         return new KafkaEventPublisher(new PublisherSettings(bootstrap, topic, delivery, request, Map.of()));
     }
 
-    private static List<CatalogEvent> numbered(int count) {
+    private static StampedEvent stamped(CatalogEvent event, long number) {
+        return new StampedEvent(event, new LogStamp(RUN, number));
+    }
+
+    private static List<StampedEvent> numbered(int count) {
         return IntStream.range(0, count)
-                .mapToObj(i -> SampleEvents.event(SampleEvents.oneOfEachType().get(i % 8), 1000 + i)).toList();
+                .mapToObj(i -> stamped(SampleEvents.event(SampleEvents.oneOfEachType().get(i % 8), 1000 + i), i + 1))
+                .toList();
+    }
+
+    private static List<UUID> ids(List<StampedEvent> records, int from, int to) {
+        return records.subList(from, to).stream().map(r -> r.event().id()).toList();
     }
 
     @Test
-    void eachEventArrivesAsAStructuredCloudEventKeyedByItsSubject() {
+    void eachRecordArrivesAsTheLogHoldsItAStructuredCloudEventKeyedByItsSubject() {
         String topic = broker.newTopic();
-        List<CatalogEvent> events = SampleEvents.events();
+        List<CatalogEvent> sample = SampleEvents.events();
+        List<StampedEvent> events = IntStream.range(0, sample.size()).mapToObj(i -> stamped(sample.get(i), i + 1))
+                .toList();
         try (KafkaEventPublisher publisher = publisher(broker.direct(), topic, Duration.ofSeconds(10),
                 Duration.ofSeconds(3))) {
             events.forEach(publisher::publish);
@@ -64,9 +79,11 @@ class KafkaPublishingTest {
         List<ConsumerRecord<byte[], byte[]>> records = broker.readAll(topic);
         assertThat(records).hasSize(events.size());
         for (int i = 0; i < events.size(); i++) {
-            CatalogEvent event = events.get(i);
+            CatalogEvent event = events.get(i).event();
             ConsumerRecord<byte[], byte[]> record = records.get(i);
-            assertThat(record.value()).isEqualTo(EventCodec.encode(event));
+            assertThat(record.value()).as("the log's line, its run and number included (item 276)")
+                    .isEqualTo(events.get(i).encode());
+            assertThat(EventCodec.envelope(record.value()).stamp()).contains(events.get(i).stamp());
             assertThat(EventCodec.decode(record.value())).isEqualTo(event);
             assertThat(record.key()).isEqualTo(event.subject() == null ? null : event.subject().getBytes(UTF_8));
             Header contentType = record.headers().lastHeader("content-type");
@@ -77,37 +94,37 @@ class KafkaPublishingTest {
     @Test
     void batchIsDeliveredInOrder() {
         String topic = broker.newTopic();
-        List<CatalogEvent> batch = numbered(40);
+        List<StampedEvent> batch = numbered(40);
         try (KafkaEventPublisher publisher = publisher(broker.direct(), topic, Duration.ofSeconds(10),
                 Duration.ofSeconds(3))) {
             publisher.deliver(batch);
         }
 
-        assertThat(ids(broker.readAll(topic))).containsExactlyElementsOf(batch.stream().map(CatalogEvent::id).toList());
+        assertThat(ids(broker.readAll(topic))).containsExactlyElementsOf(ids(batch, 0, batch.size()));
     }
 
     @Test
     void deliveryStopsAtTheFirstEventKafkaRefuses() {
         String topic = broker.newTopic();
-        List<CatalogEvent> batch = new ArrayList<>(numbered(10));
+        List<StampedEvent> batch = new ArrayList<>(numbered(10));
         // Larger than the producer's default max.request.size (1 MiB): Kafka refuses it.
-        batch.set(4, SampleEvents.event(new BreakGlass(SampleEvents.TABLE, "x".repeat(2 * 1024 * 1024),
-                SampleEvents.ACTOR), 4));
+        batch.set(4, stamped(SampleEvents.event(new BreakGlass(SampleEvents.TABLE, "x".repeat(2 * 1024 * 1024),
+                SampleEvents.ACTOR), 4), 5));
         try (KafkaEventPublisher publisher = publisher(broker.direct(), topic, Duration.ofSeconds(10),
                 Duration.ofSeconds(3))) {
             assertThatThrownBy(() -> publisher.deliver(batch)).isInstanceOf(AuditUnavailableException.class)
-                    .hasMessageContaining(batch.get(4).id().toString());
+                    .hasMessageContaining(batch.get(4).event().id().toString());
         }
 
         assertThat(ids(broker.readAll(topic)))
-                .containsExactlyElementsOf(batch.subList(0, 4).stream().map(CatalogEvent::id).toList());
+                .containsExactlyElementsOf(ids(batch, 0, 4));
     }
 
     @Test
     void sendRetriedAfterALostResponseIsWrittenOnce() throws InterruptedException {
         String topic = broker.newTopic();
-        CatalogEvent warmUp = numbered(1).get(0);
-        CatalogEvent event = SampleEvents.event(SampleEvents.oneOfEachType().get(0), 2000);
+        StampedEvent warmUp = numbered(1).get(0);
+        StampedEvent event = stamped(SampleEvents.event(SampleEvents.oneOfEachType().get(0), 2000), 2);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         try (KafkaEventPublisher publisher = publisher(broker.linkAddress(), topic, Duration.ofSeconds(40),
                 Duration.ofMillis(1500))) {
@@ -127,7 +144,7 @@ class KafkaPublishingTest {
         }
 
         assertThat(failure.get()).isNull();
-        assertThat(ids(broker.readAll(topic))).containsExactly(warmUp.id(), event.id());
+        assertThat(ids(broker.readAll(topic))).containsExactly(warmUp.event().id(), event.event().id());
     }
 
     @Test

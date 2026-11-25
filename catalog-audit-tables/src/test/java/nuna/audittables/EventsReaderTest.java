@@ -209,7 +209,7 @@ class EventsReaderTest {
 
         assertThat(page.rows()).containsExactly(logged, topic);
         assertThat(page.rows().getFirst().logStamp()).contains(new LogStamp(RUN, 7));
-        assertThat(page.rows().getLast().logStamp()).as("the topic's copy carries no stamp").isEmpty();
+        assertThat(page.rows().getLast().logStamp()).as("an older server's copy carries no stamp").isEmpty();
     }
 
     @Test
