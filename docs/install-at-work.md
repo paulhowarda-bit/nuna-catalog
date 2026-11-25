@@ -95,6 +95,16 @@ Its rules hold at work. Some of its facts describe Paul's home machine:
   catalog on the JDK's HTTP client and sends their trace (docs/observability/worker-spans.md). Boot's BOM manages it;
   it depends on nothing new.
 
+- **Trino's SQL parser (backlog 244)** checks each row filter and column mask when it is set; it is on the server's
+  class path through `catalog-security`. All are Apache-2.0 but ANTLR (BSD-3-Clause), and Boot's BOM manages none:
+  - `io.trino:trino-parser` and `io.trino:trino-grammar` 484 (marked: `trino-parser.version` in
+    `gradle.properties`);
+  - `com.google.guava:guava` 33.6.0-jre, `com.google.guava:failureaccess` 1.0.3,
+    `com.google.j2objc:j2objc-annotations` 3.1;
+  - `org.antlr:antlr4-runtime` 4.13.2.
+
+  Guava's `error_prone_annotations` is excluded; the 2.49.0 the server already had stays.
+
 Then the fast build must be green before anything else:
 
 ```bash
