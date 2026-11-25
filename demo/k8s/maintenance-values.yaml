@@ -5,7 +5,8 @@
 # queues the ones that need compaction and compacts them one at a time with the engine matrix's Spark image. It signs
 # in to Keycloak with the client-credentials grant as client nuna-maintenance (keycloak-realm.json), whose service
 # account is the catalog's maintenance principal (demo-values.yaml) in group demo-maintenance, which holds write on
-# lakehouse (demo.sh grants); it deletes from Silo as a user of its own, nuna-maintenance (silo-maintenance.json).
+# lakehouse (demo.sh grants); it deletes from Silo as a user of its own, nuna-maintenance, holding the policy the
+# catalog generates for profile s3 (demo.sh worker_policy).
 # demo.sh fills in ${NAMESPACE} and passes the client secret, the Silo key and the image's id. Test settings only.
 image:
   repository: nuna-maintenance

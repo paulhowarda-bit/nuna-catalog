@@ -444,8 +444,20 @@ nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`,
 - Its identity: Keycloak's service account of client `nuna-maintenance`, `service-account-nuna-maintenance`, the
   catalog's maintenance principal (`demo-values.yaml`), in group `demo-maintenance`, which holds `write` on
   `lakehouse`. Its compaction Jobs sign in the same way. It deletes from Silo as its own user, `nuna-maintenance`,
-  which may only list and delete beneath the tables (`silo-maintenance.json`); `up` makes it again each time,
-  which leaves one already on Silo's volume as it was.
+  which may only list and delete beneath the tables: the catalog's profile `s3` names it as its
+  `maintenance-principal` (`demo-values.yaml`), so the catalog generates its delete policies, and `up`, once the
+  catalog serves, reads them as `oscar` from `GET /management/v1/maintenance/storage-setup` and applies the `to`
+  policy, `nuna-worker-s3`, to the user, as a platform operator would at work (`deploy/README.md`, "Delete
+  rights"). `up` makes the user and the policy again each time, so a changed key or prefix takes effect; if the
+  policy cannot be read or applied, `up` says so and carries on, and the worker's scans are refused until the next
+  `up`.
+- The `except` policy, which denies delete beneath the prefixes to every other user, is not applied in the demo:
+  the demo's catalog signs in to Silo as its root user, `nunatest`, whom no policy binds. At work the catalog has a
+  user of its own, which the `except` policy must hold (`deploy/README.md`).
+- A second catalog's bucket is set up the same way, from the console as `oscar`: Maintenance's "What the worker
+  needs to maintain <catalog>" panel says which step is missing, and What to set up, on it and on Service's Worker
+  storage panel, gives the worker's settings for a new store and the policies with the commands that apply them
+  (items 252, 254).
 - A file it queues for deletion waits out the 7-day PITR window first, so the first deletions come a week after
   the data was written. The database outlives `down` and the overnight run's rebuild, so the 30-night trends
   build up; `wipe` starts them again.
