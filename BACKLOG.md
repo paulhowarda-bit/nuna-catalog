@@ -3602,3 +3602,4 @@ chain, and every line the server logs carries its run and number (`nunarun`, `nu
 | [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |
 | [268](backlog/268.md) | Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest | done | 2026-11-25 |
 | [273](backlog/273.md) | Demo: presenter may do absolutely everything | done | 2026-11-25 |
+| [274](backlog/274.md) | demo.sh up builds from one pinned commit, so a landing during the run cannot stop it or mix commits | done | 2026-11-25 |

@@ -29,6 +29,13 @@ demo/demo.sh up
   from this checkout (no tests run) and the images below, so the stack never runs code older
   than the checkout; when nothing changed, Gradle and Docker do nothing. The cluster never pulls an image: it
   runs them from the local Docker engine, and `up` pulls the public ones there.
+- Run in the main checkout, where other sessions land all day, `up` builds one commit (backlog 274): the main
+  checkout's HEAD when it starts. It runs from `~/.nuna-demo/checkout`, a worktree it keeps detached at that
+  commit and locked, so a landing during its run neither stops it nor mixes commits into the images. `engines`,
+  `gen`, `ss`, `kafka`, `cdc`, `token` and `rate` do the same, each at the HEAD of its own start; one of them at a
+  time holds that worktree, and another is refused until it ends. `up` says which commit it builds, and the URLs
+  and tokens it prints (and `token`) start with the commit the demo runs. Run from any other worktree, `demo.sh`
+  runs from that worktree's files as they are. `demo/test-pin.sh` checks this in a scratch repository.
 - Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `docker-desktop`
   (`NUNA_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
@@ -870,7 +877,8 @@ all into catalog `engines` as `engine-matrix`. Trino, CloudBeaver, Kafka Connect
 generator and the maintenance worker stop for the run and start again after it. It takes about 4 minutes once the engine images exist; the first
 run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
 shows, and SingleStore's copies in database `nuna_m8`.
-Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.
+Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there, in
+`~/.nuna-demo/checkout` when run from the main checkout.
 
 ## Kafka
 

@@ -4,7 +4,8 @@
 #
 #   demo/demo.sh up       build the jars and images, start the core stack, load sample data once, with the
 #                         catalog's branch dev and tag sample, turn gen, ss and kafka back on if they were, print
-#                         tokens
+#                         tokens; run in the main checkout, it builds that checkout's HEAD as it was at the start,
+#                         from a worktree of its own (backlog 274), and names the commit
 #   demo/demo.sh gen      turn on the brokerage world: its tables and its live generator, which writes through
 #                         Kafka (with Kafka Connect) or SingleStore or both, as the switches kafka and ss say
 #                         (turns kafka on if neither is)
@@ -49,6 +50,47 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN="${NUNA_DEMO_HOME:-$HOME/.nuna-demo}"
+
+# One commit a run (backlog 274). Started in the main checkout, a command that reads this repo over its run (up's
+# Gradle and Docker builds, the k8s files, the engine matrix's tests, this script itself, which bash reads as it
+# goes) runs instead from $RUN/checkout: a worktree detached at the main checkout's HEAD as it was at the start, and
+# locked, so worktree cleanup leaves it alone, as the overnight run keeps its own (backlog 166). A landing during the
+# run moves the main checkout's files, not these, so it can neither stop the run nor mix commits into its images.
+# Ignored files (Gradle's build folders) stay between runs, so a build there is incremental. One command at a time
+# holds it ($RUN/checkout.pid); another is refused while it runs. Run from any other worktree, demo.sh runs in
+# place, at that worktree's files: its agent owns them.
+if [[ -z "${NUNA_DEMO_COMMIT:-}" ]]; then
+  case "${1:-}" in
+    up | engines | gen | ss | kafka | cdc | token | rate)
+      if [[ "$(git -C "$REPO" rev-parse --absolute-git-dir)" \
+          == "$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)" ]]; then
+        mkdir -p "$RUN"
+        if ! (set -o noclobber; echo $$ > "$RUN/checkout.pid") 2>/dev/null; then
+          holder=$(cat "$RUN/checkout.pid" 2>/dev/null || true)
+          if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+            echo "another demo.sh (pid $holder) is running from $RUN/checkout: wait for it to end" >&2
+            exit 1
+          fi
+          rm -f "$RUN/checkout.pid"
+          (set -o noclobber; echo $$ > "$RUN/checkout.pid") 2>/dev/null \
+            || { echo "another demo.sh has just started from $RUN/checkout: wait for it to end" >&2; exit 1; }
+        fi
+        commit=$(git -C "$REPO" rev-parse HEAD)
+        if [[ ! -e "$RUN/checkout/.git" ]]; then
+          # Forced twice: a locked worktree whose folder is gone stays registered.
+          git -C "$REPO" worktree add --quiet --force --force --detach "$RUN/checkout" "$commit"
+        fi
+        git -C "$REPO" worktree lock --reason "demo.sh's checkout (backlog 274)" "$RUN/checkout" 2>/dev/null || true
+        git -C "$RUN/checkout" checkout --quiet --force --detach "$commit"
+        git -C "$RUN/checkout" clean -q -fd
+        NUNA_DEMO_COMMIT=$commit exec bash "$RUN/checkout/demo/demo.sh" "$@"
+      fi
+      ;;
+  esac
+fi
+if [[ -n "${NUNA_DEMO_COMMIT:-}" && "$(cat "$RUN/checkout.pid" 2>/dev/null)" == "$$" ]]; then
+  trap 'rm -f "$RUN/checkout.pid"' EXIT
+fi
 CONTEXT="${NUNA_DEMO_CONTEXT:-docker-desktop}"
 NS="${NUNA_DEMO_NAMESPACE:-nuna-demo}"
 DEMO_HOST="${NUNA_DEMO_HOST:-localhost}"
@@ -86,6 +128,12 @@ ORACLE_TREASURY=treasury/\"nuna-test\"@//localhost:1521/FREEPDB1
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 
 say() { printf '\n== %s\n' "$*"; }
+
+# The commit this run's files are at, with its subject, marked when the worktree it runs in has uncommitted changes.
+commit_here() {
+  git -C "$REPO" log -1 --format='%h %s' --abbrev=12
+  [[ -z "$(git -C "$REPO" status --porcelain)" ]] || echo "  (with uncommitted changes in $REPO)"
+}
 
 token_of() { tr -d '\r\n' < "$RUN/tokens/$1.jwt"; }
 
@@ -277,6 +325,8 @@ build() {
   build_connect
   printf 'SINGLESTORE_IMAGE=%s\nCLOUDBEAVER_IMAGE=%s\nCONNECT_IMAGE=%s\nBROKERAGE_IMAGE=%s\nBROKERAGE_IMAGE_ID=%s\n' \
     "$SINGLESTORE_IMAGE" "$CLOUDBEAVER_IMAGE" "$CONNECT_IMAGE" "$BROKERAGE_IMAGE" "$BROKERAGE_IMAGE_ID" > "$RUN/images.env"
+  # The commit the images are built from, which print_access names (backlog 274).
+  commit_here > "$RUN/built-commit.txt"
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
@@ -1073,6 +1123,9 @@ print_access() {
   local expires
   expires=$(tr -d '\r\n' < "$RUN/tokens/expires.txt")
   local web="https://$DEMO_HOST"
+  if [[ -f "$RUN/built-commit.txt" ]]; then
+    printf '\nThe demo runs commit %s\n' "$(cat "$RUN/built-commit.txt")"
+  fi
   cat <<EOF
 
 Every page is HTTPS, with the certificate in $TLS.
@@ -1439,6 +1492,7 @@ cdc_stop() {
 
 up() {
   mkdir -p "$RUN"
+  say "building commit $(commit_here)"
   build
   local minted=
   if tokens_expired; then
@@ -1576,7 +1630,8 @@ refuse_while_cdc() {
 }
 
 # The engine matrix's tests against this stack: its engines run as Jobs here, into catalog engines, and the
-# stack stays as it is. Results are in catalog-tests-engines/build/engines-run. Trino, CloudBeaver, Kafka Connect
+# stack stays as it is. Results are in catalog-tests-engines/build/engines-run, of $RUN/checkout when started in the
+# main checkout. Trino, CloudBeaver, Kafka Connect
 # and the brokerage world's generator stop for the run: Spark's Job asks for 2 GiB, which an 8 GB Docker Desktop
 # has only without them.
 engines() {
@@ -1621,7 +1676,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") gen_start; print_access ;;
       stop) gen_stop ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   ss)
@@ -1629,7 +1684,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") ss_on; print_access ;;
       stop) ss_stop ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   kafka)
@@ -1637,7 +1692,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") kafka_on ;;
       stop) kafka_off ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   token)
@@ -1671,7 +1726,7 @@ case "${1:-}" in
   brokerage)
     case "${2:-}" in
       logs) k logs deployment/brokerage --tail=100 -f ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   cdc)
@@ -1679,7 +1734,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,39p' "$0"; exit 2 ;;
+      *) sed -n '2,40p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -1729,7 +1784,7 @@ case "${1:-}" in
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,34p' "$0"
+    sed -n '2,35p' "$0"
     exit 2
     ;;
 esac
