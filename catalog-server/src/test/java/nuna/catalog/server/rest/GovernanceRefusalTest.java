@@ -40,6 +40,7 @@ import nuna.catalog.server.metrics.CatalogMetrics;
 import nuna.catalog.server.security.Denials;
 import nuna.catalog.server.security.DenialsForTests;
 import nuna.catalog.server.security.Holdings;
+import nuna.catalog.server.security.RuleColumnGuard;
 import nuna.catalog.server.storage.CatalogStorage;
 import nuna.catalog.server.storage.StorageSettings;
 import nuna.catalog.server.telemetry.RequestIds;
@@ -56,6 +57,7 @@ import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.Pointer;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.WriteResult;
@@ -70,14 +72,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /**
  * A commit, transaction, create, unregister or drop that a legal hold or DR freeze refuses is audited as a denial, as
  * every refusal is (D18; backlog 134), and so are a snapshot removal the minimum snapshot age refuses, an unregister
- * the store refuses as flagged and a namespace drop it refuses as held (backlog 142): the Denial names the operation
- * and the table or namespace, its reason is {@code legal_hold}, {@code dr_freeze}, {@code snapshot_min_age} or
- * {@code flagged} followed by the message the caller gets, and the answer is the 403 ForbiddenException it always
- * was. The commit engine answers its refusals as a reply, not a throw, so the routes learn which 403s are these from
+ * the store refuses as flagged and a namespace drop it refuses as held (backlog 142), and a schema change that renames
+ * or drops a column a row filter or column mask names (backlog 240): the Denial names the operation and the table or
+ * namespace, its reason is {@code legal_hold}, {@code dr_freeze}, {@code snapshot_min_age}, {@code flagged} or
+ * {@code row_column_rule} followed by the message the caller gets, and the answer is the 403 ForbiddenException it
+ * always was. The commit engine answers its refusals as a reply, not a throw, so the routes learn which 403s are these from
  * the reply. A namespace drop the store refuses because a ref still names a table or view in it is no denial but a
  * 409 NamespaceNotEmptyException, as a namespace with tables gets (backlog 157). The table, namespace and transaction
- * routes, guard, authorizer, commit engine and its rules (with a deployment minimum snapshot age of two days) are the
- * real ones, served by Spring MVC, over a store double that refuses an unregister or drop as a store would and fails
+ * routes, guard, authorizer, commit engine and its rules (with a deployment minimum snapshot age of two days, and the
+ * rule-column guard) are the real ones, served by Spring MVC, over a store double that refuses an unregister or drop as a store would and fails
  * any other write, so this needs only Java.
  */
 class GovernanceRefusalTest {
@@ -93,6 +96,10 @@ class GovernanceRefusalTest {
             {"requirements":[],"updates":[{"action":"set-properties","updates":{"desk":"rates"}}]}""";
     private static final String SCHEMA = """
             {"type":"struct","schema-id":0,"fields":[{"id":1,"name":"id","required":true,"type":"long"}]}""";
+    /** orders' schema: an id, and the account a rule masks. */
+    private static final String ORDERS_SCHEMA = """
+            {"type":"struct","schema-id":0,"fields":[{"id":1,"name":"id","required":true,"type":"long"},
+             {"id":2,"name":"account","required":false,"type":"string"}]}""";
 
     private final CatalogRecord catalog = new CatalogRecord(UUID.randomUUID(), "desks", "desks");
     private final NamespaceRecord sales = new NamespaceRecord(catalog.id(), UUID.randomUUID(), catalog.id(),
@@ -108,6 +115,8 @@ class GovernanceRefusalTest {
     private boolean held;
     /** What the store answers an unregister or a drop: a hold, a freeze or a flag it found itself. */
     private WriteResult.Reason storeRefuses;
+    /** The row filters and column masks on orders. */
+    private List<RowColumnRule.Stored> rowColumnRules = List.of();
 
     /** orders at its third version: snapshots 1 and 2, main at 2, both a day old. */
     private final Pointer pointer = new Pointer(orders.locationRoot() + "/metadata/00003.metadata.json", 3,
@@ -142,6 +151,7 @@ class GovernanceRefusalTest {
         DefaultListableBeanFactory rules = new DefaultListableBeanFactory();
         rules.registerSingleton("snapshotMinimumAge",
                 Rules.snapshotMinimumAge(MINIMUM_SNAPSHOT_AGE, retentionClass -> Optional.empty()));
+        rules.registerSingleton("ruleColumnGuard", new RuleColumnGuard(store));
         Engines engines = new Engines(store, storage, cache, alerts, events, clock,
                 rules.getBeanProvider(CommitRule.class), new RefSettings(50, 1000, Duration.ofDays(30),
                 Duration.ofDays(180), Duration.ofDays(7)));
@@ -338,7 +348,63 @@ class GovernanceRefusalTest {
         assertThat(denials()).as("a state the caller can change, as a namespace with tables is").isEmpty();
     }
 
+    @Test
+    void aRenameOfAMaskedColumnIsRefusedAndAuditedAsADenial() throws Exception {
+        rowColumnRules = List.of(rule("traders", null, Map.of("account", "'***'")));
+
+        String message = forbidden(perform(post(TABLE).contentType("application/json").content(schemaChange("""
+                {"id":1,"name":"id","required":true,"type":"long"},
+                {"id":2,"name":"acct","required":false,"type":"string"}"""))));
+
+        assertThat(message).isEqualTo("The change renames or drops a column a row filter or column mask names: group"
+                + " traders's rule names account. A rename would leave the column unmasked; the grant admin changes"
+                + " or removes the rule first (D20, backlog 240)");
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.operation()).isEqualTo("updateTable");
+            assertThat(denial.securable().id()).isEqualTo(orders.id());
+            assertThat(denial.securable().path()).containsExactly("sales", "orders");
+            assertThat(denial.reason()).isEqualTo("row_column_rule: " + message);
+            assertThat(denial.actor().principal()).isEqualTo("mo");
+        });
+    }
+
+    @Test
+    void aDropOfAColumnARowFilterNamesIsRefusedAndAuditedAsADenial() throws Exception {
+        rowColumnRules = List.of(rule("auditors", "account IN (SELECT account FROM entitled)", Map.of()));
+
+        String message = forbidden(perform(post("/v1/desks/transactions/commit").contentType("application/json")
+                .content("""
+                        {"table-changes":[{"identifier":{"namespace":["sales"],"name":"orders"},%s}]}"""
+                        .formatted(schemaUpdates("""
+                                {"id":1,"name":"id","required":true,"type":"long"}""")))));
+
+        assertThat(message).startsWith("sales.orders: The change renames or drops a column")
+                .contains("group auditors's rule names account");
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.operation()).isEqualTo("commitTransaction");
+            assertThat(denial.securable().id()).isEqualTo(orders.id());
+            assertThat(denial.reason()).isEqualTo("row_column_rule: " + message);
+        });
+    }
+
     // ---- helpers ----
+
+    private RowColumnRule.Stored rule(String group, String filter, Map<String, String> masks) {
+        return new RowColumnRule.Stored(RowColumnRule.of(catalog.id(), orders.id(), group,
+                Optional.ofNullable(filter), masks), "gina", NOW);
+    }
+
+    /** An update-table request that makes a schema of {@code fields} orders' current one. */
+    private static String schemaChange(String fields) {
+        return "{" + schemaUpdates(fields) + "}";
+    }
+
+    private static String schemaUpdates(String fields) {
+        return """
+                "requirements":[{"type":"assert-current-schema-id","current-schema-id":0}],"updates":[
+                 {"action":"add-schema","schema":{"type":"struct","schema-id":1,"fields":[%s]}},
+                 {"action":"set-current-schema","schema-id":-1}]""".formatted(fields);
+    }
 
     private MockHttpServletResponse perform(MockHttpServletRequestBuilder request) throws Exception {
         // What RequestIds would have set before the route ran.
@@ -367,7 +433,7 @@ class GovernanceRefusalTest {
 
     /** orders' metadata as the pointer names it: a v2 table at its own location, snapshots 1 and 2, main at 2. */
     private String ordersMetadata() {
-        String created = ((Outcome.NewMetadata) Metadata.createTable("{\"name\":\"orders\",\"schema\":" + SCHEMA
+        String created = ((Outcome.NewMetadata) Metadata.createTable("{\"name\":\"orders\",\"schema\":" + ORDERS_SCHEMA
                 + ",\"properties\":{\"format-version\":\"2\"}}", orders.id().toString(), orders.locationRoot()))
                 .json();
         long dayOld = NOW.minus(Duration.ofDays(1)).toEpochMilli();
@@ -426,6 +492,7 @@ class GovernanceRefusalTest {
                             ? List.of(new LegalHold(UUID.randomUUID(), orders.securable(), "litigation", "lee", NOW))
                             : List.of();
                     case "unregisterObject", "dropObject", "dropNamespace" -> new WriteResult.Refused(storeRefuses);
+                    case "rulesOn" -> orders.id().equals(args[0]) ? rowColumnRules : List.of();
                     case "toString" -> "the test's store";
                     default -> throw new UnsupportedOperationException(method.getName());
                 });

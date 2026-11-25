@@ -8,10 +8,13 @@ import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Authorizer.Decision;
 import nuna.catalog.security.Authorizer.Operation;
 import nuna.catalog.security.Privilege;
+import nuna.catalog.security.RuleColumns;
 import nuna.catalog.server.rest.AccessDenied;
 import nuna.catalog.server.rest.Callers;
 import nuna.catalog.server.rest.RequestContext;
 import nuna.catalog.server.rest.RestSettings;
+import nuna.catalog.server.rest.TableColumns;
+import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
@@ -49,7 +52,9 @@ import tools.jackson.databind.json.JsonMapper;
  * refusal is audited, and one on a table the caller holds nothing on is answered as if it did not exist, as on the
  * grant routes; every change goes through the outbox in the same transaction (D23). A rule needs the table's
  * row/column-policy flag, which a steward sets (409 without it), so writing the rules and flagging the table take
- * two people.
+ * two people. A rule names only columns the table's current schema has, and a schema change that would take one away
+ * is refused ({@link RuleColumnGuard}): a mask is served by its column's name, so a rename would unmask it (backlog
+ * 240).
  *
  * <p>The body of a set: {@code {"table": {"type": "table", "namespace": [...], "name": ...}, "group": ...,
  * "row-filter": <SQL predicate>, "column-masks": {<column>: <SQL expression>}}}, with a filter, masks or both; of a
@@ -75,16 +80,18 @@ class RuleRoutes {
     private final Denials denials;
     private final Holdings holdings;
     private final RestSettings settings;
+    private final TableColumns columns;
     private final Clock clock;
 
     RuleRoutes(CatalogStore store, Authorizer authorizer, Callers callers, Denials denials, Holdings holdings,
-               RestSettings settings, Clock clock) {
+               RestSettings settings, TableColumns columns, Clock clock) {
         this.store = store;
         this.authorizer = authorizer;
         this.callers = callers;
         this.denials = denials;
         this.holdings = holdings;
         this.settings = settings;
+        this.columns = columns;
         this.clock = clock;
     }
 
@@ -100,8 +107,8 @@ class RuleRoutes {
         String group = group(json);
         Optional<String> filter = json.hasNonNull("row-filter")
                 ? Optional.of(expression(json.get("row-filter"), "row-filter")) : Optional.empty();
-        Map<String, String> masks = masks(json.get("column-masks"));
-        if (filter.isEmpty() && masks.isEmpty()) {
+        Map<String, String> asked = masks(json.get("column-masks"));
+        if (filter.isEmpty() && asked.isEmpty()) {
             throw CatalogError.badRequest("A rule filters rows (row-filter), masks columns (column-masks), or both;"
                     + " to give a group every row, set row-filter to true");
         }
@@ -111,7 +118,8 @@ class RuleRoutes {
                     "separation-of-duties", "no one sets row filters or column masks for a group they belong to: "
                             + group);
         }
-        RowColumnRule rule = RowColumnRule.of(record.id(), on.stored().id(), group, filter, masks);
+        Map<String, String> masks = schemaColumns(record, on, filter, asked);
+        RowColumnRule rule =RowColumnRule.of(record.id(), on.stored().id(), group, filter, masks);
         Change change = change(new RowColumnRuleChange(RowColumnRuleChange.Action.SET, on.named(), group,
                 filter.orElse(null), masks, request.actor()));
         WriteResult result = write("setting the rule", () -> store.putRule(rule, request.caller().subject().id(),
@@ -245,6 +253,20 @@ class RuleRoutes {
             throw CatalogError.badRequest("A rule masks at most " + MAX_MASKS + " columns");
         }
         return masks;
+    }
+
+    /**
+     * The masks, keyed by their columns as the table's current schema spells them, when every column the filter and
+     * masks name is in it; otherwise 400, naming what it lacks (backlog 240). Asked after authorization, so the answer
+     * tells no one without {@code manage-grants} what columns the table has.
+     */
+    private Map<String, String> schemaColumns(CatalogRecord record, Securables.Resolved on, Optional<String> filter,
+                                              Map<String, String> masks) {
+        CatalogObject table = ((Authorizer.Target.TableOrView) on.target()).object();
+        return switch (RuleColumns.check(columns.current(record, table), filter, masks)) {
+            case RuleColumns.Checked.Fits fits -> fits.masks();
+            case RuleColumns.Checked.Unfit unfit -> throw CatalogError.badRequest(unfit.message());
+        };
     }
 
     private Change change(RowColumnRuleChange data) {
