@@ -8,7 +8,7 @@ read and what to rename if work's Prometheus names them otherwise.
 
 | File | Holds |
 |---|---|
-| `dashboards/nuna-catalog.json` | 31 panels: the SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement, nuna's alerts |
+| `dashboards/nuna-catalog.json` | 33 panels: the SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement and archive, nuna's alerts |
 | `dashboards/nuna-maintenance.json` | 16 panels: the worker's scans, failures, work done and compaction |
 | `dashboards/nuna-client-reports.json` | 13 panels: engines' scan and commit reports, by engine |
 | `rules/nuna-catalog.rules.yaml` | 9 alerts: two burn-rate alerts for each latency SLO, one for each alert kind |
@@ -50,6 +50,7 @@ The series the files read, 56 in all from 44 meters:
 | `nuna.catalog.metadata.cache.lookups` | `nuna_catalog_metadata_cache_lookups_total` |
 | `nuna.catalog.alerts.metadata.integrity`, `.regulated.schema.change`, `.large.metadata` | `nuna_catalog_alerts_metadata_integrity_total`, `nuna_catalog_alerts_regulated_schema_change_total`, `nuna_catalog_alerts_large_metadata_total` |
 | `nuna.sts`, `nuna.audit.publish` | `nuna_sts_milliseconds_count`, `_sum`; `nuna_audit_publish_milliseconds_bucket`, `_count`, `_sum` |
+| `nuna.audit.logged`, `nuna.audit.archive.highest` | `nuna_audit_logged`, `nuna_audit_archive_highest` |
 | `nuna.catalog.report.*` timers: `total.planning.duration`, `total.duration` | `nuna_catalog_report_total_planning_duration_milliseconds_count`, `_sum`, and the same for `total_duration` |
 | `nuna.catalog.report.*` counts: `result.data.files`, `result.delete.files`, `scanned.data.manifests`, `skipped.data.manifests`, `total.file.size.in.bytes`, `attempts`, `added.records`, `removed.records`, `added.files.size.bytes`, `added.positional.delete.files`, `added.equality.delete.files`, `added.dvs` | `nuna_catalog_report_<result>_sum`, and `_count` for `result_data_files`, `result_delete_files` and `attempts` |
 | `nuna.maintenance.scan`, `nuna.maintenance.part` | `nuna_maintenance_scan_milliseconds_count`, `_sum`; `nuna_maintenance_part_milliseconds_sum` |
@@ -83,6 +84,7 @@ The series the files read, 56 in all from 44 meters:
 | Loads and the share answered 304 | nuna catalog, "Loads": loads by outcome, the 304 share (3xx over 2xx and 3xx, D14), mean load time, failures by error type, the metadata cache's hit share | `nuna.catalog.requests`, `nuna.catalog.metadata.cache.lookups` |
 | Credential vending | nuna catalog, "Credential vending": vends by outcome, the cache's share, mean vend time, failures by error type, STS calls and their mean time by storage profile | `nuna.catalog.credential.vends`, `nuna.sts` |
 | The audit's Kafka acknowledgement time | nuna catalog, "Audit: Kafka acknowledgement": mean and p99 time and records by event, failed publishes by exception | `nuna.audit.publish` |
+| A running server's audit records that did not reach the archive (backlog 272) | nuna catalog, "Audit: the archive": the records each server run logged two hours ago less the highest the archive check verified in that run, and both counts by run | `nuna.audit.logged`, `nuna.audit.archive.highest` |
 | Each nuna alert kind | nuna catalog, "nuna's alerts": each kind fired in the time range, and when | the three `nuna.catalog.alerts.*` counters |
 | The worker: its last successful scan, failures by kind | nuna maintenance worker: time since the last success, scans by outcome and their mean time, failures by kind, where scan time goes, the worker's calls; work done; compaction and the neediest tables | worker-metrics.md's meters |
 | Client reports by engine | nuna client reports: reports by engine, planning and commit time, files, pruning, bytes, records, attempts and delete files, by engine | `nuna.catalog.report.*`, by `engine.name` |
@@ -94,6 +96,10 @@ The series the files read, 56 in all from 44 meters:
   buckets, 5 ms to 5 s (item 71), and the p99 panel takes `histogram_quantile(0.99, ...)` over them, beside the mean.
   Prometheus interpolates within the bucket the p99 falls in, so it can be off by that bucket's width (25 to 50 ms,
   say), and a p99 past 5 s reads 5 s. The health page names the bucket instead.
+- **The archive panel looks two hours back.** The check runs hourly, so a run's newest hour or so of records always
+  waits for it. The panel subtracts the highest number the check verified from what the server had logged two hours
+  before: above zero, records the server logged then are still not in the archive. Every server runs the check, so
+  the archive's gauge is taken as the highest of the servers'. A run that ended drops out of both.
 - **Mean times elsewhere.** The other timers have no buckets in Prometheus, so their panels show means.
 - **Reports by engine.** Each report records one sample of each result it carries, so the count of a result that
   every report of its type carries counts the reports: `result-data-files` for scans, `attempts` for commits. A

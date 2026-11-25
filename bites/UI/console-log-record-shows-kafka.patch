@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#aRecordSaysWhetherItWasReadFromKafkaOrTheLog
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
-index df2979b5..d421514a 100644
+index 6fa211bb..37880ec6 100644
 --- a/catalog-server/src/main/resources/nuna/ui/audit.js
 +++ b/catalog-server/src/main/resources/nuna/ui/audit.js
-@@ -370,7 +370,7 @@ const kindLabel = kind => {
+@@ -393,7 +393,7 @@ const kindLabel = kind => {
  
  function recordDetail(catalog, r) {
    const rid = r['request-id'];
 -  const fromKafka = Number(r.partition) >= 0;
 +  const fromKafka = true;
-   const o = r.object;
-   return h('div', {class: 'rec'},
-     h('dl', {class: 'facts rec-facts'},
+   // A row that says which server run logged it can be found in that run's chain (backlog 272).
+   const placed = r.chain && (r.chain.status === 'verified' || r.chain.status === 'unverified');
+   const link = placed ? h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button',

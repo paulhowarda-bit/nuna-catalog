@@ -2,6 +2,7 @@ package nuna.catalog.audit;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,6 +13,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 
@@ -163,6 +165,31 @@ class AuditRowsTest {
         assertThat(row.operation()).isEqualTo("listCatalogs");
         assertThat(row.data()).isEqualTo(new String(EventCodec.encode(event), UTF_8).replaceFirst(".*,\"data\":", "")
                 .replaceFirst("}$", ""));
+    }
+
+    @Test
+    void aRecordFromTheLogKeepsItsRunAndNumberAndOneFromTheTopicHasNeither() throws IOException {
+        // Backlog 272: the stamp places a row in its run's archive chain; the topic's copy carries none.
+        UUID run = UUID.fromString("a0000000-0000-4000-8000-000000000272");
+        for (Mapped m : golden()) {
+            byte[] logged = EventCodec.encode(m.event(), new LogStamp(run, 41));
+            AuditRow row = AuditRows.of(m.event(), EventCodec.envelope(logged).stamp(), -1, 9);
+            assertThat(row.logRun()).as(m.event().type().typeName()).isEqualTo(run.toString());
+            assertThat(row.logSequence()).as(m.event().type().typeName()).isEqualTo(41L);
+            assertThat(row.logStamp()).contains(new LogStamp(run, 41));
+            assertThat(m.row().logRun()).isNull();
+            assertThat(m.row().logSequence()).isNull();
+            assertThat(m.row().logStamp()).isEmpty();
+        }
+    }
+
+    @Test
+    void aRowCarriesBothItsRunAndItsNumberOrNeither() {
+        AuditRow row = AuditRows.of(CatalogEvent.create(SampleEvents.SOURCE, SampleEvents.TIME,
+                new Denial("listCatalogs", null, null, "no", SampleEvents.ACTOR)), 0, 0);
+        assertThatThrownBy(() -> new AuditRow(row.eventId(), row.time(), row.type(), row.source(), null, null, null,
+                null, null, null, null, null, null, null, null, row.data(), 0, 0, "a0000000-0000-4000-8000-000000000272",
+                null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

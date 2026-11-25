@@ -9,7 +9,10 @@ import nuna.audittables.EventsReader.Page;
 import nuna.audittables.EventsReader.Query;
 import nuna.audittables.EventsReader.Summary;
 import nuna.catalog.audit.AuditRow;
+import nuna.catalog.audit.LogStamp;
+import java.io.IOException;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -19,7 +22,17 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import org.apache.iceberg.AppendFiles;
+import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.PartitionKey;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.data.GenericFileWriterFactory;
+import org.apache.iceberg.data.GenericRecord;
+import org.apache.iceberg.data.InternalRecordWrapper;
+import org.apache.iceberg.io.FanoutDataWriter;
+import org.apache.iceberg.io.OutputFileFactory;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.inmemory.InMemoryFileIO;
@@ -38,6 +51,7 @@ class EventsReaderTest {
     private static final String READ = "nuna.catalog.read";
     private static final String COMMIT = "nuna.catalog.commit";
     private static final String DENIAL = "nuna.catalog.denial";
+    private static final UUID RUN = UUID.fromString("a0000000-0000-4000-8000-000000000272");
 
     private final FaultyCatalog catalog = new FaultyCatalog();
     private final EventsTable events = EventsTable.open(catalog, NAMESPACE, TOPIC);
@@ -185,6 +199,74 @@ class EventsReaderTest {
 
     // ---- helpers ----
 
+    @Test
+    void aRowGivesTheRunThatLoggedItAndItsNumberThere() {
+        AuditRow topic = row(10, READ, "ana", "lake", 0, List.of("sales", "orders"));
+        AuditRow logged = stamped(row(20, READ, "ana", "lake", -1, List.of("sales", "orders")), RUN, 7);
+        append(topic, logged);
+
+        Page page = reader(EventsReader.DEFAULT_SCAN_BUDGET).page(query(50));
+
+        assertThat(page.rows()).containsExactly(logged, topic);
+        assertThat(page.rows().getFirst().logStamp()).contains(new LogStamp(RUN, 7));
+        assertThat(page.rows().getLast().logStamp()).as("the topic's copy carries no stamp").isEmpty();
+    }
+
+    @Test
+    void aTableMadeBeforeTheLogColumnsIsGivenThemAndItsEarlierRowsReadNullThere() throws IOException {
+        FaultyCatalog older = new FaultyCatalog();
+        TableIdentifier id = TableIdentifier.of(NAMESPACE, EventsTable.NAME);
+        older.createNamespace(NAMESPACE);
+        Schema first = new Schema(EventsTable.SCHEMA.columns().stream()
+                .filter(c -> !c.name().startsWith("log_")).toList());
+        Table made = older.buildTable(id, first).withPartitionSpec(EventsTable.SPEC)
+                .withProperty(TableProperties.FORMAT_VERSION, "2").create();
+        // A row as the writer wrote it before backlog 272: a data file without the two columns.
+        GenericRecord before = GenericRecord.create(made.schema());
+        before.setField("event_id", "before-272");
+        before.setField("time", at(10).atOffset(ZoneOffset.UTC));
+        before.setField("type", READ);
+        before.setField("source", "urn:nuna:deployment:test");
+        before.setField("principal", "ana");
+        before.setField("catalog", "lake");
+        before.setField("data", "{}");
+        before.setField("topic_partition", -1);
+        before.setField("topic_offset", 1L);
+        FanoutDataWriter<org.apache.iceberg.data.Record> files = new FanoutDataWriter<>(
+                new GenericFileWriterFactory.Builder(made).dataFileFormat(FileFormat.PARQUET).build(),
+                OutputFileFactory.builderFor(made, 1, 1).format(FileFormat.PARQUET).build(), made.io(), 1 << 20);
+        PartitionKey partition = new PartitionKey(made.spec(), made.schema());
+        partition.partition(new InternalRecordWrapper(made.schema().asStruct()).wrap(before));
+        try (files) {
+            files.write(before, made.spec(), partition.copy());
+        }
+        AppendFiles append = made.newAppend();
+        files.result().dataFiles().forEach(append::appendFile);
+        append.set(EventsTable.OFFSETS + LogWriter.SOURCE, "-1:2").commit();
+
+        EventsTable opened = EventsTable.open(older, NAMESPACE, LogWriter.SOURCE);
+        assertThat(older.loadTable(id).schema().findField("log_run").fieldId()).isEqualTo(20);
+        assertThat(older.loadTable(id).schema().findField("log_seq").fieldId()).isEqualTo(21);
+        assertThat(EventsTable.open(older, NAMESPACE, LogWriter.SOURCE)).as("opened again as it is").isNotNull();
+        AuditRow after = stamped(row(20, READ, "ana", "lake", -1, List.of("sales", "orders")), RUN, 3);
+        opened.reload();
+        opened.append(List.of(after), Map.of(-1, 3L));
+
+        Page page = EventsReader.of(older.loadTable(id), EventsReader.DEFAULT_SCAN_BUDGET).page(query(50));
+
+        assertThat(page.rows()).extracting(AuditRow::eventId).containsExactly(after.eventId(), "before-272");
+        assertThat(page.rows().getFirst().logStamp()).contains(new LogStamp(RUN, 3));
+        assertThat(page.rows().getLast().logRun()).isNull();
+        assertThat(page.rows().getLast().logSequence()).isNull();
+    }
+
+    private static AuditRow stamped(AuditRow row, UUID run, long number) {
+        return new AuditRow(row.eventId(), row.time(), row.type(), row.source(), row.principal(), row.endUser(),
+                row.engine(), row.requestId(), row.catalog(), row.objectKind(), row.objectId(), row.objectPath(),
+                row.operation(), row.privilege(), row.reason(), row.data(), row.topicPartition(), row.topicOffset(),
+                run.toString(), number);
+    }
+
     private EventsReader reader(long budget) {
         Table table = catalog.loadTable(TableIdentifier.of(NAMESPACE, EventsTable.NAME));
         return EventsReader.of(table, budget);
@@ -247,7 +329,7 @@ class EventsReaderTest {
         return new AuditRow(id, at(second), type, "urn:nuna:deployment:test", principal, null,
                 principal == null ? null : "spark", "request-" + id, catalogName,
                 path == null ? null : "TABLE", object == null ? null : object.toString(), path, null, null, null,
-                "{\"n\":\"" + id + "\"}", partition, offset);
+                "{\"n\":\"" + id + "\"}", partition, offset, null, null);
     }
 
     private static Instant at(int second) {

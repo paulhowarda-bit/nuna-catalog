@@ -7,7 +7,6 @@ import io.opentelemetry.proto.collector.logs.v1.ExportLogsPartialSuccess;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceResponse;
 import io.opentelemetry.proto.common.v1.AnyValue;
-import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.archive.ArchiveSink;
 import java.io.ByteArrayOutputStream;
@@ -144,11 +143,12 @@ final class OtlpLogsReceiver implements AutoCloseable {
             if (archive.isPresent() && !archived(exchange, records)) {
                 return;
             }
-            List<CatalogEvent> events = new ArrayList<>();
+            List<LogWriter.Logged> events = new ArrayList<>();
             int rejected = 0;
             for (String record : records) {
+                byte[] bytes = record.getBytes(StandardCharsets.UTF_8);
                 try {
-                    events.add(EventCodec.decode(record.getBytes(StandardCharsets.UTF_8)));
+                    events.add(new LogWriter.Logged(EventCodec.decode(bytes), EventCodec.envelope(bytes).stamp()));
                 } catch (IllegalArgumentException e) {
                     LOG.error("A log record of {} is not a catalog event; it is not written to the audit table: {}",
                             AUDIT_LOGGER, e.getMessage());

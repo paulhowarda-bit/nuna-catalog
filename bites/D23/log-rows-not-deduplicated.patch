@@ -1,13 +1,14 @@
 Breaks: A record that arrives twice over OTLP is written twice.
 Module: catalog-audit-tables
 Test: LogWriterTest#writesEachRecordOnceInNoTopicPartitionWithRisingNumbers
+
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
-index f15ea540..8dc8c077 100644
+index 8667b407..0c9e74a7 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
-@@ -117,10 +117,6 @@ final class LogWriter {
-         int rejected = 0;
-         for (CatalogEvent event : events) {
+@@ -134,10 +134,6 @@ final class LogWriter {
+         for (Logged logged : records) {
+             CatalogEvent event = logged.event();
              String id = event.id().toString();
 -            if (seen.containsKey(id)) {
 -                repeated++;

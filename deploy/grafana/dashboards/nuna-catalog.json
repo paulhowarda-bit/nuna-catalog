@@ -1,7 +1,7 @@
 {
   "uid": "nuna-catalog",
   "title": "nuna catalog",
-  "description": "The catalog servers: SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement and nuna's alerts (backlog 44).",
+  "description": "The catalog servers: SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement and archive, and nuna's alerts (backlogs 44, 272).",
   "tags": [
     "nuna"
   ],
@@ -2109,6 +2109,168 @@
       }
     },
     {
+      "id": 39,
+      "type": "row",
+      "title": "Audit: the archive",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 116
+      }
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Records logged two hours ago and still not archived, by server run",
+      "description": "What each server run had logged two hours ago, less the highest number the archive check has verified in that run. Above zero: records the server logged then never reached the archive, though it still runs (backlog 272). The check runs hourly, so the newest hour or so always waits for it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 117
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "clamp_min(max by (run) (nuna_audit_logged{job=~\"$job\"} offset 2h) - on (run) max by (run) (nuna_audit_archive_highest{job=~\"$job\"}), 0)",
+          "legendFormat": "{{run}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "Records logged and archived, by server run",
+      "description": "The records each server run has logged, and the highest number the archive check verified in its chain. A run that ended drops out of both.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 117
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (run) (nuna_audit_logged{job=~\"$job\"})",
+          "legendFormat": "{{run}} logged",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (run) (nuna_audit_archive_highest{job=~\"$job\"})",
+          "legendFormat": "{{run}} archived",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 33,
       "type": "row",
       "title": "nuna's alerts",
@@ -2118,7 +2280,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 116
+        "y": 125
       }
     },
     {
@@ -2134,7 +2296,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 117
+        "y": 126
       },
       "targets": [
         {
@@ -2201,7 +2363,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 117
+        "y": 126
       },
       "targets": [
         {
@@ -2268,7 +2430,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 117
+        "y": 126
       },
       "targets": [
         {
@@ -2335,7 +2497,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 121
+        "y": 130
       },
       "targets": [
         {

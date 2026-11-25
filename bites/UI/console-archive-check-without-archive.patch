@@ -1,17 +1,16 @@
-Breaks: A record says it is in the archive when no archive is configured (backlogs 216, 262).
+Breaks: A record does not say that no archive is configured, and reads as if it could be checked (backlogs 216, 262).
 Module: catalog-server
 Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
-index df2979b5..b244179d 100644
+index 6fa211bb..172ce5f0 100644
 --- a/catalog-server/src/main/resources/nuna/ui/audit.js
 +++ b/catalog-server/src/main/resources/nuna/ui/audit.js
-@@ -379,7 +379,7 @@ function recordDetail(catalog, r) {
-       h('dt', null, 'Read from'), h('dd', {'data-read-from': fromKafka ? 'kafka' : 'log'}, fromKafka
-         ? [`Kafka, partition ${r.partition}, offset `, code(String(r.offset))] : ['the log ', code('nuna.audit')]),
-       // Each server run's records are chained apart (backlog 262); the table does not say which run a row came from yet.
--      h('dt', null, 'Hash chain'), h('dd', null, r.chain && r.chain.status === 'no-archive' ? 'no archive is configured'
-+      h('dt', null, 'Hash chain'), h('dd', null, false ? 'no archive is configured'
-         : 'in its server run\'s chain in the archive; this page cannot place it there yet'),
-       o && o.path && o.path.length ? [h('dt', null, kindLabel(o.kind)),
-         h('dd', null, objectLink(catalog, o.kind, o.path, null))] : null,
+@@ -419,7 +419,6 @@ function recordDetail(catalog, r) {
+ function chainLine(r, fromKafka) {
+   const status = r.chain && r.chain.status;
+   const checked = r.chain && r.chain['checked-at'];
+-  if (status === 'no-archive') return 'no archive is configured';
+   if (status === 'verified') {
+     return `verified by the check at ${at(checked)}, with every earlier record of its server run`;
+   }

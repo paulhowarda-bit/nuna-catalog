@@ -95,6 +95,14 @@ public final class AuditTrail {
     }
 
     /**
+     * How many records this run has logged: the number of the last. Exported as {@code nuna.audit.logged}, tagged with
+     * the run, beside the archive's highest number for it (backlog 272).
+     */
+    public long logged() {
+        return logged.get();
+    }
+
+    /**
      * Logs the run's run-end record, once: the last number of the run, so the archive check knows the run ended and
      * that no number after it is missing. Only the log takes it. Called as the server stops, after every other part
      * that records has stopped.

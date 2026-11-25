@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionKey;
 import org.apache.iceberg.PartitionSpec;
@@ -25,6 +26,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
@@ -54,6 +56,10 @@ import org.apache.iceberg.util.PropertyUtil;
  * their commits record, under the source name {@value LogWriter#SOURCE}, the next such number. Each commit
  * also checks that no rows were added since the snapshot it started from: a second writer fails instead of writing
  * the same records again. Compaction's and manifest rewrites' snapshots add no rows, so they never stop it.
+ *
+ * <p>A row from the log also carries the server run that logged its record and its number there, {@code log_run} and
+ * {@code log_seq} (backlog 272), which place it in the run's archive chain. The two columns came after the table's
+ * first: a table made without them is given them when the writer opens it, so its earlier rows read null there.
  */
 final class EventsTable {
 
@@ -63,7 +69,8 @@ final class EventsTable {
     /** The summary property counting the rows a commit added. */
     static final String ROWS = "nuna.audit-tables.rows";
 
-    static final Schema SCHEMA = new Schema(
+    /** The columns the table was first made with; a table is still made with these, then given {@link #LOGGED}. */
+    private static final Schema FIRST = new Schema(
             required(1, "event_id", Types.StringType.get()),
             required(2, "time", Types.TimestampType.withZone()),
             required(3, "type", Types.StringType.get()),
@@ -82,7 +89,15 @@ final class EventsTable {
             required(16, "data", Types.StringType.get()),
             required(17, "topic_partition", Types.IntegerType.get()),
             required(18, "topic_offset", Types.LongType.get()));
-    static final PartitionSpec SPEC = PartitionSpec.builderFor(SCHEMA).day("time").build();
+    /**
+     * Where a record from the log was logged (backlog 272), added after the first columns with the ids a table made
+     * with those is given next, as every reader projects by id.
+     */
+    private static final List<Types.NestedField> LOGGED = List.of(
+            optional(20, "log_run", Types.StringType.get(), "the server run that logged the record (nunarun)"),
+            optional(21, "log_seq", Types.LongType.get(), "the record's number in that run (nunaseq)"));
+    static final Schema SCHEMA = new Schema(Stream.concat(FIRST.columns().stream(), LOGGED.stream()).toList());
+    static final PartitionSpec SPEC = PartitionSpec.builderFor(FIRST).day("time").build();
 
     private final Table table;
     private final String offsetsKey;
@@ -119,12 +134,21 @@ final class EventsTable {
                     // Made since we looked.
                 }
             }
-            table = catalog.buildTable(id, SCHEMA).withPartitionSpec(SPEC)
+            table = catalog.buildTable(id, FIRST).withPartitionSpec(SPEC)
                     .withProperty(TableProperties.FORMAT_VERSION, "2").create();
+        }
+        Table opened = table;
+        List<Types.NestedField> absent = LOGGED.stream().filter(c -> opened.schema().findField(c.name()) == null)
+                .toList();
+        if (!absent.isEmpty()) {
+            UpdateSchema update = table.updateSchema();
+            absent.forEach(c -> update.addColumn(c.name(), c.type(), c.doc()));
+            update.commit();
         }
         for (Types.NestedField expected : SCHEMA.columns()) {
             Types.NestedField column = table.schema().findField(expected.name());
-            if (column == null || !column.type().toString().equals(expected.type().toString())
+            if (column == null || column.fieldId() != expected.fieldId()
+                    || !column.type().toString().equals(expected.type().toString())
                     || column.isOptional() != expected.isOptional()) {
                 throw new IllegalStateException(id + " is not the audit table this writer writes: its column "
                         + expected.name() + " is " + column + ", not " + expected);
@@ -236,6 +260,8 @@ final class EventsTable {
         record.setField("data", row.data());
         record.setField("topic_partition", row.topicPartition());
         record.setField("topic_offset", row.topicOffset());
+        record.setField("log_run", row.logRun());
+        record.setField("log_seq", row.logSequence());
         return record;
     }
 

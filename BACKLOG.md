@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**53 open:** 14 S, 20 M, 14 L, 5 XL.
+**52 open:** 14 S, 19 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -64,7 +64,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
-| [272](backlog/272.md) | M | Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends | a column pair in the audit table, one lookup route, the console's Hash chain line and a metric; nothing to wait on | 2026-11-25 |
 
 ## Open items in full
 
@@ -3313,39 +3312,6 @@ profile), which readiness says and Overview does not.
   head and KPI line say steps are left, not "has not reported", as a caller who may read readiness, and the old words
   for one who may not.
 
-### 272. Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends
-
-- Added: 2026-11-25 by observability-audit, from item 262
-- Touches: catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java catalog-audit-tables/ catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/main/resources/static/console/ docs/observability/audit-log.md
-- Effort: M, a column pair in the audit table, one lookup route, the console's Hash chain line and a metric; nothing to wait on
-
-**What is missing.** Item 262 moved the Object Lock archive onto the log path: each server run's records form one hash
-chain, and every line the server logs carries its run and number (`nunarun`, `nunaseq`). Two things it left out:
-
-- **A feed row cannot be placed in its chain.** The audit table has no run or number column, so the console's Audit
-  page cannot say which chain holds a record or whether the check has verified past it. Item 262 removed the old
-  lookup, `GET /management/v1/audit/chains/{partition}/records/{offset}`, which placed a record by its Kafka
-  partition and offset, and set every feed row's `chain.status` to `no-place` where an archive is configured. The
-  console says the record is "in its server run's chain in the archive; this page cannot place it there yet"
-  (`audit.js`). The table keeps the payload in `data` and drops the CloudEvent's extensions, the stamp among them
-  (`AuditRows`), and the Kafka copy carries no stamp, by design in 262, so a row from the topic has no run at all.
-- **A running server's lost tail shows only when the run ends or a day passes.** The check finds missing numbers
-  below the highest archived, and an unended run after a day. Records lost at the end of a server that is still
-  running (an exporter queue that dropped its last batch, with nothing logged since) show nowhere until the server
-  logs again or stops.
-
-**What done looks like.**
-
-- The audit table has `log_run` (string) and `log_seq` (long), filled from the stamp for rows from the log (and from
-  the topic once the Kafka copy carries the stamp too, if Paul wants that: ask him, since 262 kept it off the topic).
-- A lookup route gives a feed record's place in its run's chain: the segment that holds it, its hash and the one
-  before, whether the link holds, and whether the check has verified the chain past it. The feed's `chain.status` is
-  `verified` or `unverified` again for a row with a run, `no-place` only for one without.
-- The console's Hash chain line links the lookup again (Atelier decides its words).
-- Each server exports its own count of records logged in its run (a gauge tagged with the run), so a dashboard can set
-  it beside the archive's highest number for that run and show a tail that has not arrived while the server runs.
-- Tests for each, and bites for the lookup's link check and the column mapping.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3565,5 +3531,6 @@ chain, and every line the server logs carries its run and number (`nunarun`, `nu
 | [269](backlog/269.md) | MutatingRoutesAuditTest: the OPA routes (item 115) have no case | done | 2026-11-25 |
 | [270](backlog/270.md) | SecurityGateTest: the grant and engine routes' audit lines never reach the log capture | done | 2026-11-25 |
 | [271](backlog/271.md) | ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch | done | 2026-11-25 |
+| [272](backlog/272.md) | Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends | done | 2026-11-25 |
 | [273](backlog/273.md) | Demo: presenter may do absolutely everything | done | 2026-11-25 |
 | [274](backlog/274.md) | demo.sh up builds from one pinned commit, so a landing during the run cannot stop it or mix commits | done | 2026-11-25 |

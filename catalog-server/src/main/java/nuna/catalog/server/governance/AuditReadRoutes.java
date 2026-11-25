@@ -13,6 +13,7 @@ import nuna.catalog.audit.AuditRows;
 import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.EventType;
 import nuna.catalog.audit.archive.ArchiveCheck;
+import nuna.catalog.audit.archive.ObjectLockArchive;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.iceberg.Wire;
 import nuna.catalog.security.Authorizer;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.common.KafkaException;
@@ -63,10 +65,12 @@ import tools.jackson.databind.node.ObjectNode;
  *
  * <p>The console's catalog-wide feed (D45; backlog 125) reads the queryable audit table instead ({@link AuditFeed}):
  * {@code GET .../catalogs/{catalog}/audit/feed} and {@code .../audit/summary}, with the archive check's status at
- * {@code GET /management/v1/audit/archive}. Each needs {@code select} on the audit catalog, as the tables themselves do
- * (D23, amended 2026-11-22: "Audit readers only"); a refusal is a 403, audited as a {@code Denial} on the audit
- * catalog. A feed page and a summary not kept from the last minute each take one of the caller's audit reads for the
- * minute, and are audited as an {@link AuditRead} of the catalog. catalog-audit-tables' README describes the routes.
+ * {@code GET /management/v1/audit/archive} and a logged record's place in its run's hash chain at
+ * {@code GET /management/v1/audit/chains/{run}/records/{number}} (backlog 272). Each needs {@code select} on the audit
+ * catalog, as the tables themselves do (D23, amended 2026-11-22: "Audit readers only"); a refusal is a 403, audited as
+ * a {@code Denial} on the audit catalog. A feed page, a chain lookup and a summary not kept from the last minute each
+ * take one of the caller's audit reads for the minute; the feed and the summary are audited as an {@link AuditRead} of
+ * the catalog, a lookup as one of the audit catalog. catalog-audit-tables' README describes the routes.
  */
 @RestController
 class AuditReadRoutes {
@@ -181,10 +185,12 @@ class AuditReadRoutes {
         }
         AuditFeed.Read read = readTable(() -> feed.page(query));
         trail.record(new AuditRead(catalogSecurable(catalog), read.page().rows().size(), request.actor()));
+        Map<String, ArchiveCheck.Verified> verified = check.configured() ? check.verified() : Map.of();
+        Map<String, List<ArchiveCheck.Range>> missing = check.configured() ? check.missing() : Map.of();
         ObjectNode body = Management.JSON.createObjectNode();
         body.put("catalog", catalog.name());
         ArrayNode records = body.putArray("records");
-        read.page().rows().forEach(row -> records.add(record(row)));
+        read.page().rows().forEach(row -> records.add(record(row, verified, missing)));
         read.page().next().ifPresent(next -> body.put("next-page-token", next.token()));
         read.page().searchedTo().ifPresent(at -> body.put("searched-to", at.toString()));
         body.set("table", table(read.table()));
@@ -251,6 +257,82 @@ class AuditReadRoutes {
         }
         body.set("check", checkStatus(last.get()));
         return GovernanceRoutes.json(200, body);
+    }
+
+    /**
+     * Where record {@code number} of server run {@code run} lies in the run's hash chain (backlog 272): the segment
+     * holding it, its hash and its neighbours', whether its link holds, and whether the check has verified the chain
+     * past it. {@code event-id} is the record's, so a record of another id under that number is not taken for it.
+     */
+    @GetMapping(path = ROOT + AUDIT + "/chains/{run}/records/{number}", produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> chain(@PathVariable String run, @PathVariable String number,
+                                 @RequestParam(name = "event-id", required = false) String eventId,
+                                 HttpServletRequest http) {
+        Request request = management.request(http);
+        CatalogRecord audit = requireAuditReader(request, "readAuditChain");
+        UUID chain = uuid("run", run);
+        long n;
+        try {
+            n = Long.parseLong(number);
+        } catch (NumberFormatException e) {
+            n = 0;
+        }
+        if (n < 1 || !number.matches("[0-9]{1,18}")) {
+            throw CatalogError.badRequest("number must be the record's number in its run, a whole number from 1, not "
+                    + number);
+        }
+        UUID id = uuid("event-id", eventId == null ? "" : eventId);
+        if (!check.configured()) {
+            throw CatalogError.of(503, "ServiceUnavailableException",
+                    "The audit archive is not configured on this server (nuna.audit.archive.bucket)");
+        }
+        Optional<ResponseEntity<String>> limited = limited(request);
+        if (limited.isPresent()) {
+            return limited.get();
+        }
+        Optional<ObjectLockArchive.Placement> placed;
+        try {
+            placed = check.place(chain, n, id);
+        } catch (RuntimeException e) {
+            LOG.warn("audit archive could not be read for run {} record {}", chain, n, e);
+            throw CatalogError.of(503, "ServiceUnavailableException", "The audit archive cannot be read now; retry later");
+        }
+        trail.record(new AuditRead(catalogSecurable(audit), placed.isPresent() ? 1 : 0, request.actor()));
+        ObjectNode body = Management.JSON.createObjectNode();
+        body.put("chain", chain.toString());
+        body.put("log-run", chain.toString());
+        body.put("log-seq", n);
+        body.put("event-id", id.toString());
+        body.put("archived", placed.isPresent());
+        if (placed.isEmpty()) {
+            return GovernanceRoutes.json(200, body);
+        }
+        ObjectLockArchive.Placement place = placed.get();
+        body.put("position", place.position());
+        body.put("hash", place.hash());
+        body.put("previous-hash", place.previous());
+        body.put("next-hash", place.next().orElse(null));
+        body.put("link-holds", place.holds());
+        ArchiveCheck.Verified verified = check.verified().get(chain.toString());
+        body.put("verified", verified != null && place.position() <= verified.head().sequence());
+        body.put("checked-at", verified == null ? null : verified.at().toString());
+        ObjectNode segment = body.putObject("segment");
+        segment.put("key", place.segment().key());
+        segment.put("first-position", place.segment().start().sequence() + 1);
+        segment.put("last-position", place.segment().end().sequence());
+        return GovernanceRoutes.json(200, body);
+    }
+
+    private static UUID uuid(String name, String value) {
+        try {
+            UUID parsed = UUID.fromString(value);
+            if (parsed.toString().equals(value.toLowerCase(java.util.Locale.ROOT))) {
+                return parsed;
+            }
+        } catch (IllegalArgumentException e) {
+            // answered below
+        }
+        throw CatalogError.badRequest(name + " must be a UUID, not " + value);
     }
 
     /**
@@ -342,8 +424,16 @@ class AuditReadRoutes {
         }
     }
 
-    /** A feed row: its columns, its place in the topic, its chain's status, and the record itself. */
-    private ObjectNode record(AuditRow row) {
+    /**
+     * A feed row: its columns, its place in the topic, where it was logged, its chain's status, and the record itself.
+     * The status is {@code verified} when the check has verified every number of the row's run up to the row's,
+     * {@code unverified} when it has not (yet), {@code no-place} for a row that does not say where it was logged, and
+     * {@code no-archive} where no archive is configured. An unverified row whose run the last check found missing a
+     * record at or below its number gives that gap as {@code missing}: the range holding its own number, else the lowest
+     * below it. Such a row stays unverified until the missing records reach the archive, which may be never.
+     */
+    private ObjectNode record(AuditRow row, Map<String, ArchiveCheck.Verified> verified,
+                              Map<String, List<ArchiveCheck.Range>> missing) {
         ObjectNode node = Management.JSON.createObjectNode();
         node.put("event-id", row.eventId());
         node.put("time", row.time().toString());
@@ -369,9 +459,25 @@ class AuditReadRoutes {
         node.put("reason", row.reason());
         node.put("partition", row.topicPartition());
         node.put("offset", row.topicOffset());
-        // The archive keeps each run's records in a chain of its own (backlog 262); the table does not carry a row's run
-        // and number yet, so a row cannot be placed in its chain.
-        node.putObject("chain").put("status", check.configured() ? "no-place" : "no-archive");
+        node.put("log-run", row.logRun());
+        node.put("log-seq", row.logSequence());
+        ObjectNode chain = node.putObject("chain");
+        if (!check.configured()) {
+            chain.put("status", "no-archive");
+        } else if (row.logRun() == null) {
+            // From the topic, or from a server that stamped none: the table cannot say which chain holds it.
+            chain.put("status", "no-place");
+        } else {
+            ArchiveCheck.Verified run = verified.get(row.logRun());
+            long n = row.logSequence();
+            boolean through = run != null && n <= run.through();
+            chain.put("status", through ? "verified" : "unverified");
+            chain.put("checked-at", run == null ? null : run.at().toString());
+            List<ArchiveCheck.Range> gaps = through ? List.of() : missing.getOrDefault(row.logRun(), List.of());
+            gaps.stream().filter(r -> r.from() <= n && n <= r.to()).findFirst()
+                    .or(() -> gaps.stream().filter(r -> r.to() < n).min(Comparator.comparingLong(ArchiveCheck.Range::from)))
+                    .ifPresent(r -> chain.putObject("missing").put("from", r.from()).put("to", r.to()));
+        }
         try {
             node.set("event", Management.JSON.readTree(EventCodec.encode(AuditRows.event(row))));
         } catch (IllegalArgumentException e) {

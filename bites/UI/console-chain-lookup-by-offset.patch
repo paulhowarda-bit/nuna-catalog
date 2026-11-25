@@ -1,0 +1,17 @@
+Breaks: Check this record looks up the writer's offset instead of the record's number in its run (backlog 272).
+Module: catalog-server
+Test: ConsoleBrowserTest#aLoggedRecordSaysWhetherItsRunIsVerifiedAndLooksUpItsPlaceInTheChain
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index 6fa211bb..4ac4d75f 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -442,7 +442,7 @@ function chainLine(r, fromKafka) {
+ 
+ /** A record's place in its server run's hash chain, read from the archive's segment that holds it. */
+ async function chainLink(r) {
+-  const c = await api.auditChain(r['log-run'], r['log-seq'], r['event-id']);
++  const c = await api.auditChain(r['log-run'], r.offset, r['event-id']);
+   if (!c.archived) return h('span', null, pill('', icon('clock'), 'Not archived yet'), ' the archive has not received it');
+   // The place can differ from the number: the chain holds records as they arrived, repeats and all.
+   const moved = Number(c.position) !== Number(c['log-seq']);

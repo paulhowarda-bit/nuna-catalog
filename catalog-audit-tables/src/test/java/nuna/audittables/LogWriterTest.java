@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import nuna.catalog.audit.Actor;
 import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.LogStamp;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.audit.PointerState;
 import nuna.catalog.audit.Securable;
@@ -14,6 +15,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.iceberg.Table;
@@ -80,6 +82,11 @@ class LogWriterTest {
         }
     }
 
+    /** The records as a server that stamped none logged them. */
+    private static LogWriter.Taken offer(LogWriter writer, List<CatalogEvent> events) {
+        return writer.offer(events.stream().map(e -> new LogWriter.Logged(e, Optional.empty())).toList());
+    }
+
     private static List<String> ids(List<CatalogEvent> events) {
         return events.stream().map(e -> e.id().toString()).toList();
     }
@@ -89,8 +96,8 @@ class LogWriterTest {
         LogWriter writer = writer(1_000);
         List<CatalogEvent> first = reads(3);
 
-        assertThat(writer.offer(first)).isEqualTo(new LogWriter.Taken(3, 0, 0, 0));
-        assertThat(writer.offer(List.of(first.get(1)))).as("the exporter sent it again")
+        assertThat(offer(writer, first)).isEqualTo(new LogWriter.Taken(3, 0, 0, 0));
+        assertThat(offer(writer, List.of(first.get(1)))).as("the exporter sent it again")
                 .isEqualTo(new LogWriter.Taken(0, 1, 0, 0));
         writer.commitIfDue();
         assertThat(rows()).as("not due before the interval").isEmpty();
@@ -108,17 +115,46 @@ class LogWriterTest {
     }
 
     @Test
+    void eachRowKeepsTheRunAndNumberItWasLoggedWithAndARecordLoggedTwiceKeepsItsFirst() {
+        // Backlog 272: the stamp places the row in its run's archive chain.
+        LogWriter writer = writer(1_000);
+        UUID run = UUID.fromString("a0000000-0000-4000-8000-000000000272");
+        CatalogEvent a = read("reader");
+        CatalogEvent b = read("reader");
+        CatalogEvent unstamped = read("reader");
+
+        assertThat(writer.offer(List.of(new LogWriter.Logged(a, Optional.of(new LogStamp(run, 1))),
+                new LogWriter.Logged(b, Optional.of(new LogStamp(run, 2))),
+                new LogWriter.Logged(a, Optional.of(new LogStamp(run, 3))),
+                new LogWriter.Logged(unstamped, Optional.empty())))).as("the relay logged a twice")
+                .isEqualTo(new LogWriter.Taken(3, 1, 0, 0));
+        writer.commit();
+
+        Table table = catalog.loadTable(EVENTS);
+        java.util.Map<String, String> stamps = new java.util.HashMap<>();
+        try (CloseableIterable<Record> records = IcebergGenerics.read(table).build()) {
+            records.forEach(r -> stamps.put((String) r.getField("event_id"), r.getField("log_run") + ":"
+                    + r.getField("log_seq")));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        assertThat(stamps).containsOnly(java.util.Map.entry(a.id().toString(), run + ":1"),
+                java.util.Map.entry(b.id().toString(), run + ":2"),
+                java.util.Map.entry(unstamped.id().toString(), "null:null"));
+    }
+
+    @Test
     void aRestartedWriterLeavesOutARecentRecordItWroteAndNumbersAboveIt() {
         LogWriter first = writer(1_000);
         List<CatalogEvent> written = reads(2);
-        first.offer(written);
+        offer(first, written);
         first.commit();
         long highest = rows().stream().mapToLong(Row::offset).max().orElseThrow();
 
         LogWriter restarted = writer(1_000);
         restarted.commit();
         CatalogEvent fresh = read("reader");
-        assertThat(restarted.offer(List.of(written.get(0), fresh))).isEqualTo(new LogWriter.Taken(1, 1, 0, 0));
+        assertThat(offer(restarted, List.of(written.get(0), fresh))).isEqualTo(new LogWriter.Taken(1, 1, 0, 0));
         restarted.commit();
 
         assertThat(rows()).extracting(Row::eventId).containsExactlyInAnyOrder(written.get(0).id().toString(),
@@ -132,11 +168,11 @@ class LogWriterTest {
         LogWriter writer = writer(1_000);
         writer.commit();
         List<CatalogEvent> events = reads(3);
-        writer.offer(events);
+        offer(writer, events);
         catalog.failNextRows(FaultyCatalog.Fault.ANSWER_LOST);
 
         assertThatThrownBy(writer::commit).isInstanceOf(CommitStateUnknownException.class);
-        writer.offer(List.of(events.get(2)));
+        offer(writer, List.of(events.get(2)));
         writer.commit();
 
         assertThat(rows()).extracting(Row::eventId).containsExactlyInAnyOrderElementsOf(ids(events));
@@ -148,7 +184,7 @@ class LogWriterTest {
         LogWriter writer = writer(1_000);
         writer.commit();
         List<CatalogEvent> events = reads(2);
-        writer.offer(events);
+        offer(writer, events);
         catalog.failNextRows(FaultyCatalog.Fault.LOST);
 
         assertThatThrownBy(writer::commit).isInstanceOf(IllegalStateException.class);
@@ -164,7 +200,7 @@ class LogWriterTest {
         CatalogEvent own = read(WRITER);
         CatalogEvent other = read("reader");
 
-        assertThat(writer.offer(List.of(own, other))).isEqualTo(new LogWriter.Taken(1, 0, 1, 0));
+        assertThat(offer(writer, List.of(own, other))).isEqualTo(new LogWriter.Taken(1, 0, 1, 0));
         writer.commit();
 
         assertThat(rows()).extracting(Row::eventId).containsExactly(other.id().toString());
@@ -179,7 +215,7 @@ class LogWriterTest {
 
         LogWriter writer = writer(1_000);
         CatalogEvent later = read("reader");
-        writer.offer(List.of(later));
+        offer(writer, List.of(later));
         writer.commit();
 
         assertThat(rows()).extracting(Row::partition).containsExactlyInAnyOrder(0, LogWriter.PARTITION);
@@ -189,11 +225,11 @@ class LogWriterTest {
     void refusesPastTwiceMaxRowsWaiting() {
         LogWriter writer = writer(2);
         catalog.failNextRows(FaultyCatalog.Fault.LOST);
-        writer.offer(reads(4));
+        offer(writer, reads(4));
 
-        assertThatThrownBy(() -> writer.offer(reads(1))).isInstanceOf(LogWriter.Busy.class);
+        assertThatThrownBy(() -> offer(writer, reads(1))).isInstanceOf(LogWriter.Busy.class);
         assertThatThrownBy(writer::commitIfDue).isInstanceOf(IllegalStateException.class);
         writer.commitIfDue();
-        assertThat(writer.offer(reads(1)).written()).isEqualTo(1);
+        assertThat(offer(writer, reads(1)).written()).isEqualTo(1);
     }
 }

@@ -74,7 +74,8 @@ class AuditLogToWriterTest {
         }
 
         assertThat(writer.waiting()).as("the audit record, and only it").isEqualTo(1);
-        assertThat(writer.offer(List.of(issue))).as("it was the credential issue")
+        assertThat(writer.offer(List.of(new LogWriter.Logged(issue, java.util.Optional.empty()))))
+                .as("it was the credential issue")
                 .isEqualTo(new LogWriter.Taken(0, 1, 0, 0));
     }
 }

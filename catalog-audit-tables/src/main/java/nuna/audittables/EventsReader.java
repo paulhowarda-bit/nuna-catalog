@@ -413,7 +413,8 @@ public final class EventsReader implements AutoCloseable {
                 (String) record.getField("object_id"), (List<String>) record.getField("object_path"),
                 (String) record.getField("operation"), (String) record.getField("privilege"),
                 (String) record.getField("reason"), (String) record.getField("data"),
-                (Integer) record.getField("topic_partition"), (Long) record.getField("topic_offset"));
+                (Integer) record.getField("topic_partition"), (Long) record.getField("topic_offset"),
+                (String) record.getField("log_run"), (Long) record.getField("log_seq"));
     }
 
     // ---- the counts ----

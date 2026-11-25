@@ -1,0 +1,17 @@
+Breaks: the receiver hands the writer each record without its stamp, so no row says where it was logged.
+Module: catalog-audit-tables
+Test: OtlpLogsReceiverTest#eachRowKeepsTheServerRunAndNumberItsRecordWasLoggedWith
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+index cbbe75f3..889b60b0 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+@@ -148,7 +148,7 @@ final class OtlpLogsReceiver implements AutoCloseable {
+             for (String record : records) {
+                 byte[] bytes = record.getBytes(StandardCharsets.UTF_8);
+                 try {
+-                    events.add(new LogWriter.Logged(EventCodec.decode(bytes), EventCodec.envelope(bytes).stamp()));
++                    events.add(new LogWriter.Logged(EventCodec.decode(bytes), Optional.empty()));
+                 } catch (IllegalArgumentException e) {
+                     LOG.error("A log record of {} is not a catalog event; it is not written to the audit table: {}",
+                             AUDIT_LOGGER, e.getMessage());

@@ -1,0 +1,16 @@
+Breaks: A record after one the archive is missing reads as not verified yet, a wait that may never end (backlog 272).
+Module: catalog-server
+Test: ConsoleBrowserTest#aLoggedRecordSaysWhetherItsRunIsVerifiedAndLooksUpItsPlaceInTheChain
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index 6fa211bb..6325f330 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -373,7 +373,6 @@ function chainPill(r) {
+   if (chain.status === 'verified') return pill('ok', icon('check'), 'Chain verified');
+   const gap = gapOf(r);
+   if (gap === 'own') return pill('bad', icon('x'), 'Missing from archive');
+-  if (gap === 'below') return pill('bad', icon('x'), 'Earlier record missing');
+   return pill('', icon('clock'), 'Not verified yet');
+ }
+ 

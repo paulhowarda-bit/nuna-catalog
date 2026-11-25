@@ -76,8 +76,9 @@ from the catalog's log (`otlp`), so the page needs no Kafka:
   left out, whether the exporter sent its batch twice or the relay wrote a change twice.
 - A row from the log is in no topic partition: its `topic_partition` is `-1` and its `topic_offset` a number the writer
   gives it, the time in microseconds or one more than the last, which rises and never repeats. The feed's reader orders
-  and finds rows by that pair. Its archive chain is its server run's, which the table does not record, so the feed
-  cannot place a row there yet (backlog 272).
+  and finds rows by that pair. It also keeps the record's stamp, the server run that logged it and its number there,
+  in `log_run` and `log_seq` (backlog 272), which place it in its run's archive chain. A row from the topic has
+  neither: the Kafka copy carries no stamp.
 - Records wait in memory a commit interval and are answered at once; a writer that dies before its commit loses them
   (they are still on the catalog's stdout), and a shutdown commits them first. catalog-audit-tables/README.md has the
   detail.
@@ -113,6 +114,14 @@ servers only read it. Neither needs Kafka for it.
   run's numbers. What it verified is kept in the bucket, `<prefix>/check/state.json`, so every server shares it and a
   restart does not read the whole archive again. A run that ended with every number archived and verified is done, and
   is not read again. `GET /management/v1/audit/archive` gives the last result (catalog-audit-tables/README.md).
+- **A record's place.** A feed row with a run says whether the check has verified that run up to its number
+  (`chain.status` `verified`) or not (`unverified`). One whose run the check found missing records at or below its
+  number names them, since it stays unverified until they arrive, which may be never. `GET
+  /management/v1/audit/chains/{run}/records/{number}?event-id=` finds the record in its run's chain: the segment that
+  holds it, its hash and its neighbours', whether its hash matches the one recomputed from the hash before it and its
+  content, and whether the check has verified the chain through it (catalog-audit-tables/README.md). Its place in the
+  chain can differ from its number, since the chain holds records as they arrived, repeats included. The console's
+  Audit page shows both on each record (backlog 272).
 - **Reads.** The DR reconcile proves each object's tip from the archive (D37). `GrantReplay` (a library, no route yet)
   replays grant changes from it; a grant two runs changed has changes in both chains, so its caller merges the chains
   by record time.
@@ -132,8 +141,11 @@ The limits of what shows:
 
 - A server that has logged nothing for a day reads as unended until it logs again: the archive cannot tell an idle
   server from a dead one.
-- Records lost at the end of a server that is still running show only when it logs again, ends, or reaches that day
-  (backlog 272 adds the server's own count beside the archive's).
+- Records lost at the end of a server that is still running show in the check only when it logs again, ends, or
+  reaches that day. Meanwhile each server exports how many records it has logged in its run, `nuna.audit.logged`, and
+  each server's check the highest number it verified in each run not yet done, `nuna.audit.archive.highest`, both
+  tagged `run` (backlog 272). The nuna catalog dashboard's "Audit: the archive" row sets them side by side
+  (dashboards-and-alerts.md).
 - Unstamped records, from a server older than the stamp, can show a broken chain but not a missing record.
 - A run the check has marked done is not read again, so a delete marker put on one of its keys afterwards is not
   reported; the locked versions beneath it stay.
@@ -148,12 +160,15 @@ The limits of what shows:
 | `catalog-server` `AuditRuntimeWithoutKafkaTest` | With no Kafka the relay drains the outbox to the log, and a notice is in the log before the route answers; an archive needs no Kafka. |
 | `catalog-server` `AuditLogToWriterTest` | A record written to `nuna.audit` reaches the writer's receiver through the server's log wiring and Boot's exporter, with the token header; other log lines do not. |
 | `catalog-server` `KafkaOutageTest` (heavy) | With the broker paused, loads vend, commits, creates, drops and governance changes succeed, each record in the log; records reach the topic again once it is back. |
-| `catalog-server` `AuditFeedRoutesTest` | The archive status: the last check's checkpoints and counts, and only the chains with something to show. |
-| `catalog-audit-tables` `OtlpLogsReceiverTest` | Protobuf and JSON, gzip, the scope filter, the token, and the partial success naming rejected records; every audit record archived as it came, those the table leaves out included; a request the archive cannot take turned away whole. |
-| `catalog-audit-tables` `LogWriterTest` | Each record once, across repeats, a lost answer and a restart; rows in partition -1 with rising numbers; a failed commit keeps its rows; the writer's own records left out. |
+| `catalog-server` `AuditFeedRoutesTest` | The archive status: the last check's checkpoints and counts, and only the chains with something to show. Each feed row verified, unverified with the missing records that hold it back, or not placeable; a record's place looked up, audited and limited, with its 400s and 503s; the logged and archived gauges. |
+| `catalog-server` `ConsoleBrowserTest` (heavy) | A logged record says whether its run is verified up to it, or that an earlier record is missing, and looks up its place; a record from Kafka says it cannot be checked; without an archive a record says so. |
+| `catalog-audit-tables` `OtlpLogsReceiverTest` | Protobuf and JSON, gzip, the scope filter, the token, and the partial success naming rejected records; every audit record archived as it came, those the table leaves out included; a request the archive cannot take turned away whole; each row keeping the run and number its record was logged with. |
+| `catalog-audit-tables` `LogWriterTest` | Each record once, across repeats, a lost answer and a restart; rows in partition -1 with rising numbers; a failed commit keeps its rows; the writer's own records left out; each row's run and number, a repeat keeping its first. |
+| `catalog-audit-tables` `EventsReaderTest` | A row's run and number read back; a table made before those columns given them, its earlier rows null there. |
+| `catalog-audit` `PlacementTest` | A record found in its run's chain by its number and id, with its hash and neighbours, across segments, arrived late or far from where its number puts it; another record's id not taken for it; a changed record's hash not matching. |
 | `catalog-audit` `ArchiveSinkTest` | Segments sealed by count, age and run end; refused bodies; the unstamped chain; a busy writer refusing; an unreachable store and a lost answer; a second writer; checkpoints linked across a restart and written when idle; a repeat left out. |
 | `catalog-audit` `ArchiveCheckTest` | Missing numbers, late arrivals, unended runs, repeats, late and broken checkpoints, strays and broken chains found; a later run reading only what is new. |
 | `catalog-audit` `LockedArchiveTest` (heavy) | On the run's S3 store, segments and checkpoints locked in COMPLIANCE mode, a rewrite refused, and the check reading the writer's chains intact. |
 | `catalog-tests-load` `DrDrillTest` (overnight) | The DR reconcile proving each tip from an archive the servers' logs fed. |
 
-Each guarded rule's bite is in `bites/D23/` or `bites/OBS-262/`.
+Each guarded rule's bite is in `bites/D23/`, `bites/OBS-262/` or `bites/OBS-272/`, and the console's in `bites/UI/`.

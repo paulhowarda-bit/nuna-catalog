@@ -1,17 +1,17 @@
-Breaks: a feed row says its chain is verified where an archive is configured, though nothing placed it in one.
+Breaks: a feed row logged with its run says its chain is verified, though the check has not verified the run up to it.
 Module: catalog-server
-Test: AuditFeedRoutesTest#withAnArchiveARowCannotBePlacedInItsRunsChainYet
+Test: AuditFeedRoutesTest#aRowFromTheLogIsVerifiedWhenEveryNumberOfItsRunUpToItIsAndOneWithoutARunCannotBePlaced
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
-index 8b033957..2a93891f 100644
+index e48a6685..43115e27 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
-@@ -371,7 +371,7 @@ class AuditReadRoutes {
-         node.put("offset", row.topicOffset());
-         // The archive keeps each run's records in a chain of its own (backlog 262); the table does not carry a row's run
-         // and number yet, so a row cannot be placed in its chain.
--        node.putObject("chain").put("status", check.configured() ? "no-place" : "no-archive");
-+        node.putObject("chain").put("status", check.configured() ? "verified" : "no-archive");
-         try {
-             node.set("event", Management.JSON.readTree(EventCodec.encode(AuditRows.event(row))));
-         } catch (IllegalArgumentException e) {
+@@ -471,7 +471,7 @@ class AuditReadRoutes {
+             ArchiveCheck.Verified run = verified.get(row.logRun());
+             long n = row.logSequence();
+             boolean through = run != null && n <= run.through();
+-            chain.put("status", through ? "verified" : "unverified");
++            chain.put("status", "verified");
+             chain.put("checked-at", run == null ? null : run.at().toString());
+             List<ArchiveCheck.Range> gaps = through ? List.of() : missing.getOrDefault(row.logRun(), List.of());
+             gaps.stream().filter(r -> r.from() <= n && n <= r.to()).findFirst()

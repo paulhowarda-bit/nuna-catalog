@@ -1,0 +1,17 @@
+Breaks: a record is placed by its number alone, so another record logged under that number is taken for it.
+Module: catalog-audit
+Test: PlacementTest#aNumberNotArchivedOrAnotherRecordsIdIsNotFound
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+index 8a088d0f..6cd13e99 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+@@ -396,7 +396,7 @@ public final class ObjectLockArchive {
+                     return Optional.empty();
+                 }
+                 String stored = new String(line, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII);
+-                if (indexOf(line, stamp) >= 0 && indexOf(line, id) >= 0) {
++                if (indexOf(line, stamp) >= 0) {
+                     byte[] body = Arrays.copyOfRange(line, Chain.HASH_HEX_LENGTH + 1,
+                             line.length - (line[line.length - 1] == '\n' ? 1 : 0));
+                     boolean holds = Chain.HEX.formatHex(Chain.link(previous, body)).equals(stored);

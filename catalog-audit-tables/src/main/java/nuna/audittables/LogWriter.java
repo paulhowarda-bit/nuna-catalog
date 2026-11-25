@@ -3,6 +3,7 @@ package nuna.audittables;
 import nuna.catalog.audit.AuditRow;
 import nuna.catalog.audit.AuditRows;
 import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.LogStamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -29,7 +31,8 @@ import org.slf4j.LoggerFactory;
  * number this writer gives it: the current time in microseconds, or one more than the last it gave, whichever is
  * higher. The numbers rise, stay unique across restarts while the writer's clock does not go back, and keep rows apart
  * where the feed's reader orders and finds them by partition and offset. Each commit records the next one, under
- * {@value #SOURCE}, which a restart starts above.
+ * {@value #SOURCE}, which a restart starts above. A row also keeps where its record was logged, the run and its number
+ * there ({@link LogStamp}; backlog 272); of a record that arrives twice, the first copy's.
  *
  * <p>Records are taken into memory and the exporter is answered at once; they are committed every
  * {@code commitInterval}, or sooner once {@code maxRows} wait. A commit that fails keeps them for the next; past twice
@@ -77,6 +80,19 @@ final class LogWriter {
     record Taken(int written, int repeated, int own, int rejected) {
     }
 
+    /**
+     * A record as the catalog logged it.
+     *
+     * @param stamp its run and number in the run; empty for a record from a server that stamped none
+     */
+    record Logged(CatalogEvent event, Optional<LogStamp> stamp) {
+
+        Logged {
+            Objects.requireNonNull(event, "event");
+            Objects.requireNonNull(stamp, "stamp");
+        }
+    }
+
     /** Twice {@code maxRows} wait already: the exporter should retry later. */
     static final class Busy extends RuntimeException {
         Busy(int waiting) {
@@ -105,7 +121,7 @@ final class LogWriter {
      *
      * @throws Busy if twice {@code maxRows} wait already; nothing is taken
      */
-    synchronized Taken offer(List<CatalogEvent> events) {
+    synchronized Taken offer(List<Logged> records) {
         if (rows.size() >= 2 * maxRows) {
             throw new Busy(rows.size());
         }
@@ -115,7 +131,8 @@ final class LogWriter {
         int repeated = 0;
         int own = 0;
         int rejected = 0;
-        for (CatalogEvent event : events) {
+        for (Logged logged : records) {
+            CatalogEvent event = logged.event();
             String id = event.id().toString();
             if (seen.containsKey(id)) {
                 repeated++;
@@ -124,7 +141,7 @@ final class LogWriter {
             long number = Math.max(last + 1, ChronoUnit.MICROS.between(Instant.EPOCH, now));
             AuditRow row;
             try {
-                row = AuditRows.of(event, PARTITION, number);
+                row = AuditRows.of(event, logged.stamp(), PARTITION, number);
             } catch (IllegalArgumentException e) {
                 LOG.error("Audit record {} from the log is of a type this writer cannot map; it is not written to the"
                         + " audit table: {}", id, e.getMessage());
