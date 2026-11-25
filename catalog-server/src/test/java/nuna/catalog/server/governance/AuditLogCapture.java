@@ -10,7 +10,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.slf4j.LoggerFactory;
 
-/** The lines of the audit log {@value AuditTrail#LOGGER} while it is open, decoded; closing restores the logger. */
+/**
+ * The lines of the audit log {@value AuditTrail#LOGGER} while it is open, decoded; closing restores the logger. In a
+ * Spring test, make it once the context is up ({@code @BeforeAll} or {@code @BeforeEach}), not as a field: a context
+ * that starts resets logback, which detaches the capture, and it would see nothing (backlog 270).
+ */
 public final class AuditLogCapture implements AutoCloseable {
 
     private final Logger logger = (Logger) LoggerFactory.getLogger(AuditTrail.LOGGER);
@@ -30,6 +34,7 @@ public final class AuditLogCapture implements AutoCloseable {
 
     /** Every audit line written so far, in order, as written: the record's CloudEvent JSON. */
     List<String> lines() {
+        attached();
         synchronized (appender) {
             return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         }
@@ -70,6 +75,7 @@ public final class AuditLogCapture implements AutoCloseable {
 
     /** Every audit record written so far, in order, as the log line's CloudEvent. */
     List<CatalogEvent> records() {
+        attached();
         List<ILoggingEvent> lines;
         synchronized (appender) {
             lines = List.copyOf(appender.list);
@@ -80,6 +86,14 @@ public final class AuditLogCapture implements AutoCloseable {
             }
             return EventCodec.decode(line.getFormattedMessage().getBytes(StandardCharsets.UTF_8));
         }).toList();
+    }
+
+    /** Fails at once if logback has detached the capture since it was made, rather than reading nothing. */
+    private void attached() {
+        if (!appender.isStarted() || !logger.isAttached(appender)) {
+            throw new IllegalStateException("the audit log capture was detached, most likely by a Spring context that"
+                    + " started after it was made: make it in @BeforeAll or @BeforeEach");
+        }
     }
 
     @Override
