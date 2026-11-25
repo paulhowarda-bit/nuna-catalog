@@ -130,7 +130,8 @@ export async function governanceTab(target, reload) {
   const holds = g.holds || [];
   const attrs = g.attributes || [];
   const view = target.kind === 'view';
-  const nearest = name => attrs.find(a => a.attribute === name);
+  // The row and column policy counts only on the table it is set on, never from a level above (backlog 239).
+  const nearest = name => attrs.find(a => a.attribute === name && (name !== 'row-column-policy' || String(a.level).endsWith(':' + here)));
   const ownRegulated = attrs.some(a => a.attribute === 'regulated' && String(a.level).endsWith(':' + here) && a.value === 'true');
   const valueWithSource = name => {
     const a = nearest(name);
