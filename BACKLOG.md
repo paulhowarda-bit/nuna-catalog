@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**58 open:** 17 S, 21 M, 15 L, 5 XL.
+**57 open:** 16 S, 21 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -67,7 +67,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [261](backlog/261.md) | M | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's) | 2026-11-24 |
 | [262](backlog/262.md) | L | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | waits on Paul's answer below, which sets the size: (a) is S, a ledger amendment and the doc; (b) M to L, a field on every record and a reconciling check; (c) L, the archive moved off Kafka onto the log path with (b)'s field and a checkpoint of its own | 2026-11-24 |
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
-| [264](backlog/264.md) | S | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | a ledger amendment and a few comments and lines (more only if Paul lowers the floor: the floor, its test and a bite); waits on Paul's answer | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 
@@ -3405,45 +3404,6 @@ out; a writer killed before its commit loses nothing its sender was told was tak
 as above); the chart's values, `catalog-audit-tables/README.md` and audit-log.md say the new behaviour; bites in
 `bites/OBS-263/`.
 
-### 264. D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation)
-
-- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
-- Touches: decision-ledger.md build-plan.md catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java catalog-audit/src/test/java/nuna/catalog/audit/archive/LockedArchiveTest.java catalog-server/src/main/java/nuna/catalog/server/governance/AuditSettings.java bites/
-- Effort: S, a ledger amendment and a few comments and lines (more only if Paul lowers the floor: the floor, its test and a bite); waits on Paul's answer
-
-**What is wrong.** D23 says "≥5-year retention (NYDFS 500.6)". 23 NYCRR 500.6(b) sets two periods: at least five years
-for the (a)(1) systems that reconstruct material financial transactions, and at least three years for the (a)(2)
-audit trails that detect and respond to cybersecurity events. The 2017 text had the same split, and the November 2023
-Second Amendment kept it (DFS's Part 500 text, https://www.dfs.ny.gov/cybersecurity/23-NYCRR-Part-500). Cornell
-LII's copy shows one five-year period that matches neither, and LII is what the plan cited
-(`reports/Enterprise Iceberg REST catalog plan.md`, line 751); D23 carried that reading forward. The catalog's access
-and grant records are (a)(2) audit trails (inferred), so the archive's 1,827 days (`AuditSettings.java:56`, refused
-below that, `ObjectLockArchive.java`, lines 45 and 107) is above the minimum: nuna's policy, not the regulation's
-floor. The citation is repeated in `ObjectLockArchive.java` (lines 34 and 45) and in build-plan.md (line 209, and
-CMP-1 on line 421, "beyond the 5-year floor").
-
-Two related points, for the record and not this item's work: Part 500 binds only entities licensed under New York's
-Banking, Insurance or Financial Services Law (500.1), which build-plan.md's CMP-1 already asks about; and 1,827 days
-covers no six-year period, so were the firm ever to make the log a required record, 17a-4(a)'s or FINRA 4511(b)'s six
-years would outrun it, which D23's "longer where a record period applies" already allows for.
-
-**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
-`research/reports/Nuna observability and audit grounding.md`), "NYDFS asks three years for audit trails, not five",
-which read the DFS text and the 2017 original
-(https://www.governor.ny.gov/sites/governor.ny.gov/files/atoms/files/Cybersecurity_Requirements_Financial_Services_23NYCRR500.pdf).
-
-**Paul decides: correct D23's citation?**
-
-- **Recommended:** keep 1,827 days and the code's floor, and amend D23 to say five years is nuna's policy, above NYDFS
-  500.6(b)'s three-year minimum for cybersecurity audit trails (its five years apply to transaction reconstruction),
-  longer where a record period applies.
-- Or correct the citation and lower the floor to three years (1,096 days), keeping 1,827 as the default: a deployment
-  could then lock its archive for less.
-
-**Done when** D23 is amended with Paul's answer and `Decided:` added here; `ObjectLockArchive.java`'s comments and
-build-plan.md's lines 209 and 421 say the same as D23. If he lowers the floor: the floor, `LockedArchiveTest`'s refusal
-and its message changed, with a bite.
-
 ### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR
 
 - Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
@@ -3735,3 +3695,4 @@ profile), which readiness says and Overview does not.
 | [255](backlog/255.md) | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
+| [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |

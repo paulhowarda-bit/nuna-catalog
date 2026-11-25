@@ -747,6 +747,6 @@ export function auditTab(target, {title} = {}) {
         h('div', {class: 'refusal-acts'}, h('button', {class: 'btn sm', type: 'button', onclick: run}, 'Refresh')),
         status, feed)),
     h('div', {class: 'stack'}, windowBox,
-      panel('Archive', null, h('p', {class: 'fine'}, 'Changes reach a hash-chained archive kept at least five years. '
+      panel('Archive', null, h('p', {class: 'fine'}, 'Changes reach a hash-chained archive kept at least seven years. '
         + 'Each record\'s place in the chain is on the Audit page.'))));
 }
