@@ -1,0 +1,16 @@
+Breaks: the worker strips a wildcard from a prefix the catalog gives it instead of refusing the prefix, so s3://warehouse/tab*les reaches s3://warehouse/tables (item 256).
+Module: catalog-maintenance
+Test: PrefixesTest#aPrefixIsParsedAsTheCatalogWritesItAndOneThatFailsIsRefused
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+index 6563050e..54405449 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+@@ -90,7 +90,7 @@ final class Prefixes {
+      * @throws LocationRejectedException saying why
+      */
+     static ObjectLocation parse(String prefix) {
+-        return ObjectLocation.parse(Storage.normalize(prefix));
++        return ObjectLocation.parse(Storage.normalize(prefix).replace("*", ""));
+     }
+ 
+     /** Whether the identity serves the profile: the same kind, and the same endpoint however either is written. */

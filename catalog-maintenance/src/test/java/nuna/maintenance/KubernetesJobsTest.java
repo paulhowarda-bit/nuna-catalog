@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import nuna.catalog.objectstore.StoreKind;
 import nuna.catalog.tests.s3.PrivateCa;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -30,9 +31,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 import org.junit.jupiter.api.AfterEach;
@@ -54,6 +57,8 @@ import org.junit.jupiter.api.io.TempDir;
 class KubernetesJobsTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    /** No store for any table: the Job trusts no storage CA. */
+    private static final Function<String, Optional<String>> NO_STORE = location -> Optional.empty();
     private static final TokenSource TOKENS = new TokenSource() {
         @Override
         public String token() {
@@ -105,7 +110,7 @@ class KubernetesJobsTest {
         Files.writeString(serviceAccount.resolve("namespace"), "lakehouse");
         WorkerSettings.Compaction settings = settings("lakehouse-compaction");
         KubernetesJobs compactor = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS, Map.of(),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                NO_STORE, Clock.fixed(NOW, ZoneOffset.UTC));
         UUID id = UUID.randomUUID();
         Management.TableWork table = new Management.TableWork("lake", id, List.of("sales", "eu"), "orders",
                 "s3://warehouse/tables/orders", Map.of("compaction.enabled", "true",
@@ -173,7 +178,7 @@ class KubernetesJobsTest {
         // The next night, a minute after it opens: a Job of its own, whatever is kept of tonight's, to the next end.
         CleanupWindow.Night next = WINDOW.on(night.date().plusDays(1));
         KubernetesJobs tomorrow = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS, Map.of(),
-                Clock.fixed(next.opens().plusSeconds(60), ZoneOffset.UTC));
+                NO_STORE, Clock.fixed(next.opens().plusSeconds(60), ZoneOffset.UTC));
         CompactionNeed deletes = new CompactionNeed(10, 0, 4, 1, 5, 0.3, 536870912);
         assertThat(tomorrow.launch(table, deletes, next)).isEqualTo(Compactor.Launch.STARTED);
         JsonNode second = JSON.readTree(jobs.get("nuna-compact-" + id + "-20261116"));
@@ -193,13 +198,20 @@ class KubernetesJobsTest {
         X509Certificate jvmCa = jvmCa();
         Path bundle = Files.writeString(bundles.resolve("ceph.crt"), PrivateCa.pem(privateCa) + "a label between\n"
                 + PrivateCa.pem(jvmCa), StandardCharsets.US_ASCII);
-        Map<String, WorkerSettings.StorageProfile> storage = Map.of(
-                "ceph", new WorkerSettings.StorageProfile(List.of("s3://warehouse/tables"),
-                        URI.create("https://ceph.example.internal"), "us-east-1", true, null, null, bundle),
-                "aws", new WorkerSettings.StorageProfile(List.of("s3://aws-lake/tables"), null, "eu-west-2", false,
-                        null, null, null));
+        Map<String, WorkerSettings.Store> stores = Map.of(
+                "ceph", new WorkerSettings.Store(StoreKind.CEPH, URI.create("https://ceph.example.internal"),
+                        "us-east-1", null, null, bundle),
+                "aws", new WorkerSettings.Store(StoreKind.S3, URI.create("https://s3.eu-west-2.amazonaws.com"),
+                        "eu-west-2", null, null, null));
+        // The catalog gives each store's prefixes; the worker's storage finds a table's store by them.
+        OwnStorage storage = Storage.of(stores);
+        storage.reach(List.of(
+                new Management.StorageProfile("onprem", "ceph", "https://ceph.example.internal",
+                        List.of("s3://warehouse/tables")),
+                new Management.StorageProfile("cloud", "s3", "https://s3.eu-west-2.amazonaws.com",
+                        List.of("s3://aws-lake/tables"))));
         KubernetesJobs compactor = new KubernetesJobs(settings("lakehouse-compaction"), URI.create("http://ignored/"),
-                TOKENS, storage, Clock.fixed(NOW, ZoneOffset.UTC));
+                TOKENS, stores, storage::store, Clock.fixed(NOW, ZoneOffset.UTC));
         CleanupWindow.Night night = WINDOW.night(NOW).orElseThrow();
         Management.TableWork onPrem = new Management.TableWork("lake", UUID.randomUUID(), List.of("sales"), "orders",
                 "s3://warehouse/tables/orders", Map.of("compaction.enabled", "true"));
@@ -245,7 +257,7 @@ class KubernetesJobsTest {
                                 + " -Djavax.net.ssl.trustStorePassword=",
                         "/tmp/compact.py");
 
-        // A table on a profile with no bundle: its Job as it always was, and no ConfigMap.
+        // A table on a store with no bundle: its Job as it always was, and no ConfigMap.
         assertThat(compactor.launch(onAws, SMALL_FILES, night)).isEqualTo(Compactor.Launch.STARTED);
         JsonNode plain = JSON.readTree(jobs.get(KubernetesJobs.jobName(onAws, night))).at("/spec/template/spec");
         assertThat(plain.has("volumes")).isFalse();
@@ -258,7 +270,7 @@ class KubernetesJobsTest {
     void aJobsStateComesFromItsConditions() throws Exception {
         Files.writeString(serviceAccount.resolve("token"), "sa-token\n");
         KubernetesJobs compactor = new KubernetesJobs(settings("lakehouse-compaction"), URI.create("http://ignored/"),
-                TOKENS, Map.of(), Clock.fixed(NOW, ZoneOffset.UTC));
+                TOKENS, Map.of(), NO_STORE, Clock.fixed(NOW, ZoneOffset.UTC));
         Management.TableWork table = new Management.TableWork("lake", UUID.randomUUID(), List.of("sales"), "orders",
                 "s3://warehouse/tables/orders", Map.of("compaction.enabled", "true"));
         CleanupWindow.Night night = WINDOW.night(NOW).orElseThrow();
@@ -292,7 +304,7 @@ class KubernetesJobsTest {
                 base.namespace(), base.jobServiceAccount(), base.apiServer(), base.serviceAccount(), base.catalogUri(),
                 "1Gi", "128Mi", "512m", 1, 185, Map.of());
         KubernetesJobs compactor = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS, Map.of(),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                NO_STORE, Clock.fixed(NOW, ZoneOffset.UTC));
         Management.TableWork table = new Management.TableWork("lake", UUID.randomUUID(), List.of("sales"), "orders",
                 "s3://warehouse/tables/orders", Map.of("compaction.enabled", "true"));
         CleanupWindow.Night night = WINDOW.night(NOW).orElseThrow();
@@ -310,7 +322,7 @@ class KubernetesJobsTest {
         Files.writeString(serviceAccount.resolve("namespace"), "lakehouse");
 
         assertThatThrownBy(() -> new KubernetesJobs(settings("lakehouse"), URI.create("http://ignored/"), TOKENS,
-                Map.of(), Clock.systemUTC())).hasMessageContaining("the worker's own namespace");
+                Map.of(), NO_STORE, Clock.systemUTC())).hasMessageContaining("the worker's own namespace");
     }
 
     private WorkerSettings.Compaction settings(String namespace) {

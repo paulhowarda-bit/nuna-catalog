@@ -255,7 +255,8 @@ class TelemetryTest {
                 "--nuna.maintenance.cleanup-window.end=04:00",
                 "--nuna.maintenance.cleanup-window.zone=Europe/London",
                 "--nuna.maintenance.token.file=" + token,
-                "--nuna.maintenance.storage.test.prefixes[0]=s3://telemetry-test/tables",
+                "--nuna.maintenance.storage.test.kind=minio",
+                "--nuna.maintenance.storage.test.endpoint=http://127.0.0.1:" + closedPort(),
                 // The server, on this module's test class path only, brings JDBC; the worker has no database.
                 "--spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration");
     }

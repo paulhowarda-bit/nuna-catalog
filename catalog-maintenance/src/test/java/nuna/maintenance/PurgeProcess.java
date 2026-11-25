@@ -48,6 +48,11 @@ public final class PurgeProcess {
             }
 
             @Override
+            public Prefixes reach(java.util.List<Management.StorageProfile> profiles) {
+                return storage.reach(profiles);
+            }
+
+            @Override
             public void close() {
                 storage.close();
             }

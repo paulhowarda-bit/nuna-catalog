@@ -45,10 +45,9 @@ nuna:
     dr:
       verify-interval: PT1M
       replicas:
-        <profile>:              # a storage profile of nuna.maintenance.storage, by name
+        <store>:                # a store of nuna.maintenance.storage, by name; the DR store is of its kind
           endpoint: https://s3.dr.example
           region: us-east-1
-          path-style-access: false
           access-key-id: ...      # read-only keys on the DR store; the default chain when absent
           secret-access-key: ...
           ca-bundle: /etc/nuna/dr-ca.pem   # optional
@@ -56,7 +55,9 @@ nuna:
 
 The DR store is the same buckets and paths on another endpoint, as on-prem site replication keeps them (Paul,
 2026-11-20). An AWS DR bucket has another name, which no path in the metadata names: that waits on PLT-4 at work.
-The verifier only reads the DR store; it lists and reads, never writes or deletes.
+The verifier only reads the DR store; it lists and reads, never writes or deletes, and only beneath the storage
+prefixes the catalog gives the worker (item 256), which it reads again before each pass; a pass whose read fails,
+fails.
 
 Each pass:
 

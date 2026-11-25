@@ -16,7 +16,7 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /**
- * The S3 clients Iceberg opens for the worker, trusting the storage profiles' CA bundles beside the JVM's CAs (backlog
+ * The S3 clients Iceberg opens for the worker, trusting its stores' CA bundles beside the JVM's CAs (backlog
  * 21): its own ({@link Storage}) and those reading table files with the credentials the catalog vends it
  * ({@link Catalogs}). Iceberg builds the factory by name ({@code s3.client-factory-impl}), so the bundles are found
  * through the client property {@value #TRUST}, which {@link #register} hands out. A client trusts the bundle of the
@@ -36,29 +36,29 @@ public final class TrustedS3Clients implements S3FileIOAwsClientFactory {
     private String trust;
 
     /**
-     * Reads each profile's CA bundle and makes them known, by endpoint, to the factories Iceberg builds, for the JVM's
-     * life; returns the client properties that select them, or none when no profile names a bundle.
+     * Reads each store's CA bundle and makes them known, by endpoint, to the factories Iceberg builds, for the JVM's
+     * life; returns the client properties that select them, or none when no store names a bundle.
      *
-     * @throws IllegalArgumentException naming the profile and the file, when a bundle cannot be read, holds no
-     *                                  certificate or one that does not parse, or two profiles on one endpoint name
+     * @throws IllegalArgumentException naming the store and the file, when a bundle cannot be read, holds no
+     *                                  certificate or one that does not parse, or two stores on one endpoint name
      *                                  different bundles
      */
-    static Map<String, String> register(Map<String, WorkerSettings.StorageProfile> profiles) {
+    static Map<String, String> register(Map<String, WorkerSettings.Store> stores) {
         Map<String, Path> files = new LinkedHashMap<>();
         Map<String, CaBundle> bundles = new LinkedHashMap<>();
-        profiles.forEach((name, profile) -> {
-            if (profile.caBundle() == null) {
+        stores.forEach((name, store) -> {
+            if (store.caBundle() == null) {
                 return;
             }
             String setting = "nuna.maintenance.storage." + name + ".ca-bundle: ";
-            String endpoint = endpoint(profile.endpoint().toString());
-            Path other = files.putIfAbsent(endpoint, profile.caBundle());
-            if (other != null && !other.equals(profile.caBundle())) {
-                throw new IllegalArgumentException(setting + "another profile names " + other + " for the endpoint "
+            String endpoint = endpoint(store.endpoint().toString());
+            Path other = files.putIfAbsent(endpoint, store.caBundle());
+            if (other != null && !other.equals(store.caBundle())) {
+                throw new IllegalArgumentException(setting + "another store names " + other + " for the endpoint "
                         + endpoint);
             }
             try {
-                bundles.put(endpoint, CaBundle.read(profile.caBundle()));
+                bundles.put(endpoint, CaBundle.read(store.caBundle()));
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException(setting + e.getMessage(), e);
             }

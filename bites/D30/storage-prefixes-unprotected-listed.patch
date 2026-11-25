@@ -1,0 +1,17 @@
+Breaks: the storage prefixes route also lists a profile that names no maintenance principal, so the worker would list and delete beneath prefixes no delete policy protects (item 256).
+Module: catalog-server
+Test: StoragePrefixRoutesTest#onlyProfilesNamingAMaintenancePrincipalAreListedWithNoCredential
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java
+index ca1b5e93..d0ecc547 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java
+@@ -45,9 +45,6 @@ class StoragePrefixRoutes {
+         ArrayNode profiles = body.putArray("profiles");
+         for (Map.Entry<String, StorageSettings.Profile> entry : new TreeMap<>(settings.profiles()).entrySet()) {
+             StorageSettings.Profile profile = entry.getValue();
+-            if (profile.maintenancePrincipal() == null) {
+-                continue;
+-            }
+             ObjectNode item = profiles.addObject();
+             item.put("name", entry.getKey());
+             item.put("kind", profile.kind().name().toLowerCase(Locale.ROOT));

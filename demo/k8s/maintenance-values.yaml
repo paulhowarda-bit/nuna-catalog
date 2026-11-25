@@ -44,11 +44,12 @@ config:
         # Iceberg's client asks for scope catalog unless told otherwise, which Keycloak refuses as unknown.
         scope: openid
       # Its own Silo user, which may list and delete beneath the tables and nothing else; demo.sh makes it on every up.
+      # The prefixes come from the catalog's profile s3 (demo-values.yaml), which names this user as its
+      # maintenance-principal; the worker serves it because the kind and endpoint here are the profile's.
       storage:
         s3:
-          prefixes: [s3://warehouse/tables]
+          kind: minio
           endpoint: http://s3:9000
-          path-style-access: true
           access-key-id: nuna-maintenance
       # One Job at a time, asking the node for 64 MiB and using up to 1,280 MiB: beside the rest of the demo a Job
       # whose request were its limit would never schedule. Asking for little, it is also the first pod the node stops
