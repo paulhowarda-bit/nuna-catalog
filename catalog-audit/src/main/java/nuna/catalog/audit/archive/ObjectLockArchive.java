@@ -31,7 +31,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * The audit archive (D23): hash-chained segments in an S3 bucket with Object Lock, each written once
- * in COMPLIANCE mode and kept at least five years (NYDFS 500.6), longer where configured (CMP-1). No
+ * in COMPLIANCE mode and kept at least seven years (nuna's policy, D23), longer where configured (CMP-1). No
  * one, root included, can shorten the retention or delete a locked version before it lapses.
  *
  * <p>Each chain (one per audit-topic partition) is a run of segments under
@@ -42,8 +42,8 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  */
 public final class ObjectLockArchive {
 
-    /** Five years, with their leap days: the floor on retention (D23, NYDFS 500.6). */
-    public static final Duration MINIMUM_RETENTION = Duration.ofDays(5 * 365 + 2);
+    /** Seven years, with their leap days: the floor on retention, nuna's policy (D23; NYDFS 500.6 asks three). */
+    public static final Duration MINIMUM_RETENTION = Duration.ofDays(7 * 365 + 2);
 
     static final String START_SEQUENCE = "chain-start-sequence";
     static final String START_HASH = "chain-start-hash";
@@ -104,7 +104,7 @@ public final class ObjectLockArchive {
         this.retention = Objects.requireNonNull(retention, "retention");
         this.clock = Objects.requireNonNull(clock, "clock");
         if (retention.compareTo(MINIMUM_RETENTION) < 0) {
-            throw new IllegalArgumentException("archive retention " + retention + " is below the five-year floor "
+            throw new IllegalArgumentException("archive retention " + retention + " is below the seven-year floor "
                     + MINIMUM_RETENTION);
         }
         if (prefix.isEmpty() || prefix.endsWith("/")) {

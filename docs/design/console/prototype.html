@@ -1275,7 +1275,7 @@ td.acts { width: 1%; white-space: nowrap; }
           <ul class="pts">
             <li><svg class="ic"><use href="#i-db"/></svg><span><b>Four interchangeable stores.</b> PostgreSQL, Oracle, MongoDB or CockroachDB, each passing the same fault-injection suite.</span></li>
             <li><svg class="ic"><use href="#i-maint"/></svg><span><b>Maintenance that respects the rules.</b> Snapshot expiry, orphan-file removal and compaction run under holds, freezes and recovery windows.</span></li>
-            <li><svg class="ic"><use href="#i-audit"/></svg><span><b>Every read, change and access refusal audited.</b> Changes reach a hash-chained archive kept at least five years.</span></li>
+            <li><svg class="ic"><use href="#i-audit"/></svg><span><b>Every read, change and access refusal audited.</b> Changes reach a hash-chained archive kept at least seven years.</span></li>
             <li><svg class="ic"><use href="#i-key"/></svg><span><b>Credentials per table.</b> Short-lived storage credentials, scoped to the table's own prefix, only to callers allowed to read it.</span></li>
           </ul>
           <svg class="horizon" viewBox="0 0 600 150" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
@@ -4949,7 +4949,7 @@ function auditTabFor(t) {
         h('dt', null, 'Complete'), h('dd', null, h('b', null, 'No.'), ' The read stops at 20,000 records; older ones are in your SIEM and the archive.')),
         h('p', { class: 'fine' }, h('a', { href: href({ page: 'audit', c: t.cat, q: t.path }) }, `Every record of ${t.name} in the last day`), ', in the catalog\'s audit feed.')),
       panel('Archive', null, h('p', null, h('span', { class: 'pill ok' }, icon('check'), 'Hash chain whole to 06:00')),
-        h('p', { class: 'fine' }, 'Records are kept under Object Lock until 21 Nov 2031, five years from today.'))));
+        h('p', { class: 'fine' }, 'Records are kept under Object Lock until 21 Nov 2033, seven years from today.'))));
 }
 function schemaTabFor(t) {
   const sch = schemasOf(t), curI = sch.length - 1;

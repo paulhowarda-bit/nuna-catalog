@@ -87,7 +87,7 @@ class AuditFeedRoutesTest {
     private final AuditSettings auditSettings = new AuditSettings("kafka:9092", TOPIC, "nuna.catalog.changes",
             Duration.ofSeconds(5), Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(250),
             Duration.ofSeconds(30), 500, new AuditSettings.Archive("audit-archive", "store", "audit",
-                    Duration.ofDays(1827), 10_000, Duration.ofMinutes(5), "nuna-audit-archive"));
+                    Duration.ofDays(2557), 10_000, Duration.ofMinutes(5), "nuna-audit-archive"));
     private final Table table = new Table();
     private final Archive archive = new Archive();
     private AuditCatalogSettings tables = new AuditCatalogSettings("nuna_audit", "auditors", "audit-writers");
