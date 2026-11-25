@@ -51,7 +51,10 @@ class MutatingRoutesAuditTest {
             "POST /management/v1/catalogs/{catalog}/grants/check", "the caller's own batch check: stores nothing,"
                     + " and M5 does not audit its answers",
             "POST /management/v1/catalogs/{catalog}/grants/preview", "what a grant would do: stores nothing, and"
-                    + " its answers are not audited, as the check's are not (backlog 246)");
+                    + " its answers are not audited, as the check's are not (backlog 246)",
+            "POST /opa/v1/allow", "Trino's access-control query (backlog 115): answers, stores nothing",
+            "POST /opa/v1/row-filters", "Trino's query for a user's row filters: answers, stores nothing",
+            "POST /opa/v1/column-masks", "Trino's query for a user's column masks: answers, stores nothing");
 
     /**
      * Management routes that keep the maintenance worker's reports of its own work (D38): bookkeeping, not changes to

@@ -58,11 +58,13 @@ class RestRoutesTest {
     @Autowired
     private JdbcTemplate jdbc;
 
-    // The relay writes each change to the audit log and takes it out of the outbox (D23, amended 2026-11-23).
-    private final AuditLogCapture log = new AuditLogCapture();
+    // The relay writes each change to the audit log and takes it out of the outbox (D23, amended 2026-11-23). Made
+    // once the Spring context is up: a context that starts resets logback and detaches it (backlog 270).
+    private AuditLogCapture log;
 
     @BeforeEach
     void grantPrivileges() {
+        log = new AuditLogCapture();
         IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
     }
 

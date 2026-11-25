@@ -116,8 +116,9 @@ class SecurityGateTest {
     @Autowired
     private AuditSinkForTests.Sink audit;
 
-    // The relay writes each change to the audit log and takes it out of the outbox (D23, amended 2026-11-23).
-    private final AuditLogCapture log = new AuditLogCapture();
+    // The relay writes each change to the audit log and takes it out of the outbox (D23, amended 2026-11-23). Made
+    // once the Spring context is up: a context that starts resets logback and detaches it (backlog 270).
+    private AuditLogCapture log;
 
     @AfterAll
     void closeTheLog() {
@@ -126,6 +127,7 @@ class SecurityGateTest {
 
     @BeforeAll
     void buildTheEstate() throws Exception {
+        log = new AuditLogCapture();
         IssuerForTests.grant(jdbc, "gate", "data-admins", "create", "modify");
         IssuerForTests.grant(jdbc, "gate", "loaders", "modify");
         for (List<String> namespace : List.of(List.of("sales"), List.of("sales", "eu"), List.of("hr"),

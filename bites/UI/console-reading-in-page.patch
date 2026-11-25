@@ -3,13 +3,13 @@ Module: catalog-server
 Test: ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
-index 9f7f351a..e32e970c 100644
+index f7a6a0d4..3ddfa837 100644
 --- a/catalog-server/src/main/resources/nuna/ui/refs.js
 +++ b/catalog-server/src/main/resources/nuna/ui/refs.js
-@@ -225,7 +225,7 @@ export function refChrome(where, head) {
-     // The page may still be going in: wait a task, then draw only into a page that is shown.
+@@ -238,7 +238,7 @@ export function refChrome(where, head) {
+     // the document, though its own parts may still hold its head.
      await new Promise(done => setTimeout(done, 0));
-     if (!head.parentNode) return;
+     if (!head.isConnected) return;
 -    if (mine === wanted) showReading(refPick(where, list));
 +    head.append(refPick(where, list));
      if (!where.r) return;
