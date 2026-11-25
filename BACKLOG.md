@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**59 open:** 17 S, 22 M, 15 L, 5 XL.
+**58 open:** 16 S, 22 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,7 +60,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [245](backlog/245.md) | S | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js) | 2026-11-24 |
 | [246](backlog/246.md) | S | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | one route running the checks the grant route already runs, without the write, with route tests and a bite | 2026-11-24 |
 | [247](backlog/247.md) | M | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests | 2026-11-24 |
 | [248](backlog/248.md) | M | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | one dialog replacing two forms, with browser tests; waits on items 246 and 247 | 2026-11-24 |
@@ -3061,31 +3060,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 245. Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/route.js, catalog-server/src/test/
-- Effort: S, a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js)
-
-## What is wrong
-
-Paul asked on 2026-11-24 how to add grants from the console. It already can, in two places, and he had not found
-either (Atelier's answer, 2026-11-24):
-
-- Governance, then its Grants tab: "Grant a privilege" (`governance.js`, `grantsPage`).
-- A namespace's, table's or view's Access tab: "Grant on this <kind>" (`panels.js:579`, `grantsTab`).
-
-No rail item names either. Governance opens on Summary. On Access the form is the third block. A table opens on
-Overview, which refuses a grant admin such as `gary`, who holds no data access, so he reaches the tab that would let
-him grant only by knowing it is there. Branches were missed the same way on 2026-11-23.
-
-## Done when
-
-- Those who may manage grants in the catalog (`may(catalog, 'manage-grants')`) see a "Grants" rail item after
-  Governance, opening the Grants page; Governance keeps Summary and Holds and freezes. Everyone else does not see it.
-- A table or view opens on Access for a caller who may manage its grants but may not read it.
-- Console tests show both, as `gary` and as `ana`.
-
 ### 246. Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3654,5 +3628,6 @@ keys (the catalog refuses dot segments, the worker does not check).
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
 | [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |
 | [244](backlog/244.md) | Row and column rules: check expressions when set, and If-Match on set | done | 2026-11-24 |
+| [245](backlog/245.md) | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | done | 2026-11-24 |
 | [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

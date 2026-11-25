@@ -22,9 +22,11 @@ const OLD_KIND_TABS = {
 export function parse() {
   const p = new URLSearchParams(location.hash.slice(1));
   const ns = p.get('ns') ? p.get('ns').split(SEP) : [];
-  const page = OLD_PAGES[p.get('p')] || p.get('p') || null;
+  // Grants were Governance's tab until they had a place in the rail (backlog 245): an old link opens them there.
+  const grants = p.get('p') === 'governance' && p.get('tab') === 'grants';
+  const page = grants ? 'grants' : OLD_PAGES[p.get('p')] || p.get('p') || null;
   const k = p.get('k') || (ns.length ? 'namespace' : 'catalog');
-  const tab = p.get('tab');
+  const tab = grants ? null : p.get('tab');
   return {
     page,
     c: p.get('c') || null,
