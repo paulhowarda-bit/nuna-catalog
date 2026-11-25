@@ -27,7 +27,7 @@ earlier rows read null there.
 | `operation`, `privilege`, `reason` | string | where the type has them: a denial's operation, missing privilege and reason, a grant's privilege, a hold's reason |
 | `data` | string | the whole payload as the topic carries it, JSON, so a new payload version needs no new column |
 | `topic_partition`, `topic_offset` | int, long | the record's place in the topic; for a row from the log, `-1` and the writer's number for it ("From the log", below) |
-| `log_run`, `log_seq` | string, long | for a row from the log, the server run that logged the record and its number there (its `nunarun` and `nunaseq`), which place it in the run's archive chain; null for a row from the topic, whose copy carries no stamp, or from a server older than the stamp (backlog 272) |
+| `log_run`, `log_seq` | string, long | the server run that logged the record and its number there (its `nunarun` and `nunaseq`), which place it in the run's archive chain, for a row from the log or the topic alike, since the topic's copy is the log's line (backlog 276); null for a record from a server older than the stamp, or a topic copy from one older than backlog 276 (backlog 272) |
 
 The mapping from each event type lives in `catalog-audit` (`AuditRows`), without Iceberg. The relay is at least once
 (D23), so an `event_id` can repeat, at another offset; an offset is never written twice.
@@ -226,8 +226,9 @@ only"). That rules out grant admins, platform operators and holders of `select` 
   "id", "catalog", "path"} | null, "operation", "privilege", "reason", "partition", "offset", "log-run", "log-seq",
   "chain": {"status", "checked-at"?, "missing"?}, "event"}`.
   - `event` is the record as the topic and the log carry it.
-  - `log-run` and `log-seq`: the server run that logged the record and its number there; null for a record from the
-    topic, or from a server older than the stamp (backlog 272).
+  - `log-run` and `log-seq`: the server run that logged the record and its number there, whether the row came from
+    the log or the topic (backlog 276); null for a record from a server older than the stamp (backlog 272), or a
+    topic copy from one older than backlog 276.
   - `chain.status` is `no-archive` where no archive is configured; `no-place` for a record without a run, which no
     chain can be searched for; `verified` when the archive check has verified every number of its run up to the
     record's; `unverified` when it has not. `checked-at` is when the check last looked at the run, null when no check
@@ -300,7 +301,8 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an event type with
   no mapping.
 - `TableWriterTest` runs the writer against Kafka's fake consumer and Iceberg's in-memory catalog, which can lose a
-  commit or its answer: every record written once with its place in the topic, resuming after the last committed
+  commit or its answer: every record written once with its place in the topic and the run and number it was logged
+  with, resuming after the last committed
   offset, no gap and no repeat after a lost commit, a second writer, a revoked partition or a record it cannot map,
   its own records left out. `AuditTablesSettingsTest` checks the settings and the clients made of them.
 - `ArchiveSinkTest` (`catalog-audit`) runs the archive writer on an in-memory bucket that can fail or lose an answer:

@@ -111,7 +111,7 @@ class AuditFeedRoutesTest {
         ManagementGuard guard = new ManagementGuard(authorizer, separation, null, denials, holdings);
         GovernanceSettings settings = new GovernanceSettings(10, LIMIT, Map.of(), Duration.ofDays(7),
                 Duration.ofHours(1), Map.of());
-        trail = new AuditTrail(Optional.<EventPublisher>of(audited::add), URI.create("urn:nuna:test"),
+        trail = new AuditTrail(Optional.<EventPublisher>of(stamped -> audited.add(stamped.event())), URI.create("urn:nuna:test"),
                 clock, Duration.ofSeconds(1));
         AuditFeed feed = new Feed(store, clock);
         routes = new AuditReadRoutes(management, guard, null, trail, settings, feed, archive, clock);

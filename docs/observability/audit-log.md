@@ -7,10 +7,11 @@ kafka for this". Backlog 195 built it. The Object Lock archive is fed from the s
 
 ## What is written, and when
 
-- Each record is written as its CloudEvent JSON, the same bytes the audit topic carries (`EventCodec`), as the message
-  of one INFO line of the logger `nuna.audit` (`AuditTrail`), plus two CloudEvent extensions that only the log
-  carries: `nunarun`, the server run's id, a UUID the server picks when it starts, and `nunaseq`, the line's number in
-  that run, from 1. The archive check uses them to find records that never arrived ("The archive", below).
+- Each record is written as its CloudEvent JSON (`EventCodec`), as the message of one INFO line of the logger
+  `nuna.audit` (`AuditTrail`), with two CloudEvent extensions: `nunarun`, the server run's id, a UUID the server
+  picks when it starts, and `nunaseq`, the line's number in that run, from 1. The archive check uses them to find
+  records that never arrived ("The archive", below). Where Kafka is configured, the audit topic and the change
+  stream get the same bytes, stamp included (D23, amended 2026-11-25; backlog 276).
 - Reads, denials, authentication failures, audit reads and credential issues are written before the catalog answers
   the request they record. Nothing waits on Kafka for them, and nothing is refused for want of it: a credential issue
   is written as a read is.
@@ -77,8 +78,8 @@ from the catalog's log (`otlp`), so the page needs no Kafka:
 - A row from the log is in no topic partition: its `topic_partition` is `-1` and its `topic_offset` a number the writer
   gives it, the time in microseconds or one more than the last, which rises and never repeats. The feed's reader orders
   and finds rows by that pair. It also keeps the record's stamp, the server run that logged it and its number there,
-  in `log_run` and `log_seq` (backlog 272), which place it in its run's archive chain. A row from the topic has
-  neither: the Kafka copy carries no stamp.
+  in `log_run` and `log_seq` (backlog 272), which place it in its run's archive chain. A row from the topic keeps
+  them too, since the Kafka copy is the log's line (backlog 276); a copy an older server sent has neither.
 - Records wait in memory a commit interval and are answered at once; a writer that dies before its commit loses them
   (they are still on the catalog's stdout), and a shutdown commits them first. catalog-audit-tables/README.md has the
   detail.
@@ -156,18 +157,19 @@ The limits of what shows:
 
 | Test | Shows |
 |---|---|
-| `catalog-server` `AuditTrailTest` | Every record is in the log before the call returns; a Kafka failure refuses nothing, a credential issue included, and Kafka is skipped for the probe interval after; a relayed batch is in the log in order; each logged line carries its run and number and the Kafka copy does not; the run ends with one run-end record, in the last phase of stopping; the audit log off stops startup. |
+| `catalog-server` `AuditTrailTest` | Every record is in the log before the call returns; a Kafka failure refuses nothing, a credential issue included, and Kafka is skipped for the probe interval after; a relayed batch is in the log in order; each logged line carries its run and number, and the Kafka copy, on the topic and the change stream, is that line; the run ends with one run-end record, in the last phase of stopping; the audit log off stops startup. |
 | `catalog-server` `AuditRuntimeWithoutKafkaTest` | With no Kafka the relay drains the outbox to the log, and a notice is in the log before the route answers; an archive needs no Kafka. |
 | `catalog-server` `AuditLogToWriterTest` | A record written to `nuna.audit` reaches the writer's receiver through the server's log wiring and Boot's exporter, with the token header; other log lines do not. |
 | `catalog-server` `KafkaOutageTest` (heavy) | With the broker paused, loads vend, commits, creates, drops and governance changes succeed, each record in the log; records reach the topic again once it is back. |
 | `catalog-server` `AuditFeedRoutesTest` | The archive status: the last check's checkpoints and counts, and only the chains with something to show. Each feed row verified, unverified with the missing records that hold it back, or not placeable; a record's place looked up, audited and limited, with its 400s and 503s; the logged and archived gauges. |
-| `catalog-server` `ConsoleBrowserTest` (heavy) | A logged record says whether its run is verified up to it, or that an earlier record is missing, and looks up its place; a record from Kafka says it cannot be checked; without an archive a record says so. |
+| `catalog-server` `ConsoleBrowserTest` (heavy) | A logged record says whether its run is verified up to it, or that an earlier record is missing, and looks up its place; a record from Kafka without a run says it cannot be checked; without an archive a record says so. |
 | `catalog-audit-tables` `OtlpLogsReceiverTest` | Protobuf and JSON, gzip, the scope filter, the token, and the partial success naming rejected records; every audit record archived as it came, those the table leaves out included; a request the archive cannot take turned away whole; each row keeping the run and number its record was logged with. |
 | `catalog-audit-tables` `LogWriterTest` | Each record once, across repeats, a lost answer and a restart; rows in partition -1 with rising numbers; a failed commit keeps its rows; the writer's own records left out; each row's run and number, a repeat keeping its first. |
 | `catalog-audit-tables` `EventsReaderTest` | A row's run and number read back; a table made before those columns given them, its earlier rows null there. |
 | `catalog-audit` `PlacementTest` | A record found in its run's chain by its number and id, with its hash and neighbours, across segments, arrived late or far from where its number puts it; another record's id not taken for it; a changed record's hash not matching. |
 | `catalog-audit` `ArchiveSinkTest` | Segments sealed by count, age and run end; refused bodies; the unstamped chain; a busy writer refusing; an unreachable store and a lost answer; a second writer; checkpoints linked across a restart and written when idle; a repeat left out. |
 | `catalog-audit` `ArchiveCheckTest` | Missing numbers, late arrivals, unended runs, repeats, late and broken checkpoints, strays and broken chains found; a later run reading only what is new. |
+| `catalog-audit` `KafkaRecordTest` | Each record's Kafka copy, on the audit topic and the change stream, is the log's line byte for byte, its run and number included, keyed by its subject (backlog 276). |
 | `catalog-audit` `LockedArchiveTest` (heavy) | On the run's S3 store, segments and checkpoints locked in COMPLIANCE mode, a rewrite refused, and the check reading the writer's chains intact. |
 | `catalog-tests-load` `DrDrillTest` (overnight) | The DR reconcile proving each tip from an archive the servers' logs fed. |
 

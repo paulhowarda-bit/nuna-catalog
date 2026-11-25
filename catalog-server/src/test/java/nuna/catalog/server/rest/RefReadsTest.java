@@ -994,8 +994,9 @@ class RefReadsTest {
         newManagement.setAccessible(true);
         Constructor<ReadAudit> newAudit = ReadAudit.class.getDeclaredConstructor(AuditTrail.class, management);
         newAudit.setAccessible(true);
-        return newAudit.newInstance(new AuditTrail(Optional.of(audited::add), URI.create("urn:nuna:test"), clock,
-                Duration.ofMinutes(1)), newManagement.newInstance(store, callers, settings, holdings));
+        AuditTrail trail = new AuditTrail(Optional.<nuna.catalog.audit.publish.EventPublisher>of(
+                stamped -> audited.add(stamped.event())), URI.create("urn:nuna:test"), clock, Duration.ofMinutes(1));
+        return newAudit.newInstance(trail, newManagement.newInstance(store, callers, settings, holdings));
     }
 
     /**

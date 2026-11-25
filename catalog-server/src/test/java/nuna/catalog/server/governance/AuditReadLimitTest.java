@@ -101,7 +101,7 @@ class AuditReadLimitTest {
         ManagementGuard guard = new ManagementGuard(authorizer, separation, null, denials, holdings);
         GovernanceSettings settings = new GovernanceSettings(10, LIMIT, Map.of(), Duration.ofDays(7),
                 Duration.ofHours(1), Map.of());
-        AuditTrail auditTrail = new AuditTrail(Optional.<EventPublisher>of(audit::add), URI.create("urn:nuna:test"),
+        AuditTrail auditTrail = new AuditTrail(Optional.<EventPublisher>of(stamped -> audit.add(stamped.event())), URI.create("urn:nuna:test"),
                 clock, Duration.ofSeconds(1));
         // The topic's trail needs neither the audit table nor the archive (AuditFeedRoutesTest).
         trail = new AuditReadRoutes(management, guard, new Topic(), auditTrail, settings, null, null, clock);

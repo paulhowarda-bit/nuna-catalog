@@ -4,7 +4,7 @@ import io.micrometer.common.KeyValues;
 import io.micrometer.observation.ObservationRegistry;
 import java.time.Duration;
 import java.util.List;
-import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.StampedEvent;
 import nuna.catalog.audit.publish.EventPublisher;
 
 /**
@@ -32,9 +32,9 @@ public final class ObservedPublisher implements EventPublisher {
     }
 
     @Override
-    public void publish(CatalogEvent event) {
-        Observed.call(registry, NAME, "audit publish", topic.and("event", event.type().typeName()), () -> {
-            publisher.publish(event);
+    public void publish(StampedEvent stamped) {
+        Observed.call(registry, NAME, "audit publish", topic.and("event", stamped.event().type().typeName()), () -> {
+            publisher.publish(stamped);
             return null;
         }, acknowledged -> "acknowledged");
     }
