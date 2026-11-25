@@ -4,10 +4,12 @@ import nuna.catalog.core.principal.Caller;
 import nuna.catalog.security.RowColumnPolicy;
 import nuna.catalog.store.RowColumnRule;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -26,6 +28,13 @@ import tools.jackson.databind.node.ObjectNode;
  * missing or not accepted, or that names a table the user holds nothing on or that does not exist, gets no rows
  * and every column {@code NULL}: fail closed, and the same answer for a table that is not there as for one the user
  * may not know of (D18).
+ *
+ * <p>Trino asks for the masks of every column of a table it reads in one batch (its {@code analyzeFiltersAndMasks}
+ * passes the table's whole relation), so the batch shows the columns as Trino's schema names them. When the user's
+ * rules mask a column the batch does not name, the rules and that schema disagree: the column was renamed past the
+ * rename guard ({@link RuleColumnGuard}), or the query reads a snapshot or branch whose schema named it otherwise.
+ * Serving the masks by name would leave it unmasked under its other name, so every column of that table is
+ * {@code NULL} instead (backlog 240).
  */
 final class OpaAnswers {
 
@@ -73,17 +82,25 @@ final class OpaAnswers {
         return wrap(result);
     }
 
-    /** {@code GetColumnMask}, batched: the mask of each column asked for that has one, by its index in the ask. */
+    /**
+     * {@code GetColumnMask}, batched: the mask of each column asked for that has one, by its index in the ask; every
+     * column of a table whose masked columns the ask does not all name, {@code NULL}.
+     */
     String columnMasks(JsonNode body) {
         JsonNode input = body.path("input");
-        Map<Named, Answer> answers = new HashMap<>();
-        ArrayNode result = JSON.createArrayNode();
         JsonNode asked = input.path("action").path("filterResources");
+        Map<Named, Set<String>> columns = new HashMap<>();
         for (int index = 0; index < asked.size(); index++) {
             JsonNode column = asked.get(index).path("column");
-            Named table = new Named(text(column, "catalogName"), text(column, "schemaName"),
-                    text(column, "tableName"));
-            Optional<String> mask = answers.computeIfAbsent(table, named -> answer(input, named))
+            Optional.ofNullable(text(column, "columnName")).ifPresent(name -> columns
+                    .computeIfAbsent(named(column), table -> new HashSet<>()).add(name.toLowerCase(Locale.ROOT)));
+        }
+        Map<Named, Answer> answers = new HashMap<>();
+        ArrayNode result = JSON.createArrayNode();
+        for (int index = 0; index < asked.size(); index++) {
+            JsonNode column = asked.get(index).path("column");
+            Optional<String> mask = answers.computeIfAbsent(named(column), table -> answer(input, table)
+                            .within(columns.getOrDefault(table, Set.of())))
                     .mask().apply(text(column, "columnName"));
             if (mask.isPresent()) {
                 ObjectNode entry = result.addObject();
@@ -110,6 +127,10 @@ final class OpaAnswers {
                 .orElse(Answer.CLOSED);
     }
 
+    private static Named named(JsonNode column) {
+        return new Named(text(column, "catalogName"), text(column, "schemaName"), text(column, "tableName"));
+    }
+
     private static String text(JsonNode node, String field) {
         JsonNode value = node.path(field);
         return value.isString() ? value.asString() : null;
@@ -125,19 +146,25 @@ final class OpaAnswers {
     private record Named(String catalog, String schema, String table) {
     }
 
-    /** The filter on a table and each column's mask, by name in any case. */
-    private record Answer(Optional<String> rowFilter, Function<String, Optional<String>> mask) {
+    /** The filter on a table and each column's mask, by name in any case; {@code masked}, those names lowercased. */
+    private record Answer(Optional<String> rowFilter, Function<String, Optional<String>> mask, Set<String> masked) {
 
-        static final Answer NONE = new Answer(Optional.empty(), column -> Optional.empty());
+        static final Answer NONE = new Answer(Optional.empty(), column -> Optional.empty(), Set.of());
         static final Answer CLOSED = new Answer(Optional.of(RowColumnPolicy.NO_ROWS),
-                column -> Optional.of(RowColumnPolicy.NO_VALUE));
+                column -> Optional.of(RowColumnPolicy.NO_VALUE), Set.of());
 
         static Answer of(RowColumnPolicy.Applied applied) {
             Map<String, String> masks = new HashMap<>();
             applied.columnMasks().forEach((column, mask) -> masks.put(column.toLowerCase(Locale.ROOT), mask));
             return new Answer(applied.rowFilter(),
                     column -> column == null ? Optional.empty()
-                            : Optional.ofNullable(masks.get(column.toLowerCase(Locale.ROOT))));
+                            : Optional.ofNullable(masks.get(column.toLowerCase(Locale.ROOT))),
+                    Set.copyOf(masks.keySet()));
+        }
+
+        /** This answer when {@code columns}, lowercased, name every masked column; otherwise every column NULL. */
+        Answer within(Set<String> columns) {
+            return columns.containsAll(masked) ? this : CLOSED;
         }
     }
 }

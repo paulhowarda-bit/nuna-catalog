@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**51 open:** 12 S, 20 M, 14 L, 5 XL.
+**50 open:** 12 S, 19 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,7 +60,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [240](backlog/240.md) | M | Column masks fail open when a column is renamed, dropped or misspelled | a schema check when a rule is set, a guard on schema changes against the rules that name a column, tests on the stores and a bite for each | 2026-11-24 |
 | [243](backlog/243.md) | M | Console: the Row filters and column masks panel and its dialog | a new panel with a list, an add-and-edit dialog, a remove confirm, a reader's note and a Governance page panel, with browser tests; after backlog 240 and 242 | 2026-11-24 |
 | [244](backlog/244.md) | M | Row and column rules: check expressions when set, and If-Match on set | an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites | 2026-11-24 |
 
@@ -3053,34 +3052,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 240. Column masks fail open when a column is renamed, dropped or misspelled
-
-- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-server/src/main/java/nuna/catalog/server/rest/, catalog-security/, catalog-server/src/test/, bites/
-- Effort: M, a schema check when a rule is set, a guard on schema changes against the rules that name a column, tests on the stores and a bite for each
-
-## What is wrong
-
-A column mask (backlog 115) is stored under the column's name and nothing checks that name against the table's
-schema. If the column is renamed, Trino asks for the new name, finds no mask and returns the column unmasked. A typo
-in the name masks nothing. A dropped column's mask is silently ignored. A row filter that names a dropped or renamed
-column makes every query for that group fail.
-
-## Evidence
-
-The security expert, 2026-11-24:
-
-- masks are matched by name, ignoring case: `OpaAnswers.java:84-87`, `137-140`;
-- setting a rule checks only length and NUL characters, never the schema: `RuleRoutes.java:219-248`;
-- a schema change is committed with no look at the rules that name its columns.
-
-## Done when
-
-- Setting a rule refuses a mask, or a filter, that names a column the table's current schema lacks, in words.
-- A schema change that renames or drops a column a rule names is refused, saying which rule, or the masks follow
-  the column by its Iceberg field id so a rename keeps it masked. Either way, a rename never unmasks a column.
-- Tests cover a rename, a drop and a typo, and a bite breaks each guard.
-
 ### 243. Console: the Row filters and column masks panel and its dialog
 
 - Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
@@ -3337,5 +3308,6 @@ table (`desk IN (SELECT desk FROM entitlements WHERE ...)`): "Allow subqueries".
 | [236](backlog/236.md) | Presenter, who holds every duty, lands on Overview | done | 2026-11-24 |
 | [237](backlog/237.md) | The demo keeps its data across down and up: volumes for PostgreSQL, Silo, Kafka and SingleStore; demo.sh wipe | done | 2026-11-24 |
 | [239](backlog/239.md) | Governance flag only on tables: a flag above a table shows but is not enforced | done | 2026-11-24 |
+| [240](backlog/240.md) | Column masks fail open when a column is renamed, dropped or misspelled | done | 2026-11-24 |
 | [241](backlog/241.md) | Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes | done | 2026-11-24 |
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |

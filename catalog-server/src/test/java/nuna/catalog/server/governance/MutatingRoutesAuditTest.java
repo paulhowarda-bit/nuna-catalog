@@ -554,7 +554,7 @@ class MutatingRoutesAuditTest {
 
     private static String rule(String namespace) {
         return "{\"table\":{\"type\":\"table\",\"namespace\":[\"" + namespace + "\"],\"name\":\"t\"},"
-                + "\"group\":\"readers-" + Api.suffix() + "\",\"row-filter\":\"desk = 'EQ'\"}";
+                + "\"group\":\"readers-" + Api.suffix() + "\",\"row-filter\":\"id > 0\"}";
     }
 
     /** A namespace holding table t, which the steward flags for row/column rules (D20). */
