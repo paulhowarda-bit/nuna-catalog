@@ -1,6 +1,6 @@
 // The catalog's browse pages: the tree on the left, and on the right the catalog, a namespace, a table or a view.
-// The catalog has Contents and Properties (item 131); its Governance, Grants and Audit are the Governance and Audit
-// pages. A namespace has Contents, Properties (Iceberg REST), Governance, Grants and Audit. Contents marks what is
+// The catalog has Contents and Properties (item 131); its Governance, Grants and Audit are the rail's pages of those
+// names. A namespace has Contents, Properties (Iceberg REST), Governance, Grants and Audit. Contents marks what is
 // held, frozen, regulated or closed until classified (item 128), and gives each table its format, snapshot count and
 // last commit from the catalog's own listing of them (backlog 137), which reads no metadata file; each child namespace
 // gets its totals over the tables beneath it: how many, their snapshots, and the newest commit (backlog 147).
