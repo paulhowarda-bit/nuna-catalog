@@ -44,7 +44,7 @@ EOF
 }
 script v1 > demo/demo.sh && printf 'v1\n' > marker && git add -A && git commit -q -m one || exit 2
 one=$(git rev-parse --short=12 HEAD)
-grep -q 'NUNA_DEMO_COMMIT=' demo/demo.sh || { echo "the preamble is not in demo.sh's copy"; exit 2; }
+grep -q 'checkout.pid' demo/demo.sh || { echo "the preamble is not in demo.sh's copy"; exit 2; }
 
 # 1. A landing during up changes neither what it reads nor the script it runs.
 out=$root/up1.out
