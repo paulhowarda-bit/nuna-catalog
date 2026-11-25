@@ -3,10 +3,10 @@ Module: catalog-server
 Test: GrantHiddenNamesTest#everyGrantRouteOnACatalogTheCallerHoldsNothingInAnswersAsForOneThatDoesNotExist
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index 5f1a658..afc0a6a 100644
+index 7d9e0545..3351fd5a 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -245,8 +245,8 @@ class GrantRoutes {
+@@ -343,8 +343,8 @@ class GrantRoutes {
      private ResponseEntity<String> change(String catalog, String body, HttpServletRequest http, boolean grant) {
          RequestContext request = RequestContext.of(http, callers);
          Operation operation = grant ? GRANT : REVOKE;
@@ -14,6 +14,6 @@ index 5f1a658..afc0a6a 100644
 -                operation.privilege());
 +        CatalogRecord record = store.findCatalog(nuna.catalog.core.Names.normalize(catalog)).orElseThrow(
 +                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + catalog));
-         GrantSpec spec = read(body, GrantSpec.class);
-         if (spec.group() == null || spec.group().isBlank()) {
-             throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals (D19)");
+         Asked asked = asked(record, body, request, operation);
+         Securables.Resolved on = asked.on();
+         Privilege privilege = asked.privilege();

@@ -1,0 +1,17 @@
+Breaks: the grant preview skips the checks the grant route asks before its write, so it says a grant to a group the caller belongs to would be admitted, which the grant route refuses.
+Module: catalog-server
+Test: GrantPreviewTest#aGrantToAGroupTheCallerBelongsToIsRefused
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 7d9e0545..55848eae 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -313,7 +313,7 @@ class GrantRoutes {
+         out.put("securable", asked.securables().render(asked.on().stored()));
+         out.put("group", asked.group());
+         out.put("privilege", asked.privilege().wireName());
+-        Optional<Refusal> refusal = refusal(request.caller(), asked);
++        Optional<Refusal> refusal = Optional.empty();
+         Optional<GrantRecord> held = Optional.empty();
+         if (refusal.isEmpty()) {
+             List<GrantRecord> grants = all(page -> store.listGrantsOfGroups(record.id(), Set.of(asked.group()), page));
