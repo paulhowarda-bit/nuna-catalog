@@ -254,6 +254,39 @@ export function grantsOfGroups(catalog, groups) {
 export const grant = (target, group, privilege) => send(`/management/v1/catalogs/${enc(target.catalog)}/grants`,
   {method: 'POST', body: {securable: securable(target), group, privilege}});
 
+/**
+ * What a grant would do, writing nothing (backlog 246): {securable, group, privilege, answer}, the answer `admitted`,
+ * `unchanged` (with granted-by and granted-at) or `refused` (with refusal and reason). Not audited; a caller who may
+ * not manage grants there is refused as the grant is, audited.
+ */
+export const previewGrant = (target, group, privilege) => call(`/management/v1/catalogs/${enc(target.catalog)}/grants/preview`,
+  {method: 'POST', body: {securable: securable(target), group, privilege}});
+
+/** Whether the caller's groups hold `privilege` on the catalog itself, from the batch check, which is not audited. */
+export const mayOnCatalog = (catalog, privilege) => call(`/management/v1/catalogs/${enc(catalog)}/grants/check`,
+  {method: 'POST', body: {checks: [{securable: {type: 'catalog'}, privilege}]}})
+  .then(body => !!((body.results || [])[0] || {}).allowed);
+
+/**
+ * The groups holding a grant in a catalog, every page, each with its duties and privileges (backlog 247), and the
+ * deployment's grant-admin and platform-operator groups: {groups, grantAdmins, operators}. Needs manage-grants on the
+ * catalog itself.
+ */
+export async function grantGroups(catalog) {
+  const out = {groups: [], grantAdmins: [], operators: []};
+  let pageToken = null;
+  for (let page = 0; page < 100; page++) {
+    const body = await call(`/management/v1/catalogs/${enc(catalog)}/grants/groups`
+      + (pageToken ? '?pageToken=' + enc(pageToken) : ''));
+    out.groups.push(...(body.groups || []));
+    out.grantAdmins = body['grant-admin-groups'] || [];
+    out.operators = body['platform-operator-groups'] || [];
+    pageToken = body['next-page-token'];
+    if (!pageToken) break;
+  }
+  return out;
+}
+
 export const revoke = (catalog, securableSpec, group, privilege) =>
   send(`/management/v1/catalogs/${enc(catalog)}/grants/revoke`,
     {method: 'POST', body: {securable: securableSpec, group, privilege}});

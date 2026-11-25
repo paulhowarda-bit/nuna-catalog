@@ -1,0 +1,17 @@
+Breaks: The Grant access dialog offers create on a table or view, where it means nothing and the catalog refuses it.
+Module: catalog-server
+Test: ConsoleBrowserTest#theGrantAccessDialogShowsAGrantMadeOneAlreadyHeldAndOneRefused
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/grant.js b/catalog-server/src/main/resources/nuna/ui/grant.js
+index b8d2a26f..1f7724c9 100644
+--- a/catalog-server/src/main/resources/nuna/ui/grant.js
++++ b/catalog-server/src/main/resources/nuna/ui/grant.js
+@@ -22,7 +22,7 @@ export const ACCESS = [
+   ['select', 'Read its data', EVERY_KIND],
+   ['write', 'Read and write rows', ['catalog', 'namespace', 'table']],
+   ['modify', 'Change it (schema, properties, maintenance)', EVERY_KIND],
+-  ['create', 'Create tables, views and namespaces in it', ['catalog', 'namespace']],
++  ['create', 'Create tables, views and namespaces in it', EVERY_KIND],
+   ['manage-tags', 'Set labels and holds', EVERY_KIND],
+   ['manage-grants', 'Manage grants', EVERY_KIND],
+ ];

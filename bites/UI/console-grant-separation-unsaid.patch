@@ -1,0 +1,17 @@
+Breaks: A separation-of-duties refusal no longer says which duty the group already holds.
+Module: catalog-server
+Test: ConsoleBrowserTest#theGrantAccessDialogShowsAGrantMadeOneAlreadyHeldAndOneRefused+grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownBeforeGrant
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/grant.js b/catalog-server/src/main/resources/nuna/ui/grant.js
+index 6c3193e4..42daf39e 100644
+--- a/catalog-server/src/main/resources/nuna/ui/grant.js
++++ b/catalog-server/src/main/resources/nuna/ui/grant.js
+@@ -70,7 +70,7 @@ function willWords(privilege, target) {
+  * catalog checks (Separation.java); null when the dialog does not know enough to say.
+  */
+ function separationWords(group, privilege, catalog, known) {
+-  if (!known) return null;
++  if (known) return null;
+   if (known.operators.includes(group)) return `${group} operates the platform, so it holds no grant.`;
+   if (known.grantAdmins.includes(group)) return `${group} manages grants on every catalog, so it holds no other grant.`;
+   const held = new Set((known.groups.find(g => g.group === group) || {}).duties || []);

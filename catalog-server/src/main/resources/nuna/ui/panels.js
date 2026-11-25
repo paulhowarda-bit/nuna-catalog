@@ -1,19 +1,19 @@
 // The tabs every catalog object shares, each one its own render function on its own route: governance (with
-// holds, the four labels people set here and a DR freeze), grants (every grant that reaches the object, made and revoked here,
-// and who may use it), the audit trail, and the dialogs those open; and the catalog's holds, freezes and regulated
-// areas as marks on the tree and in Contents (item 128). The catalog-wide audit feed with its hash chain is the Audit
+// holds, the four labels people set here and a DR freeze), grants (every grant that reaches the object, revoked here
+// and made in the Grant access dialog, grant.js, and who may use it), the audit trail, and the dialogs those open; and
+// the catalog's holds, freezes and regulated areas as marks on the tree and in Contents (item 128). The catalog-wide audit feed with its hash chain is the Audit
 // page (audit.js, item 125).
 
 import * as api from './api.js';
 import {may, operates} from './access.js';
-import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
+import {$$, badge, code, dialogForm, facts, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
   muted, openDialog, panel, pill, plural, select, tbl, techDetails, text, when, at, copyButton} from './dom.js';
 import {dotted, objectHref} from './route.js';
 import {liveRefLink, refWords} from './refs.js';
 import {heldHere} from './requests.js';
 import {rulesPanel, yourView} from './rules.js';
+import {grantAccess} from './grant.js';
 
-export const PRIVILEGES = ['describe', 'select', 'write', 'modify', 'create', 'manage-tags', 'manage-grants'];
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
 const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', 'row-column-policy'];
 /** Each attribute in words, its key one hover away (Atelier's words table, T10). */
@@ -490,19 +490,31 @@ async function youMay(target) {
 }
 
 /**
- * A table's, view's or namespace's Access tab: what the caller may do, a reader's view of a flagged table, then its
- * governance, a table's row filters and column masks (backlog 243), then its grants.
+ * A table's, view's or namespace's Access tab: Grant access at its top for those who manage the catalog's grants
+ * (backlog 248), what the caller may do, a reader's view of a flagged table, then its governance, a table's row
+ * filters and column masks (backlog 243), then its grants.
  */
 export function accessTab(target, reload) {
   const you = h('div');
   const gov = h('div');
   load(you, () => youMay(target));
   load(gov, () => governanceTab(target, reload));
-  return h('div', {class: 'stack', id: 'access-tab'}, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grantsTab(target));
+  const [grants, listAgain] = grantsPart(target);
+  // Once the dialog closes after a grant, the grant's row is brought to the middle of the view, once the list has it.
+  let listed = Promise.resolve(null);
+  const showMade = () => listed.then(reach => {
+    const row = reach && reach.querySelector('tr.is-new');
+    if (row && row.isConnected) row.scrollIntoView({block: 'center',
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  });
+  const acts = may(target.catalog, 'manage-grants') ? h('div', {class: 'refusal-acts access-acts'},
+    h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target,
+      {after: made => { listed = listAgain(made); }, closed: showMade})}, icon('key'), 'Grant access')) : null;
+  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grants);
 }
 
-export function grantsTab(target) {
-  const out = h('div', {class: 'dlg-out', 'aria-live': 'polite', id: 'grant-result'});
+/** The Access tab's grants, and what lists them again once the dialog makes one, marking it. */
+function grantsPart(target) {
   const reach = h('div');
   const who = h('div');
   const mine = h('div');
@@ -518,21 +530,23 @@ export function grantsTab(target) {
   });
   if (!manages) {
     ownGrants();
-    return h('div', {class: 'stack grants-here', 'data-grants': 'own'}, panel('Your groups\' grants', `in ${target.catalog}`, mine,
+    return [h('div', {class: 'stack grants-here', 'data-grants': 'own'}, panel('Your groups\' grants', `in ${target.catalog}`, mine,
       h('p', {class: 'fine'}, `Who else holds what on this ${target.kind}, and granting, are open to those who manage `
-        + `${target.catalog}'s grants.`)));
+        + `${target.catalog}'s grants.`))), () => {}];
   }
-  const refresh = () => {
+  /** Lists the grants again; `made`, a grant the dialog just made here, is marked. Answers the reach list once drawn. */
+  const refresh = made => {
     const effective = api.effectiveGrants(target);
-    load(reach, async () => {
+    const drawn = load(reach, async () => {
       const list = (await effective).grants || [];
       return panel(`Grants that reach this ${target.kind}`, `${plural(list.length, 'grant')} · from the catalog down`,
         list.length ? tbl('stack-line grants-reach', ['Group', 'Privilege', 'Granted on', 'Granted', ''], list.map(g => {
           const [on, words] = grantedOn(target, g.securable);
-          return h('tr', {'data-group': g.group, 'data-privilege': g.privilege, 'data-on': on},
+          const isMade = !!made && on === 'here' && g.group === made.group && g.privilege === made.privilege;
+          return h('tr', {'data-group': g.group, 'data-privilege': g.privilege, 'data-on': on, class: isMade ? 'is-new' : null},
             h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege), h('td', null, words),
             h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])),
-            h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(target.catalog, g, refresh)}, 'Revoke')));
+            h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(target.catalog, g, () => refresh())}, 'Revoke')));
         })) : h('p', {class: 'muted'}, `No grant reaches this ${target.kind}.`),
         h('p', {class: 'fine'}, 'A grant on the catalog or a namespace reaches everything beneath it. The ladder is describe, '
           + 'select, write, modify: each gives the ones before it. Revoke takes a grant away where it was made.'));
@@ -553,37 +567,12 @@ export function grantsTab(target) {
       ], 'who-may'));
     });
     ownGrants();
+    return drawn;
   };
   refresh();
-  const group = h('input', {name: 'g', type: 'text', placeholder: 'A group, such as demo-analysts', 'aria-label': 'Group',
-    autocomplete: 'off', spellcheck: 'false', required: true});
-  const form = h('form', {class: 'grant-form here', novalidate: true},
-    h('p', {class: 'fine on-here'}, 'On ', code(target.kind === 'catalog' ? target.catalog : dotted(target)), ` (${target.kind})`),
-    h('label', null, h('span', null, 'Group'), h('span', {class: 'field mono'}, group)),
-    h('label', null, h('span', null, 'Privilege'), select('pv', PRIVILEGES, 'select', {'aria-label': 'Privilege'})),
-    h('button', {class: 'btn primary', type: 'submit'}, 'Grant'));
-  form.addEventListener('submit', async e => {
-    e.preventDefault();
-    const g = group.value.trim();
-    const pv = form.elements.pv.value;
-    if (!g) {
-      fill(out, h('p', {class: 'fine grant-hint'}, 'Name the group.'));
-      return;
-    }
-    try {
-      const answer = await api.grant(target, g, pv);
-      fill(out, granted(`Granted ${pv} to ${g}.`, answer));
-      refresh();
-    } catch (error) {
-      fill(out, failure(error));
-    }
-  });
-  return h('div', {class: 'grid-21 grants-here'}, reach,
+  return [h('div', {class: 'grid-21 grants-here'}, reach,
     h('div', {class: 'stack'}, who,
-      panel(`Grant on this ${target.kind}`, null, form, out,
-        h('p', {class: 'fine'}, 'A group that manages grants holds no other duty, and data and tags never share a group: the '
-          + 'catalog refuses a grant that would break that.')),
-      panel('Your groups\' grants', `in ${target.catalog}`, mine)));
+      panel('Your groups\' grants', `in ${target.catalog}`, mine))), refresh];
 }
 
 // ---- the audit trail ----
