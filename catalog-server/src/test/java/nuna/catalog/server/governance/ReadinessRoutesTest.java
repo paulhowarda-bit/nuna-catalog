@@ -27,7 +27,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * Maintenance readiness (backlog 251): each of the four steps the worker needs before it maintains a catalog, done,
  * missing, refused or unknown, from the worker's last scan reports (backlog 250), the catalog's grants, its storage
  * profile and its policy; names only for those who may modify the catalog or manage its grants, and platform
- * operators.
+ * operators, who read it without a grant (backlog 252).
  *
  * <p>The scans are the deployment's, not the catalog's, so each test starts with none kept: the last scan is the one
  * it reports.
@@ -95,7 +95,7 @@ class ReadinessRoutesTest {
                 .containsExactly(Map.of("prefix", allowed));
         assertThat(JsonPath.<List<Map<String, Object>>>read(body, "$.store.prefixes"))
                 .containsExactly(Map.of("prefix", allowed));
-        assertThat(JsonPath.<Map<String, Object>>read(body, "$.store")).doesNotContainKey("code");
+        assertThat(JsonPath.<Map<String, Object>>read(body, "$.store")).doesNotContainKeys("code", "deletes-since");
 
         // A worker of an earlier release reports its scans without storage: nothing more is known.
         scan(at, at.plusSeconds(5), null);
@@ -204,6 +204,8 @@ class ReadinessRoutesTest {
         assertThat(JsonPath.<String>read(body, "$.reported-at")).isEqualTo(running.toString());
         assertThat(JsonPath.<String>read(body, "$.store.state")).isEqualTo("refused");
         assertThat(JsonPath.<Integer>read(body, "$.store.prefixes[0].delete-refused")).isEqualTo(2);
+        assertThat(JsonPath.<String>read(body, "$.store.deletes-since")).as("when the counted deletes' scan started")
+                .isEqualTo(at.plusSeconds(100).toString());
 
         scan(running, running.plusSeconds(10), identity(ENDPOINT, prefix(allowed, "ok", null, 3, 0, null)), workers);
         assertThat(JsonPath.<String>read(readiness(), "$.store.state")).isEqualTo("done");
@@ -256,11 +258,28 @@ class ReadinessRoutesTest {
     }
 
     @Test
+    void aPlatformOperatorReadsItWithNamesWithoutAGrant() {
+        IssuerForTests.grant(jdbc, Api.CATALOG, workers, "write");
+        policy("{\"compaction.enabled\":\"true\"}");
+        scan(at, at.plusSeconds(10), identity(ENDPOINT, prefix(allowed, "ok", null, 2, 0, null)), workers);
+
+        // catalog-security, 2026-11-24 (backlog 252): an operator reads every catalog's readiness, as the worker's
+        // scans, holding no grant there; the read is not audited.
+        String read = "readiness-operator-" + UUID.randomUUID();
+        String body = expect(api.send("GET", READINESS, null, AUTH, api.operator(), "X-Request-ID", read), 200).body();
+        assertThat(JsonPath.<Boolean>read(body, "$.names")).isTrue();
+        assertThat(body).isEqualTo(readiness());
+        assertThat(states(body)).containsExactly("done", "done", "done", "done");
+        assertThat(JsonPath.<String>read(body, "$.store.deletes-since")).isEqualTo(at.toString());
+        assertThat(body).contains(workers, bucket, ENDPOINT);
+        assertThat(api.records()).as("a read writes no record").noneMatch(json -> json.contains(read));
+    }
+
+    @Test
     void aCallerWhoMayNotDescribeTheCatalogIsRefusedAndAudited() {
         String read = "readiness-" + UUID.randomUUID();
         expect(api.send("GET", READINESS, null, "X-Request-ID", read), 200);
         expectError(api.send("GET", READINESS, null, AUTH, api.outsider()), 404, "NoSuchWarehouseException");
-        expectError(api.send("GET", READINESS, null, AUTH, api.operator()), 403, "ForbiddenException");
         String refused = "readiness-refused-" + UUID.randomUUID();
         expectError(api.send("GET", READINESS, null, AUTH, api.bystander(), "X-Request-ID", refused), 403,
                 "ForbiddenException");
