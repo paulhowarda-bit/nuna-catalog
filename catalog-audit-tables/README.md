@@ -14,7 +14,8 @@ hash-chained Object Lock archive, the seven-year record (D23, amended 2026-11-25
 
 `<catalog>.<namespace>.events`, by default `nuna_audit.audit.events`: format v2, partitioned by `day(time)`, one row
 per record of the topic. The writer creates the namespace and the table, and refuses to write to a table of that
-name with other columns.
+name with other columns. A table made before `log_run` and `log_seq` is given them when the writer opens it; its
+earlier rows read null there.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -26,6 +27,7 @@ name with other columns.
 | `operation`, `privilege`, `reason` | string | where the type has them: a denial's operation, missing privilege and reason, a grant's privilege, a hold's reason |
 | `data` | string | the whole payload as the topic carries it, JSON, so a new payload version needs no new column |
 | `topic_partition`, `topic_offset` | int, long | the record's place in the topic; for a row from the log, `-1` and the writer's number for it ("From the log", below) |
+| `log_run`, `log_seq` | string, long | for a row from the log, the server run that logged the record and its number there (its `nunarun` and `nunaseq`), which place it in the run's archive chain; null for a row from the topic, whose copy carries no stamp, or from a server older than the stamp (backlog 272) |
 
 The mapping from each event type lives in `catalog-audit` (`AuditRows`), without Iceberg. The relay is at least once
 (D23), so an `event_id` can repeat, at another offset; an offset is never written twice.
@@ -86,9 +88,9 @@ With `source: otlp` the writer listens for OTLP/HTTP log exports, `POST /v1/logs
   number the writer gives it, the current time in microseconds or one more than the last it gave, whichever is higher.
   The numbers rise, never repeat while the writer's clock does not go back, and keep rows apart where the feed's reader
   orders and finds them by partition and offset. Each commit records the next one in its snapshot summary, under
-  `nuna.audit-tables.offsets.otlp:nuna.audit`, which a restart starts above. Its archive chain is its server run's,
-  which the table does not record: its `chain.status` in the feed is `no-place` where an archive is configured
-  (backlog 272).
+  `nuna.audit-tables.offsets.otlp:nuna.audit`, which a restart starts above. The record's stamp, the server run that
+  logged it and its number there, goes in `log_run` and `log_seq` (backlog 272); of a record that arrives twice, the
+  first copy's.
 - **Waiting rows.** Records wait in memory and are committed as from the topic, every `commit-interval` or at
   `max-rows`. A commit that fails keeps them for the next. A writer that dies before its commit loses them (they are
   still on the catalog's stdout); a shutdown stops the receiver and commits them first.
@@ -205,7 +207,8 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - A feed page and a day's counts not kept from the last minute each take one of the caller's
   `nuna.governance.audit-reads-per-minute`, shared with `GET .../audit`; beyond that the answer is 429 with
   `Retry-After`.
-- The feed and the counts are audited as an `AuditRead` of the catalog.
+- The feed and the counts are audited as an `AuditRead` of the catalog; a record's place in its chain as an
+  `AuditRead` of the audit catalog.
 
 `GET /management/v1/catalogs/{catalog}/audit/feed`
 
@@ -220,11 +223,18 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - Answer: `{"catalog", "records": [...], "next-page-token"?, "searched-to"?, "table": {"name", "snapshot-id",
   "committed-at"}}`.
 - Each record: `{"event-id", "time", "type", "principal", "end-user", "engine", "request-id", "object": {"kind",
-  "id", "catalog", "path"} | null, "operation", "privilege", "reason", "partition", "offset", "chain": {"status",
-  "checked-at"}, "event"}`.
+  "id", "catalog", "path"} | null, "operation", "privilege", "reason", "partition", "offset", "log-run", "log-seq",
+  "chain": {"status", "checked-at"?, "missing"?}, "event"}`.
   - `event` is the record as the topic and the log carry it.
-  - `chain.status` is `no-archive` where no archive is configured, and `no-place` where one is: the record is in its
-    server run's chain, which the table does not record yet (backlog 272).
+  - `log-run` and `log-seq`: the server run that logged the record and its number there; null for a record from the
+    topic, or from a server older than the stamp (backlog 272).
+  - `chain.status` is `no-archive` where no archive is configured; `no-place` for a record without a run, which no
+    chain can be searched for; `verified` when the archive check has verified every number of its run up to the
+    record's; `unverified` when it has not. `checked-at` is when the check last looked at the run, null when no check
+    has reached it.
+  - `chain.missing`, `{"from", "to"}`, on an unverified record whose run the last check reported missing records at
+    or below its number: the range holding its own number, else the lowest below it. The record stays unverified
+    until those arrive, which may be never.
 - Records come newest first by time, then partition, then offset. A page token resumes after the page's last record,
   so a growing table neither repeats nor skips one.
 - A page reads about 500,000 rows at most. When a narrow filter finds fewer than `limit` in that, the page comes back
@@ -243,6 +253,22 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - They count the records in the table. These differ from the server's own counters in two ways. The writer leaves
   its own records out. A record that never reached the writer is not in the table: from the topic, one Kafka did not
   take; from the log, one lost on the way (docs/observability/audit-log.md).
+
+`GET /management/v1/audit/chains/{run}/records/{number}?event-id=`
+
+- A logged record's place in its server run's hash chain (backlog 272), for a feed record's `log-run`, `log-seq` and
+  `event-id`; the id keeps another record logged under that number from being taken for it.
+- Answer: `{"chain", "log-run", "log-seq", "event-id", "archived"}`, and when it is archived, `"position", "hash",
+  "previous-hash", "next-hash", "link-holds", "verified", "checked-at", "segment": {"key", "first-position",
+  "last-position"}`.
+  - `position` is its place in the chain, which can differ from its number: the chain holds records as they arrived,
+    a repeat included.
+  - `link-holds`: its stored hash is the SHA-256 of the hash before it and its content, as the archive writer made it.
+  - `verified`: the check has verified the chain through it. `next-hash` is null for the newest record in its chain.
+- It is looked for in the segment its number puts it in and the one on each side, and across the whole chain when the
+  check has verified every number of the run up to it. `archived` false: not found there.
+- 400 for a run that is not a UUID, a number that is not a whole number from 1, or an event id that is not a UUID;
+  503 where no archive is configured or it cannot be read. It takes one of the caller's audit reads.
 
 `GET /management/v1/audit/archive`
 
@@ -299,11 +325,14 @@ only"). That rules out grant admins, platform operators and holders of `select` 
   readers' group.
 - The feed:
   - `EventsReaderTest` pages a real table on local files: newest first, every row once whatever the page size, a
-    short page with `searched-to` when the budget runs out, the filters, the counts and no file read outside the
-    table's location.
+    short page with `searched-to` when the budget runs out, the filters, the counts, no file read outside the
+    table's location, each row's run and number, and a table made before those columns given them.
+  - `PlacementTest` (`catalog-audit`) places records in chains the archive writer made: by number and id, across
+    segments, late or far from their number, another record's id not taken, and a changed record's hash not matching.
   - `ArchiveCheckTest` (`catalog-audit`) checks an in-memory bucket the writer filled: each chain verified to the
     newest checkpoint's head and no further, a later run reading only the new segment, missing numbers after their
     grace, late arrivals, repeats, unended runs, late and broken checkpoints, stray versions, and a changed record.
   - `AuditFeedRoutesTest` (`catalog-server`) runs the routes with the real guard over a store double: a test for
-    each refusal, the answers, the 400s and 503s, and the shared read limit.
-- Bites: `bites/D23/` and `bites/OBS-262/`.
+    each refusal, the answers, the 400s and 503s, and the shared read limit; each row's chain status, a record's place
+    and the logged and archived gauges.
+- Bites: `bites/D23/`, `bites/OBS-262/` and `bites/OBS-272/`.

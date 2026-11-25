@@ -45,6 +45,8 @@ line (item 37) and the alert lines on the `nuna.alerts` logger.
 | `nuna.catalog.alerts.large.metadata` | Counter | none | Is a loaded table's metadata over the size or snapshot limit (D14)? |
 | `nuna.catalog.report.*` | One timer or distribution summary per report result | `catalog`, `report.type`, `operation`, `engine.name` | What do engines report about their own scans and commits? |
 | `nuna.catalog.refs` | Gauge | `catalog`, `ref.kind` (`branch`, `tag`) | How many open branches and tags does each catalog hold, against P11's limits (`nuna.refs.max-branches`, `nuna.refs.max-tags`)? |
+| `nuna.audit.logged` | Gauge | `run`, the server run, as its audit records' `nunarun` | How many audit records has this server logged in its run, the number of the last (backlog 272)? |
+| `nuna.audit.archive.highest` | Gauge | `run` | What is the highest number the archive check verified in each server run's chain not yet done? Beside `nuna.audit.logged`, it shows a running server's records that never reached the archive (backlog 272). |
 | `nuna.catalog.refs.expiring` | Gauge | `catalog` | How many branches will expire within `nuna.refs.expiry-warning` (7 days) unless renewed? |
 
 ### `nuna.catalog.requests`
