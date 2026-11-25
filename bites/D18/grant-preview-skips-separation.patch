@@ -1,0 +1,18 @@
+Breaks: the grant preview never asks the separation of duties, so it says a grant the grant route refuses would be admitted.
+Module: catalog-server
+Test: GrantPreviewTest#aGrantThatBreaksTheSeparationOfDutiesIsRefusedWithTheSeparationsReason
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 1c704f5b..692f9a3d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -322,8 +322,7 @@ class GrantRoutes {
+         if (refusal.isEmpty()) {
+             List<GrantRecord> grants = all(page -> store.listGrantsOfGroups(record.id(), Set.of(asked.group()), page));
+             AtomicReference<String> separated = new AtomicReference<>();
+-            if (!admits(asked.group(), asked.privilege(), grants.stream().map(g -> g.grant().privilege()).toList(),
+-                    separated)) {
++            if (false) {
+                 refusal = Optional.of(new Refusal(Refusal.Kind.SEPARATION_OF_DUTIES, separated.get()));
+             } else {
+                 held = grants.stream().filter(g -> g.grant().securable().equals(asked.on().stored())

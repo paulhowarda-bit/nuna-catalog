@@ -1,0 +1,19 @@
+Breaks: the grant preview finds any catalog the path names, for a caller that holds nothing in it.
+Module: catalog-server
+Test: GrantPreviewTest#aCallerThatMayNotManageGrantsThereIsRefusedAsTheGrantRouteRefusesIt
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 1c704f5b..04a356fe 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -310,8 +310,8 @@ class GrantRoutes {
+     ResponseEntity<String> preview(@PathVariable String catalog, @RequestBody(required = false) String body,
+                                    HttpServletRequest http) {
+         RequestContext request = RequestContext.of(http, callers);
+-        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), PREVIEW.name(),
+-                PREVIEW.privilege());
++        CatalogRecord record = store.findCatalog(nuna.catalog.core.Names.normalize(catalog)).orElseThrow(
++                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + catalog));
+         Asked asked = asked(record, body, request, PREVIEW);
+         Map<String, Object> out = new LinkedHashMap<>();
+         out.put("securable", asked.securables().render(asked.on().stored()));
