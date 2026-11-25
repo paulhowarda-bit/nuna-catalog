@@ -5,30 +5,44 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventType;
+import nuna.catalog.audit.LogStamp;
 import nuna.catalog.audit.SampleEvents;
-import nuna.catalog.audit.publish.RelayTarget;
+import nuna.catalog.audit.StampedEvent;
+import nuna.catalog.audit.publish.StampedTarget;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** The audit feed takes every change; the CloudEvents change stream takes changes to catalog objects and refs only. */
 class ChangeStreamTest {
 
+    private static final UUID RUN = UUID.randomUUID();
+
+    /** The sample events as the audit trail logged them, numbered from 1. */
+    private static List<StampedEvent> logged() {
+        List<StampedEvent> logged = new ArrayList<>();
+        for (CatalogEvent event : SampleEvents.events()) {
+            logged.add(new StampedEvent(event, new LogStamp(RUN, logged.size() + 1)));
+        }
+        return logged;
+    }
+
     @Test
     @DisplayName("each batch goes whole to the audit feed, and its object changes, in order, to the change stream")
     void fansOut() {
-        List<CatalogEvent> audit = new ArrayList<>();
-        List<CatalogEvent> changes = new ArrayList<>();
-        List<CatalogEvent> batch = SampleEvents.events();
+        List<StampedEvent> audit = new ArrayList<>();
+        List<StampedEvent> changes = new ArrayList<>();
+        List<StampedEvent> batch = logged();
 
         ChangeStream.fanOut(audit::addAll, changes::addAll).deliver(batch);
 
         assertThat(audit).containsExactlyElementsOf(batch);
-        assertThat(changes).extracting(CatalogEvent::type).containsExactly(EventType.COMMIT, EventType.DROP,
+        assertThat(changes).extracting(e -> e.event().type()).containsExactly(EventType.COMMIT, EventType.DROP,
                 EventType.NAMESPACE_CHANGE, EventType.RENAME, EventType.UNDROP, EventType.PURGE, EventType.UNREGISTER,
                 EventType.LABEL_CHANGE, EventType.REF);
-        assertThat(changes).isSubsetOf(batch);
+        assertThat(changes).as("each with the run and number it was logged with").isSubsetOf(batch);
     }
 
     @Test
@@ -42,10 +56,10 @@ class ChangeStreamTest {
     @Test
     @DisplayName("a failure on the change stream fails the batch, so the relay delivers it again")
     void changeStreamFailureFailsTheBatch() {
-        RelayTarget down = batch -> {
+        StampedTarget down = batch -> {
             throw new IllegalStateException("change stream down");
         };
-        assertThatThrownBy(() -> ChangeStream.fanOut(batch -> { }, down).deliver(SampleEvents.events()))
+        assertThatThrownBy(() -> ChangeStream.fanOut(batch -> { }, down).deliver(logged()))
                 .hasMessage("change stream down");
     }
 }

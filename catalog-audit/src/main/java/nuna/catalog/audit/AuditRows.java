@@ -16,7 +16,8 @@ public final class AuditRows {
     }
 
     /**
-     * The row for one record of the audit topic, which carries no stamp.
+     * The row for one record that carries no stamp: from a server older than the stamp (item 262), which did not
+     * stamp its log lines, or before item 276, its copies on the audit topic.
      *
      * @param partition the topic partition it came from
      * @param offset    its offset there
@@ -29,8 +30,8 @@ public final class AuditRows {
     /**
      * The row for one record, with where it was logged when it came from the log.
      *
-     * @param stamp     its run and number in the run; empty for a record from the topic, or from a server that stamped
-     *                  none
+     * @param stamp     its run and number in the run, from the log's line or the topic's copy (item 276); empty for a
+     *                  record that carries none
      * @param partition the topic partition it came from, or the log writer's
      * @param offset    its offset there, or the number the log writer gave it
      * @throws IllegalArgumentException for an event type with no mapping here

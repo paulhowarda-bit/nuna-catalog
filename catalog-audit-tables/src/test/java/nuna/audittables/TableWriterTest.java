@@ -11,9 +11,11 @@ import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Commit;
 import nuna.catalog.audit.CredentialIssue;
 import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.LogStamp;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.audit.PointerState;
 import nuna.catalog.audit.Securable;
+import nuna.catalog.audit.StampedEvent;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -238,6 +240,26 @@ class TableWriterTest {
         assertThat(records()).singleElement().satisfies(r -> assertThat(r.getField("time"))
                 .isEqualTo(OffsetDateTime.parse("2026-11-20T08:59:00.123456Z")));
         assertThat(rows()).containsExactly(row(0, 0, a));
+    }
+
+    @Test
+    void keepsTheRunAndNumberEachRecordWasLoggedWith() {
+        Running writer = start();
+        UUID run = UUID.fromString("a0000000-0000-4000-8000-000000000276");
+        CatalogEvent stamped = read("alice");
+        send(0, new StampedEvent(stamped, new LogStamp(run, 7)).encode());
+        CatalogEvent older = send(1, read("bob"));
+        writer.poll();
+        clock.advance(INTERVAL);
+        writer.poll();
+
+        Map<String, String> stamps = new HashMap<>();
+        records().forEach(r -> stamps.put((String) r.getField("event_id"), r.getField("log_run") + ":"
+                + r.getField("log_seq")));
+        assertThat(stamps).as("the topic's copy carries the log's stamp (item 276); a record from a server older than"
+                + " the stamp has none").containsOnly(Map.entry(stamped.id().toString(), run + ":7"),
+                Map.entry(older.id().toString(), "null:null"));
+        assertThat(rows()).containsExactlyInAnyOrder(row(0, 0, stamped), row(1, 0, older));
     }
 
     @Test

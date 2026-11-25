@@ -1,17 +1,17 @@
 Breaks: the server logs each audit record without its run and number, so the archive check cannot find a record that never arrived.
 Module: catalog-server
-Test: AuditTrailTest#eachLoggedLineCarriesTheRunAndItsNumberAndTheKafkaCopyDoesNot
+Test: AuditTrailTest#eachLoggedLineCarriesTheRunAndItsNumberAndKafkasCopyIsThatLine
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
-index d6bf80c7..4d76dfca 100644
+index 505e8d6b..c5c6a323 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
-@@ -140,7 +140,7 @@ public final class AuditTrail {
-     }
- 
-     private void log(CatalogEvent event) {
--        AUDIT.info("{}", new String(EventCodec.encode(event, new LogStamp(run, logged.incrementAndGet())),
-+        AUDIT.info("{}", new String(EventCodec.encode(event),
-                 StandardCharsets.UTF_8));
+@@ -155,7 +155,7 @@ public final class AuditTrail {
+     /** Writes the record to the log with the next number of the run, and returns it as logged. */
+     private StampedEvent log(CatalogEvent event) {
+         StampedEvent stamped = new StampedEvent(event, new LogStamp(run, logged.incrementAndGet()));
+-        AUDIT.info("{}", new String(stamped.encode(), StandardCharsets.UTF_8));
++        AUDIT.info("{}", new String(nuna.catalog.audit.EventCodec.encode(event), StandardCharsets.UTF_8));
+         return stamped;
      }
  

@@ -153,7 +153,7 @@ class RowColumnReadRoutesTest {
         Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
         management = new Management(store, request -> caller, settings, holdings);
         guard = new ManagementGuard(authorizer, separation, null, denials, holdings);
-        trail = new AuditTrail(Optional.<EventPublisher>of(audit::add), URI.create("urn:nuna:test"), clock,
+        trail = new AuditTrail(Optional.<EventPublisher>of(stamped -> audit.add(stamped.event())), URI.create("urn:nuna:test"), clock,
                 Duration.ofMinutes(1));
     }
 

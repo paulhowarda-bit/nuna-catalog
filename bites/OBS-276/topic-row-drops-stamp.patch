@@ -1,0 +1,17 @@
+Breaks: the audit table writer reading the topic leaves out the run and number each record carries.
+Module: catalog-audit-tables
+Test: TableWriterTest#keepsTheRunAndNumberEachRecordWasLoggedWith
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+index a65efe3e..96cd910d 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+@@ -106,7 +106,7 @@ final class TableWriter implements AutoCloseable {
+             AuditRow row;
+             try {
+                 CatalogEvent event = EventCodec.decode(record.value());
+-                row = AuditRows.of(event, EventCodec.envelope(record.value()).stamp(), record.partition(), record.offset());
++                row = AuditRows.of(event, record.partition(), record.offset());
+             } catch (IllegalArgumentException e) {
+                 stale = true;
+                 throw new IllegalStateException("audit record " + record.topic() + "-" + record.partition() + "@"

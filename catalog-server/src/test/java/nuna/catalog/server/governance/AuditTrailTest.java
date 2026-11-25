@@ -15,9 +15,10 @@ import nuna.catalog.audit.EventType;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.audit.PointerState;
 import nuna.catalog.audit.Securable;
+import nuna.catalog.audit.StampedEvent;
 import nuna.catalog.audit.publish.AuditUnavailableException;
 import nuna.catalog.audit.publish.EventPublisher;
-import nuna.catalog.audit.publish.RelayTarget;
+import nuna.catalog.audit.publish.StampedTarget;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -38,7 +40,7 @@ import org.slf4j.LoggerFactory;
  * The audit trail (D23, amended 2026-11-23): every record is written to the log {@code nuna.audit} before the call
  * returns, Kafka takes a copy where it is configured, and a Kafka that fails refuses nothing, a credential issue
  * included, and is skipped for the probe interval after. Each logged line carries the run and its number in it, and the
- * run ends with a run-end record (D23, amended 2026-11-25).
+ * run ends with a run-end record (D23, amended 2026-11-25). Kafka's copy is the logged line, byte for byte (item 276).
  */
 class AuditTrailTest {
 
@@ -112,9 +114,9 @@ class AuditTrailTest {
     @Test
     void aCredentialIssueIsRecordedAndNotRefusedWhenKafkaFails() {
         AtomicInteger tries = new AtomicInteger();
-        EventPublisher down = event -> {
+        EventPublisher down = stamped -> {
             tries.incrementAndGet();
-            throw new AuditUnavailableException(event, new RuntimeException("broker down"));
+            throw new AuditUnavailableException(stamped.event(), new RuntimeException("broker down"));
         };
         AuditTrail trail = new AuditTrail(Optional.of(down), Optional.empty(), SOURCE, clock, PROBE);
 
@@ -128,11 +130,11 @@ class AuditTrailTest {
     void kafkaIsSkippedForTheProbeIntervalAfterItFails() {
         AtomicInteger tries = new AtomicInteger();
         List<CatalogEvent> taken = new ArrayList<>();
-        EventPublisher flaky = event -> {
+        EventPublisher flaky = stamped -> {
             if (tries.incrementAndGet() == 1) {
-                throw new AuditUnavailableException(event, new RuntimeException("broker down"));
+                throw new AuditUnavailableException(stamped.event(), new RuntimeException("broker down"));
             }
-            taken.add(event);
+            taken.add(stamped.event());
         };
         AuditTrail trail = new AuditTrail(Optional.of(flaky), Optional.empty(), SOURCE, clock, PROBE);
 
@@ -151,8 +153,8 @@ class AuditTrailTest {
 
     @Test
     void kafkaTakesACopyOfEveryRecordWhileItIsUp() {
-        List<CatalogEvent> topic = new ArrayList<>();
-        List<CatalogEvent> stream = new ArrayList<>();
+        List<StampedEvent> topic = new ArrayList<>();
+        List<StampedEvent> stream = new ArrayList<>();
         AuditTrail trail = new AuditTrail(Optional.of(topic::add), Optional.of(stream::addAll), SOURCE, clock, PROBE);
         CatalogEvent read = read();
         List<CatalogEvent> batch = List.of(commit(), commit());
@@ -160,17 +162,17 @@ class AuditTrailTest {
         trail.record(read);
         trail.deliver(batch);
 
-        assertThat(topic).containsExactly(read);
-        assertThat(stream).containsExactlyElementsOf(batch);
+        assertThat(topic).extracting(StampedEvent::event).containsExactly(read);
+        assertThat(stream).extracting(StampedEvent::event).containsExactlyElementsOf(batch);
         assertThat(ids(log.records())).containsExactly(read.id(), batch.get(0).id(), batch.get(1).id());
     }
 
     @Test
     void aRelayedBatchIsInTheLogInOrderAndAKafkaFailureFailsNothing() {
         AtomicInteger tries = new AtomicInteger();
-        RelayTarget down = batch -> {
+        StampedTarget down = batch -> {
             tries.incrementAndGet();
-            throw new AuditUnavailableException(batch.getFirst(), new RuntimeException("broker down"));
+            throw new AuditUnavailableException(batch.getFirst().event(), new RuntimeException("broker down"));
         };
         AuditTrail trail = new AuditTrail(Optional.empty(), Optional.of(down), SOURCE, clock, PROBE);
         List<CatalogEvent> batch = List.of(commit(), commit(), commit());
@@ -184,9 +186,10 @@ class AuditTrailTest {
     }
 
     @Test
-    void eachLoggedLineCarriesTheRunAndItsNumberAndTheKafkaCopyDoesNot() {
-        List<CatalogEvent> topic = new ArrayList<>();
-        AuditTrail trail = new AuditTrail(Optional.of(topic::add), Optional.empty(), SOURCE, clock, PROBE);
+    void eachLoggedLineCarriesTheRunAndItsNumberAndKafkasCopyIsThatLine() {
+        List<StampedEvent> topic = new ArrayList<>();
+        List<StampedEvent> stream = new ArrayList<>();
+        AuditTrail trail = new AuditTrail(Optional.of(topic::add), Optional.of(stream::addAll), SOURCE, clock, PROBE);
 
         trail.record(read());
         trail.deliver(List.of(commit(), commit()));
@@ -194,15 +197,16 @@ class AuditTrailTest {
         assertThat(log.lines()).extracting(line -> EventCodec.envelope(line.getBytes(StandardCharsets.UTF_8)).stamp())
                 .containsExactly(Optional.of(new LogStamp(trail.run(), 1)), Optional.of(new LogStamp(trail.run(), 2)),
                         Optional.of(new LogStamp(trail.run(), 3)));
-        assertThat(topic).singleElement().satisfies(copy -> assertThat(new String(EventCodec.encode(copy),
-                StandardCharsets.UTF_8)).doesNotContain(EventCodec.RUN));
+        assertThat(Stream.concat(topic.stream(), stream.stream()).map(copy -> new String(copy.encode(),
+                StandardCharsets.UTF_8))).as("the synchronous record's copy, then the batch's, each as logged")
+                .containsExactlyElementsOf(log.lines());
         assertThat(new AuditTrail(Optional.empty(), SOURCE, clock, PROBE).run()).as("a run of its own")
                 .isNotEqualTo(trail.run());
     }
 
     @Test
     void theRunEndsWithARunEndRecordOnceAsItsLastNumber() {
-        List<CatalogEvent> topic = new ArrayList<>();
+        List<StampedEvent> topic = new ArrayList<>();
         AuditTrail trail = new AuditTrail(Optional.of(topic::add), Optional.empty(), SOURCE, clock, PROBE);
         trail.record(read());
 

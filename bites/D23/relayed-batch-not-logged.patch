@@ -3,14 +3,15 @@ Module: catalog-server
 Test: AuditTrailTest#aRelayedBatchIsInTheLogInOrderAndAKafkaFailureFailsNothing
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
-index d6bf80c7..5a67546d 100644
+index 505e8d6b..214a12cd 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
-@@ -129,7 +129,6 @@ public final class AuditTrail {
-      * Never throws for Kafka, so the relay marks the batch relayed once it is in the log.
-      */
+@@ -141,7 +141,7 @@ public final class AuditTrail {
      public void deliver(List<CatalogEvent> orderedBatch) {
--        orderedBatch.forEach(this::log);
+         List<StampedEvent> copies = new ArrayList<>(orderedBatch.size());
+         for (CatalogEvent event : orderedBatch) {
+-            copies.add(log(event));
++            copies.add(new StampedEvent(event, new LogStamp(run, logged.incrementAndGet())));
+         }
          if (stream.isPresent() && kafkaTried()) {
              try {
-                 stream.get().deliver(orderedBatch);

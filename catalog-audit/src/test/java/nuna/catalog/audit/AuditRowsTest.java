@@ -169,7 +169,7 @@ class AuditRowsTest {
 
     @Test
     void aRecordFromTheLogKeepsItsRunAndNumberAndOneFromTheTopicHasNeither() throws IOException {
-        // Backlog 272: the stamp places a row in its run's archive chain; the topic's copy carries none.
+        // Backlog 272: the stamp places a row in its run's archive chain; a record from an older server carries none.
         UUID run = UUID.fromString("a0000000-0000-4000-8000-000000000272");
         for (Mapped m : golden()) {
             byte[] logged = EventCodec.encode(m.event(), new LogStamp(run, 41));

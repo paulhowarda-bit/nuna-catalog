@@ -3578,3 +3578,4 @@ storage `missing` and store `unknown`. The scan at 19:11:25 read all four `done`
 | [272](backlog/272.md) | Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends | done | 2026-11-25 |
 | [273](backlog/273.md) | Demo: presenter may do absolutely everything | done | 2026-11-25 |
 | [274](backlog/274.md) | demo.sh up builds from one pinned commit, so a landing during the run cannot stop it or mix commits | done | 2026-11-25 |
+| [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |

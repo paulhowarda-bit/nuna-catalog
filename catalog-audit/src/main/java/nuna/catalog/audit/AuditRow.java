@@ -30,8 +30,9 @@ import java.util.UUID;
  * @param data           the payload, as the topic carries it under {@code data}
  * @param topicPartition the audit topic's partition the record came from
  * @param topicOffset    its offset there
- * @param logRun         the server run that logged it ({@link LogStamp#run}), or null: a record from the topic, or
- *                       from a server that stamped none
+ * @param logRun         the server run that logged it ({@link LogStamp#run}), from the log's line or the topic's
+ *                       copy, or null for a record that carries none: from a server older than the stamp, or a
+ *                       topic copy from one older than item 276
  * @param logSequence    its number in that run ({@link LogStamp#sequence}), or null when {@code logRun} is
  */
 public record AuditRow(String eventId, Instant time, String type, String source, String principal, String endUser,
