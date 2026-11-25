@@ -1,0 +1,14 @@
+Breaks: a reader's own view carries their row filter expression.
+Module: catalog-server
+Test: RowColumnReadRoutesTest#aReaderLearnsWhetherTheirRowsAreFilteredAndWhichColumnsAreMaskedButNeverTheExpressions
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+@@ -141,6 +141,7 @@
+                 : applied.rowFilter().isEmpty() ? "all" : "filtered");
+         ArrayNode masked = body.putArray("masked-columns");
+         applied.columnMasks().keySet().forEach(masked::add);
++        applied.rowFilter().ifPresent(filter -> body.put("row-filter", filter));
+         return GovernanceRoutes.json(200, body);
+     }
+ 
