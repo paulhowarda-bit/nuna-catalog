@@ -1,0 +1,17 @@
+Breaks: on Oracle a scan's end report leaves the start's storage in place, so the scan's deletes, done and refused, are never kept (backlog 250).
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Health#aScanKeepsWhatTheWorkerReaches
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleHealth.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleHealth.java
+index cb5a4fea..8283d4e0 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleHealth.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleHealth.java
+@@ -138,7 +138,7 @@ final class OracleHealth {
+                             + " s.ended_at, s.outcome, s.failures, s.error)",
+                     scan.id(), scan.worker(), scan.startedAt(), scan.endedAt().orElse(null),
+                     scan.outcome().map(Enum::name).orElse(null), failures(scan.failures()), scan.error().orElse(null));
+-            if (written > 0) {
++            if (written > 0 && scan.endedAt().isEmpty()) {
+                 // The CLOBs on their own: a long text bound in MERGE's USING select is not a CLOB there.
+                 update(connection, "UPDATE maintenance_scan SET worker_groups = ?, worker_storage = ? WHERE id = ?",
+                         scan.groups().map(MaintenanceScan::writeGroups).orElse(null),

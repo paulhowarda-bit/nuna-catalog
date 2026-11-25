@@ -76,6 +76,15 @@ and each table's assessment and compaction Job as it makes or starts and ends th
 logged and counted as a `report` failure, and the work goes on; one for a table dropped or replaced since the work list
 was read is refused, and left at that.
 
+Each scan's report also says what the worker's own storage identity reaches (backlog 250), by kind of store and
+endpoint, for each prefix of `nuna.maintenance.storage`: as the scan starts, the worker lists at most one key beneath
+each prefix and reports whether the store let it (`ok`), refused it with a code (`AccessDenied`, `NoSuchBucket`), or
+did not answer; at its end, the deletes beneath each prefix in that scan, done, refused by the store with the first
+refusal's code, and failed. A refused listing is logged as a warning and changes nothing else. The worker sends
+DeleteObjects itself on the profile's S3 client, 250 keys a call as S3FileIO does, to keep the code the store gives each
+key it refuses. No report holds a key, an object or a credential. Platform operators read it, with the groups the
+worker's token carried, in the scans (`GET /management/v1/maintenance/scans`).
+
 It also reports each job of the night, which the catalog keeps for a month for the console's overview and maintenance
 pages (D45, backlog 126, `docs/observability/maintenance-nights.md`; `PUT /management/v1/maintenance/jobs/{id}`).
 A night is one opening of the cleanup window and the day that follows it. Each report gives the job's start, end,

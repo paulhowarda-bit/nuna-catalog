@@ -1,0 +1,17 @@
+Breaks: the SQL and Oracle stores read a scan's deletes the store refused as failed without its answer, and those failed as refused (backlog 250).
+Module: catalog-store-api
+Test: WorkerStorageTest#theTextReadsBackAsWritten
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java b/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java
+index 5bbceb0b..84ffac65 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java
+@@ -170,7 +170,7 @@ public record WorkerStorage(String kind, Optional<String> endpoint, List<Prefix>
+                 prefixes = new ArrayList<>();
+             } else if (fields[0].equals(PREFIX) && fields.length == 8 && kind != null) {
+                 prefixes.add(new Prefix(fields[1], Listed.valueOf(fields[2]), optional(fields[3]),
+-                        Long.parseLong(fields[4]), Long.parseLong(fields[5]), Long.parseLong(fields[6]),
++                        Long.parseLong(fields[4]), Long.parseLong(fields[6]), Long.parseLong(fields[5]),
+                         optional(fields[7])));
+             } else {
+                 throw new IllegalArgumentException("worker storage: not a store or prefix line: " + line);

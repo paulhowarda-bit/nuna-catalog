@@ -209,7 +209,19 @@ kept even when 50 failed scans have come since.
       "started-at": "2027-03-28T01:00:00Z",
       "ended-at": "2027-03-28T01:00:04Z",
       "outcome": "succeeded",
-      "failures": { "orphan-scan": 1 }
+      "failures": { "orphan-scan": 1 },
+      "groups": ["nuna-maintenance"],
+      "storage": [
+        {
+          "kind": "s3",
+          "endpoint": "https://silo.example:9000",
+          "prefixes": [
+            { "prefix": "s3://lake/tables", "listed": "ok", "deleted": 12, "delete-refused": 0, "delete-failed": 0 },
+            { "prefix": "s3://ledger-warehouse/tables", "listed": "refused", "list-code": "AccessDenied",
+              "deleted": 0, "delete-refused": 3, "delete-failed": 0, "delete-code": "AccessDenied" }
+          ]
+        }
+      ]
     }
   ],
   "last-success": { ... }
@@ -217,6 +229,23 @@ kept even when 50 failed scans have come since.
 ```
 
 - `worker` is the maintenance principal that ran it.
+- `groups` are the groups its token carried when it reported (backlog 250): the groups its grants are held by. Absent
+  for a scan kept before the catalog recorded them.
+- `storage` is what the worker's own storage identity reached in that scan (backlog 250), one entry for each kind of
+  store and endpoint (`endpoint` absent for AWS S3's own), with the prefixes its settings give it there
+  (`nuna.maintenance.storage`). Each prefix has:
+  - `listed`: at the scan's start the worker lists at most one key beneath the prefix, as its delete policy reads it
+    (`<prefix>/`). `ok` when the store let it, `refused` when the store answered with an error, whose code is
+    `list-code` (`AccessDenied`, `NoSuchBucket`, ...), and `failed` when the store did not answer, `list-code` then
+    naming the client's failure (`SdkClientException`).
+  - `deleted`, `delete-refused` and `delete-failed`: the objects beneath it the worker deleted in that scan, the store
+    refused it (each key of a DeleteObjects answered with an error), and those it could not reach the store to delete;
+    `delete-code` is the code of the first not deleted. The start's report carries 0s; the end's replaces it.
+
+  A report names prefixes and the store's codes, never an object key, a credential or the store's message. `storage`
+  is absent for a scan reported by a worker of an earlier release, and for a scan kept before the catalog recorded it.
+  The deletes beneath a prefix since a given time are the sum over the scans since; the first scan in the list with
+  `storage` holds what the worker last reached.
 - `outcome` is `succeeded` when the scan read the whole work list, as the worker's meters judge it, even if some jobs
   in it failed; `failed` when it could not. Absent while the scan runs, as is `ended-at`; a worker that died
   mid-scan leaves its scan that way.
@@ -232,7 +261,7 @@ other management calls; anyone else gets 403. Each answers 204.
 
 | Route | Body |
 |---|---|
-| `PUT /management/v1/maintenance/scans/{scan id}` | `started-at`; once it has ended, `ended-at`, `outcome`, `failures` and for a failed scan `error` |
+| `PUT /management/v1/maintenance/scans/{scan id}` | `started-at` and `storage` (above, "The scans"); once it has ended, `ended-at`, `outcome`, `failures` and for a failed scan `error`. The catalog keeps the groups of the worker's token with it. |
 | `PUT /management/v1/maintenance/tables/{table id}/assessment` | The table's `catalog`, `namespace` and `name`, then `assessed-at`, `data-files`, `small-files`, `position-delete-files`, `deletion-vectors`, `equality-delete-files`, `reasons` and `score` |
 | `PUT /management/v1/maintenance/tables/{table id}/compaction` | The table's `catalog`, `namespace` and `name`, then `started-at`, `outcome` and once it has ended `ended-at` |
 | `PUT /management/v1/maintenance/jobs/{job id}` | A job of the night (maintenance-nights.md); for a job run on request, `requested-at` too, which marks the request started |
@@ -271,12 +300,25 @@ the waiting ones in the order the work list reads them.
 | Oracle | `V14__maintenance_requests.sql` | `maintenance_request`, and an index over the time asked |
 | MongoDB | step 12 (`MongoSchema`) | the `maintenance_request` collection, unique by table and job, and an index over the time asked |
 
+What a scan reaches (backlog 250) is two more columns of `maintenance_scan`, nullable and without a default, so the
+step changes only the table's definition and a server of the previous release goes on writing scans without them:
+`worker_groups` (one group a line) and `worker_storage` (a line for each store, then one for each of its prefixes,
+fields separated by tabs; `WorkerStorage.write`). MongoDB keeps them as arrays in the scan's document, with no step.
+
+| Store | Step | What it adds |
+|---|---|---|
+| PostgreSQL | `V17__worker_reach.sql` | `worker_groups`, `worker_storage` (`TEXT`) |
+| CockroachDB | `V16__worker_reach.sql` | `worker_groups`, `worker_storage` (`TEXT`) |
+| Oracle | `V18__worker_reach.sql` | `worker_groups`, `worker_storage` (`CLOB`) |
+
 ## Tests and bites
 
 | Test | Shows |
 |---|---|
-| `HealthSuite` (catalog-store-api, run on each store) | The latest assessment kept; reports for gone tables refused; the last compaction kept; the neediest order and paging; a purge deletes the health; recent scans and the last success kept. |
-| `catalog-server` `HealthRoutesTest` | The worker's reports make a table's health; only the worker reports; a report for a table gone or now another is refused; a reader sees only the neediest tables they may select; operators read the scans. |
+| `HealthSuite` (catalog-store-api, run on each store) | The latest assessment kept; reports for gone tables refused; the last compaction kept; the neediest order and paging; a purge deletes the health; recent scans and the last success kept; a scan's groups and storage kept, a refused listing as refused, the end's in place of the start's. |
+| `catalog-server` `HealthRoutesTest` | The worker's reports make a table's health; only the worker reports; a report for a table gone or now another is refused; a reader sees only the neediest tables they may select; operators read the scans, with the groups and storage each kept; a storage report holding a code where nothing was refused, a message for a code, or an unknown listing is a bad request. |
+| `catalog-store-api` `WorkerStorageTest` (fast) | What a storage report may hold, the text the SQL and Oracle stores keep it as, and the reported prefix that covers a location. |
+| `catalog-maintenance` `StorageReportTest` (fast) | Through `Storage.of` and stand-in stores: each scan reports, by kind and endpoint, a listing let, refused (AccessDenied, NoSuchBucket) or failed, and the deletes done and refused with the store's code, counted afresh each scan; no key, credential or store message in any report. |
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
 | `catalog-server` `MaintenanceEstateTest` (fast) | Every table: a row for each table the caller may select and none for another; its assessment; a hold or freeze from any level above; a closed table counted only for a caller whose grants give select; fixed last night only by a compaction that succeeded; paging, the 500-row page and the 2,000 tables a page looks at. |
 | `catalog-server` `MaintenanceEstateRoutesTest` (heavy) | Every table through the server, with real reports, holds, freezes, grants and classifications; a caller who may select nothing gets no row. |
@@ -301,3 +343,15 @@ Maintenance on request has four bites in `bites/D30/`:
 - `requested-job-window-deadline` (`RequestedWorkTest`): a requested Job stops at the window's end, not the request's
   deadline.
 - `requested-job-waits-for-window` (`RequestedWorkTest`): a requested job waits for the cleanup window.
+
+What the worker reaches (backlog 250) has eight bites in `bites/D30/`:
+
+- `worker-refused-listing-reported-ok` (`StorageReportTest`): a refused listing is reported as let, with no code.
+- `worker-refused-deletes-counted-deleted` (`StorageReportTest`): keys the store refuses are counted as deleted.
+- `worker-storage-code-takes-a-message` (`WorkerStorageTest`): any text is kept as a store's code, a message naming a
+  key among them.
+- `worker-storage-text-swaps-delete-counts` (`WorkerStorageTest`): the SQL and Oracle stores read refused deletes as
+  failed and failed as refused.
+- `scan-end-keeps-start-storage-sql`, `scan-end-keeps-start-storage-oracle`, `scan-end-drops-storage-mongo`
+  (`HealthSuite` on each store): the end's report does not replace the start's storage.
+- `scan-groups-not-recorded` (`HealthRoutesTest`): a scan is kept without the groups of the worker's token.

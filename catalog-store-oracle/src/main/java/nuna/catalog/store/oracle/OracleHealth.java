@@ -12,6 +12,7 @@ import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.TableAssessment;
 import nuna.catalog.store.TableHealth;
+import nuna.catalog.store.WorkerStorage;
 import nuna.catalog.store.WriteResult;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -30,10 +31,11 @@ import java.util.stream.Collectors;
 
 /**
  * What the maintenance worker reports of its own work, kept for the console (D38): each table's latest assessment and
- * last compaction in {@code table_health}, and the recent scans in {@code maintenance_scan}. The reports carry no
- * change id and write no audit record; each is safe to repeat. Recording locks the table's row (Oracle has no shared
- * row lock), so a drop waits, and a purge's completion deletes its health. A score is bound as a decimal: it has at
- * most four decimals, so the NUMBER holds it exactly.
+ * last compaction in {@code table_health}, and the recent scans in {@code maintenance_scan}, each with the worker's
+ * groups and the storage it reached as text in CLOBs. The reports carry no change id and write no audit record; each
+ * is safe to repeat. Recording locks the table's row (Oracle has no shared row lock), so a drop waits, and a purge's
+ * completion deletes its health. A score is bound as a decimal: it has at most four decimals, so the NUMBER holds it
+ * exactly.
  */
 final class OracleHealth {
 
@@ -41,6 +43,7 @@ final class OracleHealth {
             + " h.deletion_vectors, h.equality_delete_files, h.reasons, h.score, h.compaction_started_at,"
             + " h.compaction_ended_at, h.compaction_outcome";
     private static final String SCAN = "id, worker, started_at, ended_at, outcome, failures, error";
+    private static final String SCAN_READ = SCAN + ", worker_groups, worker_storage";
 
     private final Transactions transactions;
 
@@ -126,15 +129,21 @@ final class OracleHealth {
 
     void recordScan(MaintenanceScan scan, int keep) {
         transactions.writeAndRetryOnFailure("scan record", connection -> {
-            upsert(connection, "maintenance_scan_pk", "MERGE INTO maintenance_scan t USING (SELECT ? id, ? worker,"
-                            + " ? started_at, CAST(? AS TIMESTAMP WITH TIME ZONE) ended_at, ? outcome, ? failures, ? error"
-                            + " FROM dual) s ON (t.id = s.id)"
+            int written = upsert(connection, "maintenance_scan_pk", "MERGE INTO maintenance_scan t USING (SELECT"
+                            + " ? id, ? worker, ? started_at, CAST(? AS TIMESTAMP WITH TIME ZONE) ended_at, ? outcome,"
+                            + " ? failures, ? error FROM dual) s ON (t.id = s.id)"
                             + " WHEN MATCHED THEN UPDATE SET t.ended_at = s.ended_at, t.outcome = s.outcome,"
                             + " t.failures = s.failures, t.error = s.error WHERE t.ended_at IS NULL"
                             + " WHEN NOT MATCHED THEN INSERT (" + SCAN + ") VALUES (s.id, s.worker, s.started_at,"
                             + " s.ended_at, s.outcome, s.failures, s.error)",
                     scan.id(), scan.worker(), scan.startedAt(), scan.endedAt().orElse(null),
                     scan.outcome().map(Enum::name).orElse(null), failures(scan.failures()), scan.error().orElse(null));
+            if (written > 0) {
+                // The CLOBs on their own: a long text bound in MERGE's USING select is not a CLOB there.
+                update(connection, "UPDATE maintenance_scan SET worker_groups = ?, worker_storage = ? WHERE id = ?",
+                        scan.groups().map(MaintenanceScan::writeGroups).orElse(null),
+                        scan.storage().map(WorkerStorage::write).orElse(null), scan.id());
+            }
             update(connection, "DELETE FROM maintenance_scan WHERE id NOT IN (SELECT id FROM maintenance_scan"
                     + " ORDER BY started_at DESC, id DESC FETCH FIRST ? ROWS ONLY) AND id NOT IN (SELECT id"
                     + " FROM maintenance_scan WHERE outcome = 'SUCCEEDED' ORDER BY started_at DESC, id DESC"
@@ -144,7 +153,7 @@ final class OracleHealth {
     }
 
     List<MaintenanceScan> listScans() {
-        return transactions.autocommit("scan listing", connection -> query(connection, "SELECT " + SCAN
+        return transactions.autocommit("scan listing", connection -> query(connection, "SELECT " + SCAN_READ
                 + " FROM maintenance_scan ORDER BY started_at DESC, id DESC", OracleHealth::scan));
     }
 
@@ -176,7 +185,9 @@ final class OracleHealth {
         return new MaintenanceScan(Jdbc.uuid(row, "id"), Jdbc.text(row, "worker"), instant(row, "started_at"),
                 Optional.ofNullable(instant(row, "ended_at")),
                 Optional.ofNullable(row.getString("outcome")).map(MaintenanceScan.Outcome::valueOf),
-                failures(Jdbc.text(row, "failures")), Optional.ofNullable(Jdbc.text(row, "error")));
+                failures(Jdbc.text(row, "failures")), Optional.ofNullable(Jdbc.text(row, "error")),
+                Optional.ofNullable(Jdbc.text(row, "worker_groups")).map(MaintenanceScan::readGroups),
+                Optional.ofNullable(Jdbc.text(row, "worker_storage")).map(WorkerStorage::read));
     }
 
     private static Set<String> reasons(String stored) {

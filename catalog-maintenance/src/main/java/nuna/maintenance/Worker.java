@@ -153,7 +153,7 @@ final class Worker implements AutoCloseable {
 
     private void scan(UUID id, ScanReport report) {
         Instant now = clock.instant();
-        health.scanStarted(id, now, report);
+        health.scanStarted(id, now, storage.check(), report);
         boolean ended = false;
         Optional<String> error = Optional.empty();
         try {
@@ -186,7 +186,8 @@ final class Worker implements AutoCloseable {
         } finally {
             // As WorkerMetrics judges it: a scan succeeds when it read the whole work list.
             health.scanEnded(id, now, clock.instant(),
-                    ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST), error, report);
+                    ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST), error, storage.reach(),
+                    report);
         }
     }
 

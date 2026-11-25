@@ -1,0 +1,17 @@
+Breaks: the catalog keeps any text as a store's code in a worker's storage report, so a store's message naming an object key is kept and shown to operators (backlog 250).
+Module: catalog-store-api
+Test: WorkerStorageTest#aReportNamesNoKeyAndHoldsCodesOnlyWhereSomethingWasNotDone
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java b/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java
+index 5bbceb0b..8d72bea0 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/WorkerStorage.java
+@@ -36,7 +36,7 @@ public record WorkerStorage(String kind, Optional<String> endpoint, List<Prefix>
+     /** A store's kind. */
+     static final Pattern KIND = Pattern.compile("[a-z][a-z0-9-]{0,19}");
+     /** A store's error code as it gives it, or the name of the client's failure. */
+-    static final Pattern CODE = Pattern.compile("[A-Za-z0-9._-]{1,100}");
++    static final Pattern CODE = Pattern.compile("\\P{Cntrl}{1,100}");
+     /** An endpoint, a prefix or a group: up to 1,000 characters, none of them a control character. */
+     static final Pattern TEXT = Pattern.compile("\\P{Cntrl}{1,1000}");
+     private static final int MAX_PREFIXES = 1000;

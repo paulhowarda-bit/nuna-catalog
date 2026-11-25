@@ -405,7 +405,8 @@ final class TestCatalog {
      * SDK's default chain (its pod's identity), which is all {@link Storage#of} uses there; in a test JVM that chain is
      * the run's sign-in, the catalog's own identity, which the delete policy refuses. So the same S3FileIO is opened
      * here with Iceberg's AssumeRoleAwsClientFactory, which assumes the role from that sign-in, and the worker lists
-     * and deletes through it as {@link Storage#of}'s does: listPrefix and deleteFiles. A child JVM's worker
+     * and deletes through it: listPrefix as {@link Storage#of}'s does, and deleteFiles, which sends the same
+     * DeleteObjects calls {@link StorePrefix} sends without keeping each refused key's code. A child JVM's worker
      * ({@link ChildJvm#storage}) opens it too.
      */
     static Storage asRole(String role) {

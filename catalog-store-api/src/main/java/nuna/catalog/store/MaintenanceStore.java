@@ -81,13 +81,17 @@ public interface MaintenanceStore {
     Page<TableHealth> listNeediestTables(PageRequest page);
 
     /**
-     * Records a scan's start, or its end, by its id; a scan that has ended keeps its end. Then deletes every scan
-     * but the {@code keep} that started last and the last that succeeded, so the catalog keeps recent failures and
-     * the last success, however long ago.
+     * Records a scan's start, or its end, by its id; a scan that has ended keeps its end. The groups and storage it
+     * reports are kept with it, the end's in place of the start's (backlog 250). Then deletes every scan but the
+     * {@code keep} that started last and the last that succeeded, so the catalog keeps recent failures and the last
+     * success, however long ago.
      */
     void recordScan(MaintenanceScan scan, int keep);
 
-    /** The scans kept, the last started first. */
+    /**
+     * The scans kept, the last started first. The first with storage holds what the worker last reached
+     * ({@link MaintenanceScan#covering}); deletes since a time are the sum over the scans since.
+     */
     List<MaintenanceScan> listScans();
 
     // ---- the worker's nights, kept for the console's overview and maintenance pages (D45, backlog 126) ----
