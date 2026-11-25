@@ -50,8 +50,8 @@ class ConsoleRowColumnRulesBrowserTest {
               {"id":3,"name":"trader","required":false,"type":"string"},
               {"id":4,"name":"pnl","required":false,"type":"double"}]},"properties":{"format-version":"2"}}""";
     private static final String FILTER = "desk = 'EQ'";
-    private static final String CHANGED = "Another grant admin changed this rule. The list now shows theirs; make your"
-            + " change again.";
+    private static final String CHANGED = "Another grant admin changed this rule since you opened it. Close this; the list"
+            + " shows theirs.";
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -179,6 +179,8 @@ class ConsoleRowColumnRulesBrowserTest {
         expect(api.manage("POST", "/row-column-rules", rule(ns, analysts), AUTH, api.grantAdmin()), 204);
         save();
         assertThat(textContent(browser.await(By.cssSelector("dialog.dlg [data-refused='changed']")))).isEqualTo(CHANGED);
+        // Its version is spent: Save stays off, so a second click cannot report one's own edit as another's (backlog 257).
+        assertThat(driver.findElement(By.cssSelector("dialog.dlg button[type='submit']")).isEnabled()).isFalse();
         assertThat(rules(ns)).containsExactly(Map.of("group", analysts, "row-filter", FILTER,
                 "column-masks", Map.of("trader", "'***'")));
         browser.awaitText(By.cssSelector("#row-column-rules tr[data-group='" + analysts + "'] [data-rows]"),
