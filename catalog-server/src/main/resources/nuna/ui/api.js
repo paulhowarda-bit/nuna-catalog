@@ -360,6 +360,12 @@ export const scans = () => call('/management/v1/maintenance/scans');
  */
 export const readiness = catalog => call(`/management/v1/catalogs/${enc(catalog)}/maintenance/readiness`);
 
+/**
+ * What an operator sets up outside the catalog for each storage profile (backlog 253): the worker's reach, its settings
+ * for a store it does not reach, and the delete policies with their commands. Platform operators only.
+ */
+export const storageSetup = () => call('/management/v1/maintenance/storage-setup');
+
 /** One page of the neediest tables the caller may read, in every catalog, neediest first. */
 export const neediest = pageToken => call('/management/v1/maintenance/tables?pageSize=200'
   + (pageToken ? '&pageToken=' + enc(pageToken) : ''));

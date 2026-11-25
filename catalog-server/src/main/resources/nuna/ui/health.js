@@ -9,6 +9,7 @@ import {at, code, facts, failure, fmt, h, icon, load, muted, pageHead, panel, pi
 import {objectHref} from './route.js';
 import {REASONS, compactionWords, estate, iceQueue, keyOfRow, maintenanceOff, queue, queueOf, reasonPill} from './queue.js';
 import {mayModify, requestButtons, requestsBox} from './requests.js';
+import {workerStoragePanel} from './storage.js';
 
 const ALERTS = [
   ['metadata-integrity', 'Metadata integrity', 'A metadata file no longer hashes to what its pointer recorded. Pages.'],
@@ -68,13 +69,17 @@ function verdict(met) {
   return met === undefined ? muted('no requests in the last day') : met ? pill('ok', icon('check'), 'met') : pill('bad', 'missed');
 }
 
-export function healthPage() {
+/**
+ * The Service page. `tab` "worker-storage" brings the Worker storage panel into view, and `profile` marks that profile's
+ * row there, as the links from Maintenance do (backlog 254).
+ */
+export function healthPage(tab, profile) {
   const main = h('div', {class: 'nc-main', id: 'catalog-health'});
-  load(main, catalogHealth);
+  load(main, () => catalogHealth(tab === 'worker-storage' ? profile || '' : undefined));
   return main;
 }
 
-async function catalogHealth() {
+async function catalogHealth(focus) {
   let health;
   try {
     health = await api.catalogHealth();
@@ -96,6 +101,8 @@ async function catalogHealth() {
   load(dr, drPanel);
   const store = h('div');
   load(store, storePanel);
+  const storage = h('div');
+  load(storage, () => workerStoragePanel(focus));
   return [
     pageHead({
       eyebrow: 'all catalogs · the last day',
@@ -123,6 +130,7 @@ async function catalogHealth() {
         panel('Alerts fired', null, alerts(health.alerts || {}),
           h('p', {class: 'fine'}, 'Paging stays in your alerting; these are the last day\'s counts.'))),
       h('div', {class: 'grid-2'}, serversPanel(health, servers), worker),
+      storage,
       h('div', {class: 'grid-2'}, dr, store)),
   ];
 }
