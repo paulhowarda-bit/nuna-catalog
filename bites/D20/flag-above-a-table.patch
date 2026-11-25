@@ -2,15 +2,15 @@ Breaks: the row-column-policy flag is set on a catalog, namespace or view, where
 Module: catalog-server
 Test: FlagOnTablesOnlyTest#theFlagIsRefusedOnACatalogANamespaceAndAView
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-index 36eb43fb..6822e3a9 100644
+index 62aeec85..7524f157 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-@@ -193,7 +193,7 @@ class GovernanceRoutes {
-         Target target = management.target(request, "setGovernanceAttribute", Privilege.MANAGE_TAGS,
-                 prefix, namespace, table, view);
-         guard.require(request, target, "setGovernanceAttribute", Privilege.MANAGE_TAGS);
+@@ -399,7 +399,7 @@ class GovernanceRoutes {
+ 
+     private ResponseEntity<String> put(Target target, GovernanceAttribute.Kind kind, String attribute, String value,
+                                        String provenance, Request request) {
 -        if (kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.securable().kind() != Securable.Kind.TABLE) {
 +        if (false && kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.securable().kind() != Securable.Kind.TABLE) {
              throw flagOnTablesOnly(target);
          }
-         JsonNode json = Management.body(body);
+         Instant now = now();
