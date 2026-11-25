@@ -3211,6 +3211,7 @@ and a reader of `markets.desks.positions`, with browser tests for each role.
 ### 244. Row and column rules: check expressions when set, and If-Match on set
 
 - Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Decided: 2026-11-24, D20
 - Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-security/, catalog-server/build.gradle.kts, catalog-server/src/test/, bites/
 - Effort: M, an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites
 
@@ -3226,16 +3227,15 @@ The security expert, 2026-11-24, found no privilege problem in expressions: nuna
 (`OpaAnswers.java:72`, `91`), so Trino runs an expression as the querying user and every table it reads goes through
 nuna's authorization for that user.
 
-## Question for Paul
+## Decided
 
-May an expression hold a subquery or read another table? Lookup-table entitlements need it (a filter like
-`desk IN (SELECT desk FROM entitlements WHERE ...)`); forbidding it keeps each rule about its own table. Today
-nothing forbids it.
+Paul, 2026-11-24 (D20): expressions may hold subqueries and read other tables, so entitlements can come from a lookup
+table (`desk IN (SELECT desk FROM entitlements WHERE ...)`): "Allow subqueries".
 
 ## Done when
 
 - Setting a rule parses its predicate and masks as Trino SQL expressions (Trino's own parser, or one that matches
-  it) and refuses one that does not parse, saying where. Subqueries are allowed or refused as Paul decides.
+  it) and refuses one that does not parse, saying where. Subqueries and references to other tables parse and are accepted (D20).
 - Each rule carries a version, the list gives it, and a set or remove with a stale If-Match answers 412.
 - Route tests and a bite for each.
 
