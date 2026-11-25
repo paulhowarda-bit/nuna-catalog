@@ -1,0 +1,16 @@
+Breaks: nuna serves masks by name when Trino's ask does not name a masked column, so a column renamed past the guard, or read through a snapshot or branch that named it otherwise, is unmasked.
+Module: catalog-server
+Test: OpaAnswersTest#aTableWhoseAskDoesNotNameAMaskedColumnGetsEveryColumnNull
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+index b2f4d4cf..6e83c370 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+@@ -164,7 +164,7 @@ final class OpaAnswers {
+ 
+         /** This answer when {@code columns}, lowercased, name every masked column; otherwise every column NULL. */
+         Answer within(Set<String> columns) {
+-            return columns.containsAll(masked) ? this : CLOSED;
++            return columns.containsAll(masked) ? this : this;
+         }
+     }
+ }
