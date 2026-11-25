@@ -63,7 +63,7 @@ import tools.jackson.databind.JsonNode;
  * files never arrived.
  *
  * <p>Not on {@code -Ps3=aws}: the servers lock the archive in COMPLIANCE mode, as they always do (D23), and an AWS
- * bucket so locked could not be deleted for five years.
+ * bucket so locked could not be deleted for seven years.
  */
 @Tag("overnight")
 class DrDrillTest {
@@ -86,7 +86,7 @@ class DrDrillTest {
     @BeforeAll
     static void notOnAws() {
         Assumptions.assumeFalse(TestS3.kindFromSystemProperty() == TestS3.Kind.AWS,
-                "the archive's COMPLIANCE lock would keep an AWS bucket for five years");
+                "the archive's COMPLIANCE lock would keep an AWS bucket for seven years");
     }
 
     @AfterEach

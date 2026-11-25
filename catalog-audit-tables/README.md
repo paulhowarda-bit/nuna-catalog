@@ -32,7 +32,7 @@ The mapping from each event type lives in `catalog-audit` (`AuditRows`), without
 Not in it: from the topic, history older than its retention and records Kafka did not take in an outage (they are in
 the catalog's log only); from the log, what was lost before it reached the writer (docs/observability/audit-log.md);
 and the records of the writer's own requests (below). Rows are never deleted by the writer: the archive is
-the five-year record (D24).
+the seven-year record (D24).
 
 ## How it writes
 

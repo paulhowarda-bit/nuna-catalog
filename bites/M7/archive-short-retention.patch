@@ -1,17 +1,17 @@
-Breaks: the archive accepts a lock shorter than five years.
+Breaks: the archive accepts a lock shorter than seven years.
 Module: catalog-audit
 Test: LockedArchiveTest#refusesUnlockedBucketAndShortRetention
 
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
-index 9bfa673..d76c052 100644
+index 13e98719..1dda54e2 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
-@@ -75,7 +75,7 @@ public final class ObjectLockArchive {
+@@ -103,7 +103,7 @@ public final class ObjectLockArchive {
          this.prefix = Objects.requireNonNull(prefix, "prefix");
          this.retention = Objects.requireNonNull(retention, "retention");
          this.clock = Objects.requireNonNull(clock, "clock");
 -        if (retention.compareTo(MINIMUM_RETENTION) < 0) {
 +        if (false) {
-             throw new IllegalArgumentException("archive retention " + retention + " is below the five-year floor "
+             throw new IllegalArgumentException("archive retention " + retention + " is below the seven-year floor "
                      + MINIMUM_RETENTION);
          }
