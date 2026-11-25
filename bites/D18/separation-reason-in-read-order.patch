@@ -1,0 +1,17 @@
+Breaks: the separation reason names whichever conflict the store read first, so a grant and its preview can name different privileges.
+Module: catalog-security
+Test: SeparationTest#theReasonNamesTheSameConflictWhateverOrderTheGrantsAreReadIn
+
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Separation.java b/catalog-security/src/main/java/nuna/catalog/security/Separation.java
+index 554474e7..140e5d17 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/Separation.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Separation.java
+@@ -87,7 +87,7 @@ public final class Separation {
+         Duty wanted = Duty.of(privilege);
+         return heldInCatalog.stream()
+                 .filter(held -> Duty.of(held).conflictsWith(wanted))
+-                .min(java.util.Comparator.naturalOrder())
++                .findFirst()
+                 .map(held -> "group " + group + " holds " + held.wireName() + " in this catalog, a "
+                         + Duty.of(held).name().toLowerCase(java.util.Locale.ROOT) + " duty that "
+                         + privilege.wireName() + " (" + wanted.name().toLowerCase(java.util.Locale.ROOT)
