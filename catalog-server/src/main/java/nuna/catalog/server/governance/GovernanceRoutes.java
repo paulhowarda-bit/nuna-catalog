@@ -193,9 +193,6 @@ class GovernanceRoutes {
         Target target = management.target(request, "setGovernanceAttribute", Privilege.MANAGE_TAGS,
                 prefix, namespace, table, view);
         guard.require(request, target, "setGovernanceAttribute", Privilege.MANAGE_TAGS);
-        if (kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.securable().kind() != Securable.Kind.TABLE) {
-            throw flagOnTablesOnly(target);
-        }
         JsonNode json = Management.body(body);
         String value = Management.text(json, "value", MAX_VALUE);
         String provenance = Management.text(json, "provenance", MAX_VALUE);
@@ -402,6 +399,9 @@ class GovernanceRoutes {
 
     private ResponseEntity<String> put(Target target, GovernanceAttribute.Kind kind, String attribute, String value,
                                        String provenance, Request request) {
+        if (kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.securable().kind() != Securable.Kind.TABLE) {
+            throw flagOnTablesOnly(target);
+        }
         Instant now = now();
         GovernanceAttribute record = new GovernanceAttribute(target.securable(), kind, value, provenance,
                 request.actor().principal(), now);
@@ -454,7 +454,7 @@ class GovernanceRoutes {
      * clients that are no trusted engine, so one on a catalog, namespace or view would read as protection that is not
      * there. Removing one set there before is still allowed ({@link FlagsAboveTables} removes them at startup).
      */
-    static CatalogError flagOnTablesOnly(Target target) {
+    private static CatalogError flagOnTablesOnly(Target target) {
         return CatalogError.badRequest("The row-column-policy flag goes on a table, not on a " + kind(target.securable())
                 + ": only a table's own flag is enforced, so set it on each table to protect");
     }
