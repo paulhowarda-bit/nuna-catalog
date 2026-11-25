@@ -19,6 +19,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.event.CommandListener;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
@@ -97,6 +98,7 @@ final class MongoReplicaSet implements CatalogStoreUnderTest, Faults {
     private final ToxiproxyContainer toxiproxy;
     private final ToxiproxyClient toxiproxyClient;
     private final List<Member> members = new ArrayList<>();
+    private final MongoClientSettings linkSettings;
     private final MongoClient linkClient;
 
     private final Set<Member> stalled = new LinkedHashSet<>();
@@ -201,7 +203,7 @@ final class MongoReplicaSet implements CatalogStoreUnderTest, Faults {
 
         String seeds = String.join(",", members.stream().map(Member::address).toList());
         InetAddress dockerHost = resolve(toxiproxy.getHost());
-        linkClient = MongoClients.create(MongoClientSettings.builder()
+        linkSettings = MongoClientSettings.builder()
                 .applyConnectionString(new ConnectionString("mongodb://" + seeds + "/?replicaSet=" + SET_NAME))
                 .inetAddressResolver(host -> NAMES.contains(host) ? List.of(dockerHost) : List.of(InetAddress.getAllByName(host)))
                 .retryWrites(false)
@@ -209,7 +211,8 @@ final class MongoReplicaSet implements CatalogStoreUnderTest, Faults {
                         .readTimeout(SOCKET_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS))
                 .applyToClusterSettings(cluster -> cluster.serverSelectionTimeout(5, TimeUnit.SECONDS))
                 .applyToServerSettings(server -> server.heartbeatFrequency(1, TimeUnit.SECONDS))
-                .build());
+                .build();
+        linkClient = MongoClients.create(linkSettings);
         awaitLinkToPrimary();
     }
 
@@ -275,6 +278,14 @@ final class MongoReplicaSet implements CatalogStoreUnderTest, Faults {
     @Override
     public CatalogStore store(CommitHook hook) {
         return new MongoCatalogStore(linkClient, DATABASE, hook);
+    }
+
+    /**
+     * A client of its own, reaching the set as the suite's does, that also hands each command it sends to
+     * {@code listener}, on the thread that sends it, before it goes out. The caller closes it.
+     */
+    MongoClient linkClientWatchedBy(CommandListener listener) {
+        return MongoClients.create(MongoClientSettings.builder(linkSettings).addCommandListener(listener).build());
     }
 
     /** A store on {@code database} whose outbox entry ids come from {@code entryIds}, as from a process with another clock. */
