@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**60 open:** 18 S, 22 M, 15 L, 5 XL.
+**59 open:** 17 S, 22 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -64,7 +64,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [246](backlog/246.md) | S | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | one route running the checks the grant route already runs, without the write, with route tests and a bite | 2026-11-24 |
 | [247](backlog/247.md) | M | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests | 2026-11-24 |
 | [248](backlog/248.md) | M | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | one dialog replacing two forms, with browser tests; waits on items 246 and 247 | 2026-11-24 |
-| [249](backlog/249.md) | S | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | a paragraph in the demo's README | 2026-11-24 |
 | [250](backlog/250.md) | M | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | a new field on the scan report kept by all four stores with the conformance suite, and one list call per prefix per scan | 2026-11-24 |
 | [251](backlog/251.md) | S | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | one route reading item 250's record, the catalog's storage profile, the grants and the resolved policy; waits on item 250 | 2026-11-24 |
 | [252](backlog/252.md) | M | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button | 2026-11-24 |
@@ -3173,26 +3172,6 @@ Access tab, beside item 243's rules button.
 The dialog replaces both forms and does each of the above. Browser tests, signed in as `gary`, show a grant made,
 one already held and one refused.
 
-### 249. Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: demo/README.md
-- Effort: S, a paragraph in the demo's README
-
-## What is wrong
-
-The obvious first try at showing a grant in the demo is refused, so the feature looks broken (Atelier, 2026-11-24).
-The catalog refuses a grant to a group the caller belongs to ("no one grants to a group they belong to",
-`GrantRoutes.java:289`). `presenter` belongs to all five demo groups, so every grant to one of them is refused, and
-`gary` meets the same refusal for `demo-grant-admins` and `demo-auditors`. `demo/README.md` says the catalog does not
-refuse one person in every group, but not that this person can then grant to none of them.
-
-## Done when
-
-`demo/README.md`, beside the users table, says that `presenter` and `gary` cannot grant to their own groups. To show a
-grant, they grant to `demo-loaders` or to a new group name such as `demo-readers`. Grants go to group names, so
-Keycloak needs no change.
-
 ### 250. Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3675,4 +3654,5 @@ keys (the catalog refuses dot segments, the worker does not check).
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
 | [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |
 | [244](backlog/244.md) | Row and column rules: check expressions when set, and If-Match on set | done | 2026-11-24 |
+| [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
