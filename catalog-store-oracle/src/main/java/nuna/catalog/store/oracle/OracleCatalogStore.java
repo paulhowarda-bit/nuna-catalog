@@ -64,6 +64,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -594,13 +595,13 @@ public final class OracleCatalogStore implements CatalogStore {
     // ---- row filters and column masks ----
 
     @Override
-    public WriteResult putRule(RowColumnRule rule, String setBy, Change change) {
-        return rules.put(rule, setBy, change);
+    public WriteResult putRule(RowColumnRule rule, OptionalLong expected, String setBy, Change change) {
+        return rules.put(rule, expected, setBy, change);
     }
 
     @Override
-    public WriteResult removeRule(UUID catalogId, UUID tableId, String group, Change change) {
-        return rules.remove(catalogId, tableId, group, change);
+    public WriteResult removeRule(UUID catalogId, UUID tableId, String group, OptionalLong expected, Change change) {
+        return rules.remove(catalogId, tableId, group, expected, change);
     }
 
     @Override

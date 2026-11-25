@@ -1,6 +1,7 @@
 package nuna.catalog.store;
 
 import java.util.List;
+import java.util.OptionalLong;
 import java.util.UUID;
 
 /**
@@ -13,16 +14,23 @@ import java.util.UUID;
 public interface RowColumnRuleStore {
 
     /**
-     * Puts the group's rule on the table, replacing the one it had.
+     * Puts the group's rule on the table, replacing the one it had, at {@link RowColumnRule#nextVersion}.
      *
+     * @param expected the version the group's rule must be at (If-Match, backlog 244); empty for whatever it is, or
+     *                 none
      * @return {@code Applied}; {@code Unchanged} when the group's rule was already this one; {@code Missing(OBJECT)}
-     *         when the table is not an active table of the catalog; or {@code Refused(NOT_FLAGGED)} when the table
-     *         does not carry the row/column-policy flag set to true
+     *         when the table is not an active table of the catalog; {@code Refused(NOT_FLAGGED)} when the table
+     *         does not carry the row/column-policy flag set to true; or {@code VersionMismatch} when a version is
+     *         expected and the rule is at another, carrying it, or 0 when the group has no rule
      */
-    WriteResult putRule(RowColumnRule rule, String setBy, Change change);
+    WriteResult putRule(RowColumnRule rule, OptionalLong expected, String setBy, Change change);
 
-    /** @return {@code Applied} or {@code Missing(RULE)} */
-    WriteResult removeRule(UUID catalogId, UUID tableId, String group, Change change);
+    /**
+     * @param expected the version the rule must be at (If-Match, backlog 244); empty for whatever it is
+     * @return {@code Applied}, {@code Missing(RULE)}, or {@code VersionMismatch} carrying the rule's version when one
+     *         is expected and the rule is at another
+     */
+    WriteResult removeRule(UUID catalogId, UUID tableId, String group, OptionalLong expected, Change change);
 
     /** Every rule on the table, by group. */
     List<RowColumnRule.Stored> rulesOn(UUID tableId);

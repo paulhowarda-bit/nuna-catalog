@@ -9,6 +9,13 @@ dependencies {
     // Spring Security's JWT decoder and validators (D17a). Its version comes from the Security BOM
     // that Boot 4.1.2 imports; it brings nimbus-jose-jwt, which Boot does not manage itself.
     api("org.springframework.security:spring-security-oauth2-jose")
+    // Trino's own SQL parser (Apache-2.0): a row filter or column mask is parsed as Trino parses it when it applies
+    // the rule, when the rule is set (D20, backlog 244). Its version is in gradle.properties. It brings Guava 33.6.0,
+    // ANTLR's runtime 4.13.2 and Trino's grammar; Guava's error_prone_annotations (2.47.0, annotations only) is left
+    // out, so the 2.49.0 Caffeine brings through Iceberg is the one version on every class path.
+    implementation("io.trino:trino-parser:${property("trino-parser.version")}") {
+        exclude(group = "com.google.errorprone", module = "error_prone_annotations")
+    }
 
     // Authorization is tested on PostgreSQL through the storage interface, as the commit engine is.
     testImplementation(project(":catalog-store-sql"))

@@ -64,9 +64,27 @@ class RuleColumnsTest {
                 "date_trunc('day', current_timestamp) > TIMESTAMP '2026-01-01 00:00:00' - INTERVAL '1' DAY",
                 "any_match(split(symbol, '.'), part -> part = 'SAP')",
                 "CASE WHEN desk = 'EQ' THEN true ELSE false END",
-                "\"desk\" = 'it''s book' AND e.desk IS NULL")) {
+                "\"desk\" = 'it''s book' AND e.desk IS NULL",
+                "EXISTS (SELECT 1 FROM entitlements e WHERE e.book = desk AND e.user_name = current_user)",
+                "reduce(ARRAY[quantity], 0, (s, x) -> s + x, s -> s) > 0",
+                "CAST(ROW(desk, 1) AS ROW(book varchar, n integer)).book = 'EQ'")) {
             assertThat(check(filter, Map.of())).as(filter).isInstanceOf(Checked.Fits.class);
         }
+    }
+
+    @Test
+    void aFilterTheParserFindsColumnsInIsReadFromItsTree() {
+        assertThat(RuleColumns.columnsReferenced(((RuleExpressions.Parsed.Parses) RuleExpressions.parse(
+                "desk = 'EQ' AND lower(\"Trader\") IN (SELECT trader FROM book) AND any_match(ARRAY[pnl], p -> p > 0)"
+                        + " AND CAST(quantity AS bigint) > 0", "row-filter")).expression()))
+                .containsExactly("desk", "trader", "pnl", "quantity");
+    }
+
+    @Test
+    void aFilterThatDoesNotParseIsUnfitSayingWhere() {
+        assertThat(check("desk = 'EQ' AND", Map.of())).isInstanceOf(Checked.Unfit.class).extracting(
+                unfit -> ((Checked.Unfit) unfit).message()).asString()
+                .startsWith("row-filter is not a Trino SQL expression: at line 1, column 16, ");
     }
 
     @Test
