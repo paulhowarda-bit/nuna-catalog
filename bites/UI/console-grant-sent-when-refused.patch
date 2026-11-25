@@ -1,0 +1,16 @@
+Breaks: Grant can be pressed while the grant's preview refuses it.
+Module: catalog-server
+Test: ConsoleBrowserTest#theGrantAccessDialogShowsAGrantMadeOneAlreadyHeldAndOneRefused+grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownBeforeGrant
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/grant.js b/catalog-server/src/main/resources/nuna/ui/grant.js
+index b8d2a26f..f44a84c1 100644
+--- a/catalog-server/src/main/resources/nuna/ui/grant.js
++++ b/catalog-server/src/main/resources/nuna/ui/grant.js
+@@ -256,6 +256,7 @@ export function grantAccess(target, {pick, after} = {}) {
+       return say('unchanged', h('p', null, `Already held: ${privilege} on ${n}, granted by ${answer['granted-by']} ${onDay(answer['granted-at'])}.`));
+     }
+     if (answer.answer === 'refused') {
++      ok.disabled = false;
+       const words = answer.refusal === 'self-grant'
+         ? `You belong to ${group}. No one grants to their own group: ask another grant admin.`
+         : answer.refusal === 'separation-of-duties'
