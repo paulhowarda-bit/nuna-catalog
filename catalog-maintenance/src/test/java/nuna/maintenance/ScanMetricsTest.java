@@ -122,8 +122,9 @@ class ScanMetricsTest {
             catalog.advance(Duration.ofHours(1), clock);
             reports.add(worker.runOnce());
 
-            assertThat(reports.getLast().failuresByKind).as("nor could it report its start and end")
-                    .isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 5, ScanReport.Failure.REPORT, 2));
+            assertThat(reports.getLast().failuresByKind).as("nor read its storage prefixes, nor report its start and end")
+                    .isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 5, ScanReport.Failure.STORAGE_PREFIXES, 1,
+                            ScanReport.Failure.REPORT, 2));
             assertThat(catalog.scan(reports.getLast().id).isMissingNode()).isTrue();
             assertCounted(meters, reports);
             assertThat(failures(meters, ScanReport.Failure.WORK_LIST)).isEqualTo(5);
