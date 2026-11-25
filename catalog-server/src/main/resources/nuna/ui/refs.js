@@ -230,11 +230,14 @@ async function noRef(where, list) {
  * `head`; both once the catalog's refs are read. A page the caller may not list refs on keeps neither.
  */
 export function refChrome(where, head) {
-  const mine = ++wanted;
+  // The page's own turn, which its render took as it started (clearReading): a page that asks only once its contents
+  // are read may ask after the caller has gone on to the next, and must not take that page's turn (backlog 271).
+  const mine = wanted;
   refsOf(where.c).then(async list => {
-    // The page may still be going in: wait a task, then draw only into a page that is shown.
+    // The page may still be going in: wait a task, then draw only into a page that is shown. A page left is out of
+    // the document, though its own parts may still hold its head.
     await new Promise(done => setTimeout(done, 0));
-    if (!head.parentNode) return;
+    if (!head.isConnected) return;
     if (mine === wanted) showReading(refPick(where, list));
     if (!where.r) return;
     const r = findRef(list, where.r);

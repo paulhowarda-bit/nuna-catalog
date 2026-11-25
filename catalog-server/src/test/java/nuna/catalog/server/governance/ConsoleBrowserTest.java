@@ -1410,6 +1410,25 @@ class ConsoleBrowserTest {
     }
 
     /**
+     * Holds the console's requests for the namespaces of warehouse {@code trading@<arguments[0]>} until
+     * {@code window.held.release()}: {@code window.held.page} is the page that asked first, and {@code window.held.filled}
+     * says whether that page has drawn its head since.
+     */
+    private static final String HOLD_THE_BRANCHS_NAMESPACES = """
+            const branch = arguments[0];
+            const real = window.fetch;
+            let release;
+            const gate = new Promise(done => release = done);
+            window.held = {page: null, release, filled: () => !!(window.held.page && window.held.page.querySelector('.ph'))};
+            window.fetch = (url, init) => {
+              const path = decodeURIComponent(new URL(url, location.origin).pathname);
+              if (!path.endsWith('/trading@' + branch + '/namespaces')) return real(url, init);
+              window.held.page = window.held.page || document.getElementById('catalog-page');
+              return gate.then(() => real(url, init));
+            };
+            """;
+
+    /**
      * A catalog branch made in the console, committed on through the REST API as any engine commits to a warehouse,
      * then previewed and merged in the console (D33, backlog 109). Read through the branch, a table's page names it in
      * the band, the top chip, the first crumb and the selector; the merge tab and its dialog show the dry run's plan;
@@ -1473,13 +1492,25 @@ class ConsoleBrowserTest {
         // The menu makes a branch or tag too, for one who may (backlog 221).
         assertThat(textContent(browser.await(By.cssSelector("#ref-menu [data-act='ref-new-menu']"))))
                 .isEqualTo("Make a branch or tag");
+        // The catalog reads its contents before it draws the Reading control: they are held here until the caller has
+        // gone on to Governance, as a slow answer was in the overnight run of 2026-11-25 (backlog 271).
+        driver.executeScript(HOLD_THE_BRANCHS_NAMESPACES, branch);
         driver.findElement(By.cssSelector("#ref-menu [data-ref-item='" + branch + "'] > a:first-child")).click();
         browser.await("the ref did not open the catalog through it",
                 d -> d.getCurrentUrl().endsWith("#c=trading&r=" + branch));
+        browser.await("the catalog did not ask for the branch's namespaces",
+                d -> (Boolean) driver.executeScript("return window.held.page !== null"));
         // Going on to a page that shows main only keeps the branch, and says the page shows main (backlog 200).
         browser.await(By.cssSelector("#nav a[data-k='governance']")).click();
         browser.await("the branch was not kept on Governance",
                 d -> d.getCurrentUrl().endsWith("#p=governance&c=trading&r=" + branch));
+        assertThat(textContent(browser.await(By.cssSelector("#top #reading-slot [data-main-only]"))))
+                .isEqualTo("This page shows main only");
+        // The page left gets its contents and draws itself, out of sight: Governance keeps the header.
+        driver.executeScript("window.held.release()");
+        browser.await("the catalog page left did not draw itself",
+                d -> (Boolean) driver.executeScript("return window.held.filled()"));
+        driver.executeAsyncScript("setTimeout(arguments[arguments.length - 1], 500)");
         assertThat(textContent(browser.await(By.cssSelector("#top #reading-slot [data-main-only]"))))
                 .isEqualTo("This page shows main only");
         assertThat(browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]")).getDomAttribute("aria-label"))
