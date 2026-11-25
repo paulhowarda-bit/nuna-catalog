@@ -2,8 +2,10 @@ package nuna.maintenance;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import org.apache.iceberg.aws.s3.S3FileIO;
@@ -14,15 +16,25 @@ import org.apache.iceberg.io.FileInfo;
  * each reaching the prefixes the catalog gave for its store at this scan (item 256; D30, amended 2026-11-24). A
  * location strictly beneath one of them is listed or deleted with that store's identity; one at a prefix, outside
  * every one, or anywhere before the catalog has given any, is refused. That is the worker's own check on where it
- * lists and deletes; the store's policy on its identity is the other (D30 (7)).
+ * lists and deletes; the store's policy on its identity is the other (D30 (7)). Each prefix keeps account of what the
+ * store let the worker do beneath it since the scan's {@link #check} (backlog 250, {@link StorePrefix}).
  */
 final class OwnStorage implements Storage {
 
     private final Map<String, WorkerSettings.Store> stores;
     private final Map<String, String> trust;
     private final Map<String, S3FileIO> byStore = new LinkedHashMap<>();
-    /** The prefixes the catalog gave at this scan; none before the first or after a scan that read none. */
-    private volatile Prefixes reached = Prefixes.NONE;
+    /**
+     * The prefixes the catalog gave at this scan, each with its account; none before the first read, or after one
+     * that named none or failed.
+     */
+    private volatile Reached reached = new Reached(Prefixes.NONE, Map.of());
+    /** Whether {@link #check} has run since the prefixes were last taken. */
+    private volatile boolean checked;
+
+    /** The prefixes reached, and the account of each, by prefix, in the order of their locations. */
+    private record Reached(Prefixes prefixes, Map<Prefixes.Prefix, StorePrefix> accounts) {
+    }
 
     OwnStorage(Map<String, WorkerSettings.Store> stores) {
         this.stores = Map.copyOf(stores);
@@ -33,25 +45,57 @@ final class OwnStorage implements Storage {
     @Override
     public Prefixes reach(List<Management.StorageProfile> profiles) {
         Prefixes now = Prefixes.resolve(profiles, stores);
-        reached = now;
+        Map<Prefixes.Prefix, StorePrefix> accounts = new LinkedHashMap<>();
+        now.prefixes().stream().sorted(Comparator.comparing(prefix -> prefix.location().toString()))
+                .forEach(prefix -> {
+                    WorkerSettings.Store store = stores.get(prefix.store());
+                    accounts.put(prefix, new StorePrefix(prefix.location().toString(),
+                            store.kind().name().toLowerCase(Locale.ROOT), Optional.ofNullable(store.endpoint()),
+                            byStore.get(prefix.store())));
+                });
+        checked = false;
+        reached = new Reached(now, accounts);
         return now;
     }
 
     /** The store identity a location lies beneath at this scan, by name; none at a prefix or outside every one. */
     Optional<String> store(String location) {
-        return reached.holding(location).map(Prefixes.Prefix::store);
+        return reached.prefixes().holding(location).map(Prefixes.Prefix::store);
     }
 
     @Override
     public Iterable<FileInfo> list(String prefix) {
-        return io(prefix).listPrefix(prefix);
+        return account(prefix).io.listPrefix(prefix);
     }
 
     @Override
     public void delete(Collection<String> locations) {
-        Map<S3FileIO, List<String>> byIo = new LinkedHashMap<>();
-        locations.forEach(location -> byIo.computeIfAbsent(io(location), io -> new ArrayList<>()).add(location));
-        byIo.forEach(S3FileIO::deleteFiles);
+        Map<StorePrefix, List<String>> beneath = new LinkedHashMap<>();
+        locations.forEach(location -> beneath.computeIfAbsent(account(location), prefix -> new ArrayList<>())
+                .add(location));
+        RuntimeException first = null;
+        for (Map.Entry<StorePrefix, List<String>> objects : beneath.entrySet()) {
+            try {
+                objects.getKey().delete(objects.getValue());
+            } catch (RuntimeException e) {
+                first = first == null ? e : first;
+            }
+        }
+        if (first != null) {
+            throw first;
+        }
+    }
+
+    @Override
+    public List<Reach> check() {
+        List<Reach> reach = reached.accounts().values().stream().map(StorePrefix::check).toList();
+        checked = true;
+        return reach;
+    }
+
+    @Override
+    public List<Reach> reach() {
+        return checked ? reached.accounts().values().stream().map(StorePrefix::reach).toList() : List.of();
     }
 
     @Override
@@ -64,10 +108,12 @@ final class OwnStorage implements Storage {
         return trust;
     }
 
-    private S3FileIO io(String location) {
-        Prefixes now = reached;
-        return now.holding(location).map(prefix -> byStore.get(prefix.store())).orElseThrow(() ->
+    /** The account of the prefix a location lies strictly beneath at this scan. */
+    private StorePrefix account(String location) {
+        Reached now = reached;
+        return now.prefixes().holding(location).map(now.accounts()::get).orElseThrow(() ->
                 new IllegalStateException(location + " lies strictly beneath none of the storage prefixes the catalog"
-                        + " gives the worker at this scan, " + now + ": the worker lists and deletes nothing there"));
+                        + " gives the worker at this scan, " + now.prefixes() + ": the worker lists and deletes"
+                        + " nothing there"));
     }
 }

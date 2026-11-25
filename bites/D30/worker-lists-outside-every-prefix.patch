@@ -2,17 +2,18 @@ Breaks: the worker's storage lists and deletes a location beneath none of the ca
 Module: catalog-maintenance
 Test: PrefixesTest#theWorkersStorageRefusesALocationOutsideEveryPrefix
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java b/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
-index 71e6b52b..dd381bde 100644
+index c115eb5b..11214cbd 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
-@@ -66,8 +66,7 @@ final class OwnStorage implements Storage {
- 
-     private S3FileIO io(String location) {
-         Prefixes now = reached;
--        return now.holding(location).map(prefix -> byStore.get(prefix.store())).orElseThrow(() ->
+@@ -111,9 +111,7 @@ final class OwnStorage implements Storage {
+     /** The account of the prefix a location lies strictly beneath at this scan. */
+     private StorePrefix account(String location) {
+         Reached now = reached;
+-        return now.prefixes().holding(location).map(now.accounts()::get).orElseThrow(() ->
 -                new IllegalStateException(location + " lies strictly beneath none of the storage prefixes the catalog"
--                        + " gives the worker at this scan, " + now + ": the worker lists and deletes nothing there"));
-+        return now.holding(location).map(prefix -> byStore.get(prefix.store()))
-+                .orElseGet(() -> byStore.values().iterator().next());
+-                        + " gives the worker at this scan, " + now.prefixes() + ": the worker lists and deletes"
+-                        + " nothing there"));
++        return now.prefixes().holding(location).map(now.accounts()::get)
++                .orElseGet(() -> new StorePrefix(location, "s3", Optional.empty(), byStore.values().iterator().next()));
      }
  }

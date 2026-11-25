@@ -159,7 +159,10 @@ final class Worker implements AutoCloseable {
 
     private void scan(UUID id, ScanReport report) {
         Instant now = clock.instant();
-        health.scanStarted(id, now, report);
+        // The prefixes first, so that the scan's start reports what the store lets the worker list beneath those the
+        // catalog gives at this scan (backlog 250).
+        boolean reaches = reach(report);
+        health.scanStarted(id, now, storage.check(), report);
         boolean ended = false;
         Optional<String> error = Optional.empty();
         try {
@@ -173,7 +176,6 @@ final class Worker implements AutoCloseable {
                         clock, this::load);
             }
             orphansDue.clear();
-            boolean reaches = reach(report);
             pages(Management.Section.REFS, management::refs, refs -> refs.forEach(r -> expire(r, report)), report);
             pages(Management.Section.TABLES, management::tables,
                     tables -> tables.forEach(t -> maintain(t, now, report)), report);
@@ -203,7 +205,8 @@ final class Worker implements AutoCloseable {
         } finally {
             // As WorkerMetrics judges it: a scan succeeds when it read the whole work list.
             health.scanEnded(id, now, clock.instant(),
-                    ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST), error, report);
+                    ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST), error, storage.reach(),
+                    report);
         }
     }
 

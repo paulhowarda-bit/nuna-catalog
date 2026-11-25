@@ -215,6 +215,64 @@ class HealthRoutesTest {
         expectError(api.send("GET", "/management/v1/maintenance/scans", null), 403, "ForbiddenException");
     }
 
+    /**
+     * Backlog 250: a scan keeps what the worker reports its own storage identities reach, by kind and endpoint with
+     * the prefixes under each, and the groups its token carried, and operators read both with the scans.
+     */
+    @Test
+    void aScanKeepsWhatTheWorkerReachesAndTheGroupsItsTokenCarried() {
+        Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS).plusSeconds(7200);
+        String id = UUID.randomUUID().toString();
+        String[] worker = {GovernanceServer.PRINCIPAL, "maintenance", GovernanceServer.GROUPS, "maintainers"};
+        String storage = "[{\"kind\":\"s3\",\"endpoint\":\"https://silo.example:9000\",\"prefixes\":["
+                + "{\"prefix\":\"s3://lake/tables\",\"listed\":\"ok\",\"deleted\":12,\"delete-refused\":0,"
+                + "\"delete-failed\":0},"
+                + "{\"prefix\":\"s3://ledger-warehouse/tables\",\"listed\":\"refused\",\"list-code\":\"AccessDenied\","
+                + "\"deleted\":0,\"delete-refused\":3,\"delete-failed\":1,\"delete-code\":\"AccessDenied\"}]},"
+                + "{\"kind\":\"s3\",\"prefixes\":[{\"prefix\":\"s3://archive\",\"listed\":\"failed\","
+                + "\"list-code\":\"SdkClientException\"}]}]";
+
+        expect(api.manage("PUT", "/maintenance/scans/" + id, withStorage(scan(at, at.plusSeconds(30), "succeeded",
+                "{}", null), storage), worker), 204);
+
+        String body = expect(api.send("GET", "/management/v1/maintenance/scans", null, AUTH, api.operator()), 200)
+                .body();
+        String scan = "$.scans[?(@.id == '" + id + "')]";
+        assertThat(JsonPath.<List<List<String>>>read(body, scan + ".groups")).containsExactly(List.of("maintainers"));
+        assertThat(JsonPath.<List<String>>read(body, scan + ".storage[0].endpoint"))
+                .containsExactly("https://silo.example:9000");
+        assertThat(JsonPath.<List<String>>read(body, scan + ".storage[0].prefixes[*].prefix"))
+                .containsExactly("s3://lake/tables", "s3://ledger-warehouse/tables");
+        assertThat(JsonPath.<List<String>>read(body, scan + ".storage[0].prefixes[1].listed"))
+                .containsExactly("refused");
+        assertThat(JsonPath.<List<String>>read(body, scan + ".storage[0].prefixes[1].list-code"))
+                .containsExactly("AccessDenied");
+        assertThat(JsonPath.<List<Integer>>read(body, scan + ".storage[0].prefixes[1].delete-refused"))
+                .containsExactly(3);
+        assertThat(JsonPath.<List<Integer>>read(body, scan + ".storage[0].prefixes[0].deleted")).containsExactly(12);
+        assertThat(JsonPath.<List<Map<String, Object>>>read(body, scan + ".storage[1]")).as("AWS S3's own: no endpoint")
+                .singleElement().satisfies(store -> assertThat(store).doesNotContainKey("endpoint"));
+        assertThat(JsonPath.<List<Integer>>read(body, scan + ".storage[1].prefixes[0].delete-refused"))
+                .as("a count left out is 0").containsExactly(0);
+
+        for (String refused : List.of(
+                "[{\"kind\":\"s3\",\"prefixes\":[{\"prefix\":\"s3://lake/tables\",\"listed\":\"ok\","
+                        + "\"list-code\":\"AccessDenied\"}]}]",
+                "[{\"kind\":\"s3\",\"prefixes\":[{\"prefix\":\"s3://lake/tables\",\"listed\":\"maybe\"}]}]",
+                "[{\"kind\":\"s3\",\"prefixes\":[{\"prefix\":\"s3://lake/tables\",\"listed\":\"refused\","
+                        + "\"list-code\":\"Access Denied for tables/ns/t/data/a.parquet\"}]}]",
+                "[{\"kind\":\"s3\",\"prefixes\":[{\"prefix\":\"s3://lake/tables\",\"listed\":\"ok\","
+                        + "\"delete-refused\":1}]}]",
+                "{\"kind\":\"s3\"}")) {
+            expectError(api.manage("PUT", "/maintenance/scans/" + UUID.randomUUID(), withStorage(scan(at, null, null,
+                    "{}", null), refused), worker), 400, "BadRequestException");
+        }
+    }
+
+    private static String withStorage(String scan, String storage) {
+        return scan.substring(0, scan.length() - 1) + ",\"storage\":" + storage + "}";
+    }
+
     private HttpResponse<String> report(String id, String what, String namespace, String name, String body) {
         return api.manage("PUT", "/maintenance/tables/" + id + "/" + what, body.contains("\"catalog\"") ? body
                 : withName(namespace, name, body), WORKER);

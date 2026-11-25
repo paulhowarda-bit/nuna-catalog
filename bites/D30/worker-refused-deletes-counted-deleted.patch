@@ -1,0 +1,17 @@
+Breaks: keys the store refuses in a DeleteObjects answer are counted as deleted, so the scan reports no refused delete and the deletion does not fail (backlog 250).
+Module: catalog-maintenance
+Test: StorageReportTest#eachScanReportsWhatTheStoreLetTheWorkerListAndDeleteBeneathEachPrefix
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java b/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java
+index 792e8f8f..d68dab51 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/StorePrefix.java
+@@ -131,7 +131,7 @@ final class StorePrefix {
+         try {
+             DeleteObjectsResponse response = io.client().deleteObjects(request -> request.bucket(bucket)
+                     .delete(delete -> delete.objects(objects)));
+-            List<S3Error> errors = response.hasErrors() ? response.errors() : List.of();
++            List<S3Error> errors = List.of();
+             return new Batch(keys.size() - errors.size(), errors.size(), 0,
+                     errors.stream().findFirst().map(error -> code(error.code(), "Unknown")));
+         } catch (S3Exception e) {

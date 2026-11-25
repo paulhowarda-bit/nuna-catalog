@@ -3,18 +3,18 @@ Module: catalog-server
 Test: GrantRaceTest#racedGrantsThatConflictCannotBothApply
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index da70fbc..6834c4b 100644
+index 7d9e0545..751aacc1 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -251,8 +251,10 @@ class GrantRoutes {
+@@ -364,8 +364,10 @@ class GrantRoutes {
          AtomicReference<String> separated = new AtomicReference<>();
          WriteResult result;
          try {
-+            List<String> before = store.listGrantsOfGroups(record.id(), Set.of(spec.group()), PageRequest.first(EXPORT_PAGE))
++            List<String> before = store.listGrantsOfGroups(record.id(), Set.of(asked.group()), PageRequest.first(EXPORT_PAGE))
 +                    .items().stream().map(g -> g.grant().privilege()).toList();
              result = grant ? store.putGrantIf(stored, request.caller().subject().id(), change,
--                    held -> admits(spec.group(), privilege, held, separated))
-+                    held -> admits(spec.group(), privilege, before, separated))
+-                    held -> admits(asked.group(), privilege, held, separated))
++                    held -> admits(asked.group(), privilege, before, separated))
                      : store.revokeGrant(stored, change);
          } catch (CommitOutcomeUnknownException e) {
              // Both are safe to repeat: a repeated grant answers unchanged, a repeated revoke not found.

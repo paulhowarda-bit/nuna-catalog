@@ -2,13 +2,13 @@ Breaks: the worker never reads the work list's refs section, so no branch near i
 Module: catalog-maintenance
 Test: WorkerRefsTest#branchesAreWarnedOfAndEndedBeforeTheTablesAreRead
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-index d0621eef..d34fa72e 100644
+index c5c10856..aa5bfae5 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-@@ -174,7 +174,6 @@ final class Worker implements AutoCloseable {
+@@ -176,7 +176,6 @@ final class Worker implements AutoCloseable {
+                         clock, this::load);
              }
              orphansDue.clear();
-             boolean reaches = reach(report);
 -            pages(Management.Section.REFS, management::refs, refs -> refs.forEach(r -> expire(r, report)), report);
              pages(Management.Section.TABLES, management::tables,
                      tables -> tables.forEach(t -> maintain(t, now, report)), report);

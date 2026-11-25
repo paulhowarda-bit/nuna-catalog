@@ -49,7 +49,9 @@ class MutatingRoutesAuditTest {
     private static final Map<String, String> NOT_MUTATING = Map.of(
             "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics", "forwarded to telemetry, never stored",
             "POST /management/v1/catalogs/{catalog}/grants/check", "the caller's own batch check: stores nothing,"
-                    + " and M5 does not audit its answers");
+                    + " and M5 does not audit its answers",
+            "POST /management/v1/catalogs/{catalog}/grants/preview", "what a grant would do: stores nothing, and"
+                    + " its answers are not audited, as the check's are not (backlog 246)");
 
     /**
      * Management routes that keep the maintenance worker's reports of its own work (D38): bookkeeping, not changes to

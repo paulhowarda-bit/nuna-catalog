@@ -1,0 +1,16 @@
+Breaks: the groups that hold grants in a catalog, with their duties, are listed to anyone who holds something there, not only to those who manage its grants, and no refusal is audited.
+Module: catalog-server
+Test: GrantGroupsRouteTest#anyoneWithoutManageGrantsOnTheCatalogIsRefusedAuditedAndReadsNoGroup
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 8c2bf7d5..3666b295 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -217,7 +217,6 @@ class GrantRoutes {
+         CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), LIST_GROUPS.name(),
+                 LIST_GROUPS.privilege());
+         Securables securables = new Securables(store, record);
+-        require(request, securables.catalogItself(), LIST_GROUPS);
+         Page<GrantGroup> page = paged(() -> store.listGrantGroups(record.id(), page(pageToken, pageSize)));
+         Map<String, Object> out = new LinkedHashMap<>();
+         out.put("groups", page.items().stream().map(GrantRoutes::render).toList());

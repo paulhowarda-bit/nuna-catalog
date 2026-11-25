@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**59 open:** 17 S, 22 M, 15 L, 5 XL.
+**56 open:** 16 S, 20 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,17 +60,14 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [245](backlog/245.md) | S | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js) | 2026-11-24 |
-| [246](backlog/246.md) | S | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | one route running the checks the grant route already runs, without the write, with route tests and a bite | 2026-11-24 |
-| [247](backlog/247.md) | M | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests | 2026-11-24 |
 | [248](backlog/248.md) | M | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | one dialog replacing two forms, with browser tests; waits on items 246 and 247 | 2026-11-24 |
-| [250](backlog/250.md) | M | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | a new field on the scan report kept by all four stores with the conformance suite, and one list call per prefix per scan | 2026-11-24 |
 | [251](backlog/251.md) | S | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | one route reading item 250's record, the catalog's storage profile, the grants and the resolved policy; waits on item 250 | 2026-11-24 |
 | [252](backlog/252.md) | M | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button | 2026-11-24 |
 | [253](backlog/253.md) | S | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250 | 2026-11-24 |
 | [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
 | [255](backlog/255.md) | S | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | one setting and a change to `maintenance_worker()`, checked with `demo.sh up` | 2026-11-24 |
 | [256](backlog/256.md) | L | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | the worker's settings and routing change shape and the DR replica keys move, plus a route, the chart, the README's rules per store, fast tests with bites and two heavy store tests | 2026-11-24 |
+| [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
 
 ## Open items in full
 
@@ -3061,78 +3058,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 245. Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/route.js, catalog-server/src/test/
-- Effort: S, a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js)
-
-## What is wrong
-
-Paul asked on 2026-11-24 how to add grants from the console. It already can, in two places, and he had not found
-either (Atelier's answer, 2026-11-24):
-
-- Governance, then its Grants tab: "Grant a privilege" (`governance.js`, `grantsPage`).
-- A namespace's, table's or view's Access tab: "Grant on this <kind>" (`panels.js:579`, `grantsTab`).
-
-No rail item names either. Governance opens on Summary. On Access the form is the third block. A table opens on
-Overview, which refuses a grant admin such as `gary`, who holds no data access, so he reaches the tab that would let
-him grant only by knowing it is there. Branches were missed the same way on 2026-11-23.
-
-## Done when
-
-- Those who may manage grants in the catalog (`may(catalog, 'manage-grants')`) see a "Grants" rail item after
-  Governance, opening the Grants page; Governance keeps Summary and Holds and freezes. Everyone else does not see it.
-- A table or view opens on Access for a caller who may manage its grants but may not read it.
-- Console tests show both, as `gary` and as `ana`.
-
-### 246. Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java, catalog-server/src/test/, bites/
-- Effort: S, one route running the checks the grant route already runs, without the write, with route tests and a bite
-
-## What is missing
-
-The console learns that a grant is refused only after the grant is sent: the self-grant refusal ("no one grants to a
-group they belong to", `GrantRoutes.java:289`), the separation-of-duties refusals, and a privilege that means
-nothing on its object (the server accepts `create` on a table). Atelier's grant dialog (item 248) shows, before
-Grant is pressed, one line saying what the grant will do, that it is already held, or why it would be refused, with
-Grant disabled (Atelier, 2026-11-24).
-
-## Done when
-
-- `POST /management/v1/catalogs/{catalog}/grants/preview` takes a grant's body and answers `admitted`, `unchanged`
-  (already held, with who granted it and when) or `refused` with the reason the grant route would give, writing
-  nothing. Like the existing `/check` route it is not audited.
-- It refuses callers who may not manage grants on the object as the grant route does.
-- Route tests cover each answer, and a bite shows the self-grant refusal is checked.
-- A privilege that means nothing on its object (`create` on a table or view) is refused by both preview and grant.
-
-### 247. Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-store-api/, catalog-store-sql/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java, catalog-server/src/test/, catalog-tests-conformance/
-- Effort: M, a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests
-
-## What is missing
-
-The console's Group field is free text; its suggestions are only the groups already listed on the page
-(`governance.js`, the `grant-groups` datalist). No route lists the groups a catalog knows, so a grant admin types a
-group name from memory, and a misspelling grants to a group no one is in. Atelier's grant dialog (item 248) needs a
-group picker, each group with its duties: Reading, Data, Tags, Grants (Atelier, 2026-11-24).
-
-`GrantStore` lists the grants of named groups or on one object (`listGrantsOfGroups`, `listGrantsOn`), never the
-distinct groups.
-
-## Done when
-
-- `GET /management/v1/catalogs/{catalog}/grants/groups`, for those who manage the catalog's grants, lists each group
-  holding a grant in the catalog with its duties, plus the deployment's grant-admin and operator groups, marked as
-  such. The catalog cannot list the directory's groups, and the answer says so.
-- Every store answers it, checked by the conformance suite on all four databases; route tests show the refusal for
-  others.
-
 ### 248. Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3171,42 +3096,6 @@ Access tab, beside item 243's rules button.
 
 The dialog replaces both forms and does each of the above. Browser tests, signed in as `gary`, show a grant made,
 one already held and one refused.
-
-### 250. Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-maintenance/src/main/java/nuna/maintenance/, catalog-maintenance/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, catalog-store-api/, catalog-store-sql/, catalog-store-oracle/, catalog-store-mongo/, catalog-tests-conformance/, bites/
-- Effort: M, a new field on the scan report kept by all four stores with the conformance suite, and one list call per prefix per scan
-
-## What is missing
-
-Paul set up a second catalog, `ledger`, at work and opened Maintenance for it: nothing happened, and nothing said why
-(2026-11-24). The worker cannot maintain a catalog until four steps are done: a write grant for its group, a storage
-profile covering the catalog's bucket, the store's permission to list and delete there, and a policy that turns a job
-on. The catalog can check the first and the last; it cannot see the middle two, because only the worker meets them
-(Atelier, 2026-11-24):
-
-- When no worker profile covers a location, `Storage.io()` throws "no nuna.maintenance.storage profile covers …"; when
-  the store refuses, the worker gets AccessDenied. Both reach the catalog only as counts by kind on the scan report
-  (`orphan-scan 3`) and as failed night jobs, with no reason, table, catalog or bucket (`HealthReports`,
-  `Management.reportScan`, `reportJob`). The catalog never learns the worker's groups either.
-- Meanwhile the Maintenance page says "N tables not assessed yet: the maintenance worker has not reported"
-  (`queue.js:122`), even while the worker reports every scan.
-- With only the grant done, maintenance looks healthy and deletes nothing. Expiry, manifest rewrite, assessment and
-  compaction run on credentials the catalog vends; only deletion, orphan scans and purges use the worker's own storage
-  identity. Every replaced file waits on the pending list for ever, and the first deletion falls due only after the
-  PITR window (7 days by default), so deletion results alone are a week-late signal. A list check at each scan is not.
-
-## Done when
-
-- At the start of each scan, `PUT /management/v1/maintenance/scans/{id}` carries `storage`: for each profile its name,
-  endpoint and prefixes, and for each prefix `listed`, `ok` or `refused` with the store's code (AccessDenied,
-  NoSuchBucket). The worker lists at most one key per prefix for this, which its policy already allows.
-- At the end of the scan, for each profile, the deletes done and refused, with the first refusal's code.
-- The catalog records the worker's groups from its token.
-- A test shows no key or secret in the body. The conformance suite passes on all four databases. A bite shows a
-  refused list is kept as refused.
-- If item 256 lands first, the report is per store identity, with the prefixes the catalog gave it.
 
 ### 251. Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog
 
@@ -3458,6 +3347,31 @@ session on AWS; on Ceph, a bucket owner against an explicit deny, IAM accounts a
 `tenant:bucket`; MinIO's group and service-account inheritance on Silo; whether S3FileIO's client resolves `..` in
 keys (the catalog refuses dot segments, the worker does not check).
 
+### 258. Grants: refuse write on a view, which gives only select there yet counts as a data duty
+
+- Added: 2026-11-24 by catalog-security review of backlog 246
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java, catalog-server/src/test/, bites/
+- Effort: S, one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite
+
+## What is wrong
+
+`write` on a view means nothing there: no route needs it on a view (loading needs `select`; replace, drop and
+rename need `modify`), so it gives only `select`, through the ladder. Yet separation of duties counts it as a data
+duty (`Separation.Duty.of`), so a group granted it is kept from `manage-tags` anywhere in the catalog, and the
+certification export lists it as a right to write data. The grant route and its preview accept it.
+
+Backlog 246 refuses `create` on a table or view the same way (400 at the grant route, `refused` with
+`privilege-not-on-object` at the preview, revoke still removing one granted before: `GrantRoutes.refusal`). Its
+done-when named only `create`, so `write` on a view was left for this item (catalog-security's review of 246,
+2026-11-24). Every other privilege means something on every kind of securable: `manage-tags` on a view sets its
+labels and holds, and anything on a namespace or catalog reaches what is below.
+
+## Done when
+
+- The grant route answers 400 to `write` on a view and the preview `refused` with `privilege-not-on-object`; a
+  revoke still removes one.
+- `GrantPreviewTest` covers it at both, and a bite shows the refusal is checked.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3654,5 +3568,9 @@ keys (the catalog refuses dot segments, the worker does not check).
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
 | [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |
 | [244](backlog/244.md) | Row and column rules: check expressions when set, and If-Match on set | done | 2026-11-24 |
+| [245](backlog/245.md) | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | done | 2026-11-24 |
+| [246](backlog/246.md) | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | done | 2026-11-24 |
+| [247](backlog/247.md) | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | done | 2026-11-24 |
 | [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
+| [250](backlog/250.md) | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

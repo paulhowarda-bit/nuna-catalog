@@ -45,8 +45,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
  * Names are hidden on the grant routes as on the Iceberg routes (D18, amended again 2026-11-19; backlog 73). A
- * grant, a revoke or a listing of grants on a namespace, table or view the caller holds nothing on answers exactly
- * as for one that does not exist, and the batch check answers for it as for a missing one; a caller that holds
+ * grant, a revoke, a grant's preview (backlog 246) or a listing of grants on a namespace, table or view the caller
+ * holds nothing on answers exactly as for one that does not exist, and the batch check answers for it as for a
+ * missing one; a caller that holds
  * something there is refused with 403, or told its own answer. A caller that holds nothing in the catalog at all
  * gets, on every grant route, what a catalog that does not exist gets (D18, amended 2026-11-20; backlog 68). Every
  * refusal is audited; a check is not. The routes and authorizer are the real ones over a store double, so this
@@ -113,6 +114,8 @@ class GrantHiddenNamesTest {
                 .isEqualTo(missing);
         assertThat(alike(() -> routes.revoke(CATALOG, body(namespaceSpec("hr"), "auditors", "select"), http), hr))
                 .isEqualTo(missing);
+        assertThat(alike(() -> routes.preview(CATALOG, body(namespaceSpec("hr"), "auditors", "select"), http), hr))
+                .isEqualTo(missing);
         assertThat(alike(() -> routes.listOn(CATALOG, "namespace", List.of("hr"), null, null, null, http), hr))
                 .isEqualTo(missing);
     }
@@ -123,6 +126,8 @@ class GrantHiddenNamesTest {
         assertThat(alike(() -> routes.grant(CATALOG, body(tableSpec("hr", "staff"), "auditors", "select"), http),
                 staff, hr)).isEqualTo(noTable);
         assertThat(alike(() -> routes.revoke(CATALOG, body(tableSpec("hr", "staff"), "auditors", "select"), http),
+                staff, hr)).isEqualTo(noTable);
+        assertThat(alike(() -> routes.preview(CATALOG, body(tableSpec("hr", "staff"), "auditors", "select"), http),
                 staff, hr)).isEqualTo(noTable);
         assertThat(alike(() -> routes.listOn(CATALOG, "table", List.of("hr"), "staff", null, null, http), staff, hr))
                 .isEqualTo(noTable);
@@ -204,6 +209,7 @@ class GrantHiddenNamesTest {
         List<Callable<ResponseEntity<?>>> calls = List.of(
                 () -> routes.grant(CATALOG, body("{\"type\":\"catalog\"}", "auditors", "select"), http),
                 () -> routes.revoke(CATALOG, body(namespaceSpec("hr"), "auditors", "select"), http),
+                () -> routes.preview(CATALOG, body(namespaceSpec("hr"), "auditors", "select"), http),
                 () -> routes.listByGroups(CATALOG, null, null, null, http),
                 () -> routes.listByGroups(CATALOG, List.of("auditors"), null, null, http),
                 () -> routes.listOn(CATALOG, "catalog", null, null, null, null, http),
