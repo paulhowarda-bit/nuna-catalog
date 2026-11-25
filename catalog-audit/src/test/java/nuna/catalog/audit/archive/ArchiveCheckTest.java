@@ -1,249 +1,339 @@
 package nuna.catalog.audit.archive;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.LogStamp;
+import nuna.catalog.audit.RunEnd;
 import nuna.catalog.audit.SampleEvents;
-import nuna.catalog.audit.archive.ArchiveCheck.Anchor;
-import nuna.catalog.audit.archive.ArchiveCheck.ChainResult;
-import nuna.catalog.audit.archive.ArchiveCheck.Checked;
-import nuna.catalog.audit.archive.ArchiveCheck.Result;
-import nuna.catalog.audit.archive.ObjectLockArchive.Placement;
-import nuna.catalog.audit.archive.ObjectLockArchive.Segment;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.sync.RequestBody;
 
 /**
- * The archive check and a record's place in its chain (D23; backlog 125), on an in-memory bucket: each chain verified
- * to the archive consumer's anchor and no further, a later run reading only what was written since, a changed record
- * or a lost tail found and the verified head kept, and a record found by its offset with its neighbours.
+ * The archive check of the log path (D23, amended 2026-11-25; backlog 262), on the archive writer's own output: each
+ * run's chain verified up to the newest head a checkpoint gave it, its numbers followed for gaps, repeats and its end,
+ * and the checkpoints followed for their links and their lateness.
  */
 class ArchiveCheckTest {
 
-    private static final String TOPIC = "nuna.catalog.audit";
-    private static final String P0 = ArchiveConsumer.chain(TOPIC, 0);
-    private static final String P1 = ArchiveConsumer.chain(TOPIC, 1);
-    private static final Instant NOW = Instant.parse("2026-11-22T06:00:00Z");
+    private static final UUID RUN_A = UUID.fromString("a0000000-0000-4000-8000-000000000001");
+    private static final UUID RUN_B = UUID.fromString("b0000000-0000-4000-8000-000000000002");
+    private static final Duration INTERVAL = Duration.ofMinutes(5);
 
-    private final MemoryS3 s3 = new MemoryS3();
+    private final MovingClock clock = new MovingClock(Instant.parse("2026-11-25T10:00:00Z"));
+    private final MemoryS3 s3 = new MemoryS3(clock);
     private final ObjectLockArchive archive = new ObjectLockArchive(s3.client(), "audit-archive", "audit",
-            ObjectLockArchive.MINIMUM_RETENTION, Clock.fixed(NOW, ZoneOffset.UTC));
-    private final FakeHeads heads = new FakeHeads();
-    private final ArchiveCheck check = new ArchiveCheck(archive, TOPIC, heads, Clock.fixed(NOW, ZoneOffset.UTC));
-    private final Map<String, ChainHead> ends = new HashMap<>();
-    private final Map<String, Long> nextOffsets = new HashMap<>();
-    private final Map<String, List<CatalogEvent>> written = new HashMap<>();
-    private int n;
+            ObjectLockArchive.MINIMUM_RETENTION, clock);
+    private final ArchiveSink sink = new ArchiveSink(archive, 3, Duration.ofMinutes(1), INTERVAL, 1000, clock);
+    private final ArchiveCheck check = new ArchiveCheck(archive, clock);
 
-    @Test
-    void verifiesEachChainToItsAnchorAndNoFurther() throws IOException {
-        Segment first = segment(P0, 5);
-        Segment second = segment(P0, 7);
-        segment(P0, 3); // written, not yet anchored
-        Segment other = segment(P1, 4);
-        heads.anchor(0, second);
-        heads.anchor(1, other);
+    /** Record {@code n} of {@code run}, as the run logged it. */
+    static byte[] logged(UUID run, long n) {
+        CatalogEvent event = SampleEvents.event(SampleEvents.oneOfEachType().get((int) (n % 8)), (int) n);
+        return EventCodec.encode(event, new LogStamp(run, n));
+    }
 
-        Result result = check.run();
+    /** The run's run-end record, its {@code n}th. */
+    static byte[] ended(UUID run, long n) {
+        return EventCodec.encode(SampleEvents.event(new RunEnd("nuna-catalog-0"), 9000 + (int) n),
+                new LogStamp(run, n));
+    }
 
-        assertThat(result.intact()).isTrue();
-        assertThat(chain(result, 0).verified()).contains(new Checked(second.end(), second.nextOffset(), second.key(),
-                NOW));
-        assertThat(chain(result, 0).records()).isEqualTo(12);
-        assertThat(chain(result, 1).verified().orElseThrow().head()).isEqualTo(other.end());
-        assertThat(heads.checked).containsOnlyKeys(0, 1);
-        assertThat(heads.checked.get(0).nextOffset()).isEqualTo(first.nextOffset() + 7);
+    private void offer(UUID run, long... numbers) {
+        List<byte[]> bodies = new ArrayList<>();
+        for (long n : numbers) {
+            bodies.add(logged(run, n));
+        }
+        sink.offer(bodies);
+    }
+
+    private static long[] range(long from, long to) {
+        return LongStream.rangeClosed(from, to).toArray();
+    }
+
+    private ArchiveCheck.ChainResult chain(ArchiveCheck.Result result, UUID run) {
+        return result.chains().stream().filter(c -> c.chain().equals(run.toString())).findFirst().orElseThrow();
     }
 
     @Test
-    void aLaterRunReadsOnlyWhatWasWrittenSince() throws IOException {
-        segment(P0, 40);
-        Segment second = segment(P0, 40);
-        heads.anchor(0, second);
-        check.run();
-        Segment third = segment(P0, 6);
-        heads.anchor(0, third);
-        long before = s3.fetched();
+    void verifiesEachRunToTheNewestHeadACheckpointGaveItAndNoFurther() {
+        offer(RUN_A, range(1, 6));
+        offer(RUN_B, range(1, 2));
+        sink.tick();
+        clock.advance(Duration.ofMinutes(2));
+        assertThat(sink.tick().segments()).as("run B's two records, old enough now").isEqualTo(1);
+        // Written as a segment, but no checkpoint gives the chain its head yet.
+        ChainHead six = chainHead(RUN_A);
+        archive.write(RUN_A.toString(), six, segment(six, logged(RUN_A, 7)), next(six, logged(RUN_A, 7)));
 
-        Result result = check.run();
+        ArchiveCheck.Result result = check.run();
 
         assertThat(result.intact()).isTrue();
-        assertThat(chain(result, 0).records()).isEqualTo(6);
-        assertThat(s3.fetched() - before).as("the third segment's bytes only")
-                .isEqualTo(s3.bytes(third.key()).length);
-        assertThat(heads.checked.get(0).head()).isEqualTo(third.end());
+        assertThat(result.complete()).isTrue();
+        assertThat(result.checkpoints().late()).isFalse();
+        ArchiveCheck.ChainResult a = chain(result, RUN_A);
+        assertThat(a.verified().head().sequence()).as("to the checkpoint's head, not the segment after it")
+                .isEqualTo(6);
+        assertThat(a.records()).isEqualTo(6);
+        assertThat(a.verified().highest()).isEqualTo(6);
+        assertThat(a.verified().through()).isEqualTo(6);
+        assertThat(chain(result, RUN_B).verified().highest()).isEqualTo(2);
     }
 
     @Test
-    void aChangedRecordIsFoundAndTheVerifiedHeadStaysWhereItWas() throws IOException {
-        Segment first = segment(P0, 5);
-        heads.anchor(0, first);
+    void aLaterRunReadsOnlyWhatWasWrittenSinceAndAFreshCheckReadsItsStateFromTheBucket() {
+        offer(RUN_A, range(1, 30));
+        sink.tick();
         check.run();
-        Segment second = segment(P0, 5);
-        heads.anchor(0, second);
-        String text = new String(s3.bytes(second.key()), UTF_8);
-        s3.overwrite(second.key(), text.replaceFirst("2026", "2027").getBytes(UTF_8));
+        long fetched = s3.fetched();
 
-        Result result = check.run();
-        Result again = check.run();
+        offer(RUN_A, range(31, 33));
+        sink.tick();
+        ArchiveCheck.Result later = new ArchiveCheck(archive, clock).run();
+
+        assertThat(chain(later, RUN_A).records()).isEqualTo(3);
+        assertThat(chain(later, RUN_A).verified().through()).isEqualTo(33);
+        assertThat(s3.fetched() - fetched).as("the new segment, the new checkpoint and the state: a fraction")
+                .isLessThan(fetched / 3);
+    }
+
+    @Test
+    void numbersMissingFromARunAreReportedOnceTheyHaveBeenMissingForTwoIntervalsAndALateOneFillsItsGap() {
+        offer(RUN_A, 1, 2, 5, 6);
+        sink.tick();
+        ArchiveCheck.Result first = check.run();
+        assertThat(chain(first, RUN_A).missing()).as("not yet: a late record may still land").isEmpty();
+        assertThat(chain(first, RUN_A).verified().missing()).hasSize(1);
+        assertThat(chain(first, RUN_A).verified().through()).isEqualTo(2);
+
+        clock.advance(INTERVAL.multipliedBy(2).plusSeconds(1));
+        offer(RUN_A, 3);
+        sink.tick();
+        ArchiveCheck.Result later = check.run();
+
+        assertThat(chain(later, RUN_A).missing()).containsExactly(new ArchiveCheck.Range(4, 4));
+        assertThat(later.complete()).isFalse();
+        assertThat(later.intact()).as("nothing archived was changed").isTrue();
+        assertThat(chain(later, RUN_A).verified().through()).isEqualTo(3);
+    }
+
+    @Test
+    void aRecordSentAgainIsARepeatNotAGap() {
+        offer(RUN_A, range(1, 4));
+        sink.finish();
+        // A writer that restarted does not know what its predecessor took.
+        ArchiveSink restarted = new ArchiveSink(archive, 3, Duration.ofMinutes(1), INTERVAL, 1000, clock);
+        restarted.offer(List.of(logged(RUN_A, 3), logged(RUN_A, 4), logged(RUN_A, 5)));
+        restarted.finish();
+
+        ArchiveCheck.Result result = check.run();
+
+        ArchiveCheck.ChainResult a = chain(result, RUN_A);
+        assertThat(a.verified().repeats()).isEqualTo(2);
+        assertThat(a.missing()).isEmpty();
+        assertThat(a.verified().through()).isEqualTo(5);
+        assertThat(result.intact()).isTrue();
+    }
+
+    @Test
+    void aRunThatEndsWithEveryNumberIsDoneAndOneThatStopsWithoutItsEndIsUnendedAfterADay() {
+        offer(RUN_A, range(1, 4));
+        sink.offer(List.of(ended(RUN_A, 5)));
+        offer(RUN_B, range(1, 2));
+        clock.advance(Duration.ofMinutes(2));
+        sink.tick();
+        ArchiveCheck.Result first = check.run();
+        assertThat(chain(first, RUN_A).verified().ended()).isTrue();
+        assertThat(chain(first, RUN_A).verified().done()).isTrue();
+        assertThat(chain(first, RUN_B).unended()).isFalse();
+
+        clock.advance(ArchiveCheck.UNENDED_AFTER.plusMinutes(1));
+        sink.tick();
+        ArchiveCheck.Result dayLater = check.run();
+
+        assertThat(chain(dayLater, RUN_B).unended()).isTrue();
+        assertThat(chain(dayLater, RUN_A).unended()).isFalse();
+        assertThat(dayLater.complete()).isFalse();
+        assertThat(dayLater.intact()).isTrue();
+    }
+
+    @Test
+    void aChangedRecordIsFoundAndTheVerifiedHeadStaysWhereItWas() {
+        offer(RUN_A, range(1, 3));
+        sink.tick();
+        check.run();
+        offer(RUN_A, range(4, 6));
+        sink.tick();
+        String key = archive.segments(RUN_A.toString()).getLast().key();
+        byte[] bytes = s3.bytes(key);
+        bytes[bytes.length - 10] ^= 1;
+        s3.overwrite(key, bytes);
+
+        ArchiveCheck.Result result = check.run();
 
         assertThat(result.intact()).isFalse();
-        assertThat(chain(result, 0).broken()).hasValueSatisfying(why -> assertThat(why).contains("HASH_MISMATCH"));
-        assertThat(heads.checked.get(0).head()).as("kept at the last head verified").isEqualTo(first.end());
-        assertThat(chain(again, 0).broken()).as("found again on every run").isPresent();
+        assertThat(chain(result, RUN_A).problems()).singleElement().asString().contains("after record 3");
+        assertThat(chain(result, RUN_A).verified().head().sequence()).isEqualTo(3);
+        assertThat(chain(check.run(), RUN_A).problems()).as("found again on every run").hasSize(1);
     }
 
     @Test
-    void anAnchorPastTheArchivesLastSegmentIsALostTail() throws IOException {
-        Segment first = segment(P0, 5);
-        heads.anchors.put(0, new Anchor(first.nextOffset() + 3, new ChainHead(first.end().sequence() + 3,
-                "1".repeat(64))));
+    void aDeleteMarkerAndASecondVersionOnASegmentKeyAreReported() {
+        offer(RUN_A, range(1, 3));
+        sink.tick();
+        String key = archive.segments(RUN_A.toString()).getFirst().key();
+        s3.client().deleteObject(b -> b.bucket("audit-archive").key(key));
+        s3.client().putObject(b -> b.bucket("audit-archive").key(key).ifNoneMatch("*"),
+                RequestBody.fromString("forged\n"));
 
-        Result result = check.run();
+        ArchiveCheck.Result result = check.run();
 
-        assertThat(chain(result, 0).broken()).hasValueSatisfying(why -> assertThat(why)
-                .contains("no segment of the chain ends there"));
-        assertThat(heads.checked).isEmpty();
+        assertThat(result.intact()).isFalse();
+        assertThat(chain(result, RUN_A).problems()).anyMatch(p -> p.startsWith("a delete marker on " + key))
+                .anyMatch(p -> p.startsWith("a second version of " + key));
+        assertThat(chain(result, RUN_A).verified().head().sequence()).as("read by the first version all the same")
+                .isEqualTo(3);
     }
 
     @Test
-    void aChainWithNothingAnchoredHasNothingVerified() throws IOException {
-        segment(P0, 5);
+    void aWriterThatStopsShowsAsALateCheckpoint() {
+        assertThat(check.run().checkpoints().late()).as("no checkpoint at all").isTrue();
+        sink.tick();
+        assertThat(check.run().checkpoints().late()).isFalse();
 
-        Result result = check.run();
+        clock.advance(INTERVAL.multipliedBy(2).plusSeconds(1));
+        ArchiveCheck.Result result = check.run();
 
+        assertThat(result.checkpoints().late()).isTrue();
+        assertThat(result.intact()).isFalse();
+        sink.tick();
+        assertThat(check.run().checkpoints().late()).as("an idle writer still checkpoints").isFalse();
+    }
+
+    @Test
+    void aCheckpointThatDoesNotFollowTheOneBeforeOrGivesAChainAShorterHeadIsReported() {
+        offer(RUN_A, range(1, 6));
+        sink.tick();
+        ArchiveCheck.Result before = check.run();
+        assertThat(before.intact()).isTrue();
+        clock.advance(Duration.ofSeconds(1));
+        ChainHead three = archive.segments(RUN_A.toString()).getFirst().end();
+        archive.writeCheckpoint(clock.instant(), new Checkpoint("forger", clock.instant(), INTERVAL,
+                ObjectLockArchive.MINIMUM_RETENTION, Optional.of(new Checkpoint.Link("audit/checkpoints/x", "00")),
+                List.of(new Checkpoint.Anchor(RUN_A.toString(), three, "k"))).toJson());
+
+        ArchiveCheck.Result result = check.run();
+
+        assertThat(result.checkpoints().problems()).anyMatch(p -> p.contains("as the one before it"))
+                .anyMatch(p -> p.contains("short of"));
+        assertThat(result.intact()).isFalse();
+    }
+
+    @Test
+    void aSegmentNoCheckpointCoversIsReportedOnceItIsOlderThanTwoIntervals() {
+        archive.write(RUN_A.toString(), ChainHead.GENESIS, segment(ChainHead.GENESIS, logged(RUN_A, 1)),
+                next(ChainHead.GENESIS, logged(RUN_A, 1)));
+        sink.tick();
+        assertThat(chain(check.run(), RUN_A).problems()).isEmpty();
+
+        clock.advance(INTERVAL.multipliedBy(2).plusSeconds(1));
+        sink.tick();
+
+        assertThat(chain(check.run(), RUN_A).problems()).singleElement().asString()
+                .contains("no checkpoint covers it");
+    }
+
+    @Test
+    void aRecordOfAnotherRunInARunsChainIsReported() {
+        ChainHead end = next(ChainHead.GENESIS, logged(RUN_B, 1));
+        ObjectLockArchive.Segment forged = archive.write(RUN_A.toString(), ChainHead.GENESIS,
+                segment(ChainHead.GENESIS, logged(RUN_B, 1)), end);
+        archive.writeCheckpoint(clock.instant(), new Checkpoint("w", clock.instant(), INTERVAL,
+                ObjectLockArchive.MINIMUM_RETENTION, Optional.empty(),
+                List.of(new Checkpoint.Anchor(RUN_A.toString(), end, forged.key()))).toJson());
+
+        assertThat(chain(check.run(), RUN_A).problems()).singleElement().asString()
+                .contains("belongs to run " + RUN_B);
+    }
+
+    @Test
+    void recordsWithNoStampGoToTheWritersOwnChainAndVerify() {
+        sink.offer(List.of(EventCodec.encode(SampleEvents.events().getFirst()),
+                EventCodec.encode(SampleEvents.events().get(1))));
+        sink.finish();
+
+        ArchiveCheck.Result result = check.run();
+
+        ArchiveCheck.ChainResult unstamped = result.chains().getFirst();
+        assertThat(unstamped.chain()).isEqualTo("unstamped-" + sink.writer());
+        assertThat(unstamped.run()).isFalse();
+        assertThat(unstamped.verified().head().sequence()).isEqualTo(2);
         assertThat(result.intact()).isTrue();
-        assertThat(chain(result, 0).verified()).isEmpty();
-        assertThat(heads.checked).isEmpty();
+        assertThat(result.complete()).isTrue();
     }
 
-    @Test
-    void whatWasVerifiedIsKeptAsACommittedOffsetsMetadata() {
-        Checked checked = new Checked(new ChainHead(12, "ab".repeat(32)), 40, "audit/nuna.catalog.audit-0/x.log", NOW);
-
-        assertThat(Checked.parse(40, checked.metadata())).contains(checked);
-        assertThat(Checked.parse(0, new Checked(ChainHead.GENESIS, 0, null, NOW).metadata()))
-                .contains(new Checked(ChainHead.GENESIS, 0, null, NOW));
-        assertThat(Checked.parse(40, "12:" + "ab".repeat(32))).as("the archive consumer's own anchor").isEmpty();
-        assertThat(Checked.parse(40, null)).isEmpty();
+    /** The head of the run's chain as the archive holds it. */
+    private ChainHead chainHead(UUID run) {
+        return archive.last(run.toString()).orElseThrow().end();
     }
 
-    @Test
-    void placesARecordByItsOffsetWithItsNeighbours() throws IOException {
-        // The chain starts at offset 100: older records were gone from the topic when archiving began.
-        nextOffsets.put(P0, 100L);
-        segment(P0, 4);
-        segment(P0, 3);
-        List<String[]> lines = lines(P0);
-        List<CatalogEvent> events = written.get(P0);
-
-        Placement middle = archive.place(P0, 101, events.get(1).id().toString(), 10_000).orElseThrow();
-        assertThat(middle.sequence()).isEqualTo(2);
-        assertThat(middle.hash()).isEqualTo(lines.get(1)[0]);
-        assertThat(middle.previous()).isEqualTo(lines.get(0)[0]);
-        assertThat(middle.next()).contains(lines.get(2)[0]);
-        assertThat(middle.holds()).isTrue();
-
-        Placement lastOfFirst = archive.place(P0, 103, events.get(3).id().toString(), 10_000).orElseThrow();
-        assertThat(lastOfFirst.next()).as("the next segment's first record").contains(lines.get(4)[0]);
-        Placement firstOfSecond = archive.place(P0, 104, events.get(4).id().toString(), 2).orElseThrow();
-        assertThat(firstOfSecond.previous()).as("the segment's start head").isEqualTo(lines.get(3)[0]);
-        assertThat(firstOfSecond.segment().start().sequence()).isEqualTo(4);
-        Placement newest = archive.place(P0, 106, events.get(6).id().toString(), 10_000).orElseThrow();
-        assertThat(newest.next()).as("the chain's last record so far").isEmpty();
-
-        assertThat(archive.place(P0, 107, "not-archived-yet", 10_000)).isEmpty();
-        assertThat(archive.place(P0, 99, "before-the-archive", 10_000)).isEmpty();
-        assertThat(archive.place(P1, 0, "no-chain", 10_000)).isEmpty();
-    }
-
-    @Test
-    void aPlacedRecordWhoseHashNoLongerHoldsSaysSo() throws IOException {
-        Segment first = segment(P0, 4);
-        CatalogEvent third = written.get(P0).get(2);
-        String text = new String(s3.bytes(first.key()), UTF_8);
-        String[] records = text.split("\n");
-        records[2] = records[2].replace("\"time\":\"2026", "\"time\":\"2027");
-        s3.overwrite(first.key(), (String.join("\n", records) + "\n").getBytes(UTF_8));
-
-        Placement placed = archive.place(P0, 2, third.id().toString(), 10_000).orElseThrow();
-
-        assertThat(placed.holds()).isFalse();
-        assertThat(archive.place(P0, 1, written.get(P0).get(1).id().toString(), 10_000).orElseThrow().holds())
-                .isTrue();
-    }
-
-    // ---- helpers ----
-
-    /** Writes a segment of {@code count} new records to the chain, continuing from its head and offset. */
-    private Segment segment(String chain, int count) throws IOException {
-        ChainHead start = ends.getOrDefault(chain, ChainHead.GENESIS);
-        List<CatalogEvent> events = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            events.add(SampleEvents.event(SampleEvents.oneOfEachType().get(n % 8), ++n));
+    private static byte[] segment(ChainHead from, byte[] record) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try {
+            new ArchiveWriter(out, from).appendLogged(List.of(record));
+        } catch (IOException e) {
+            throw new AssertionError(e);
         }
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        ChainHead end = new ArchiveWriter(bytes, start).append(events);
-        long next = nextOffsets.getOrDefault(chain, 0L) + count;
-        Segment segment = archive.write(chain, start, bytes.toByteArray(), end, next);
-        ends.put(chain, end);
-        nextOffsets.put(chain, next);
-        written.computeIfAbsent(chain, c -> new ArrayList<>()).addAll(events);
-        return segment;
+        return out.toByteArray();
     }
 
-    /** Every record of the chain as stored: its hash and its body. */
-    private List<String[]> lines(String chain) {
-        List<String[]> lines = new ArrayList<>();
-        for (Segment segment : archive.segments(chain)) {
-            for (String line : new String(s3.bytes(segment.key()), UTF_8).split("\n")) {
-                lines.add(line.split(" ", 2));
-            }
+    private static ChainHead next(ChainHead from, byte[] record) {
+        try {
+            return new ArchiveWriter(new ByteArrayOutputStream(), from).appendLogged(List.of(record));
+        } catch (IOException e) {
+            throw new AssertionError(e);
         }
-        return lines;
     }
 
-    private static ChainResult chain(Result result, int partition) {
-        return result.chains().stream().filter(c -> c.partition() == partition).findFirst().orElseThrow();
-    }
+    /** A clock the test moves. */
+    static final class MovingClock extends Clock {
 
-    /** The anchors and the verified heads, in memory: the server keeps them in Kafka. */
-    private static final class FakeHeads implements ArchiveCheck.Heads {
+        private Instant now;
 
-        final Map<Integer, Anchor> anchors = new HashMap<>();
-        final Map<Integer, Checked> checked = new HashMap<>();
+        MovingClock(Instant now) {
+            this.now = now;
+        }
 
-        void anchor(int partition, Segment segment) {
-            anchors.put(partition, new Anchor(segment.nextOffset(), segment.end()));
+        void advance(Duration by) {
+            now = now.plus(by);
         }
 
         @Override
-        public List<Integer> partitions() {
-            return List.of(0, 1);
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
         }
 
         @Override
-        public Map<Integer, Anchor> anchors() {
-            return Map.copyOf(anchors);
+        public Clock withZone(ZoneId zone) {
+            return this;
         }
 
         @Override
-        public Map<Integer, Checked> checked() {
-            return Map.copyOf(checked);
-        }
-
-        @Override
-        public void record(Map<Integer, Checked> verified) {
-            checked.putAll(verified);
+        public Instant instant() {
+            return now;
         }
     }
 }

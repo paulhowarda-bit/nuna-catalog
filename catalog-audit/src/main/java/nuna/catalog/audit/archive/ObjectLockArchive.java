@@ -7,9 +7,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -22,23 +24,33 @@ import java.util.function.Consumer;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry;
 import software.amazon.awssdk.services.s3.model.GetObjectLockConfigurationResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectLockEnabled;
 import software.amazon.awssdk.services.s3.model.ObjectLockMode;
 import software.amazon.awssdk.services.s3.model.ObjectVersion;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
- * The audit archive (D23): hash-chained segments in an S3 bucket with Object Lock, each written once
- * in COMPLIANCE mode and kept at least seven years (nuna's policy, D23), longer where configured (CMP-1). No
- * one, root included, can shorten the retention or delete a locked version before it lapses.
+ * The audit archive (D23, amended 2026-11-25): the records of the log {@code nuna.audit} in an S3 bucket with Object
+ * Lock, each object written once in COMPLIANCE mode and kept at least seven years (nuna's policy, D23), longer where
+ * configured (CMP-1). No one, root included, can shorten the retention or delete a locked version before it lapses.
  *
- * <p>Each chain (one per audit-topic partition) is a run of segments under
- * {@code <prefix>/<chain>/}, named by the sequence number of their first record. A segment's user
- * metadata records the chain heads it starts from and ends at and the next topic offset to archive,
- * so a restarted consumer resumes exactly where the last segment ended. Segments are listed by
- * version, so a delete marker cannot hide one.
+ * <p>Under the archive's prefix:
+ * <ul>
+ * <li>{@code runs/<chain>/<first sequence>.log}: the segments of one hash chain. A chain holds one catalog server run's
+ * records ({@link nuna.catalog.audit.LogStamp}), named by the run, or the records of servers that stamped none,
+ * {@code unstamped-<writer>}. A segment's user metadata records the chain heads it starts from and ends at.</li>
+ * <li>{@code checkpoints/<day>/<time>.json}: the archive writer's checkpoints ({@link Checkpoint}), locked like the
+ * segments, each naming the one before it: the heads of the chains it wrote, outside the chains themselves.</li>
+ * <li>{@code check/state.json}: how far the archive check has verified ({@link ArchiveCheck}), unlocked and
+ * overwritten by each run; losing it costs one read of the archive from the start.</li>
+ * </ul>
+ *
+ * <p>Objects are listed by version, so a delete marker hides nothing, and read by their first version, so a later
+ * version written over a delete marker replaces nothing; both are reported ({@link #strays}).
  */
 public final class ObjectLockArchive {
 
@@ -49,7 +61,21 @@ public final class ObjectLockArchive {
     static final String START_HASH = "chain-start-hash";
     static final String END_SEQUENCE = "chain-end-sequence";
     static final String END_HASH = "chain-end-hash";
-    static final String NEXT_OFFSET = "next-offset";
+
+    static final String RUNS = "runs";
+    static final String CHECKPOINTS = "checkpoints";
+    static final String STATE = "check/state.json";
+
+    /**
+     * Checkpoint keys sort as they were written: a folder per UTC day, then the time to the millisecond, so the newest
+     * is found without listing every checkpoint since the archive began.
+     */
+    private static final DateTimeFormatter CHECKPOINT_TIME = DateTimeFormatter.ofPattern("yyyyMMdd/HHmmss.SSS'Z'")
+            .withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter CHECKPOINT_DAY = DateTimeFormatter.ofPattern("yyyyMMdd")
+            .withZone(ZoneOffset.UTC);
+    /** How many days back from today the newest checkpoint is looked for, a day at a time, before every one is listed. */
+    private static final int CHECKPOINT_DAYS_BACK = 31;
 
     /**
      * How many bytes of a chain a read holds at once besides the record it is checking: one buffer of the stream from
@@ -60,13 +86,32 @@ public final class ObjectLockArchive {
     /**
      * One written segment.
      *
-     * @param key        its object key
-     * @param versionId  its object version
-     * @param start      the head its first record links to
-     * @param end        the head after its last record
-     * @param nextOffset the first topic offset not in this or any earlier segment of the chain
+     * @param key       its object key
+     * @param versionId its object version: the first written under the key
+     * @param start     the head its first record links to
+     * @param end       the head after its last record
+     * @param written   when the store took it
      */
-    public record Segment(String key, String versionId, ChainHead start, ChainHead end, long nextOffset) {
+    public record Segment(String key, String versionId, ChainHead start, ChainHead end, Instant written) {
+    }
+
+    /**
+     * A version under the archive's prefix that is not the first version of its key: a delete marker, or a later
+     * version written after one. Neither can hide or replace a locked first version, but neither should exist.
+     *
+     * @param deleteMarker whether it is a delete marker rather than a later version
+     */
+    public record Stray(String key, String versionId, boolean deleteMarker, Instant at) {
+    }
+
+    /**
+     * One object read by its first version.
+     *
+     * @param key       its object key
+     * @param versionId its first version
+     * @param written   when the store took it
+     */
+    public record Stored(String key, String versionId, Instant written) {
     }
 
     private final S3Client s3;
@@ -78,8 +123,8 @@ public final class ObjectLockArchive {
     private final int readBuffer;
 
     /**
-     * @param prefix    the key prefix every chain lives under, without a trailing slash
-     * @param retention how long each segment is locked; at least {@link #MINIMUM_RETENTION}
+     * @param prefix    the key prefix the archive lives under, without a trailing slash
+     * @param retention how long each segment and checkpoint is locked; at least {@link #MINIMUM_RETENTION}
      */
     public ObjectLockArchive(S3Client s3, String bucket, String prefix, Duration retention, Clock clock) {
         this(s3, bucket, prefix, retention, clock, ObjectLockMode.COMPLIANCE);
@@ -87,7 +132,7 @@ public final class ObjectLockArchive {
 
     /**
      * For tests on real AWS only: GOVERNANCE mode, so the test can delete what it wrote. Never reachable from
-     * the server, which always locks in COMPLIANCE mode (D23).
+     * the writer, which always locks in COMPLIANCE mode (D23).
      */
     ObjectLockArchive(S3Client s3, String bucket, String prefix, Duration retention, Clock clock, ObjectLockMode mode) {
         this(s3, bucket, prefix, retention, clock, mode, READ_BUFFER);
@@ -112,6 +157,11 @@ public final class ObjectLockArchive {
         }
     }
 
+    /** How long each object is locked. */
+    public Duration retention() {
+        return retention;
+    }
+
     /** @throws IllegalStateException unless the bucket has Object Lock enabled, which only bucket creation can turn on */
     public void checkBucket() {
         GetObjectLockConfigurationResponse lock;
@@ -128,37 +178,50 @@ public final class ObjectLockArchive {
     }
 
     /**
-     * Writes one segment, locked in COMPLIANCE mode until now plus the retention. Refuses to replace an
-     * existing segment.
+     * Writes one segment, locked in COMPLIANCE mode until now plus the retention. Refuses to replace an existing
+     * segment: an S3Exception with status 412 when the key holds one ({@link #segmentAt} tells whether it is this one).
      *
      * @param records the chained records, as {@link ArchiveWriter} wrote them from {@code start} to {@code end}
      */
-    public Segment write(String chain, ChainHead start, byte[] records, ChainHead end, long nextOffset) {
+    public Segment write(String chain, ChainHead start, byte[] records, ChainHead end) {
         if (end.sequence() <= start.sequence()) {
             throw new IllegalArgumentException("a segment holds at least one record");
         }
         String key = key(chain, start.sequence() + 1);
         Map<String, String> metadata = Map.of(
                 START_SEQUENCE, Long.toString(start.sequence()), START_HASH, start.hash(),
-                END_SEQUENCE, Long.toString(end.sequence()), END_HASH, end.hash(),
-                NEXT_OFFSET, Long.toString(nextOffset));
-        String version = s3.putObject(b -> b.bucket(bucket).key(key)
+                END_SEQUENCE, Long.toString(end.sequence()), END_HASH, end.hash());
+        Instant now = clock.instant();
+        String version = locked(key, "application/x-ndjson", metadata, records, now);
+        return new Segment(key, version, start, end, now);
+    }
+
+    /** The segment whose first record is {@code firstSequence}, if one is stored. */
+    public Optional<Segment> segmentAt(String chain, long firstSequence) {
+        String key = key(chain, firstSequence);
+        Map.Entry<String, ObjectVersion> found = firstVersions(chainPrefix(chain), null, key).lastEntry();
+        return found == null || !found.getKey().equals(key) ? Optional.empty()
+                : Optional.of(segment(found.getValue()));
+    }
+
+    private String locked(String key, String contentType, Map<String, String> metadata, byte[] body, Instant now) {
+        return s3.putObject(b -> b.bucket(bucket).key(key)
                         .ifNoneMatch("*")
-                        .contentType("application/x-ndjson")
+                        .contentType(contentType)
                         .metadata(metadata)
                         .checksumAlgorithm(ChecksumAlgorithm.SHA256)
                         .objectLockMode(mode)
-                        .objectLockRetainUntilDate(clock.instant().plus(retention)),
-                RequestBody.fromBytes(records)).versionId();
-        return new Segment(key, version, start, end, nextOffset);
+                        .objectLockRetainUntilDate(now.plus(retention)),
+                RequestBody.fromBytes(body)).versionId();
     }
 
-    /** The chains in the archive. */
+    /** The chains in the archive, by name. */
     public List<String> chains() {
         List<String> chains = new ArrayList<>();
-        s3.listObjectsV2Paginator(b -> b.bucket(bucket).prefix(prefix + "/").delimiter("/"))
+        String runs = prefix + "/" + RUNS + "/";
+        s3.listObjectsV2Paginator(b -> b.bucket(bucket).prefix(runs).delimiter("/"))
                 .commonPrefixes()
-                .forEach(p -> chains.add(p.prefix().substring(prefix.length() + 1, p.prefix().length() - 1)));
+                .forEach(p -> chains.add(p.prefix().substring(runs.length(), p.prefix().length() - 1)));
         return chains;
     }
 
@@ -173,152 +236,10 @@ public final class ObjectLockArchive {
      */
     public List<Segment> segmentsAfter(String chain, String afterKey) {
         List<Segment> segments = new ArrayList<>();
-        for (ObjectVersion version : firstVersions(chain, afterKey, null).values()) {
-            segments.add(segment(version.key(), version.versionId()));
+        for (ObjectVersion version : firstVersions(chainPrefix(chain), afterKey, null).values()) {
+            segments.add(segment(version));
         }
         return segments;
-    }
-
-    /**
-     * Checks a run of consecutive segments on its own: its records link to one another from {@code start}, the head
-     * the first segment starts from, and end at the last segment's end. After a part of the chain already checked,
-     * that is as good as checking the whole chain again, since a locked segment cannot change (D23).
-     */
-    public Verification verify(List<Segment> run, ChainHead start) {
-        try (InputStream records = new SegmentStream(run)) {
-            return ArchiveVerifier.verify(new BufferedInputStream(records, readBuffer), start,
-                    run.isEmpty() ? start : run.getLast().end(), body -> { });
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    /**
-     * Where a record of the audit topic lies in the archive, for the audit feed (backlog 125).
-     *
-     * @param segment  the segment holding it
-     * @param sequence its sequence number in the chain
-     * @param hash     the hash it stores
-     * @param previous the hash of the record before it: the segment's start head for its first record
-     * @param next     the hash of the record after it; empty while it is the chain's last
-     * @param holds    whether its stored hash is the hash of the one before it and its content
-     */
-    public record Placement(Segment segment, long sequence, String hash, String previous, Optional<String> next,
-                           boolean holds) {
-    }
-
-    /**
-     * The place of the record at {@code offset} of the chain's partition, whose event id is {@code eventId}; empty
-     * when the archive does not hold it yet, or never will (it precedes the archive). The audit topic is written
-     * without transactions, so its offsets run without gaps and a record's sequence is its offset less the chain's
-     * first offset, plus one. The segment that sequence falls in is searched for the record by its event id.
-     *
-     * @param segmentEvents the most records a segment holds, so the listing starts at most that far back
-     */
-    public Optional<Placement> place(String chain, long offset, String eventId, int segmentEvents) {
-        Map.Entry<String, ObjectVersion> firstEntry = firstVersions(chain, null, key(chain, 1)).firstEntry();
-        if (firstEntry == null || !firstEntry.getKey().equals(key(chain, 1))) {
-            return Optional.empty();
-        }
-        Segment first = segment(firstEntry.getKey(), firstEntry.getValue().versionId());
-        long firstOffset = first.nextOffset() - (first.end().sequence() - first.start().sequence());
-        long sequence = offset - firstOffset + 1;
-        if (sequence < 1) {
-            return Optional.empty();
-        }
-        Map.Entry<String, ObjectVersion> holder = firstVersions(chain,
-                key(chain, Math.max(0, sequence - segmentEvents)), key(chain, sequence)).lastEntry();
-        if (holder == null) {
-            holder = firstVersions(chain, null, key(chain, sequence)).lastEntry();
-        }
-        Segment segment = segment(holder.getKey(), holder.getValue().versionId());
-        byte[] id = ("\"id\":\"" + eventId + "\"").getBytes(StandardCharsets.UTF_8);
-        try (InputStream in = new BufferedInputStream(fetch(segment), readBuffer)) {
-            byte[] previous = Chain.HEX.parseHex(segment.start().hash());
-            byte[] line;
-            while ((line = ArchiveVerifier.nextLine(in)) != null) {
-                if (line.length < Chain.HASH_HEX_LENGTH + 2) {
-                    return Optional.empty();
-                }
-                String stored = new String(line, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII);
-                byte[] body = Arrays.copyOfRange(line, Chain.HASH_HEX_LENGTH + 1,
-                        line.length - (line[line.length - 1] == '\n' ? 1 : 0));
-                if (contains(body, id)) {
-                    boolean holds = Chain.HEX.formatHex(Chain.link(previous, body)).equals(stored);
-                    byte[] after = ArchiveVerifier.nextLine(in);
-                    Optional<String> next = after != null && after.length >= Chain.HASH_HEX_LENGTH
-                            ? Optional.of(new String(after, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII))
-                            : firstHashAfter(chain, segment);
-                    return Optional.of(new Placement(segment, sequence(body), stored, Chain.HEX.formatHex(previous),
-                            next, holds));
-                }
-                previous = Chain.HEX.parseHex(stored);
-            }
-            return Optional.empty();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
-
-    /** The hash of the first record of the segment after {@code segment}, if there is one yet. */
-    private Optional<String> firstHashAfter(String chain, Segment segment) throws IOException {
-        Map.Entry<String, ObjectVersion> next = firstVersions(chain, segment.key(), null).firstEntry();
-        if (next == null) {
-            return Optional.empty();
-        }
-        try (InputStream in = s3.getObject(r -> r.bucket(bucket).key(next.getKey())
-                .versionId(next.getValue().versionId()))) {
-            byte[] hash = in.readNBytes(Chain.HASH_HEX_LENGTH);
-            return hash.length == Chain.HASH_HEX_LENGTH
-                    ? Optional.of(new String(hash, StandardCharsets.US_ASCII)) : Optional.empty();
-        }
-    }
-
-    private InputStream fetch(Segment segment) {
-        return s3.getObject(r -> r.bucket(bucket).key(segment.key()).versionId(segment.versionId()));
-    }
-
-    private static long sequence(byte[] body) {
-        int end = 0;
-        while (body[end] != ' ') {
-            end++;
-        }
-        return Long.parseLong(new String(body, 0, end, StandardCharsets.US_ASCII));
-    }
-
-    private static boolean contains(byte[] haystack, byte[] needle) {
-        outer:
-        for (int i = 0; i + needle.length <= haystack.length; i++) {
-            for (int j = 0; j < needle.length; j++) {
-                if (haystack[i + j] != needle[j]) {
-                    continue outer;
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * The first version of each of the chain's segment keys after {@code afterKey} (from the first when null) up to
-     * {@code upTo} inclusive (to the last when null), by key. The listing stops once past {@code upTo}.
-     */
-    private TreeMap<String, ObjectVersion> firstVersions(String chain, String afterKey, String upTo) {
-        TreeMap<String, ObjectVersion> firstVersions = new TreeMap<>();
-        for (ObjectVersion v : s3.listObjectVersionsPaginator(b -> {
-            b.bucket(bucket).prefix(prefix + "/" + chain + "/");
-            if (afterKey != null) {
-                b.keyMarker(afterKey);
-            }
-        }).versions()) {
-            if (upTo != null && v.key().compareTo(upTo) > 0) {
-                break;
-            }
-            if (afterKey == null || v.key().compareTo(afterKey) > 0) {
-                firstVersions.merge(v.key(), v, (a, b) -> a.lastModified().isBefore(b.lastModified()) ? a : b);
-            }
-        }
-        return firstVersions;
     }
 
     /** The chain's last segment, if it has any. */
@@ -327,9 +248,96 @@ public final class ObjectLockArchive {
         return segments.isEmpty() ? Optional.empty() : Optional.of(segments.getLast());
     }
 
+    /** The delete markers and later versions under the chain's keys. */
+    public List<Stray> strays(String chain) {
+        return strays(chainPrefix(chain), null);
+    }
+
+    /** The delete markers and later versions under the checkpoints' keys after {@code afterKey}, or all of them. */
+    public List<Stray> checkpointStrays(String afterKey) {
+        return strays(prefix + "/" + CHECKPOINTS + "/", afterKey);
+    }
+
+    /**
+     * Writes a checkpoint, locked as the segments are, under a key that sorts by {@code at}.
+     *
+     * @return where it went
+     */
+    public Stored writeCheckpoint(Instant at, byte[] json) {
+        String key = prefix + "/" + CHECKPOINTS + "/" + CHECKPOINT_TIME.format(at) + ".json";
+        Instant now = clock.instant();
+        return new Stored(key, locked(key, "application/json", Map.of(), json, now), now);
+    }
+
+    /** The checkpoints after the one keyed {@code afterKey}, oldest first; every checkpoint when it is null. */
+    public List<Stored> checkpointsAfter(String afterKey) {
+        List<Stored> found = new ArrayList<>();
+        firstVersions(prefix + "/" + CHECKPOINTS + "/", afterKey, null).values()
+                .forEach(v -> found.add(new Stored(v.key(), v.versionId(), v.lastModified())));
+        return found;
+    }
+
+    /** The newest checkpoint, if there is one: today's folder first, then a day further back at a time. */
+    public Optional<Stored> lastCheckpoint() {
+        Instant today = clock.instant();
+        for (int back = 0; back <= CHECKPOINT_DAYS_BACK; back++) {
+            String day = prefix + "/" + CHECKPOINTS + "/" + CHECKPOINT_DAY.format(today.minus(Duration.ofDays(back)))
+                    + "/";
+            Map.Entry<String, ObjectVersion> last = firstVersions(day, null, null).lastEntry();
+            if (last != null) {
+                return Optional.of(new Stored(last.getKey(), last.getValue().versionId(),
+                        last.getValue().lastModified()));
+            }
+        }
+        List<Stored> all = checkpointsAfter(null);
+        return all.isEmpty() ? Optional.empty() : Optional.of(all.getLast());
+    }
+
+    /** An object's bytes, as {@code version} of {@code key} holds them. */
+    public byte[] read(String key, String version) {
+        return s3.getObjectAsBytes(b -> b.bucket(bucket).key(key).versionId(version)).asByteArray();
+    }
+
+    /** What the archive check last kept, if anything. */
+    public Optional<byte[]> readCheckState() {
+        try {
+            return Optional.of(s3.getObjectAsBytes(b -> b.bucket(bucket).key(prefix + "/" + STATE)).asByteArray());
+        } catch (NoSuchKeyException e) {
+            return Optional.empty();
+        }
+    }
+
+    /** Keeps what the archive check verified, over what it kept before; unlocked, so the next run can replace it. */
+    public void writeCheckState(byte[] json) {
+        s3.putObject(b -> b.bucket(bucket).key(prefix + "/" + STATE).contentType("application/json")
+                .checksumAlgorithm(ChecksumAlgorithm.SHA256), RequestBody.fromBytes(json));
+    }
+
+    /**
+     * Checks a run of consecutive segments on its own: its records link to one another from {@code start}, the head
+     * the first segment starts from, and end at the last segment's end. After a part of the chain already checked,
+     * that is as good as checking the whole chain again, since a locked segment cannot change (D23).
+     */
+    public Verification verify(List<Segment> run, ChainHead start) {
+        return verify(run, start, body -> { });
+    }
+
+    /**
+     * As {@link #verify(List, ChainHead)}, handing {@code verified} each record's body, {@code <sequence> SP <event
+     * JSON>}, once its hash checks.
+     */
+    public Verification verify(List<Segment> run, ChainHead start, Consumer<byte[]> verified) {
+        try (InputStream records = new SegmentStream(run)) {
+            return ArchiveVerifier.verify(new BufferedInputStream(records, readBuffer), start,
+                    run.isEmpty() ? start : run.getLast().end(), verified);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     /**
      * Checks the whole chain from genesis: every record links to the one before it, across segments,
-     * and the chain ends at {@code anchor}, a head kept outside the archive, or else at the last
+     * and the chain ends at {@code anchor}, a head kept outside the chain, or else at the last
      * segment's recorded end.
      */
     public Verification verify(String chain, Optional<ChainHead> anchor) {
@@ -383,7 +391,8 @@ public final class ObjectLockArchive {
         List<Segment> segments = segments(chain);
         try (InputStream records = new SegmentStream(segments)) {
             Verification verification = ArchiveVerifier.verify(new BufferedInputStream(records, readBuffer),
-                    ChainHead.GENESIS, expected(segments, anchor), verified);
+                    ChainHead.GENESIS, anchor.orElse(segments.isEmpty() ? ChainHead.GENESIS : segments.getLast().end()),
+                    verified);
             // Fetch the segments after a break too, as the read that fetched every segment before checking any did:
             // a segment the store cannot serve still fails the read as unreadable before the break fails it as broken.
             records.transferTo(OutputStream.nullOutputStream());
@@ -393,17 +402,71 @@ public final class ObjectLockArchive {
         }
     }
 
-    /** The event a verified record's body ({@code <sequence> SP <event JSON>}) holds. */
-    private static CatalogEvent event(byte[] body) {
+    /** The record JSON of a verified record's body, {@code <sequence> SP <event JSON>}. */
+    static byte[] json(byte[] body) {
         int space = 0;
         while (body[space] != ' ') {
             space++;
         }
-        return EventCodec.decode(Arrays.copyOfRange(body, space + 1, body.length));
+        return Arrays.copyOfRange(body, space + 1, body.length);
     }
 
-    private static ChainHead expected(List<Segment> segments, Optional<ChainHead> anchor) {
-        return anchor.orElse(segments.isEmpty() ? ChainHead.GENESIS : segments.getLast().end());
+    private static CatalogEvent event(byte[] body) {
+        return EventCodec.decode(json(body));
+    }
+
+    /**
+     * The first version of each key under {@code under} after {@code afterKey} (from the first when null) up to
+     * {@code upTo} inclusive (to the last when null), by key. The listing stops once past {@code upTo}.
+     */
+    private TreeMap<String, ObjectVersion> firstVersions(String under, String afterKey, String upTo) {
+        TreeMap<String, ObjectVersion> firstVersions = new TreeMap<>();
+        for (ObjectVersion v : s3.listObjectVersionsPaginator(b -> {
+            b.bucket(bucket).prefix(under);
+            if (afterKey != null) {
+                b.keyMarker(afterKey);
+            }
+        }).versions()) {
+            if (upTo != null && v.key().compareTo(upTo) > 0) {
+                break;
+            }
+            if (afterKey == null || v.key().compareTo(afterKey) > 0) {
+                firstVersions.merge(v.key(), v, (a, b) -> a.lastModified().isBefore(b.lastModified()) ? a : b);
+            }
+        }
+        return firstVersions;
+    }
+
+    /** Every delete marker under {@code under}, and every version of a key but its first. */
+    private List<Stray> strays(String under, String afterKey) {
+        List<Stray> strays = new ArrayList<>();
+        Map<String, ObjectVersion> first = new TreeMap<>();
+        List<ObjectVersion> later = new ArrayList<>();
+        var pages = s3.listObjectVersionsPaginator(b -> {
+            b.bucket(bucket).prefix(under);
+            if (afterKey != null) {
+                b.keyMarker(afterKey);
+            }
+        });
+        pages.forEach(page -> {
+            for (ObjectVersion v : page.versions()) {
+                ObjectVersion was = first.get(v.key());
+                if (was == null) {
+                    first.put(v.key(), v);
+                } else if (v.lastModified().isBefore(was.lastModified())) {
+                    first.put(v.key(), v);
+                    later.add(was);
+                } else {
+                    later.add(v);
+                }
+            }
+            for (DeleteMarkerEntry marker : page.deleteMarkers()) {
+                strays.add(new Stray(marker.key(), marker.versionId(), true, marker.lastModified()));
+            }
+        });
+        later.forEach(v -> strays.add(new Stray(v.key(), v.versionId(), false, v.lastModified())));
+        strays.sort(java.util.Comparator.comparing(Stray::key).thenComparing(Stray::at));
+        return strays;
     }
 
     /** A chain's segments as one stream, each fetched only once the one before it has been read to its end. */
@@ -440,19 +503,24 @@ public final class ObjectLockArchive {
         }
     }
 
-    private Segment segment(String key, String versionId) {
-        HeadObjectResponse head = s3.headObject(b -> b.bucket(bucket).key(key).versionId(versionId));
+    private Segment segment(ObjectVersion version) {
+        HeadObjectResponse head = s3.headObject(b -> b.bucket(bucket).key(version.key())
+                .versionId(version.versionId()));
         Map<String, String> metadata = head.metadata();
-        return new Segment(key, versionId,
+        return new Segment(version.key(), version.versionId(),
                 new ChainHead(Long.parseLong(metadata.get(START_SEQUENCE)), metadata.get(START_HASH)),
                 new ChainHead(Long.parseLong(metadata.get(END_SEQUENCE)), metadata.get(END_HASH)),
-                Long.parseLong(metadata.get(NEXT_OFFSET)));
+                version.lastModified());
     }
 
-    private String key(String chain, long firstSequence) {
+    private String chainPrefix(String chain) {
         if (chain.isEmpty() || chain.contains("/")) {
             throw new IllegalArgumentException("a chain name is non-empty and has no slash: " + chain);
         }
-        return prefix + "/" + chain + "/" + String.format("%019d", firstSequence) + ".log";
+        return prefix + "/" + RUNS + "/" + chain + "/";
+    }
+
+    private String key(String chain, long firstSequence) {
+        return chainPrefix(chain) + String.format("%019d", firstSequence) + ".log";
     }
 }

@@ -31,17 +31,34 @@ public final class ArchiveWriter {
 
     /** Writes the events in order and flushes; returns the new head. */
     public ChainHead append(List<CatalogEvent> events) throws IOException {
+        return appendLogged(events.stream().map(EventCodec::encode).toList());
+    }
+
+    /**
+     * Writes the records in order, each the JSON of one CloudEvent as the log holds it, kept byte for byte, and
+     * flushes; returns the new head.
+     *
+     * @throws IllegalArgumentException if a record is empty or breaks a line, which would break the chain's format;
+     *                                  nothing is written then
+     */
+    public ChainHead appendLogged(List<byte[]> logged) throws IOException {
+        for (byte[] record : logged) {
+            if (!fitsOnALine(record)) {
+                throw new IllegalArgumentException("an archived record is one line of JSON, not empty and with no"
+                        + " line break");
+            }
+        }
         if (failed) {
             throw new IllegalStateException("an earlier write to this segment failed; verify it and resume from its head");
         }
         ByteArrayOutputStream records = new ByteArrayOutputStream();
         byte[] hash = Chain.HEX.parseHex(head.hash());
         long sequence = head.sequence();
-        for (CatalogEvent event : events) {
+        for (byte[] record : logged) {
             sequence++;
             ByteArrayOutputStream body = new ByteArrayOutputStream();
             body.writeBytes((sequence + " ").getBytes(US_ASCII));
-            body.writeBytes(EventCodec.encode(event));
+            body.writeBytes(record);
             hash = Chain.link(hash, body.toByteArray());
             records.writeBytes(Chain.HEX.formatHex(hash).getBytes(US_ASCII));
             records.write(' ');
@@ -61,5 +78,18 @@ public final class ArchiveWriter {
 
     public ChainHead head() {
         return head;
+    }
+
+    /** Whether {@code record} can be archived as it is: not empty, and no line feed or carriage return in it. */
+    public static boolean fitsOnALine(byte[] record) {
+        if (record.length == 0) {
+            return false;
+        }
+        for (byte b : record) {
+            if (b == '\n' || b == '\r') {
+                return false;
+            }
+        }
+        return true;
     }
 }

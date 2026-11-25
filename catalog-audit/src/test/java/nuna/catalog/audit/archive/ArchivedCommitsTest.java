@@ -79,7 +79,7 @@ class ArchivedCommitsTest {
             ChainHead start = head;
             head = new ArchiveWriter(records, start).append(List.of(events).subList(from,
                     Math.min(events.length, from + perSegment)));
-            archive.write(chain, start, records.toByteArray(), head, head.sequence());
+            archive.write(chain, start, records.toByteArray(), head);
         }
     }
 
