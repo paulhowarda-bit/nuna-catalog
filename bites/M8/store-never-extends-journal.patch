@@ -1,18 +1,19 @@
-Breaks: the server's store migrates PostgreSQL with the shared steps only, as a backend without journal partitions:
-PostgreSQL never reaches V4 (journal partitions), and nothing extends them, so the server still starts.
+Breaks: the server's store takes PostgreSQL for a backend that does not partition its journal, so it never extends
+the partitions V4 made: the journal has no months ahead. It replaces store-skips-postgresql-steps, whose break (the
+shared steps only) no longer lets the server start, since a PostgreSQL step adds columns it reads (backlog 228).
 Module: catalog-server
 Test: SchemaAtStartupTest
 
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java
-index fbac17c..0c455f8 100644
+index 8acdc8c3..8f8087f7 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java
 @@ -15,7 +15,7 @@ import java.sql.Statement;
  enum Backend {
- 
+
      /** The shared steps, then the journal's partitioning. */
 -    POSTGRESQL(new String[] {Locations.SHARED, "classpath:nuna/store/sql/postgresql"}, true, true, true),
-+    POSTGRESQL(new String[] {Locations.SHARED}, true, false, true),
++    POSTGRESQL(new String[] {Locations.SHARED, "classpath:nuna/store/sql/postgresql"}, true, false, true),
      /** Its own steps, in CockroachDB's dialect; its journal splits into ranges by itself. */
      COCKROACHDB(new String[] {"classpath:nuna/store/sql/cockroachdb"}, false, false, false);
- 
+

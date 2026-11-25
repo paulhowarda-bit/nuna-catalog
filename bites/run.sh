@@ -150,6 +150,12 @@ judge() {
         echo "SETUP: the test task did not run"
         return
     fi
+    # A test JVM that died (out of heap, say) leaves result files that prove nothing: on 2026-11-24
+    # one that ran out of heap after 48 minutes left one that passed (backlog 226).
+    if grep -q "^Gradle Test Executor [0-9]* FAILED" "$1"; then
+        echo "SETUP: the test JVM died"
+        return
+    fi
     local run setup bad
     read -r run setup bad <<<"$(tally "$root/$2/build/test-results/test")"
     if [ "$run" -eq 0 ]; then

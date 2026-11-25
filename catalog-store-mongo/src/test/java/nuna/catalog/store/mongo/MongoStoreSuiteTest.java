@@ -12,7 +12,10 @@ import static nuna.catalog.store.suite.Commits.swap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.event.CommandListener;
+import com.mongodb.event.CommandStartedEvent;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogSettings;
@@ -34,6 +37,9 @@ import nuna.catalog.store.OutboxEvent;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.StoreUnavailableException;
@@ -485,6 +491,62 @@ class MongoStoreSuiteTest extends CommitSuite {
         release.countDown();
         assertThat(removing.get(60, TimeUnit.SECONDS)).as(what).isEqualTo(WriteResult.APPLIED);
         return waiting.get(60, TimeUnit.SECONDS);
+    }
+
+    /**
+     * A cut reads the catalog's namespaces and then its tables and views, with their pointers, all in one snapshot
+     * session (D33, item 102), so it never holds a table without the namespace that held it. A client's command
+     * listener runs on the thread that sends each command, before it goes out, so a namespace is made and a table
+     * moved into it after the cut has read the namespaces and before it reads the tables, every time: read in the
+     * snapshot, the cut holds the table where it was, beside its namespace (backlog 227). A table made between the
+     * reads would prove nothing: the cut leaves out a table with no pointer in the snapshot, read there or not. So
+     * {@code RefSuite#everyTableInACutHasItsNamespace}, whose writer makes a namespace and a table in it while cuts are
+     * taken, cannot see a table read outside the snapshot.
+     */
+    @Test
+    @DisplayName("MongoDB: a table moved between a cut's read of namespaces and its read of tables, into a namespace"
+            + " made between them, is in the cut where it was")
+    void aCutReadsNamespacesAndTablesInOneSnapshot() {
+        CatalogStore store = mongo.store(CommitHook.NONE);
+        UUID catalogId = newCatalog(store, "cut-snapshot");
+        NamespaceRecord early = new NamespaceRecord(catalogId, UUID.randomUUID(), catalogId, new Name("early", "early"),
+                Map.of(), 1);
+        assertApplied(store.createNamespace(early, Changes.change()));
+        CatalogObject table = CatalogObject.active(catalogId, UUID.randomUUID(), early.id(), new Name("t", "t"),
+                CatalogObject.Kind.TABLE, "s3://suite-warehouse/" + UUID.randomUUID());
+        assertApplied(store.createObject(creation(table)));
+        NamespaceRecord late = new NamespaceRecord(catalogId, UUID.randomUUID(), catalogId, new Name("late", "late"),
+                Map.of(), 1);
+        AtomicBoolean armed = new AtomicBoolean();
+        List<WriteResult> made = new ArrayList<>();
+        CommandListener betweenTheReads = new CommandListener() {
+            @Override
+            public void commandStarted(CommandStartedEvent event) {
+                // The driver logs and drops what a listener throws, so the writes' results are kept and checked below.
+                if (event.getCommandName().equals("find")
+                        && event.getCommand().getString("find").getValue().equals(MongoCatalogStore.OBJECT)
+                        && armed.compareAndSet(true, false)) {
+                    made.add(store.createNamespace(late, Changes.change()));
+                    made.add(store.renameObject(table.id(), late.id(), table.name(), Changes.change()));
+                }
+            }
+        };
+        Ref tag = nuna.catalog.store.suite.Refs.tag(catalogId, "cut", now());
+        try (MongoClient watched = mongo.linkClientWatchedBy(betweenTheReads)) {
+            armed.set(true);
+            assertApplied(new MongoCatalogStore(watched, MongoReplicaSet.DATABASE).createRef(tag, RefLimits.P11,
+                    Changes.change()));
+        }
+
+        assertThat(made).as("the namespace made and the table moved into it, between the cut's two reads")
+                .containsExactly(WriteResult.APPLIED, WriteResult.APPLIED);
+        assertThat(store.listRefNamespaces(tag.id(), catalogId, PageRequest.first(10)).items())
+                .extracting(RefEntry::id).containsExactly(early.id());
+        assertThat(store.listRefObjects(tag.id(), late.id(), CatalogObject.Kind.TABLE, PageRequest.first(10)).items())
+                .as("in the namespace made after the cut read the namespaces").isEmpty();
+        assertThat(store.listRefObjects(tag.id(), early.id(), CatalogObject.Kind.TABLE, PageRequest.first(10)).items())
+                .extracting(RefEntry::id).as("where the table was when the cut read the namespaces")
+                .containsExactly(table.id());
     }
 
     /** The group suites leave these two contract guards untested. */

@@ -17,6 +17,7 @@
 #   container-per-test  M8/reconcile-takes-unproven-file with Ryuk unreachable: each test's Harness
 #                       starts PostgreSQL in a field, so each test fails with Testcontainers on the stack
 #   passed              a class of the fast build
+#   jvm-died            passed's, standing for what a test JVM that died left behind (backlog 226)
 #   the others          a scratch class of probes, since deleted: @BeforeAll failing, alone and before
 #                       a @Nested class (initializationError), @AfterAll failing (executionError), a
 #                       field initializer and @BeforeEach throwing, a static initializer throwing, and
@@ -72,6 +73,11 @@ check not-compiled "SETUP: does not compile" "> Task :not-compiled:compileJava F
     "Compilation failed; see the compiler output below." "BUILD FAILED in 4s"
 check no-verdict "SETUP: no Gradle verdict" "> Task :no-verdict:test"
 check task-not-run "SETUP: the test task did not run" "> Task :other:compileTestJava FAILED" "BUILD FAILED in 3s"
+# A test JVM that died, whatever result files it left (backlog 226: one that passed).
+check jvm-died "SETUP: the test JVM died" "> Task :jvm-died:test" "" "Gradle Test Executor 310 FAILED" \
+    "    org.gradle.api.internal.tasks.testing.TestSuiteExecutionException at SuiteTestDefinitionProcessor.java:65" \
+    "        Caused by: java.lang.OutOfMemoryError at LifecycleRoutes.java:429" "" \
+    "> Task :jvm-died:test FAILED" "BUILD FAILED in 47m 49s"
 
 echo "$wrong wrong"
 [ "$wrong" -eq 0 ]

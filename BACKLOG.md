@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**60 open:** 18 S, 23 M, 14 L, 5 XL.
+**56 open:** 15 S, 22 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,9 +53,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
 | [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
-| [226](backlog/226.md) | S | Bite metadata-log-ref-page-by-version runs the server out of heap instead of failing its test, and run.sh calls it NO BITE | re-record one bite against a test that ends on an assertion, and make the judge call an executor crash SETUP, not NO BITE | 2026-11-24 |
-| [227](backlog/227.md) | M | Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot | the race is a drop landing between two reads; the suite needs a way to land it there every time on MongoDB (a hook or a second session), found and then recorded again | 2026-11-24 |
-| [228](backlog/228.md) | S | Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only | finding why the context no longer loads (likely a later PostgreSQL step that assumes journal partitions) and recording the bite again so the server starts; cause not known yet | 2026-11-24 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
@@ -67,7 +64,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
-| [268](backlog/268.md) | S | Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest | two assertions to bring up to the PostgreSQL schema's latest version, and a look at whether RollingUpgradeTest's v9-to-v15 path should name v17 | 2026-11-25 |
 | [269](backlog/269.md) | S | MutatingRoutesAuditTest: the OPA routes (item 115) have no case | the test's route discovery counts the three OPA query routes as mutating; exclude them, or give them cases, in one test class | 2026-11-25 |
 | [270](backlog/270.md) | M | SecurityGateTest: the grant and engine routes' audit lines never reach the log capture | the cause is not known yet: finding whether the grant and engine routes no longer write their audit records or the capture misses them, then the fix | 2026-11-25 |
 | [271](backlog/271.md) | M | ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch | the cause is not known yet: finding whether the console or the test changed (items 109, 212 to 217, 254 touched the header), then the fix | 2026-11-25 |
@@ -2948,67 +2944,6 @@ width, the merge verdict's one sentence). Left:
 Done looks like: each as above, checked in the demo at 1440 × 900 (no column clipped: each table's scrollWidth within
 its card); the heavy browser cases that read the headline or the button updated.
 
-### 226. Bite metadata-log-ref-page-by-version runs the server out of heap instead of failing its test, and run.sh calls it NO BITE
-
-- Added: 2026-11-24 by overnight run 2026-11-24
-- Touches: bites/D33/metadata-log-ref-page-by-version.patch catalog-server/src/test/ bites/run.sh bites/test-run.sh
-- Effort: S, re-record one bite against a test that ends on an assertion, and make the judge call an executor crash SETUP, not NO BITE
-
-What failed: in the overnight run of 2026-11-24, `bites/D33/metadata-log-ref-page-by-version.patch`
-(`MetadataLogRefTest#throughABranchThePagesCrossTheCutWithoutAGapOrARepeat`, item 109) came out
-`NO BITE (1 passed)`. Its log shows the break did bite, but not on an assertion: with a token's line ignored, the
-pages repeat without end, and after 47 min 49 s the test JVM died with `Gradle Test Executor 310 FAILED`,
-`java.lang.OutOfMemoryError at LifecycleRoutes.java:429` ("Java heap space").
-
-Two things are wrong:
-- The test follows the pages with no bound, so a paging bug hangs it for most of an hour and then crashes it,
-  instead of failing it on an assertion (for example, more pages than the log has lines).
-- `bites/run.sh` judged a run whose test executor crashed as NO BITE, counting one test as passed. An executor
-  failure proves neither verdict; it should be SETUP at least.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\metadata-log-ref-page-by-version.log`, `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites.log` line 734.
-
-Done when the test bounds its paging and fails on an assertion under this break, `bites/run.sh` on the bite reports
-BITES in under a few minutes, the judge no longer reports NO BITE for an executor crash (with a case in
-`bites/test-run.sh`), and the overnight run shows the bite biting.
-Seen again in the overnight run of 2026-11-25: NO BITE (1 passed), restored.
-
-### 227. Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot
-
-- Added: 2026-11-24 by overnight run 2026-11-24
-- Touches: catalog-store-api/src/test/ catalog-store-mongo/src/test/ bites/D33/mongo-cut-read-outside-the-snapshot.patch
-- Effort: M, the race is a drop landing between two reads; the suite needs a way to land it there every time on MongoDB (a hook or a second session), found and then recorded again
-
-What failed: in the overnight run of 2026-11-24, `bites/D33/mongo-cut-read-outside-the-snapshot.patch` came out
-`NO BITE (1 passed)`: with `MongoRefs` reading a ref's tables outside the cut's snapshot session,
-`MongoStoreSuiteTest$Refs#everyTableInACutHasItsNamespace` still passed (BUILD SUCCESSFUL in 30 s). The test
-does not make a namespace go between the cut's namespace read and its table read, so it cannot see the break.
-Recorded under item 102; related races in items 157 and 158.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\mongo-cut-read-outside-the-snapshot.log`, `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites.log` line 743.
-
-Done when the test (or a new one in the shared refs suite) lands a drop between the two reads every time, fails
-on an assertion with the patch applied, and the overnight run shows the bite biting.
-Seen again in the overnight run of 2026-11-25: NO BITE (1 passed), restored.
-
-### 228. Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only
-
-- Added: 2026-11-24 by overnight run 2026-11-24
-- Touches: bites/M8/store-skips-postgresql-steps.patch catalog-store-sql/ catalog-server/src/test/
-- Effort: S, finding why the context no longer loads (likely a later PostgreSQL step that assumes journal partitions) and recording the bite again so the server starts; cause not known yet
-
-What failed: in the overnight run of 2026-11-24, `bites/M8/store-skips-postgresql-steps.patch`
-(`SchemaAtStartupTest`) came out `SETUP: 1 of 1 failed in setup`. The Spring context did not load:
-`StoreException at Transactions.java:222` caused by `PSQLException at QueryExecutorImpl.java:2993`. Item 30
-fixed exactly this on 2026-11-15 (the server started and the test failed on its assertion that the journal is
-partitioned); something landed since makes the store fail on a PostgreSQL migrated without V4. Candidates: schema
-steps added by items 114, 126 and 133.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\store-skips-postgresql-steps.log`, `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites.log` line 1475.
-
-Done when the server starts with the patch applied and `SchemaAtStartupTest` fails on its assertion:
-`bites/run.sh` on the bite reports BITES, and so does the overnight run.
-
 ### 231. Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides)
 
 - Added: 2026-11-24 by Paul
@@ -3381,22 +3316,6 @@ profile), which readiness says and Overview does not.
   head and KPI line say steps are left, not "has not reported", as a caller who may read readiness, and the old words
   for one who may not.
 
-### 268. Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest
-
-- Added: 2026-11-25 by overnight run 2026-11-25
-- Touches: catalog-server/src/test/java/nuna/catalog/server/SchemaAtStartupTest.java, catalog-tests-load/src/test/java/nuna/catalog/load/RollingUpgradeTest.java
-- Effort: S, two assertions to bring up to the PostgreSQL schema's latest version, and a look at whether RollingUpgradeTest's v9-to-v15 path should name v17
-
-PostgreSQL's migrations now end at V17 (`V16__row_column_rule_version.sql`, item 244; `V17__worker_reach.sql`, item 250), but two tests still expect version 15. Neither runs in the fast build, so the landings did not see it.
-
-Evidence, the overnight run of 2026-11-25 on 639b0da5:
-- Heavy build: `SchemaAtStartupTest#theJournalIsPartitionedWithMonthsAhead`: expected: 15 but was: 17 (`SchemaAtStartupTest.java:29`).
-- Nightly: `RollingUpgradeTest#upgradingOneServerAtATimeAcrossV9ToV15LosesNothing`: [the schema once a server of this release started] expected: "15" but was: "17" (`RollingUpgradeTest.java:91`).
-- Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server, nightly.log, nightly-results\catalog-tests-load.
-- The overnight agents for catalog-server and catalog-tests-load both ended at once with an expired OAuth session and claimed nothing.
-
-Done when both tests pass in the overnight run, and they read the latest version from the migrations rather than a number that every new migration breaks.
-
 ### 269. MutatingRoutesAuditTest: the OPA routes (item 115) have no case
 
 - Added: 2026-11-25 by overnight run 2026-11-25
@@ -3651,6 +3570,9 @@ chain, and every line the server logs carries its run and number (`nunarun`, `nu
 | [223](backlog/223.md) | KafkaDownTest still expects a scan to fail while Kafka is down, which 195 changed: a Kafka outage blocks nothing | done | 2026-11-24 |
 | [224](backlog/224.md) | Heavy build 2026-11-24: eight catalog-server tests disagree with items 193, 195, 206, 207 and 214 | done | 2026-11-24 |
 | [225](backlog/225.md) | Console: Service's Most versions behind opens a table the operator may not read (Paul, 2026-11-23) | done | 2026-11-24 |
+| [226](backlog/226.md) | Bite metadata-log-ref-page-by-version runs the server out of heap instead of failing its test, and run.sh calls it NO BITE | done | 2026-11-25 |
+| [227](backlog/227.md) | Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot | done | 2026-11-25 |
+| [228](backlog/228.md) | Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only | done | 2026-11-25 |
 | [229](backlog/229.md) | The console header lists every group by name and runs off the screen | done | 2026-11-24 |
 | [230](backlog/230.md) | The demo runs no maintenance worker, so Overview and Maintenance are empty | done | 2026-11-24 |
 | [234](backlog/234.md) | Demo SingleStore refuses order writes once its pipelines' extractors fill the table-memory cap | done | 2026-11-24 |
@@ -3678,3 +3600,4 @@ chain, and every line the server logs carries its run and number (`nunarun`, `nu
 | [262](backlog/262.md) | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | done | 2026-11-25 |
 | [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
 | [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |
+| [268](backlog/268.md) | Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest | done | 2026-11-25 |

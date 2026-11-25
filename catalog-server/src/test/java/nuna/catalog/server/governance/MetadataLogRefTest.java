@@ -158,6 +158,8 @@ class MetadataLogRefTest {
                 read.addAll(locations(log));
                 token = log.has("next-page-token") ? log.get("next-page-token").asString() : null;
                 pages++;
+                // The log has six lines, so a page that repeats one ends the reading here instead of never.
+                assertThat(read).as("pages of " + size + ", read so far").hasSizeLessThanOrEqualTo(6);
             } while (token != null);
 
             assertThat(read).as("pages of " + size + ": the branch's 3 to 1, then main's 3 to 1, each once")
@@ -206,6 +208,7 @@ class MetadataLogRefTest {
             JsonNode log = log("dev2", token, 2);
             read.addAll(locations(log));
             token = log.has("next-page-token") ? log.get("next-page-token").asString() : null;
+            assertThat(read).as("read so far").hasSizeLessThanOrEqualTo(8);
         } while (token != null);
         assertThat(read).as("its own, then dev's, then main's, across pages")
                 .containsExactly("dev2-2", "dev2-1", "dev-3", "dev-2", "dev-1", "main-3", "main-2", "main-1");

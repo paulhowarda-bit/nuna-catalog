@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -20,10 +21,12 @@ import org.junit.jupiter.api.Test;
 /**
  * A rolling upgrade across schema changes (M8). Two servers of the previous release, whose PostgreSQL schema
  * stops at V8 (the worker's reports of table health and scans are kept), take traffic; servers of this release
- * replace them one at a time, the first of them migrating to V15 (V9: each table's DR watermark is kept; V10: a
- * storage profile records its KMS key; V11: refs and their cuts; V12: the maintenance nights' jobs; V13: maintenance
- * on request; V14: holds released and freezes lifted are kept; V15: row filters and column masks) while previous-release servers still commit. Each
- * server leaves only after the balancer has drained it. No request fails and no commit is lost or doubled.
+ * replace them one at a time, the first of them migrating through every step since (V9: each table's DR watermark is
+ * kept; V10: a storage profile records its KMS key; V11: refs and their cuts; V12: the maintenance nights' jobs; V13:
+ * maintenance on request; V14: holds released and freezes lifted are kept; V15: row filters and column masks; V16: a
+ * rule's version; V17: what the worker can reach) while previous-release servers still commit. Each server leaves only
+ * after the balancer has drained it. No request fails and no commit is lost or doubled. The steps are read from the
+ * classpath, so a new one needs no change here (backlog 268).
  */
 @Tag("overnight")
 class RollingUpgradeTest {
@@ -49,7 +52,7 @@ class RollingUpgradeTest {
     }
 
     @Test
-    void upgradingOneServerAtATimeAcrossV9ToV15LosesNothing() throws Exception {
+    void upgradingOneServerAtATimeAcrossEveryStepSinceV8LosesNothing() throws Exception {
         String url = stack.postgres.serverUrl();
         ServerProcess old1 = stack.server("upgrade-old-1", previous, url);
         stack.grantWriters();
@@ -88,7 +91,10 @@ class RollingUpgradeTest {
                 beforeUpgrade = ledger.acknowledged.size();
 
                 new1 = stack.server("upgrade-new-1");
-                assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("15");
+                assertThat(Flyway.configure().dataSource(stack.postgres.primaryUrl(), PostgresCluster.USER,
+                        PostgresCluster.USER).locations("classpath:nuna/store/sql/migration",
+                        "classpath:nuna/store/sql/postgresql").load().info().pending())
+                        .as("PostgreSQL's steps not applied once a server of this release started").isEmpty();
                 catalog.add(new1.uri());
                 ServerProcess.pause(Duration.ofSeconds(5));
                 catalog.drain(old1.uri());
