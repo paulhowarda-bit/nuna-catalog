@@ -1,0 +1,18 @@
+Breaks: the storage setup gives the worker settings for every profile, a bucket on a store the worker already reaches among them, so an operator would add a second identity for that store and the worker would serve its profiles with none (backlog 253, item 256).
+Module: catalog-server
+Test: StorageSetupRoutesTest#aBucketOnAStoreTheWorkerReachesNeedsNoWorkerSettings
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
+index f093e261..da47db9a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
+@@ -101,9 +101,7 @@ class StorageSetupRoutes {
+             }
+             Optional<WorkerStorage> listing = last.flatMap(scan -> identity(scan, profile));
+             item.set("worker", worker(prefixes, listing, ended.flatMap(scan -> identity(scan, profile))));
+-            if (listing.isEmpty()) {
+-                item.set("worker-settings", workerSettings(name, profile));
+-            }
++            item.set("worker-settings", workerSettings(name, profile));
+             item.set("store", profile.maintenancePrincipal() == null ? unprotected(name)
+                     : generated(name, profile, policies));
+         }

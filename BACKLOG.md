@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**54 open:** 17 S, 18 M, 14 L, 5 XL.
+**53 open:** 16 S, 18 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,7 +60,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [253](backlog/253.md) | S | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250 | 2026-11-24 |
 | [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
 | [255](backlog/255.md) | S | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | one setting and a change to `maintenance_worker()`, checked with `demo.sh up` | 2026-11-24 |
 | [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
@@ -3056,33 +3055,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 253. Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/
-- Effort: S, one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250
-
-## What is missing
-
-`GET /management/v1/maintenance/delete-policies` (`DeletePolicyRoutes.java`) is read by no console page, names no
-commands, gives nothing for a profile with no `maintenance-principal` but "unprotected", and nothing produces the
-worker's settings for a new bucket (Atelier, 2026-11-24). The operator dialog (item 254) needs all of it. D21 and D30
-stand: the catalog writes these, never applies them.
-
-## Done when
-
-`GET /management/v1/maintenance/storage-setup`, for platform operators only, gives for each catalog storage profile:
-
-- its catalogs and prefixes, and the worker's coverage and reach there (item 250);
-- `worker-settings`: the prefix added to the worker's profile on the same store, or a new profile for a new store with
-  the key's place marked, never a key. After item 256, a new store only;
-- `store`: each delete policy with its commands for the store's kind (`mc admin policy create/attach` for MinIO,
-  `aws s3api put-bucket-policy`, with `--endpoint-url` for Ceph), or `unprotected` with the catalog setting to add
-  (`nuna.storage.profiles.<name>.maintenance-principal`).
-
-Route tests cover MinIO, AWS S3 and Ceph, a bucket on a store the worker already reaches and one on a new store, and an
-unprotected profile.
-
 ### 254. Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3435,5 +3407,6 @@ page, sees `stewards` with "Tags", and opens its grants from it.
 | [250](backlog/250.md) | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | done | 2026-11-24 |
 | [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
 | [252](backlog/252.md) | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | done | 2026-11-24 |
+| [253](backlog/253.md) | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

@@ -11,7 +11,7 @@ D13 keeps out of the database (the catalog turns them into meters, catalog-metri
 
 ## The reads
 
-Five routes, all answering JSON. Times are ISO-8601 instants, kept to the millisecond.
+Six routes, all answering JSON. Times are ISO-8601 instants, kept to the millisecond.
 
 | Route | Who may call | Returns |
 |---|---|---|
@@ -20,6 +20,7 @@ Five routes, all answering JSON. Times are ISO-8601 instants, kept to the millis
 | `GET /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health` | `select` on the table | One table's health |
 | `GET /management/v1/maintenance/scans` | Platform operators (`nuna.security.platform-operator-groups`) | The worker's recent scans and its last successful one |
 | `GET /management/v1/catalogs/{catalog}/maintenance/readiness` | `describe` on the catalog, or a platform operator; names only to those who may `modify` it or manage its grants, and platform operators | Whether the worker can maintain the catalog, step by step |
+| `GET /management/v1/maintenance/storage-setup` | Platform operators | For each storage profile, what to set up outside the catalog so the worker can maintain its catalogs |
 
 A refusal is 403 `ForbiddenException`, except on a table's health to a caller that holds nothing on the table: that is
 404 `NoSuchTableException`, the answer for a table that does not exist (D18, backlog 73), and on readiness to a caller
@@ -317,6 +318,90 @@ The first three steps come from the newest scan that reported `storage` ("The sc
   started (absent before one has ended). Anyone else who may `describe` the catalog gets each step's `state`, the
   store's `code` and the policy's `jobs`.
 
+### Storage setup
+
+`GET /management/v1/maintenance/storage-setup` says, for each catalog storage profile, what a platform operator does
+outside the catalog so the worker can maintain its catalogs (backlog 253; the console's "What to set up" is backlog
+254): the worker's settings for a store it does not reach yet, and the store's delete policies with the commands that
+apply them. The catalog writes all of it and applies none of it (D21, D30), and it never holds or gives a key of the
+worker's. Platform operators only (`StorageSetupRoutes`); a refusal is audited (D18), the read is not.
+
+Two MinIO profiles, by name: `ledger`, a new bucket on a store the worker does not reach yet, and `s3`, on the store it
+does. The policy texts are shortened here.
+
+```json
+{
+  "reported-at": "2026-11-24T14:05:31.204Z",
+  "profiles": [
+    {
+      "name": "ledger",
+      "catalogs": ["ledger"],
+      "kind": "minio",
+      "endpoint": "https://silo.example:9000",
+      "prefixes": ["s3://ledger-warehouse/tables"],
+      "maintenance-principal": "nuna-maintenance",
+      "worker": { "state": "not-reported" },
+      "worker-settings": {
+        "store": "ledger",
+        "yaml": "ledger:\n  kind: minio\n  endpoint: https://silo.example:9000\n  region: us-east-1\n  access-key-id: <the worker's access key on this store>\n",
+        "secret": "nuna.maintenance.storage.ledger.secret-access-key"
+      },
+      "store": {
+        "state": "generated",
+        "policies": [
+          { "apply-as": "user-policy", "except": "nuna-maintenance", "name": "nuna-no-delete-ledger",
+            "file": "nuna-no-delete-ledger.json", "policy": "{\"Version\":\"2012-10-17\",…}",
+            "commands": ["mc admin policy create <alias> nuna-no-delete-ledger nuna-no-delete-ledger.json",
+                         "mc admin policy attach <alias> nuna-no-delete-ledger --user <user>"] },
+          { "apply-as": "user-policy", "to": "nuna-maintenance", "name": "nuna-worker-ledger",
+            "file": "nuna-worker-ledger.json", "policy": "{\"Version\":\"2012-10-17\",…}",
+            "commands": ["mc admin policy create <alias> nuna-worker-ledger nuna-worker-ledger.json",
+                         "mc admin policy attach <alias> nuna-worker-ledger --user nuna-maintenance"] }
+        ]
+      }
+    },
+    {
+      "name": "s3",
+      "catalogs": ["sales", "warehouse"],
+      "kind": "minio",
+      "endpoint": "http://s3:9000",
+      "prefixes": ["s3://warehouse/tables"],
+      "maintenance-principal": "nuna-maintenance",
+      "worker": {
+        "state": "reported",
+        "prefixes": [
+          { "prefix": "s3://warehouse/tables", "listed": "ok", "deleted": 12, "delete-refused": 0, "delete-failed": 0 }
+        ]
+      },
+      "store": { "state": "generated", "policies": [ … ] }
+    }
+  ]
+}
+```
+
+| Field | What it holds |
+|---|---|
+| `reported-at` | When the worker last reported what it reaches, as for readiness; absent before any report |
+| `name`, `kind`, `endpoint`, `prefixes` | The profile: its kind (`s3` for AWS S3, `minio`, `ceph`), its endpoint as the catalog's settings write it, its allowed prefixes |
+| `catalogs` | The catalogs bound to the profile (`nuna.storage.catalogs`), by name; never a namespace, table or view (D18) |
+| `maintenance-principal` | The worker's identity on the store, as the profile names it; absent when it names none |
+| `worker` | `state` `reported` when the newest scan that reported storage shows an identity of the worker's of the profile's kind at its endpoint, compared as the worker compares them (scheme, host and port); then `prefixes`, what the store answered beneath each of the profile's prefixes, with the fields readiness gives beneath each (the listing from the newest scan with storage, the deletes from the newest such scan that has ended). A prefix with only `prefix` is one the worker has not reached: it takes a new profile's prefixes at its next scan, and only from a profile that names a maintenance principal. Otherwise `not-reported` |
+| `worker-settings` | Only while `worker` is `not-reported`: `store`, the name to give the store in the worker's settings (the profile's; any the settings do not use yet will do); `yaml`, to paste under `nuna.maintenance.storage`, with the store's kind, endpoint (as the profile writes it, so the worker matches them) and region, `access-key-id` marked `<the worker's access key on this store>` and, for a profile with a CA bundle, `ca-bundle` marked too; `secret`, the name its secret key takes in the release's secrets; and on AWS S3, `note`: with a role for the worker (IRSA, Pod Identity), leave the keys out. Then upgrade the nuna-maintenance release: the worker reads its settings only when it starts |
+| `store` | `state` `generated` with `policies`, the profile's delete policies, the texts `GET /management/v1/maintenance/delete-policies` gives, each with `commands` to run as an identity that may; or, for a profile naming no maintenance principal, `state` `unprotected` with `setting`, the catalog setting to add, `nuna.storage.profiles.<name>.maintenance-principal` |
+
+- **AWS S3 and Ceph:** one `bucket-policy` per bucket the profile's prefixes lie in: `bucket`, `profiles` (every
+  profile with prefixes in it: a bucket holds one policy, so each gets the same one, and it is merged into any policy
+  the bucket already has), `policy` and the command `aws s3api put-bucket-policy --bucket <bucket> --policy
+  '<policy>'`, with `--endpoint-url <endpoint>` on Ceph.
+- **MinIO:** two `user-policy` entries: `except`, attached to every user of the store but the worker, the catalog's
+  own included, and `to`, attached to the worker's user. Each has `name` (`nuna-no-delete-<profile>`,
+  `nuna-worker-<profile>`: one per profile, so two profiles on one store keep both), `file` (where to save `policy`)
+  and the commands `mc admin policy create <alias> <name> <file>` and `mc admin policy attach <alias> <name> --user
+  <user>`. `<alias>` is the operator's `mc` alias for the store, and `<user>` each other user.
+- The worker reports a store only once it reaches a prefix there, so a store whose profiles all name no maintenance
+  principal is never `reported`: its settings are given until a profile there names one and the worker has scanned.
+- Nothing in the answer is a key, a secret, the catalog's own role or keys, a KMS key or a CA bundle's path.
+
 ## The worker's reports
 
 The worker reports as a maintenance principal acting as itself (`nuna.security.maintenance-principals`), as with its
@@ -382,6 +467,7 @@ fields separated by tabs; `WorkerStorage.write`). MongoDB keeps them as arrays i
 | `catalog-server` `HealthRoutesTest` | The worker's reports make a table's health; only the worker reports; a report for a table gone or now another is refused; a reader sees only the neediest tables they may select; operators read the scans, with the groups and storage each kept; a storage report holding a code where nothing was refused, a message for a code, or an unknown listing is a bad request. |
 | `catalog-store-api` `WorkerStorageTest` (fast) | What a storage report may hold, the text the SQL and Oracle stores keep it as, and the reported prefix that covers a location. |
 | `catalog-server` `ReadinessRoutesTest` (heavy) | Readiness: the first three steps unknown before a scan reports storage; every step done; write on a namespace or select on the catalog leaves the grant missing, a policy with every job off leaves the policy missing; a reported prefix beneath, beside or in another bucket leaves the storage missing and the store unknown; a refused listing or delete is refused with the store's code, a scan under way keeps the last ended scan's refused deletes, no answer is unknown with the client's failure, and `deletes-since` is when the counted deletes' scan started; names only to the tester (modify), the grant admin and an operator, states without names to a describer and a tag steward; an operator with no grant reads it with names, unaudited; refused to an outsider (404) and a bystander (403), the refusal audited and the read not. |
+| `catalog-server` `StorageSetupRoutesTest` (fast) | Storage setup, through the real route and guard over profiles as configured and a stand-in store of scans: refused to an analyst, a grant admin and the worker, each refusal audited, read by an operator unaudited; profiles by name with their catalogs, kind, endpoint, prefixes and principal; a new bucket on a MinIO or AWS S3 store the worker reaches (its endpoint spelled otherwise) gets no worker settings, a Ceph store behind a private CA, another AWS region and a MinIO store it does not reach get them, with the key's place marked, the secret's name and on AWS the note; before any report every store gets them, and an identity of another kind at the endpoint serves none; the listing from the newest report, the deletes from the newest ended one; MinIO's two policies named per profile with their `mc` commands, AWS S3's and Ceph's bucket policies (one shared by two profiles) with `put-bucket-policy`, `--endpoint-url` on Ceph; an unprotected profile's setting; no key, secret, role, KMS key or CA path. |
 | `catalog-maintenance` `StorageReportTest` (fast) | Through `Storage.of` and stand-in stores: each scan reports, by kind and endpoint, a listing let, refused (AccessDenied, NoSuchBucket) or failed, and the deletes done and refused with the store's code, counted afresh each scan; no key, credential or store message in any report. |
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
 | `catalog-server` `MaintenanceEstateTest` (fast) | Every table: a row for each table the caller may select and none for another; its assessment; a hold or freeze from any level above; a closed table counted only for a caller whose grants give select; fixed last night only by a compaction that succeeded; paging, the 500-row page and the 2,000 tables a page looks at. |
@@ -426,3 +512,9 @@ worker has reported any storage, so an allowed prefix no reported prefix covers 
 (backlog 252) has one in `bites/D18/`: `readiness-admits-every-caller`
 (`ReadinessRoutesTest#aCallerWhoMayNotDescribeTheCatalogIsRefusedAndAudited`), the `describe` check dropped with the
 platform operator's way past it, so a bystander reads the readiness and no refusal is audited.
+
+Storage setup (backlog 253) has two bites, each against `StorageSetupRoutesTest`:
+
+- `bites/D18/storage-setup-open`: anyone signed in reads it, and no refusal is audited.
+- `bites/D30/storage-setup-settings-for-a-reached-store`: every profile gets the worker's settings, a bucket on a store
+  the worker already reaches among them.

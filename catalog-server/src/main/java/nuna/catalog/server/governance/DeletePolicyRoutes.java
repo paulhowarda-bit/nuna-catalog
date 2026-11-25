@@ -60,26 +60,47 @@ class DeletePolicyRoutes {
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode policies = body.putArray("policies");
         ArrayNode unprotected = body.putArray("unprotected");
-        Map<Bucket, List<String>> profiles = new LinkedHashMap<>();
-        Map<Bucket, List<DeletePolicy.Worker>> workers = new LinkedHashMap<>();
+        List<Protected> named = new ArrayList<>();
         for (CatalogStorage.Bound bound : storage.profiles()) {
             String principal = settings.profiles().get(bound.name()).maintenancePrincipal();
-            StorageProfile profile = bound.profile();
             if (principal == null) {
                 unprotected.add(bound.name());
-            } else if (profile.kind() == StoreKind.MINIO) {
-                userPolicy(policies, bound.name(), profile, "except", principal,
+            } else {
+                named.add(new Protected(bound.name(), bound.profile(), principal));
+            }
+        }
+        policies.addAll(policies(named));
+        return GovernanceRoutes.json(200, body);
+    }
+
+    /** A profile that names a {@code maintenance-principal}: its name, its store and prefixes, and that principal. */
+    record Protected(String name, StorageProfile profile, String principal) {
+    }
+
+    /**
+     * The delete policies of {@code profiles}, in their order, as {@link #deletePolicies} lists them: each MinIO
+     * profile's two user policies, then one bucket policy per bucket on AWS S3 and Ceph, naming every profile with
+     * prefixes there. Shared with {@link StorageSetupRoutes}, so both routes give the same text.
+     */
+    static ArrayNode policies(List<Protected> profiles) {
+        ArrayNode policies = Management.JSON.createArrayNode();
+        Map<Bucket, List<String>> names = new LinkedHashMap<>();
+        Map<Bucket, List<DeletePolicy.Worker>> workers = new LinkedHashMap<>();
+        for (Protected each : profiles) {
+            StorageProfile profile = each.profile();
+            if (profile.kind() == StoreKind.MINIO) {
+                userPolicy(policies, each.name(), profile, "except", each.principal(),
                         DeletePolicy.userPolicy(profile.allowedPrefixes()));
-                userPolicy(policies, bound.name(), profile, "to", principal,
+                userPolicy(policies, each.name(), profile, "to", each.principal(),
                         DeletePolicy.workerPolicy(profile.allowedPrefixes()));
             } else {
                 profile.allowedPrefixes().stream()
                         .collect(Collectors.groupingBy(ObjectLocation::bucket, LinkedHashMap::new, Collectors.toList()))
                         .forEach((name, prefixes) -> {
                             Bucket bucket = new Bucket(profile.kind(), profile.endpoint(), profile.region(), name);
-                            profiles.computeIfAbsent(bucket, b -> new ArrayList<>()).add(bound.name());
+                            names.computeIfAbsent(bucket, b -> new ArrayList<>()).add(each.name());
                             workers.computeIfAbsent(bucket, b -> new ArrayList<>())
-                                    .add(new DeletePolicy.Worker(principal, prefixes));
+                                    .add(new DeletePolicy.Worker(each.principal(), prefixes));
                         });
             }
         }
@@ -88,11 +109,11 @@ class DeletePolicyRoutes {
             policy.put("apply-as", "bucket-policy");
             policy.put("endpoint", bucket.endpoint().toString());
             policy.put("bucket", bucket.name());
-            ArrayNode names = policy.putArray("profiles");
-            profiles.get(bucket).forEach(names::add);
+            ArrayNode listed = policy.putArray("profiles");
+            names.get(bucket).forEach(listed::add);
             policy.put("policy", DeletePolicy.bucketPolicy(bucket.kind(), bucket.region(), bucket.name(), each));
         });
-        return GovernanceRoutes.json(200, body);
+        return policies;
     }
 
     /** A MinIO user policy for one profile; {@code users} is {@code except} or {@code to}, naming the worker. */
