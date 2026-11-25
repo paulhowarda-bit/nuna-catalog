@@ -61,7 +61,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 | [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
-| [255](backlog/255.md) | S | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | one setting and a change to `maintenance_worker()`, checked with `demo.sh up` | 2026-11-24 |
 | [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
@@ -70,6 +69,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [264](backlog/264.md) | S | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | a ledger amendment and a few comments and lines (more only if Paul lowers the floor: the floor, its test and a bite); waits on Paul's answer | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
+| [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 
 ## Open items in full
 
@@ -3164,30 +3164,6 @@ can't see whether it is applied" / "Unprotected"). Each row has **What to set up
 The dialog and panel work as above, and browser tests as `oscar` show a store in each state. The note's link from item
 252 opens the Service page on the Worker storage panel.
 
-### 255. Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: demo/k8s/demo-values.yaml, demo/demo.sh, demo/k8s/silo-maintenance.json, demo/README.md
-- Effort: S, one setting and a change to `maintenance_worker()`, checked with `demo.sh up`
-
-## What is wrong
-
-The demo's catalog storage profile `s3` (`demo/k8s/demo-values.yaml`) names no `maintenance-principal`, so
-`GET /management/v1/maintenance/delete-policies` lists it as unprotected and generates no policy for it. `demo.sh`
-(`maintenance_worker()`) applies a hand-written `demo/k8s/silo-maintenance.json` instead, so the demo never shows the
-path an operator takes for a second catalog's bucket (items 253, 254). The demo's catalog signs in to Silo as its root
-user (`nunatest`), which no user policy can restrict, so the `except` policy cannot be applied there (Atelier,
-2026-11-24).
-
-## Done when
-
-- Profile `s3` names `maintenance-principal: nuna-maintenance`.
-- `maintenance_worker()` applies the `to` policy that `/delete-policies` generates for the worker's user, and
-  `silo-maintenance.json` is gone.
-- `demo/README.md` says the demo's catalog is Silo's root user, so the `except` policy is not applied, and that a
-  second catalog's bucket is set up the same way, from the console (items 252, 254).
-- After `demo.sh up`, item 251's readiness route shows 4 of 4 for `lakehouse`.
-
 ### 258. Grants: refuse write on a view, which gives only select there yet counts as a data duty
 
 - Added: 2026-11-24 by catalog-security review of backlog 246
@@ -3519,6 +3495,38 @@ and Micrometer's handler
 **Done when** the test and its bite are in and the doc says which traces each mode keeps; at work, a forced 5xx shows
 as a trace in work's Grafana under tail sampling, or the doc says why the deployment keeps head sampling.
 
+### 266. Overview says a catalog's worker has not reported while the worker reports every scan
+
+- Added: 2026-11-24 by Paul, via item 252
+- Touches: catalog-server/src/main/resources/nuna/ui/overview.js, catalog-server/src/test/
+- Effort: S, one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest`
+
+## What is wrong
+
+Item 252 fixed the Maintenance page's head: when no table of a catalog is assessed, it reads item 251's readiness
+route and says what is missing ("The worker can't maintain ledger yet: 2 of 4 steps left.", `readiness.js`
+`stepsWords`), or, once every step is done, why nothing is assessed (`queue.js` `shapeWords(c, ready)`). Overview
+still says the worker "has not reported" on the same grounds, whenever no table is assessed, though the worker reports
+at every scan: the usual reason is that it cannot reach the catalog (no `write` grant, no storage for the catalog's
+profile), which readiness says and Overview does not.
+
+- `catalog-server/src/main/resources/nuna/ui/overview.js:35-36`: the head calls `shapeWords(c)` without readiness,
+  so it falls through to "{n} tables not assessed yet: the maintenance worker has not reported." (`queue.js:128`).
+- `overview.js:54-55`: the In shape KPI's line, "{n} not assessed yet: the maintenance worker has not reported".
+- `overview.js:72`: the queue panel, "Nothing queued: the maintenance worker has not assessed any table you may read
+  yet."
+
+## Done when
+
+- Overview reads item 251's readiness route as the Maintenance page does (`readinessOf`), and while no table is
+  assessed its head, KPI line and queue line say what readiness says, in Atelier's words from item 252 where they fit:
+  `stepsWords` while a step is left, `shapeWords(c, ready)` once all four are done, with a link to the Maintenance
+  page's "What the worker needs to maintain <catalog>" panel in place of the panel itself. "Has not reported" stays
+  only for a catalog no worker has reported on (`reported-at` absent), and for a caller readiness refuses.
+- A browser test, as `ConsoleReadinessBrowserTest` does on a catalog with no grant and no storage, shows Overview's
+  head and KPI line say steps are left, not "has not reported", as a caller who may read readiness, and the old words
+  for one who may not.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3724,5 +3732,6 @@ as a trace in work's Grafana under tail sampling, or the doc says why the deploy
 | [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
 | [252](backlog/252.md) | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | done | 2026-11-24 |
 | [253](backlog/253.md) | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | done | 2026-11-24 |
+| [255](backlog/255.md) | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
