@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**55 open:** 15 S, 21 M, 14 L, 5 XL.
+**54 open:** 15 S, 20 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,7 +60,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [243](backlog/243.md) | M | Console: the Row filters and column masks panel and its dialog | a new panel with a list, an add-and-edit dialog, a remove confirm, a reader's note and a Governance page panel, with browser tests; after backlog 240 and 242 | 2026-11-24 |
 | [244](backlog/244.md) | M | Row and column rules: check expressions when set, and If-Match on set | an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites | 2026-11-24 |
 | [245](backlog/245.md) | S | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js) | 2026-11-24 |
 | [246](backlog/246.md) | S | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | one route running the checks the grant route already runs, without the write, with route tests and a bite | 2026-11-24 |
@@ -3057,40 +3056,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 243. Console: the Row filters and column masks panel and its dialog
-
-- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: M, a new panel with a list, an add-and-edit dialog, a remove confirm, a reader's note and a Governance page panel, with browser tests; after backlog 240 and 242
-
-## What is missing
-
-Row filters and column masks (backlog 115) can be set only through the management API. Atelier's design,
-2026-11-24:
-
-- **Where:** a table's Access tab, a panel "Row filters and column masks" between Governance and Grants.
-- **Grant admin (manage-grants):** the list (Group | Rows | Masked columns | Set by, when | Edit, Remove) and
-  "Add a rule for a group". A rule for one of their own groups is read only: "Another grant admin sets this group's
-  rule."
-- **The dialog:** a group; Rows, either "Every row" or "Only rows where" with a predicate; one line per masked
-  column, a column picked from the schema (backlog 242) and NULL, '***' or a custom expression. It checks the
-  fields, the 4,000-character limit and that each column is in the schema before saving ("Save the rule"). Edit
-  opens with the group fixed. The first rule warns: "Groups without a rule will see no rows."
-- **Remove:** the confirm says what follows: "demo-analysts will see no rows" while other rules stand, "Everyone
-  with select will see every row through Trino" for the last.
-- **Flagged with no rules:** "Flagged. No rules yet: Trino shows every row to anyone who may select; other tools get
-  no files." **Not flagged:** "Rules need the flag. A steward sets it, so only trusted engines read the files."
-- **Steward:** the rule count and groups, no expressions (backlog 242).
-- **Reader:** "Your view of this table" under What you may do: "Read through Trino only. Your rows are filtered.
-  Masked for you: trader." Never the expressions.
-- **Governance page:** a "Flagged tables" figure and a panel of flagged tables with their rule counts.
-- **Refusals in words:** not flagged (409), "You belong to {group}", and the rest the routes give.
-
-## Done when
-
-The panel, dialog, reader's note and Governance panel work as above in the demo for the grant admin, the steward
-and a reader of `markets.desks.positions`, with browser tests for each role.
-
 ### 244. Row and column rules: check expressions when set, and If-Match on set
 
 - Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
@@ -3447,3 +3412,4 @@ Keycloak needs no change.
 | [240](backlog/240.md) | Column masks fail open when a column is renamed, dropped or misspelled | done | 2026-11-24 |
 | [241](backlog/241.md) | Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes | done | 2026-11-24 |
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
+| [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |

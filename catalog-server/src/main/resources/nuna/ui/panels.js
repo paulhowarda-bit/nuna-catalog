@@ -11,6 +11,7 @@ import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, he
 import {dotted, objectHref} from './route.js';
 import {liveRefLink, refWords} from './refs.js';
 import {heldHere} from './requests.js';
+import {rulesPanel, yourView} from './rules.js';
 
 export const PRIVILEGES = ['describe', 'select', 'write', 'modify', 'create', 'manage-tags', 'manage-grants'];
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
@@ -488,13 +489,16 @@ async function youMay(target) {
       'The catalog decides each request; this is what your grants allow.'));
 }
 
-/** A table's, view's or namespace's Access tab: what the caller may do, then its governance, then its grants. */
+/**
+ * A table's, view's or namespace's Access tab: what the caller may do, a reader's view of a flagged table, then its
+ * governance, a table's row filters and column masks (backlog 243), then its grants.
+ */
 export function accessTab(target, reload) {
   const you = h('div');
   const gov = h('div');
   load(you, () => youMay(target));
   load(gov, () => governanceTab(target, reload));
-  return h('div', {class: 'stack', id: 'access-tab'}, you, gov, grantsTab(target));
+  return h('div', {class: 'stack', id: 'access-tab'}, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grantsTab(target));
 }
 
 export function grantsTab(target) {
