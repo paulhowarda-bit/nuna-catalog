@@ -789,20 +789,15 @@ class ConsoleBrowserTest {
                 && d.findElements(By.cssSelector("dialog.dlg")).isEmpty());
         browser.await(group + " may still read", d -> !d.findElement(whoMay("Read")).getText().contains(group));
 
-        // Stewards hold manage-tags, a duty that write must stay apart from (D18): refused before Grant, in the
-        // catalog's own words, and Grant cannot be pressed.
+        // Stewards hold manage-tags, a duty that write must stay apart from (D18): refused before Grant, said in the
+        // duty the group already holds, and Grant cannot be pressed.
         grant("write", GovernanceServer.STEWARDS);
         WebElement refusal = browser.await(By.cssSelector("dialog.dlg .grant-line[data-answer='refused'] "
                 + ".refusal[data-refusal='separation-of-duties']"));
-        HttpResponse<String> preview = api.manage("POST", "/grants/preview", "{\"securable\":{\"type\":\"namespace\","
-                + "\"namespace\":" + json(equities) + "},\"group\":\"" + GovernanceServer.STEWARDS
-                + "\",\"privilege\":\"write\"}", AUTH, api.grantAdmin());
-        expect(preview, 200);
-        String reason = JsonPath.read(preview.body(), "$.reason");
-        assertThat(reason).contains("separate");
-        assertThat(textContent(refusal.findElement(By.cssSelector(".fine")))).isEqualTo("The catalog: " + reason);
         assertThat(textContent(refusal.findElement(By.cssSelector(".refusal-h")))).isEqualTo(GovernanceServer.STEWARDS
-                + " can't be given this. A group that manages grants holds nothing else, and data and tags never share a group.");
+                + " sets labels and holds in trading, and data and tags never share a group.");
+        assertThat(refusal.findElements(By.cssSelector(".fine"))).as("the catalog's reason, needed only when the "
+                + "dialog cannot say which duty").isEmpty();
         assertThat(grantButton().isEnabled()).isFalse();
         closeDialog();
 
@@ -852,6 +847,8 @@ class ConsoleBrowserTest {
         assertThat(admins.getDomAttribute("aria-disabled")).isEqualTo("true");
         assertThat(admins.findElements(By.cssSelector(".pill"))).extracting(ConsoleBrowser::textContent)
                 .containsExactly("Manages grants on every catalog", "Yours");
+        assertThat(textContent(dialog.findElement(By.cssSelector(".grp-cfg-h"))))
+                .isEqualTo("Set by the deployment: these hold no grant.");
 
         // Already held: stewards' manage-tags on the catalog. Grant would change nothing.
         stewards.click();
@@ -865,19 +862,24 @@ class ConsoleBrowserTest {
         // Refused: his own group, and tags for the testers, who hold data (D18). Grant stays off.
         grant("select", GovernanceServer.GRANT_ADMINS);
         assertThat(answer()).isEqualTo("refused");
-        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg .refusal[data-refusal='self-grant'] .refusal-h"))))
+        WebElement self = browser.await(By.cssSelector("dialog.dlg .refusal[data-refusal='self-grant']"));
+        assertThat(textContent(self.findElement(By.cssSelector(".refusal-h"))))
                 .isEqualTo("You belong to grant-admins. No one grants to their own group: ask another grant admin.");
+        assertThat(self.findElements(By.cssSelector(".fine"))).isEmpty();
         assertThat(grantButton().isEnabled()).isFalse();
         grant("manage-tags", IssuerForTests.GROUP);
         assertThat(answer()).isEqualTo("refused");
-        browser.await(By.cssSelector("dialog.dlg .refusal[data-refusal='separation-of-duties']"));
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg .refusal[data-refusal='separation-of-duties'] "
+                + ".refusal-h")))).isEqualTo(IssuerForTests.GROUP
+                + " changes data in trading, and data and tags never share a group.");
         assertThat(grantButton().isEnabled()).isFalse();
 
         // Made: a group the catalog does not know yet, on a namespace found by its path.
         grant("select", group);
-        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg [data-new-group]"))))
-                .isEqualTo("The catalog can't list your directory's groups; check the spelling.");
-        driver.findElement(By.cssSelector("dialog.dlg input[aria-label='Go to a path']")).sendKeys(top + " equities");
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg [data-new-group]")))).isEqualTo(group
+                + " holds no grant in trading yet. The catalog can't list your directory's groups, so check the spelling.");
+        driver.findElement(By.cssSelector("dialog.dlg input[aria-label='Find a namespace, table or view']"))
+                .sendKeys(top + " equities");
         browser.await(By.cssSelector("dialog.dlg button.on-hit[data-path='" + dotted(equities) + "']")).click();
         assertThat(textContent(browser.await(By.cssSelector("dialog.dlg .on-now code")))).isEqualTo(dotted(equities));
         assertThat(answer()).isEqualTo("admitted");
@@ -889,6 +891,8 @@ class ConsoleBrowserTest {
         assertThat(made.getText()).contains("It is in the audit trail.");
         assertThat(made.findElement(By.cssSelector("a[data-act='see-record']")).getDomAttribute("href"))
                 .isEqualTo("#p=audit&c=trading&kind=grant");
+        assertThat(textContent(driver.findElement(By.cssSelector("dialog.dlg .dlg-acts button.ghost"))))
+                .as("nothing is left to cancel").isEqualTo("Close");
         closeDialog();
         browser.await("the list is not of " + group, d -> d.getCurrentUrl().endsWith("#p=grants&c=trading&g=" + group));
         WebElement row = browser.await(By.cssSelector("#grants-list tr[data-group='" + group
@@ -901,7 +905,7 @@ class ConsoleBrowserTest {
         assertThat(driver.findElement(By.cssSelector("dialog.dlg #dlg-h")).getText())
                 .isEqualTo("Grant access on " + dotted(eu) + ".trades");
         assertThat(textContent(dialog.findElement(By.cssSelector(".on-now")))).isEqualTo(dotted(eu) + ".trades · table");
-        assertThat(dialog.findElements(By.cssSelector("input[aria-label='Go to a path']"))).isEmpty();
+        assertThat(dialog.findElements(By.cssSelector("input[aria-label='Find a namespace, table or view']"))).isEmpty();
         assertThat(dialog.findElements(By.cssSelector(".acc code"))).extracting(ConsoleBrowser::textContent)
                 .containsExactly("describe", "select", "write", "modify", "manage-tags", "manage-grants");
         closeDialog();
@@ -912,6 +916,8 @@ class ConsoleBrowserTest {
         dialog = openGrantAccess("#access-tab > .access-acts");
         assertThat(dialog.findElements(By.cssSelector(".acc code"))).extracting(ConsoleBrowser::textContent)
                 .containsExactly("describe", "select", "modify", "manage-tags", "manage-grants");
+        assertThat(dialog.findElements(By.cssSelector(".acc span"))).extracting(ConsoleBrowser::textContent)
+                .contains("Change it (definition, properties)");
         grant("select", group);
         assertThat(answer()).isEqualTo("admitted");
         assertThat(liveLine()).isEqualTo(group + " will read " + dotted(equities) + ".daily.");
@@ -925,6 +931,9 @@ class ConsoleBrowserTest {
         WebElement here = browser.await(By.cssSelector(".grants-reach tr[data-group='" + group
                 + "'][data-privilege='select'][data-on='here']"));
         assertThat(here.getDomAttribute("class")).isEqualTo("is-new");
+        browser.await("the grant made is not brought into view", d -> (Boolean) driver.executeScript(
+                "const r = document.querySelector('.grants-reach tr.is-new').getBoundingClientRect();"
+                        + " return r.top >= 0 && r.bottom <= window.innerHeight;"));
         assertThat(driver.findElement(By.cssSelector(".grants-reach tr[data-group='" + group
                 + "'][data-privilege='select'][data-on='namespace']")).getDomAttribute("class")).isNull();
     }

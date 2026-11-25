@@ -558,6 +558,10 @@ button.grp[aria-pressed="true"] { border-color: var(--accent); background: var(-
 .on-hit { padding: 5px 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .on-hit:hover, .on-hit:focus-visible { background: var(--surface-2); }
 .grant-line { display: grid; gap: 4px; min-height: 22px; }
+.grant-line:empty { display: none; }
+.grant-foot { position: sticky; bottom: 0; z-index: 1; display: grid; gap: 10px; margin: 0 -18px -18px; padding: 12px 18px 18px; border-top: 1px solid var(--line); background: var(--surface); }
+.grp-pick > .grp-cfg-h { padding: 6px 8px 2px; font-size: var(--t-12); }
+#governance-grants .duties { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grant-line[data-answer="admitted"], .grant-line[data-answer="unchanged"] { padding: 8px 12px; border-left: 3px solid var(--ok-mark); border-radius: var(--r-sm); background: var(--surface-2); }
 .grant-line[data-answer="unchanged"] { border-left-color: var(--line-strong); }
 .grant-line .refusal.compact { margin-bottom: 0; }
@@ -950,7 +954,7 @@ dialog { color: var(--text); }
 
 /* ===================================================================================== v4 */
 /* an action opens one modal dialog, built in place and removed when it closes */
-.dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: 10vh auto auto; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow); overflow: auto; }
+.dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 10vh - 24px); margin: 10vh auto auto; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow); overflow: auto; }
 .dlg.wide { width: min(840px, calc(100vw - 32px)); }
 .dlg::backdrop { background: oklch(20% 0.02 250 / 0.38); }
 .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }

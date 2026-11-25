@@ -500,9 +500,16 @@ export function accessTab(target, reload) {
   load(you, () => youMay(target));
   load(gov, () => governanceTab(target, reload));
   const [grants, listAgain] = grantsPart(target);
+  // Once the dialog closes after a grant, the grant's row is brought to the middle of the view, once the list has it.
+  let listed = Promise.resolve(null);
+  const showMade = () => listed.then(reach => {
+    const row = reach && reach.querySelector('tr.is-new');
+    if (row && row.isConnected) row.scrollIntoView({block: 'center',
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  });
   const acts = may(target.catalog, 'manage-grants') ? h('div', {class: 'refusal-acts access-acts'},
-    h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target, {after: listAgain})},
-      icon('key'), 'Grant access')) : null;
+    h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target,
+      {after: made => { listed = listAgain(made); }, closed: showMade})}, icon('key'), 'Grant access')) : null;
   return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grants);
 }
 
@@ -527,10 +534,10 @@ function grantsPart(target) {
       h('p', {class: 'fine'}, `Who else holds what on this ${target.kind}, and granting, are open to those who manage `
         + `${target.catalog}'s grants.`))), () => {}];
   }
-  /** Lists the grants again; `made`, a grant the dialog just made here, is marked. */
+  /** Lists the grants again; `made`, a grant the dialog just made here, is marked. Answers the reach list once drawn. */
   const refresh = made => {
     const effective = api.effectiveGrants(target);
-    load(reach, async () => {
+    const drawn = load(reach, async () => {
       const list = (await effective).grants || [];
       return panel(`Grants that reach this ${target.kind}`, `${plural(list.length, 'grant')} · from the catalog down`,
         list.length ? tbl('stack-line grants-reach', ['Group', 'Privilege', 'Granted on', 'Granted', ''], list.map(g => {
@@ -560,6 +567,7 @@ function grantsPart(target) {
       ], 'who-may'));
     });
     ownGrants();
+    return drawn;
   };
   refresh();
   return [h('div', {class: 'grid-21 grants-here'}, reach,

@@ -9,9 +9,8 @@ import {at, code, fill, fmt, frozenPill, h, heldPill, icon, load, muted, openDia
 import {href, objectHref, pageHref} from './route.js';
 import {drFreeze, governanceTab, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
 import {may, operates} from './access.js';
-import {grantAccess} from './grant.js';
+import {DUTY, grantAccess} from './grant.js';
 
-const DUTY = {describe: 'read', select: 'read', write: 'data', modify: 'data', create: 'data', 'manage-grants': 'grants', 'manage-tags': 'tags'};
 const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write, modify, create'], ['grants', 'Grants', 'manage-grants'],
   ['tags', 'Tags', 'manage-tags']];
 
