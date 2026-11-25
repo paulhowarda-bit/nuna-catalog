@@ -13,7 +13,7 @@ import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, f
 import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {policyKey, sourceWords, tableHealthTab} from './health.js';
-import {accessTab, actionWords, auditTab, exportDialog, governanceSummary} from './panels.js';
+import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceSummary, TRINO_WORDS} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
@@ -53,6 +53,15 @@ function refusedLoad(error, others, ref) {
   return [failure(error, {big: true}), error.status === 403 ? h('div', {class: 'notice'}, icon('info'),
     h('span', null, h('b', null, `You may still open ${others}:`), ' each tab is checked on its own.'))
     : null];
+}
+
+/**
+ * A table flagged for row and column rules refuses the console's load, which is storage access, to everyone (D20): its
+ * Overview, Schema and History say why instead of the refusal (Atelier, 2026-11-24; backlog 241).
+ */
+async function flaggedLoad(error, target) {
+  if (error.status !== 403 || !(await api.governance(target).then(flaggedHere, () => false))) return null;
+  return h('div', {class: 'notice', id: 'read-through-trino'}, icon('info'), h('span', null, TRINO_WORDS));
 }
 
 /**
@@ -137,7 +146,7 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
-          return refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
+          return await flaggedLoad(error, target) || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
         const shown = {'': overviewTab, schema: (x, y) => h('div', {class: 'stack'}, schemaTab(x, y), partitionTab(x, y)),
