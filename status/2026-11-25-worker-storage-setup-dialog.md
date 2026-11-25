@@ -18,4 +18,5 @@
   answer stubbed (the panel and the MinIO and Ceph dialogs drawn).
 - Bites `bites/UI/console-storage-setup-for-anyone-with-names`, `console-storage-deletes-refused-as-listing`,
   `console-storage-policy-unfolded`, recorded and checked with `git apply --check`; every other bite still applies.
-- Fast build: see the end of this entry.
+- Fast build (`./gradlew build`) after merging `main` at 639b0da5, once the overnight run had ended: BUILD SUCCESSFUL in
+  2m 18s; `ConsoleRulesTest` 2 of 2 with `storage.js` in its list; `:bitesApply` green.
