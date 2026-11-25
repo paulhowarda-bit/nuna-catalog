@@ -11,10 +11,12 @@ import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.PointerState;
 import nuna.catalog.audit.RefChange;
 import nuna.catalog.audit.Securable;
+import nuna.catalog.audit.archive.ObjectLockArchive;
 import nuna.catalog.store.OutboxBatch;
 import nuna.catalog.store.OutboxEntry;
 import nuna.catalog.store.OutboxStore;
 import nuna.catalog.store.WriteResult;
+import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -27,11 +29,13 @@ import java.util.UUID;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.services.s3.S3Client;
 
 /**
  * Audit with no Kafka configured (D23, amended 2026-11-23): the server's audit runtime starts, its outbox relay drains
  * every change to the log {@code nuna.audit} instead of leaving it in the outbox, and a notice goes to the log before
- * the route answers. With the audit log switched off the server does not start.
+ * the route answers. With the audit log switched off the server does not start. An archive needs no Kafka either: the
+ * audit table writer writes it from the log, and the server only reads it (D23, amended 2026-11-25).
  */
 class AuditRuntimeWithoutKafkaTest {
 
@@ -74,15 +78,15 @@ class AuditRuntimeWithoutKafkaTest {
         }
     }
 
-    private static AuditSettings noKafka() {
+    private static AuditSettings noKafka(AuditSettings.Archive archive) {
         return new AuditSettings(null, "nuna.catalog.audit", "nuna.catalog.changes", Duration.ofSeconds(5),
                 Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(20), Duration.ofSeconds(30), 2,
-                new AuditSettings.Archive(null, null, "audit"));
+                archive);
     }
 
     private AuditRuntime runtime() {
-        return new AuditRuntime(noKafka(), outbox, Optional.empty(), SOURCE, UnaryOperator.identity(),
-                Clock.systemUTC());
+        return new AuditRuntime(noKafka(new AuditSettings.Archive(null, null, "audit")), outbox, Optional.empty(),
+                SOURCE, UnaryOperator.identity(), Clock.systemUTC());
     }
 
     private static CatalogEvent commit() {
@@ -125,6 +129,33 @@ class AuditRuntimeWithoutKafkaTest {
         }
 
         assertThat(log.records()).extracting(CatalogEvent::id).containsExactly(warning.id());
+    }
+
+    @Test
+    void anArchiveNeedsNoKafkaAndTheServerWritesNothingToIt() throws InterruptedException {
+        List<String> calls = new ArrayList<>();
+        S3Client store = (S3Client) Proxy.newProxyInstance(S3Client.class.getClassLoader(),
+                new Class<?>[] {S3Client.class}, (proxy, method, args) -> {
+                    calls.add(method.getName());
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        ObjectLockArchive archive = new ObjectLockArchive(store, "audit-archive", "audit",
+                ObjectLockArchive.MINIMUM_RETENTION, Clock.systemUTC());
+        CatalogEvent change = commit();
+        outbox.add(change);
+
+        try (AuditRuntime runtime = new AuditRuntime(noKafka(new AuditSettings.Archive("audit-archive", "archive",
+                "audit")), outbox, Optional.of(archive), SOURCE, UnaryOperator.identity(), Clock.systemUTC())) {
+            runtime.start();
+            long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+            while (outbox.size() > 0 && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
+            assertThat(runtime.archive()).as("kept for the reconcile and the check").containsSame(archive);
+        }
+
+        assertThat(log.records()).extracting(CatalogEvent::id).containsExactly(change.id());
+        assertThat(calls).as("the audit table writer writes the archive, not the server").isEmpty();
     }
 
     @Test

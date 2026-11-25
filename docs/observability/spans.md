@@ -74,7 +74,8 @@ called no STS and published no credential issue.
   Its calls, the server's startup (migration, storage profiles, declared catalogs) and the relay's publishes to Kafka
   make neither spans nor timers.
 - **Methods that reach nothing.** `TableFiles.newLocation` and `isWithin` compute an answer and call no store.
-- **The archive** (Object Lock writes, `nuna.audit.archive.*`) runs on its own thread, outside any request.
+- **The archive check** (`nuna.audit.archive.*`) reads the archive on its own thread, hourly, outside any request.
+  The audit table writer writes the archive, in a process of its own.
 
 ## What tags never hold
 

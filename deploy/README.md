@@ -165,12 +165,16 @@ cluster's log collection takes, and over OTLP wherever the logs go. That log is 
 optional (docs/observability/audit-log.md says what is written when, and what can be lost).
 
 - **Without Kafka** (`config.nuna.audit.kafka-bootstrap-servers` empty, the default) the servers serve, vend
-  credentials and drain the outbox to the log. There is no audit topic, change stream or archive, and `GET .../audit`
+  credentials and drain the outbox to the log. There is no audit topic or change stream, and `GET .../audit`
   (an object's recent records from the topic) answers 503 saying it needs Kafka; the console's catalog-wide Audit page
   reads the audit table instead.
 - **With Kafka**, every record also goes to the audit topic, and changes to the change stream, best effort: an outage
-  refuses and slows nothing, and what happened during it is in the log only, not in the topic, the SIEM's feed or the
-  Object Lock archive. The archive (`nuna.audit.archive.*`) needs Kafka.
+  refuses and slows nothing, and what happened during it is in the log only, not in the topic or the SIEM's feed.
+- **The Object Lock archive** needs no Kafka [D23, amended 2026-11-25]: the audit table writer with the source `otlp`
+  writes it from the log (`config.nuna.audit-tables.archive` in its chart; catalog-audit-tables/README.md, "The
+  archive"), and the catalog reads it, checking it every hour and proving tips from it in the DR reconcile
+  (`config.nuna.audit.archive.bucket`, `profile`, `prefix`). Create the bucket with Object Lock first; both refuse a
+  bucket without it.
 - **The console's Audit page without Kafka.** Point the catalog's logs at the audit table writer, whose source `otlp`
   takes them over OTLP/HTTP. One shared token, in a Secret both releases read:
 
