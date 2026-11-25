@@ -1,0 +1,17 @@
+Breaks: a feed row after a record the check found missing does not say so, so it reads as verified soon.
+Module: catalog-server
+Test: AuditFeedRoutesTest#aRowFromTheLogIsVerifiedWhenEveryNumberOfItsRunUpToItIsAndOneWithoutARunCannotBePlaced
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index e48a6685..05326ee3 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -476,7 +476,7 @@ class AuditReadRoutes {
+             List<ArchiveCheck.Range> gaps = through ? List.of() : missing.getOrDefault(row.logRun(), List.of());
+             gaps.stream().filter(r -> r.from() <= n && n <= r.to()).findFirst()
+                     .or(() -> gaps.stream().filter(r -> r.to() < n).min(Comparator.comparingLong(ArchiveCheck.Range::from)))
+-                    .ifPresent(r -> chain.putObject("missing").put("from", r.from()).put("to", r.to()));
++                    .ifPresent(r -> { });
+         }
+         try {
+             node.set("event", Management.JSON.readTree(EventCodec.encode(AuditRows.event(row))));

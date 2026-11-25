@@ -1,0 +1,17 @@
+Breaks: a record's place says the check verified it once the check has seen its run, wherever the head is.
+Module: catalog-server
+Test: AuditFeedRoutesTest#aRecordPastTheVerifiedHeadOrWithABrokenLinkSaysSo
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index e48a6685..742f4d2a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -314,7 +314,7 @@ class AuditReadRoutes {
+         body.put("next-hash", place.next().orElse(null));
+         body.put("link-holds", place.holds());
+         ArchiveCheck.Verified verified = check.verified().get(chain.toString());
+-        body.put("verified", verified != null && place.position() <= verified.head().sequence());
++        body.put("verified", verified != null);
+         body.put("checked-at", verified == null ? null : verified.at().toString());
+         ObjectNode segment = body.putObject("segment");
+         segment.put("key", place.segment().key());

@@ -1,0 +1,17 @@
+Breaks: the archive's gauge keeps a row for every run ever archived, done ones included, so it grows without end.
+Module: catalog-server
+Test: AuditFeedRoutesTest#theArchiveGaugeGivesTheHighestVerifiedInEachRunNotDoneAndTheServerGivesWhatItLogged
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditArchiveCheck.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditArchiveCheck.java
+index 17932607..1a4c9059 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditArchiveCheck.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditArchiveCheck.java
+@@ -145,7 +145,7 @@ class AuditArchiveCheck implements SmartLifecycle, MeterBinder {
+     private void gauge(ArchiveCheck.Result result) {
+         MultiGauge gauge = archived;
+         if (gauge != null) {
+-            gauge.register(result.chains().stream().filter(c -> c.run() && !c.verified().done())
++            gauge.register(result.chains().stream().filter(c -> c.run())
+                     .map(c -> MultiGauge.Row.of(Tags.of(RUN, c.chain()), c.verified().highest())).toList(), true);
+         }
+     }

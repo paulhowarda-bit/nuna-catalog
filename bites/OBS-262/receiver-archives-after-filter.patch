@@ -3,10 +3,10 @@ Module: catalog-audit-tables
 Test: OtlpLogsReceiverTest#archivesEveryAuditRecordAsItCameEvenThoseTheTableLeavesOut
 
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
-index 10f1e2c5..4cdc0f0f 100644
+index cbbe75f3..57881994 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
-@@ -141,7 +141,8 @@ final class OtlpLogsReceiver implements AutoCloseable {
+@@ -140,7 +140,8 @@ final class OtlpLogsReceiver implements AutoCloseable {
                  answer(exchange, 400, null);
                  return;
              }
@@ -15,4 +15,4 @@ index 10f1e2c5..4cdc0f0f 100644
 +                    .toList())) {
                  return;
              }
-             List<CatalogEvent> events = new ArrayList<>();
+             List<LogWriter.Logged> events = new ArrayList<>();

@@ -1,0 +1,16 @@
+Breaks: looking up a record's place in its chain is not audited as a read of the audit catalog.
+Module: catalog-server
+Test: AuditFeedRoutesTest#aRecordsPlaceInItsRunsChainIsReadFromTheArchiveAndTheReadIsAudited
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index e48a6685..81d9a9d2 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -297,7 +297,6 @@ class AuditReadRoutes {
+             LOG.warn("audit archive could not be read for run {} record {}", chain, n, e);
+             throw CatalogError.of(503, "ServiceUnavailableException", "The audit archive cannot be read now; retry later");
+         }
+-        trail.record(new AuditRead(catalogSecurable(audit), placed.isPresent() ? 1 : 0, request.actor()));
+         ObjectNode body = Management.JSON.createObjectNode();
+         body.put("chain", chain.toString());
+         body.put("log-run", chain.toString());
