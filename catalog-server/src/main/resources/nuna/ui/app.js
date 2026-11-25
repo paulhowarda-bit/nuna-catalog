@@ -349,7 +349,7 @@ function signInPage(message, again) {
       h('ul', {class: 'pts'}, [
         ['db', 'Four interchangeable stores.', 'PostgreSQL, Oracle, MongoDB or CockroachDB, each passing the same fault-injection suite.'],
         ['maint', 'Maintenance that respects the rules.', 'Snapshot expiry, orphan-file removal and compaction run under holds, freezes and recovery windows.'],
-        ['audit', 'Every read, change and access refusal audited.', 'Changes reach a hash-chained archive kept at least five years.'],
+        ['audit', 'Every read, change and access refusal audited.', 'Changes reach a hash-chained archive kept at least seven years.'],
         ['key', 'Credentials per table.', 'Short-lived storage credentials, scoped to the table\'s own prefix, only to callers allowed to read it.'],
       ].map(([ic, b, t]) => h('li', null, icon(ic), h('span', null, h('b', null, b), ' ', t)))),
       horizon()),
@@ -727,7 +727,7 @@ function render() {
   } else if (r.page === 'service') {
     navKey = 'service';
     title = 'Service';
-    content = operates() ? healthPage() : closedPage('Service', 'Service health is open to platform operators.');
+    content = operates() ? healthPage(r.tab, r.g) : closedPage('Service', 'Service health is open to platform operators.');
   } else if (!r.page && r.c) {
     // Branches and tags, and a ref's own page, are the rail's Branches and tags (Atelier, 2026-11-24; backlog 221).
     const refs = r.k === 'ref' || (r.k === 'catalog' && r.tab === 'refs');

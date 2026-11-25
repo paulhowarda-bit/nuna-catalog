@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**58 open:** 17 S, 21 M, 15 L, 5 XL.
+**56 open:** 16 S, 20 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,14 +60,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
 | [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
 | [261](backlog/261.md) | M | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's) | 2026-11-24 |
 | [262](backlog/262.md) | L | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | waits on Paul's answer below, which sets the size: (a) is S, a ledger amendment and the doc; (b) M to L, a field on every record and a reconciling check; (c) L, the archive moved off Kafka onto the log path with (b)'s field and a checkpoint of its own | 2026-11-24 |
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
-| [264](backlog/264.md) | S | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | a ledger amendment and a few comments and lines (more only if Paul lowers the floor: the floor, its test and a bite); waits on Paul's answer | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 
@@ -3112,58 +3110,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 254. Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/main/resources/nuna/ui/dom.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/
-- Effort: M, one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253
-
-## What is missing
-
-The two maintenance steps done outside the catalog (the worker's settings, the store's policy: item 252) leave the
-operator to work out what to change by reading `deploy/README.md`. The console can hand over the exact text from item
-253's route (Atelier, 2026-11-24).
-
-## Atelier's design
-
-**Dialog "Set up the worker's storage for ledger"**, opened by **What to add** and **What to apply** on Maintenance
-(item 252) and by **What to set up** on Service. Intro: "Two changes outside the catalog, one in the worker's settings
-and one in the store. The steps on the Maintenance page turn to Done at the worker's next scan after each."
-
-- **"1. The worker's settings"**
-  - A store the worker already reaches: "Add s3://ledger-warehouse/tables to the worker's profile s3, which already
-    reaches http://s3:9000:", the YAML with both prefixes, then "Then upgrade the nuna-maintenance release. The worker
-    reads its settings only when it starts." Button **Copy the settings**. After item 256 this case needs nothing, and
-    the block is not shown.
-  - A new store: "Add a profile for {endpoint}. Its key and secret are the worker's own on that store, never the
-    catalog's:", the YAML with `access-key-id: <the worker's access key on this store>`, then "Put the secret in the
-    release's secrets as nuna.maintenance.storage.{name}.secret-access-key, then upgrade the release. On AWS S3 with a
-    role for the worker (IRSA or Pod Identity), leave both keys out."
-- **"2. The store's policy"**
-  - MinIO: "As a store admin, let the worker's user list and delete beneath …:", the `mc admin policy create/attach`
-    commands with `<alias>` marked, buttons **Copy the commands** and **Copy the policy**, the policy itself folded.
-    Then "Then attach nuna-no-delete to every other user of the store, the catalog's own included, so only the worker
-    deletes there:" with its own commands.
-  - AWS S3 and Ceph: "As an identity that may, put this policy on bucket ledger-warehouse. A bucket holds one policy:
-    merge these statements into any it already has.", then `aws s3api put-bucket-policy …`, with `--endpoint-url` for
-    Ceph.
-  - No maintenance principal on the profile: "The catalog's profile {name} names no maintenance principal, so the
-    catalog generates no delete policy for it and nothing stops other keys deleting there. Name the worker's storage
-    identity in the catalog's settings, then upgrade the catalog and come back:", then
-    `nuna.storage.profiles.{name}.maintenance-principal`.
-- Foot: "The catalog writes these policies but never applies them: its own keys would then need the right to undo
-  them."
-
-**Service page, a "Worker storage" panel, operators only.** One row per catalog storage profile, those with something
-not done first. Columns: Profile · Catalogs · Prefixes · Worker settings ("Covered by s3" / "Not covered") · Store
-("Listed 14:05" / "Refused: AccessDenied" / "Not checked") · Delete policy ("Generated for nuna-maintenance; the catalog
-can't see whether it is applied" / "Unprotected"). Each row has **What to set up**, opening the dialog.
-
-## Done when
-
-The dialog and panel work as above, and browser tests as `oscar` show a store in each state. The note's link from item
-252 opens the Service page on the Worker storage panel.
-
 ### 258. Grants: refuse write on a view, which gives only select there yet counts as a data duty
 
 - Added: 2026-11-24 by catalog-security review of backlog 246
@@ -3404,45 +3350,6 @@ built to keep them": a persistent queue re-sends after a crash
 out; a writer killed before its commit loses nothing its sender was told was taken (or audit-log.md states the window,
 as above); the chart's values, `catalog-audit-tables/README.md` and audit-log.md say the new behaviour; bites in
 `bites/OBS-263/`.
-
-### 264. D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation)
-
-- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
-- Touches: decision-ledger.md build-plan.md catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java catalog-audit/src/test/java/nuna/catalog/audit/archive/LockedArchiveTest.java catalog-server/src/main/java/nuna/catalog/server/governance/AuditSettings.java bites/
-- Effort: S, a ledger amendment and a few comments and lines (more only if Paul lowers the floor: the floor, its test and a bite); waits on Paul's answer
-
-**What is wrong.** D23 says "≥5-year retention (NYDFS 500.6)". 23 NYCRR 500.6(b) sets two periods: at least five years
-for the (a)(1) systems that reconstruct material financial transactions, and at least three years for the (a)(2)
-audit trails that detect and respond to cybersecurity events. The 2017 text had the same split, and the November 2023
-Second Amendment kept it (DFS's Part 500 text, https://www.dfs.ny.gov/cybersecurity/23-NYCRR-Part-500). Cornell
-LII's copy shows one five-year period that matches neither, and LII is what the plan cited
-(`reports/Enterprise Iceberg REST catalog plan.md`, line 751); D23 carried that reading forward. The catalog's access
-and grant records are (a)(2) audit trails (inferred), so the archive's 1,827 days (`AuditSettings.java:56`, refused
-below that, `ObjectLockArchive.java`, lines 45 and 107) is above the minimum: nuna's policy, not the regulation's
-floor. The citation is repeated in `ObjectLockArchive.java` (lines 34 and 45) and in build-plan.md (line 209, and
-CMP-1 on line 421, "beyond the 5-year floor").
-
-Two related points, for the record and not this item's work: Part 500 binds only entities licensed under New York's
-Banking, Insurance or Financial Services Law (500.1), which build-plan.md's CMP-1 already asks about; and 1,827 days
-covers no six-year period, so were the firm ever to make the log a required record, 17a-4(a)'s or FINRA 4511(b)'s six
-years would outrun it, which D23's "longer where a record period applies" already allows for.
-
-**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
-`research/reports/Nuna observability and audit grounding.md`), "NYDFS asks three years for audit trails, not five",
-which read the DFS text and the 2017 original
-(https://www.governor.ny.gov/sites/governor.ny.gov/files/atoms/files/Cybersecurity_Requirements_Financial_Services_23NYCRR500.pdf).
-
-**Paul decides: correct D23's citation?**
-
-- **Recommended:** keep 1,827 days and the code's floor, and amend D23 to say five years is nuna's policy, above NYDFS
-  500.6(b)'s three-year minimum for cybersecurity audit trails (its five years apply to transaction reconstruction),
-  longer where a record period applies.
-- Or correct the citation and lower the floor to three years (1,096 days), keeping 1,827 as the default: a deployment
-  could then lock its archive for less.
-
-**Done when** D23 is amended with Paul's answer and `Decided:` added here; `ObjectLockArchive.java`'s comments and
-build-plan.md's lines 209 and 421 say the same as D23. If he lowers the floor: the floor, `LockedArchiveTest`'s refusal
-and its message changed, with a bite.
 
 ### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR
 
@@ -3732,6 +3639,8 @@ profile), which readiness says and Overview does not.
 | [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
 | [252](backlog/252.md) | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | done | 2026-11-24 |
 | [253](backlog/253.md) | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | done | 2026-11-24 |
+| [254](backlog/254.md) | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | done | 2026-11-24 |
 | [255](backlog/255.md) | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
+| [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |

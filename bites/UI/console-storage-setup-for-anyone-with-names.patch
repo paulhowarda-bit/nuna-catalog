@@ -1,0 +1,17 @@
+Breaks: Maintenance offers the operator's storage dialog (What to add, What to apply) to anyone who may see names, so a caller who is not a platform operator opens it and draws an audited refusal from the storage-setup route.
+Module: catalog-server
+Test: ConsoleStorageSetupBrowserTest#neitherThePanelNorTheDialogIsOfferedToOneWhoIsNotAnOperator
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/readiness.js b/catalog-server/src/main/resources/nuna/ui/readiness.js
+index 5e5fb375..0534e294 100644
+--- a/catalog-server/src/main/resources/nuna/ui/readiness.js
++++ b/catalog-server/src/main/resources/nuna/ui/readiness.js
+@@ -97,7 +97,7 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
+   const note = noteButton(catalog, ready);
+   // An action for a step done outside the catalog: an operator's dialog or link, the note for others who may see names,
+   // else whom to ask.
+-  const outside = (act, words) => !names ? askNames() : operates() ? operatorAction(act, words) : note();
++  const outside = (act, words) => !names ? askNames() : true ? operatorAction(act, words) : note();
+ 
+   // 1. Write access.
+   const grant = ready.grant || {};

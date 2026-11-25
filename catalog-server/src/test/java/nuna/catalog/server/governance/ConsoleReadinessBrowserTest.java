@@ -40,8 +40,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *       the catalog's policy to edit.</li>
  *   <li>{@code gary}, a grant admin: "Grant write to" the worker's group, which opens item 248's Grant access dialog
  *       filled in; once granted, the step is done.</li>
- *   <li>{@code oscar}, a platform operator holding no grant: the steps outside the catalog link to the Service page
- *       (item 254 replaces them with its dialog), and the steps an operator can't do say whom to ask, so nothing he is
+ *   <li>{@code oscar}, a platform operator holding no grant: the steps outside the catalog open his dialog for the
+ *       catalog's profile (item 254), and the steps an operator can't do say whom to ask, so nothing he is
  *       offered draws an audited refusal (catalog-security, 2026-11-24).</li>
  * </ul>
  *
@@ -145,7 +145,7 @@ class ConsoleReadinessBrowserTest {
         assertThat(copy.getDomAttribute("data-note")).isEqualTo("The maintenance worker can't delete old files in "
                 + "catalog trading. Its tables are in " + allowed + ". " + noIdentity()
                 + " What to apply is on the console's Service page, under Worker storage: " + browser.origin()
-                + "/ui/#p=service");
+                + "/ui/#p=service&tab=worker-storage&g=" + S3ForTests.PROFILE);
         copy.click();
         browser.await("the note was not copied", d -> copy.getText().equals("Copied") ? true : null);
         assertThat(step("storage").findElement(By.cssSelector(".step-sent")).getText())
@@ -194,7 +194,7 @@ class ConsoleReadinessBrowserTest {
     }
 
     @Test
-    void oscarIsSentToServiceForTheStoreStepsAndAskedForTheRest() {
+    void oscarOpensTheStorageDialogForTheStoreStepsAndIsAskedForTheRest() {
         browser.signIn(token("oscar", GovernanceServer.PLATFORM_OPS));
 
         // Before any worker reports, the first three steps are not known, and none offers an action.
@@ -220,15 +220,15 @@ class ConsoleReadinessBrowserTest {
         assertThat(step("grant").findElement(By.cssSelector(".step-ask")).getText()).isEqualTo("Ask a grant admin.");
         assertThat(step("policy").findElement(By.cssSelector(".step-ask")).getText())
                 .isEqualTo("Ask someone with modify on trading.");
-        WebElement add = step("storage").findElement(By.cssSelector("a[data-act='what-to-add']"));
+        // The steps outside the catalog open his dialog for trading's profile (backlog 254).
+        WebElement add = step("storage").findElement(By.cssSelector("button[data-act='what-to-add']"));
         assertThat(add.getText()).isEqualTo("What to add");
-        assertThat(add.getDomAttribute("href")).isEqualTo("#p=service");
-        WebElement apply = step("store").findElement(By.cssSelector("a[data-act='what-to-apply']"));
+        WebElement apply = step("store").findElement(By.cssSelector("button[data-act='what-to-apply']"));
         assertThat(apply.getText()).isEqualTo("What to apply");
         assertThat(driver.findElements(By.cssSelector("#readiness [data-act='grant-write'], #readiness "
                 + "[data-act='edit-policy'], #readiness [data-act='copy-note']"))).isEmpty();
         apply.click();
-        browser.await("Service has not opened", d -> d.getCurrentUrl().endsWith("#p=service") ? true : null);
+        browser.awaitText(By.cssSelector("dialog.dlg #dlg-h"), "Set up the worker's storage for trading");
     }
 
     @Test
@@ -272,7 +272,8 @@ class ConsoleReadinessBrowserTest {
      * for AWS S3's own, for which the route gives no endpoint.
      */
     private String noIdentity() {
-        Map<String, Object> storage = JsonPath.read(expect(api.manage("GET", "/maintenance/readiness", null), 200).body(),
+        Map<String, Object> storage = JsonPath.read(expect(api.send("GET", "/management/v1/catalogs/" + Api.CATALOG
+                + "/maintenance/readiness", null), 200).body(),
                 "$.storage");
         return storage.containsKey("endpoint") ? "The worker holds no identity for the store at " + storage.get("endpoint")
                 + "." : "The worker holds no identity for AWS S3.";

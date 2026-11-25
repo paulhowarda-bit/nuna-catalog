@@ -44,7 +44,7 @@ public record AuditSettings(
      * @param bucket          the Object Lock bucket
      * @param profile         the storage profile whose endpoint, region and keys reach the bucket
      * @param prefix          the key prefix of every chain
-     * @param retention       how long each segment is locked; at least five years (D23)
+     * @param retention       how long each segment is locked; at least seven years (D23)
      * @param segmentEvents   the most records in one segment
      * @param segmentAge      the longest a record waits before its segment is written
      * @param consumerGroup   the Kafka consumer group the archive consumers share
@@ -53,7 +53,7 @@ public record AuditSettings(
             String bucket,
             String profile,
             @DefaultValue("audit") String prefix,
-            @DefaultValue("1827d") Duration retention,
+            @DefaultValue("2557d") Duration retention,
             @DefaultValue("10000") int segmentEvents,
             @DefaultValue("5m") Duration segmentAge,
             @DefaultValue("nuna-audit-archive") String consumerGroup) {
