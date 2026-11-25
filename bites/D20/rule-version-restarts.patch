@@ -1,0 +1,16 @@
+Breaks: a rule's version starts again at 1, so an If-Match read from a removed rule replaces the rule set after it.
+Module: catalog-server
+Test: RuleRoutesTest#aSetNamingTheVersionOfARuleRemovedSinceAnswers412
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java b/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java
+index 6cff3c3b..9a7a1dad 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/RowColumnRule.java
+@@ -52,7 +52,7 @@ public record RowColumnRule(UUID catalogId, UUID tableId, String group, Optional
+      */
+     public static long nextVersion(OptionalLong was, Instant at) {
+         long micros = Math.addExact(Math.multiplyExact(at.getEpochSecond(), 1_000_000L), at.getNano() / 1_000);
+-        return was.isPresent() ? Math.max(was.getAsLong() + 1, micros) : micros;
++        return was.isPresent() ? was.getAsLong() + 1 : 1;
+     }
+ 
+     /**

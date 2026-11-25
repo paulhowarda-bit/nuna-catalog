@@ -1,0 +1,17 @@
+Breaks: an expression Trino cannot parse is taken as parsed, so it is stored and fails every query of its group.
+Module: catalog-security
+Test: RuleExpressionsTest#anExpressionThatDoesNotParseIsRefusedSayingWhere+aStatementOrTwoExpressionsAreNoExpression
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/RuleExpressions.java b/catalog-security/src/main/java/nuna/catalog/security/RuleExpressions.java
+index 5e002e9d..33b5f33e 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/RuleExpressions.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/RuleExpressions.java
+@@ -41,8 +41,7 @@ public final class RuleExpressions {
+         try {
+             return new Parsed.Parses(PARSER.createExpression(sql));
+         } catch (ParsingException e) {
+-            return new Parsed.Fails(what + " is not a Trino SQL expression: at line " + e.getLineNumber() + ", column "
+-                    + e.getColumnNumber() + ", " + e.getErrorMessage());
++            return new Parsed.Parses(null);
+         }
+     }
+ }

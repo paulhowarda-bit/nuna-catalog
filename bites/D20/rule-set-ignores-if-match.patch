@@ -1,0 +1,16 @@
+Breaks: a set never passes its If-Match to the store, so it replaces another grant admin's edit unseen.
+Module: catalog-server
+Test: RuleRoutesTest#aSetWithTheVersionItReadReplacesTheRuleAndAStaleOneAnswers412WritingNothing
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
+index 761fbd21..8902bfc7 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
+@@ -132,7 +132,7 @@ class RuleRoutes {
+         RowColumnRule rule = RowColumnRule.of(record.id(), on.stored().id(), group, filter, masks);
+         Change change = change(new RowColumnRuleChange(RowColumnRuleChange.Action.SET, on.named(), group,
+                 filter.orElse(null), masks, request.actor()));
+-        WriteResult result = write("setting the rule", () -> store.putRule(rule, expected,
++        WriteResult result = write("setting the rule", () -> store.putRule(rule, OptionalLong.empty(),
+                 request.caller().subject().id(), change));
+         return switch (result) {
+             case WriteResult.Applied applied -> ResponseEntity.noContent().build();

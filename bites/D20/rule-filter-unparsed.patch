@@ -1,0 +1,15 @@
+Breaks: a row filter that does not parse is kept, its columns unread, and fails every query of its group.
+Module: catalog-security
+Test: RuleColumnsTest#aFilterThatDoesNotParseIsUnfitSayingWhere
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
+index 98bc2f6f..30f234b8 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
+@@ -85,7 +85,6 @@ public final class RuleColumns {
+             switch (RuleExpressions.parse(filter.get(), "row-filter")) {
+                 case RuleExpressions.Parsed.Parses parses -> referenced.addAll(columnsReferenced(parses.expression()));
+                 case RuleExpressions.Parsed.Fails fails -> {
+-                    return new Checked.Unfit(fails.message());
+                 }
+             }
+         }

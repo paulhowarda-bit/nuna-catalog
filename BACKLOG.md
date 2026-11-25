@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**61 open:** 18 S, 23 M, 15 L, 5 XL.
+**60 open:** 18 S, 22 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,7 +60,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [244](backlog/244.md) | M | Row and column rules: check expressions when set, and If-Match on set | an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites | 2026-11-24 |
 | [245](backlog/245.md) | S | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | a rail entry and a landing tab chosen from what the caller may do, both already known to the console (access.js) | 2026-11-24 |
 | [246](backlog/246.md) | S | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | one route running the checks the grant route already runs, without the write, with route tests and a bite | 2026-11-24 |
 | [247](backlog/247.md) | M | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests | 2026-11-24 |
@@ -3063,37 +3062,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 244. Row and column rules: check expressions when set, and If-Match on set
-
-- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Decided: 2026-11-24, D20
-- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-security/, catalog-server/build.gradle.kts, catalog-server/src/test/, bites/
-- Effort: M, an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites
-
-## What is wrong
-
-- **Expressions are not checked.** Setting a rule checks only its length and NUL characters
-  (`RuleRoutes.java:219-228`). A predicate or mask that does not parse is stored, and fails only when Trino runs a
-  query, for every user of that group.
-- **A set replaces another admin's edit silently.** The set route takes no If-Match, so two grant admins editing one
-  rule lose the first edit with no warning.
-
-The security expert, 2026-11-24, found no privilege problem in expressions: nuna's OPA answer carries no identity
-(`OpaAnswers.java:72`, `91`), so Trino runs an expression as the querying user and every table it reads goes through
-nuna's authorization for that user.
-
-## Decided
-
-Paul, 2026-11-24 (D20): expressions may hold subqueries and read other tables, so entitlements can come from a lookup
-table (`desk IN (SELECT desk FROM entitlements WHERE ...)`): "Allow subqueries".
-
-## Done when
-
-- Setting a rule parses its predicate and masks as Trino SQL expressions (Trino's own parser, or one that matches
-  it) and refuses one that does not parse, saying where. Subqueries and references to other tables parse and are accepted (D20).
-- Each rule carries a version, the list gives it, and a set or remove with a stale If-Match answers 412.
-- Route tests and a bite for each.
-
 ### 245. Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3706,3 +3674,4 @@ keys (the catalog refuses dot segments, the worker does not check).
 | [241](backlog/241.md) | Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes | done | 2026-11-24 |
 | [242](backlog/242.md) | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | done | 2026-11-24 |
 | [243](backlog/243.md) | Console: the Row filters and column masks panel and its dialog | done | 2026-11-24 |
+| [244](backlog/244.md) | Row and column rules: check expressions when set, and If-Match on set | done | 2026-11-24 |

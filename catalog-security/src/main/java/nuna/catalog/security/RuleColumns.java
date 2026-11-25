@@ -1,5 +1,13 @@
 package nuna.catalog.security;
 
+import io.trino.sql.tree.DataType;
+import io.trino.sql.tree.DereferenceExpression;
+import io.trino.sql.tree.Expression;
+import io.trino.sql.tree.Identifier;
+import io.trino.sql.tree.LambdaExpression;
+import io.trino.sql.tree.Node;
+import io.trino.sql.tree.Query;
+import io.trino.sql.tree.SubqueryExpression;
 import nuna.catalog.store.RowColumnRule;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -26,29 +34,16 @@ import java.util.stream.Collectors;
  *     <li>a schema change: one that renames or drops a column a rule names is refused, naming the rule
  *     ({@link #taken}).</li>
  * </ul>
- * Names compare ignoring case, as Trino's do. Which names a filter means as columns is read from its words alone,
- * not parsed: an identifier that is no SQL keyword, function, qualified name, typed literal's type, lambda parameter
- * or part of a subquery ({@link #columnsReferenced}). The schema-change check reads every identifier in the filter,
- * subqueries included ({@link #identifiers}), so it refuses at least every change the filter needs.
+ * Names compare ignoring case, as Trino's do. Which names a filter means as columns is read from its tree, parsed by
+ * Trino's parser ({@link RuleExpressions}, backlog 244): each identifier that is no part of a qualified name, a type,
+ * a lambda's parameter or a subquery ({@link #columnsReferenced}). The schema-change check reads every identifier in
+ * the filter's words, subqueries included ({@link #identifiers}), so it refuses at least every change the filter needs,
+ * and reads a rule stored before rules were parsed as well as one stored after.
  */
 public final class RuleColumns {
 
     /** The most names a message lists. */
     private static final int LISTED = 10;
-
-    /** Words of Trino's SQL a filter's words may be without naming a column: keywords, types and niladic functions. */
-    private static final Set<String> KEYWORDS = Set.of(
-            "all", "and", "any", "array", "as", "asc", "at", "between", "bigint", "boolean", "both", "by", "case",
-            "cast", "char", "current", "current_catalog", "current_date", "current_path", "current_role",
-            "current_schema", "current_time", "current_timestamp", "current_user", "date", "day", "decimal", "desc",
-            "distinct", "double", "else", "end", "escape", "except", "exists", "extract", "false", "fetch", "filter",
-            "first", "following", "for", "from", "full", "group", "having", "hour", "if", "in", "inner", "int",
-            "integer", "intersect", "interval", "ipaddress", "is", "join", "json", "last", "leading", "left", "like",
-            "limit", "localtime", "localtimestamp", "map", "minute", "month", "natural", "next", "not", "null",
-            "nulls", "of", "offset", "on", "only", "or", "order", "outer", "over", "partition", "preceding",
-            "precision", "range", "real", "right", "row", "rows", "second", "select", "smallint", "some", "then",
-            "time", "timestamp", "tinyint", "to", "trailing", "true", "try_cast", "unbounded", "union", "unnest",
-            "using", "uuid", "values", "varbinary", "varchar", "when", "where", "with", "without", "year", "zone");
 
     private RuleColumns() {
     }
@@ -85,9 +80,17 @@ public final class RuleColumns {
             return new Checked.Unfit("column-masks names " + listed(lacking) + ", which the table's current schema"
                     + " does not have; a mask names a column of the table as it is now (D20)");
         }
+        Set<String> referenced = new LinkedHashSet<>();
+        if (filter.isPresent()) {
+            switch (RuleExpressions.parse(filter.get(), "row-filter")) {
+                case RuleExpressions.Parsed.Parses parses -> referenced.addAll(columnsReferenced(parses.expression()));
+                case RuleExpressions.Parsed.Fails fails -> {
+                    return new Checked.Unfit(fails.message());
+                }
+            }
+        }
         Set<String> known = lowered(columns);
-        List<String> unknown = filter.map(RuleColumns::columnsReferenced).orElse(Set.of()).stream()
-                .filter(name -> !known.contains(name)).toList();
+        List<String> unknown = referenced.stream().filter(name -> !known.contains(name)).toList();
         if (!unknown.isEmpty()) {
             return new Checked.Unfit("row-filter names " + listed(unknown) + ", which the table's current schema"
                     + " does not have; a filter's columns are the table's as it is now (D20)");
@@ -144,87 +147,53 @@ public final class RuleColumns {
     }
 
     /**
-     * The names {@code filter} means as the table's columns, lowercased, read from its words: each identifier that is
-     * no keyword, function name, part of a qualified name, typed literal's type, cast's type or lambda parameter, and
-     * is outside every subquery (whose names are its own tables').
+     * The names {@code filter} means as the table's columns, lowercased, read from its tree: each identifier that is
+     * not part of a qualified name ({@code e.desk}, or a row's field), a type, a lambda's parameter, or inside a
+     * subquery, whose names are its own tables'. A function's name is no identifier in Trino's tree.
      */
-    static Set<String> columnsReferenced(String filter) {
-        List<Token> tokens = tokens(filter);
-        Set<String> parameters = new HashSet<>();
-        for (int i = 0; i < tokens.size(); i++) {
-            if (!tokens.get(i).is("->")) {
-                continue;
-            }
-            if (i > 0 && tokens.get(i - 1).identifier()) {
-                parameters.add(tokens.get(i - 1).lowered());
-            } else if (i > 0 && tokens.get(i - 1).is(")")) {
-                for (int j = i - 2; j >= 0 && !tokens.get(j).is("("); j--) {
-                    if (tokens.get(j).identifier()) {
-                        parameters.add(tokens.get(j).lowered());
-                    }
-                }
-            }
-        }
+    static Set<String> columnsReferenced(Expression filter) {
         Set<String> names = new LinkedHashSet<>();
-        for (int i = 0; i < tokens.size(); i++) {
-            Token token = tokens.get(i);
-            if (token.is("(") && i + 1 < tokens.size() && tokens.get(i + 1).bareIn(Set.of("select", "with", "values"))) {
-                i = closing(tokens, i);
-                continue;
-            }
-            if (!token.identifier()) {
-                continue;
-            }
-            Token previous = i > 0 ? tokens.get(i - 1) : Token.NONE;
-            Token next = i + 1 < tokens.size() ? tokens.get(i + 1) : Token.NONE;
-            boolean keyword = !token.quoted() && KEYWORDS.contains(token.lowered());
-            if (keyword || next.is("(") || next.is(".") || previous.is(".") || next.literal()
-                    || previous.bareIn(Set.of("as")) || parameters.contains(token.lowered())) {
-                continue;
-            }
-            names.add(token.lowered());
-        }
+        columns(filter, Set.of(), names);
         return names;
     }
 
-    /** The index of the parenthesis that closes the one at {@code open}; the last token's when none does. */
-    private static int closing(List<Token> tokens, int open) {
-        int depth = 0;
-        for (int i = open; i < tokens.size(); i++) {
-            if (tokens.get(i).is("(")) {
-                depth++;
-            } else if (tokens.get(i).is(")") && --depth == 0) {
-                return i;
+    private static void columns(Node node, Set<String> parameters, Set<String> names) {
+        switch (node) {
+            case Identifier identifier -> {
+                String name = identifier.getValue().toLowerCase(Locale.ROOT);
+                if (!parameters.contains(name)) {
+                    names.add(name);
+                }
             }
+            case DereferenceExpression dereference -> {
+                if (!(dereference.getBase() instanceof Identifier)
+                        && !(dereference.getBase() instanceof DereferenceExpression)) {
+                    columns(dereference.getBase(), parameters, names);
+                }
+            }
+            case LambdaExpression lambda -> {
+                Set<String> inner = new HashSet<>(parameters);
+                lambda.getArguments().forEach(argument -> inner.add(argument.getName().getValue()
+                        .toLowerCase(Locale.ROOT)));
+                columns(lambda.getBody(), inner, names);
+            }
+            case SubqueryExpression subquery -> {
+            }
+            case Query query -> {
+            }
+            case DataType type -> {
+            }
+            default -> node.getChildren().forEach(child -> columns(child, parameters, names));
         }
-        return tokens.size() - 1;
     }
 
     /** A word of an SQL expression: an identifier, quoted or bare; a string literal; or any other symbol. */
     private record Token(Kind kind, String text) {
 
-        static final Token NONE = new Token(Kind.SYMBOL, "");
-
         enum Kind { BARE, QUOTED, LITERAL, SYMBOL }
 
         boolean identifier() {
             return kind == Kind.BARE || kind == Kind.QUOTED;
-        }
-
-        boolean quoted() {
-            return kind == Kind.QUOTED;
-        }
-
-        boolean literal() {
-            return kind == Kind.LITERAL;
-        }
-
-        boolean is(String symbol) {
-            return kind == Kind.SYMBOL && text.equals(symbol);
-        }
-
-        boolean bareIn(Set<String> words) {
-            return kind == Kind.BARE && words.contains(lowered());
         }
 
         String lowered() {

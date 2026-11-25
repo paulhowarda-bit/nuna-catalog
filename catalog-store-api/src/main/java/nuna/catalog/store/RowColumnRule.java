@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -41,8 +42,24 @@ public record RowColumnRule(UUID catalogId, UUID tableId, String group, Optional
         return new RowColumnRule(catalogId, tableId, group, rowFilter, new TreeMap<>(columnMasks));
     }
 
-    /** A stored rule: who set it and when. */
-    public record Stored(RowColumnRule rule, String setBy, Instant setAt) {
+    /**
+     * The version a set gives a rule (backlog 244): the time of the write in microseconds since 1970, or one past
+     * the version the rule had when the clock is behind it. A version only grows while the rule lasts, and a rule
+     * removed and set again does not come back at a version a client read before, as it would if versions started
+     * again at 1: an If-Match read from the old rule cannot replace the new one.
+     *
+     * @param was the version of the rule being replaced; empty when the group has no rule on the table
+     */
+    public static long nextVersion(OptionalLong was, Instant at) {
+        long micros = Math.addExact(Math.multiplyExact(at.getEpochSecond(), 1_000_000L), at.getNano() / 1_000);
+        return was.isPresent() ? Math.max(was.getAsLong() + 1, micros) : micros;
+    }
+
+    /**
+     * A stored rule: who set it and when, and its version, which a set or removal may name to act only on the rule
+     * as it was read (If-Match, backlog 244). A rule stored before versions were kept reads as version 1.
+     */
+    public record Stored(RowColumnRule rule, String setBy, Instant setAt, long version) {
 
         public Stored {
             Objects.requireNonNull(rule, "rule");

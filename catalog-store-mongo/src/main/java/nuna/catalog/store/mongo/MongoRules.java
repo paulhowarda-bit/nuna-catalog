@@ -17,11 +17,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.TreeMap;
 import java.util.UUID;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
+import org.bson.BsonInt64;
 import org.bson.BsonNull;
 import org.bson.BsonString;
 import org.bson.BsonValue;
@@ -40,7 +42,7 @@ final class MongoRules {
         this.transactions = transactions;
     }
 
-    WriteResult put(RowColumnRule rule, String setBy, Change change) {
+    WriteResult put(RowColumnRule rule, OptionalLong expected, String setBy, Change change) {
         return transactions.change(change, "rule put", tx -> {
             Optional<BsonDocument> table = activeTable(tx, rule.tableId());
             if (table.isEmpty() || !uuid(table.get().get("catalogId")).equals(rule.catalogId())) {
@@ -54,10 +56,14 @@ final class MongoRules {
             }
             BsonDocument key = key(rule.tableId(), rule.group());
             Optional<BsonDocument> was = tx.find(RULE, key);
+            was.ifPresent(tx::see);
+            long version = was.map(MongoRules::version).orElse(0L);
+            if (expected.isPresent() && expected.getAsLong() != version) {
+                return new WriteResult.VersionMismatch(version);
+            }
             if (was.isPresent() && rule(was.get()).rule().equals(rule)) {
                 return WriteResult.UNCHANGED;
             }
-            was.ifPresent(tx::see);
             tx.mark(OBJECT, table.get());
             was.ifPresent(doc -> tx.collection(RULE).deleteOne(tx.session, byId(doc.get("_id"))));
             BsonArray masks = new BsonArray();
@@ -69,18 +75,23 @@ final class MongoRules {
                     .append("columnMasks", masks)
                     .append("setBy", new BsonString(setBy))
                     .append("setAt", time(change.at()))
+                    .append("version", new BsonInt64(RowColumnRule.nextVersion(
+                            was.isPresent() ? OptionalLong.of(version) : OptionalLong.empty(), change.at())))
                     .append("clock", tx.clock()));
             return WriteResult.APPLIED;
         });
     }
 
-    WriteResult remove(UUID catalogId, UUID tableId, String group, Change change) {
+    WriteResult remove(UUID catalogId, UUID tableId, String group, OptionalLong expected, Change change) {
         return transactions.change(change, "rule remove", tx -> {
             Optional<BsonDocument> found = tx.find(RULE, key(tableId, group).append("catalogId", uuid(catalogId)));
             if (found.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.RULE);
             }
             tx.see(found.get());
+            if (expected.isPresent() && expected.getAsLong() != version(found.get())) {
+                return new WriteResult.VersionMismatch(version(found.get()));
+            }
             tx.collection(RULE).deleteOne(tx.session, byId(found.get().get("_id")));
             return WriteResult.APPLIED;
         });
@@ -120,6 +131,13 @@ final class MongoRules {
         RowColumnRule rule = RowColumnRule.of(uuid(doc.get("catalogId")), uuid(doc.get("tableId")),
                 doc.getString("group").getValue(),
                 filter == null || filter.isNull() ? Optional.empty() : Optional.of(filter.asString().getValue()), masks);
-        return new RowColumnRule.Stored(rule, doc.getString("setBy").getValue(), instant(doc.get("setAt")));
+        return new RowColumnRule.Stored(rule, doc.getString("setBy").getValue(), instant(doc.get("setAt")),
+                version(doc));
+    }
+
+    /** The rule's version; 1 for a rule a server of the release before versions wrote (backlog 244). */
+    private static long version(BsonDocument doc) {
+        BsonValue version = doc.get("version");
+        return version == null || version.isNull() ? 1 : version.asNumber().longValue();
     }
 }

@@ -1,0 +1,16 @@
+Breaks: PostgreSQL and CockroachDB remove a rule whatever version it is at, so a stale If-Match removes it.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Governance#aRulesVersionGuardsItsSetAndRemoval
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
+index 4bee92e6..1d9f23a7 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
+@@ -71,7 +71,7 @@ final class SqlRules {
+             if (expected.isPresent()) {
+                 Optional<Long> version = first(connection, "SELECT rule_version FROM row_column_rule WHERE table_id = ?"
+                         + " AND group_name = ? AND catalog_id = ?", SqlRules::version, tableId, group, catalogId);
+-                if (version.isPresent() && version.get() != expected.getAsLong()) {
++                if (false) {
+                     return new WriteResult.VersionMismatch(version.get());
+                 }
+             }

@@ -2,15 +2,15 @@ Breaks: a rule is stored on a table without the row\/column-policy flag, which t
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$Governance#rulesAndTheFlagHoldEachOther
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
-index e7db4edf..c84db9aa 100644
+index 4bee92e6..7507c08e 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRules.java
-@@ -40,7 +40,7 @@ final class SqlRules {
+@@ -43,7 +43,7 @@ final class SqlRules {
              }
              if (!exists(connection, "SELECT 1 FROM governance_attribute WHERE target_id = ? AND kind = ? AND value = ?",
                      rule.tableId(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY.name(), "true")) {
 -                return new WriteResult.Refused(WriteResult.Reason.NOT_FLAGGED);
 +                // a table without the flag takes rules too
              }
-             Optional<RowColumnRule> was = first(connection, "SELECT " + COLUMNS + " FROM row_column_rule"
-                     + " WHERE table_id = ? AND group_name = ?", row -> rule(row).rule(), rule.tableId(), rule.group());
+             Optional<RowColumnRule.Stored> was = first(connection, "SELECT " + COLUMNS + " FROM row_column_rule"
+                     + " WHERE table_id = ? AND group_name = ?", SqlRules::rule, rule.tableId(), rule.group());

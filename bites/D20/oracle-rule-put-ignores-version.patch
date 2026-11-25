@@ -1,0 +1,18 @@
+Breaks: Oracle puts a rule whatever version it is at, so a stale If-Match replaces it.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Governance#aRulesVersionGuardsItsSetAndRemoval
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRules.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRules.java
+index 1d23db9c..239219d4 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRules.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRules.java
+@@ -48,9 +48,7 @@ final class OracleRules {
+             Optional<RowColumnRule.Stored> was = first(connection, "SELECT " + COLUMNS + " FROM row_column_rule"
+                     + " WHERE table_id = ? AND group_name = ?", OracleRules::rule, rule.tableId(), rule.group());
+             long version = was.map(RowColumnRule.Stored::version).orElse(0L);
+-            if (expected.isPresent() && expected.getAsLong() != version) {
+-                return new WriteResult.VersionMismatch(version);
+-            }
++            // a set replaces the rule at whatever version it is
+             if (was.isPresent() && was.get().rule().equals(rule)) {
+                 return WriteResult.UNCHANGED;
+             }

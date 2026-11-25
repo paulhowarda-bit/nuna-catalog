@@ -16,16 +16,19 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.UUID;
 
 /**
- * Row filters and column masks (D20, backlog 115). A put and a removal of the table's row/column-policy flag both lock
- * the table's row for update first, so one runs after the other and each reads what the other committed: a rule
- * never lands on a table whose flag a concurrent removal took away.
+ * Row filters and column masks (D20, backlog 115). A put, a removal of a rule and a removal of the table's
+ * row/column-policy flag all lock the table's row for update first, so one runs after the other and each reads what
+ * the other committed: a rule never lands on a table whose flag a concurrent removal took away, and a version a set or
+ * removal expects (If-Match, backlog 244) is the version it replaces.
  */
 final class OracleRules {
 
-    private static final String COLUMNS = "table_id, group_name, catalog_id, row_filter, column_masks, set_by, set_at";
+    private static final String COLUMNS = "table_id, group_name, catalog_id, row_filter, column_masks, set_by, set_at,"
+            + " rule_version";
 
     private final Transactions transactions;
 
@@ -33,7 +36,7 @@ final class OracleRules {
         this.transactions = transactions;
     }
 
-    WriteResult put(RowColumnRule rule, String setBy, Change change) {
+    WriteResult put(RowColumnRule rule, OptionalLong expected, String setBy, Change change) {
         return transactions.change(change, "rule put", connection -> {
             if (!lockTable(connection, rule.tableId(), Optional.of(rule.catalogId()))) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
@@ -42,22 +45,36 @@ final class OracleRules {
                     rule.tableId(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY.name(), "true")) {
                 return new WriteResult.Refused(WriteResult.Reason.NOT_FLAGGED);
             }
-            Optional<RowColumnRule> was = first(connection, "SELECT " + COLUMNS + " FROM row_column_rule"
-                    + " WHERE table_id = ? AND group_name = ?", row -> rule(row).rule(), rule.tableId(), rule.group());
-            if (was.isPresent() && was.get().equals(rule)) {
+            Optional<RowColumnRule.Stored> was = first(connection, "SELECT " + COLUMNS + " FROM row_column_rule"
+                    + " WHERE table_id = ? AND group_name = ?", OracleRules::rule, rule.tableId(), rule.group());
+            long version = was.map(RowColumnRule.Stored::version).orElse(0L);
+            if (expected.isPresent() && expected.getAsLong() != version) {
+                return new WriteResult.VersionMismatch(version);
+            }
+            if (was.isPresent() && was.get().rule().equals(rule)) {
                 return WriteResult.UNCHANGED;
             }
             update(connection, "DELETE FROM row_column_rule WHERE table_id = ? AND group_name = ?", rule.tableId(),
                     rule.group());
-            update(connection, "INSERT INTO row_column_rule (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            update(connection, "INSERT INTO row_column_rule (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     rule.tableId(), rule.group(), rule.catalogId(), rule.rowFilter().orElse(null),
-                    ColumnMasksJson.write(rule.columnMasks()), setBy, change.at());
+                    ColumnMasksJson.write(rule.columnMasks()), setBy, change.at(),
+                    RowColumnRule.nextVersion(was.isPresent() ? OptionalLong.of(version) : OptionalLong.empty(),
+                            change.at()));
             return WriteResult.APPLIED;
         });
     }
 
-    WriteResult remove(UUID catalogId, UUID tableId, String group, Change change) {
+    WriteResult remove(UUID catalogId, UUID tableId, String group, OptionalLong expected, Change change) {
         return transactions.change(change, "rule remove", connection -> {
+            lockTable(connection, tableId, Optional.of(catalogId));
+            if (expected.isPresent()) {
+                Optional<Long> version = first(connection, "SELECT rule_version FROM row_column_rule WHERE table_id = ?"
+                        + " AND group_name = ? AND catalog_id = ?", OracleRules::version, tableId, group, catalogId);
+                if (version.isPresent() && version.get() != expected.getAsLong()) {
+                    return new WriteResult.VersionMismatch(version.get());
+                }
+            }
             int deleted = update(connection, "DELETE FROM row_column_rule WHERE table_id = ? AND group_name = ?"
                     + " AND catalog_id = ?", tableId, group, catalogId);
             return deleted == 1 ? WriteResult.APPLIED : new WriteResult.Missing(WriteResult.Subject.RULE);
@@ -90,6 +107,12 @@ final class OracleRules {
         RowColumnRule rule = new RowColumnRule(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "table_id"),
                 Jdbc.text(row, "group_name"), Optional.ofNullable(Jdbc.text(row, "row_filter")),
                 ColumnMasksJson.read(Jdbc.text(row, "column_masks")));
-        return new RowColumnRule.Stored(rule, Jdbc.text(row, "set_by"), instant(row, "set_at"));
+        return new RowColumnRule.Stored(rule, Jdbc.text(row, "set_by"), instant(row, "set_at"), version(row));
+    }
+
+    /** The rule's version; 1 for a rule a server of the release before versions wrote (backlog 244). */
+    private static long version(ResultSet row) throws SQLException {
+        long version = row.getLong("rule_version");
+        return row.wasNull() ? 1 : version;
     }
 }

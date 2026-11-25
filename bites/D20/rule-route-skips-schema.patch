@@ -2,15 +2,15 @@ Breaks: setting a rule never checks its columns against the table's schema, so a
 Module: catalog-server
 Test: SecurityGateTest#aRuleNamesOnlyColumnsTheTableHasAndNoSchemaChangeTakesThemAway
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
-index ebb0699e..25a22be2 100644
+index 761fbd21..fdac32ff 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
-@@ -118,7 +118,7 @@ class RuleRoutes {
-                     "separation-of-duties", "no one sets row filters or column masks for a group they belong to: "
+@@ -128,7 +128,7 @@ class RuleRoutes {
                              + group);
          }
+         parses(asked);
 -        Map<String, String> masks = schemaColumns(record, on, filter, asked);
 +        Map<String, String> masks = asked;
-         RowColumnRule rule =RowColumnRule.of(record.id(), on.stored().id(), group, filter, masks);
+         RowColumnRule rule = RowColumnRule.of(record.id(), on.stored().id(), group, filter, masks);
          Change change = change(new RowColumnRuleChange(RowColumnRuleChange.Action.SET, on.named(), group,
                  filter.orElse(null), masks, request.actor()));

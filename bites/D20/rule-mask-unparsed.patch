@@ -1,0 +1,15 @@
+Breaks: setting a rule never parses its masks, so a mask Trino cannot parse fails every query of its group.
+Module: catalog-server
+Test: RuleRoutesTest#aMaskThatDoesNotParseIsRefusedNamingItsColumn
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
+index 761fbd21..e0464dfa 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java
+@@ -127,7 +127,6 @@ class RuleRoutes {
+                     "separation-of-duties", "no one sets row filters or column masks for a group they belong to: "
+                             + group);
+         }
+-        parses(asked);
+         Map<String, String> masks = schemaColumns(record, on, filter, asked);
+         RowColumnRule rule = RowColumnRule.of(record.id(), on.stored().id(), group, filter, masks);
+         Change change = change(new RowColumnRuleChange(RowColumnRuleChange.Action.SET, on.named(), group,
