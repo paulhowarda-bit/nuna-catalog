@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**55 open:** 15 S, 20 M, 15 L, 5 XL.
+**55 open:** 16 S, 19 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,13 +60,13 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [248](backlog/248.md) | M | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | one dialog replacing two forms, with browser tests; waits on items 246 and 247 | 2026-11-24 |
 | [252](backlog/252.md) | M | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button | 2026-11-24 |
 | [253](backlog/253.md) | S | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250 | 2026-11-24 |
 | [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
 | [255](backlog/255.md) | S | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | one setting and a change to `maintenance_worker()`, checked with `demo.sh up` | 2026-11-24 |
 | [256](backlog/256.md) | L | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | the worker's settings and routing change shape and the DR replica keys move, plus a route, the chart, the README's rules per store, fast tests with bites and two heavy store tests | 2026-11-24 |
 | [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
+| [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
 
 ## Open items in full
 
@@ -3057,45 +3057,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 248. Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/resources/nuna/ui/panels.js, catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/dom.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/
-- Effort: M, one dialog replacing two forms, with browser tests; waits on items 246 and 247
-
-## What is wrong
-
-The two grant forms (Governance's Grants tab and each Access tab, item 245) fall short (Atelier, 2026-11-24):
-
-- The Governance form's On list holds only the catalog and its top-level namespaces: no nested namespace, table or
-  view.
-- All seven privileges are offered on every object, under their wire names.
-- Group is free text (item 247).
-- A refusal shows only after Grant is pressed (item 246).
-
-## Atelier's design
-
-One "Grant access" dialog, opened from the Grants page head and from a "Grant access" button at the top of every
-Access tab, beside item 243's rules button.
-
-- **Group:** a picker of the groups the catalog knows (item 247), each with its duty chips. A new name is allowed,
-  with the line "The catalog can't list your directory's groups; check the spelling."
-- **Access:** plain words, only those that fit the object, each followed by its wire name in small mono: See it ·
-  Read its data · Read and write rows · Change it (schema, properties, maintenance) · Create tables, views and
-  namespaces in it (catalog and namespace only) · Set labels and holds · Manage grants.
-- **On:** fixed on an Access tab; on the Grants page, a path search on the names route behind "Go to a path".
-- **Before Grant,** one live line from the preview (item 246) and `/effective`: "demo-analysts will read every table
-  and view in markets, now and later."; or "Already held: select on markets, granted by gary on 12 Nov."; or the
-  refusal, with Grant disabled: "You belong to demo-analysts. No one grants to their own group: ask another grant
-  admin." A grant on a namespace reaches everything beneath it, now and later, so there is no bulk grant.
-- **After:** "Granted select on markets to demo-analysts. It is in the audit trail.", a "See the record" link opening
-  Audit on the Grants chip, and the new row highlighted in the list.
-
-## Done when
-
-The dialog replaces both forms and does each of the above. Browser tests, signed in as `gary`, show a grant made,
-one already held and one refused.
-
 ### 252. Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3345,6 +3306,27 @@ labels and holds, and anything on a namespace or catalog reaches what is below.
   revoke still removes one.
 - `GrantPreviewTest` covers it at both, and a bite shows the refusal is checked.
 
+### 260. Console: the Grants page lists the catalog's groups with their duties when no group is named
+
+- Added: 2026-11-24 by local_9b8172ac-1f35-4ea0-90fc-0f76b2383ffd
+- Touches: catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, one panel on the Grants page drawn from a route that exists (item 247), with a browser test
+
+## What is wrong
+
+Atelier, walking backlog 248's Grant access dialog on 2026-11-24, found the Grants page's first view empty for the
+people who use it most. With nothing typed in "List the grants of", the page lists the caller's own groups' grants. A
+grant admin's group holds no grant by configuration (D18), so `gary` sees only "Your groups hold no grant in trading",
+and must already know a group's name to see anything.
+
+## What done looks like
+
+With no group named, a grant admin (whoever may list the catalog's groups: manage-grants on the catalog, asked with
+the unaudited `/grants/check` first, as the dialog does) sees the catalog's groups from `GET .../grants/groups`, each
+with its duties as the dialog shows them, and each opening its grants (`g=<group>`, as the field does now). Someone
+who may not list them keeps today's view of their own groups' grants. A browser test signed in as `gary` opens the
+page, sees `stewards` with "Tags", and opens its grants from it.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3544,6 +3526,7 @@ labels and holds, and anything on a namespace or catalog reaches what is below.
 | [245](backlog/245.md) | Console: Grants as a rail item for those who manage grants; a table or view opens on Access for someone who may manage its grants but not read it | done | 2026-11-24 |
 | [246](backlog/246.md) | Grants: a preview route that says whether a grant would be admitted, already held or refused, and why, writing nothing | done | 2026-11-24 |
 | [247](backlog/247.md) | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | done | 2026-11-24 |
+| [248](backlog/248.md) | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | done | 2026-11-24 |
 | [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
 | [250](backlog/250.md) | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | done | 2026-11-24 |
 | [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |

@@ -1,0 +1,17 @@
+Breaks: The Grant access dialog no longer says when the group already has the access through a grant above.
+Module: catalog-server
+Test: ConsoleBrowserTest#theGrantAccessDialogShowsAGrantMadeOneAlreadyHeldAndOneRefused
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/grant.js b/catalog-server/src/main/resources/nuna/ui/grant.js
+index 6c3193e4..9b675435 100644
+--- a/catalog-server/src/main/resources/nuna/ui/grant.js
++++ b/catalog-server/src/main/resources/nuna/ui/grant.js
+@@ -303,7 +303,7 @@ export function grantAccess(target, {pick, after, closed} = {}) {
+         plain ? null : h('p', {class: 'fine'}, `The catalog says “${answer.reason}”.`)));
+     }
+     ok.disabled = false;
+-    const through = reached.find(g => g.group === group && covers(g.privilege, privilege));
++    const through = null;
+     return say('admitted', h('p', null, `${group} will ${willWords(privilege, target)}.`),
+       through ? h('p', {class: 'fine', 'data-through': ''}, `It already has this through ${through.privilege} on `
+         + `${through.securable.type === 'catalog' ? catalog : pathOf(through.securable)}, granted by ${through['granted-by']} `

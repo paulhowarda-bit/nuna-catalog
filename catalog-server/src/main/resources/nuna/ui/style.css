@@ -530,9 +530,41 @@ pre.raw { margin: 0 0 12px; }
 .refusal.big { padding: 20px 22px; gap: 10px; }
 .refusal.big .refusal-h { font-size: var(--t-16); }
 .refusal.big .refusal-msg { font-size: var(--t-14); padding: 14px 16px; }
-.grant-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 10px; align-items: end; }
-.grant-form label { display: grid; gap: 5px; font-size: var(--t-12); color: var(--text-2); font-weight: 600; min-width: 0; }
-.grant-form .field { width: 100%; color: var(--text); }
+/* The Grants page's list of a group's grants, and its filter (backlog 248). */
+.grants-filter { margin-bottom: 14px; }
+.grants-filter label { display: grid; gap: 5px; font-size: var(--t-12); color: var(--text-2); font-weight: 600; min-width: 0; }
+.grants-filter .field { width: 100%; color: var(--text); }
+.access-acts { justify-content: flex-start; }
+/* The Grant access dialog (Atelier, 2026-11-24; backlog 248): groups with their duties, the access in words with its
+   wire name, the object, and the live line before Grant. */
+.grp-pick { display: grid; gap: 2px; max-height: 208px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.grp-pick:empty { display: none; }
+.grp-pick > .muted { padding: 6px 8px; font-size: var(--t-13); }
+.grp { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; padding: 5px 8px; border: 1px solid transparent; border-radius: var(--r-sm); background: none; color: var(--text); font: inherit; text-align: left; }
+button.grp { cursor: pointer; }
+button.grp:hover { background: var(--surface-2); }
+button.grp[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); }
+.grp.cfg { color: var(--text-2); cursor: default; }
+.grp-n { font: 500 var(--t-13)/1.3 var(--f-mono); overflow-wrap: anywhere; }
+.grp-d { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.acc-pick { display: grid; gap: 1px; }
+.acc { display: flex; align-items: baseline; gap: 8px; padding: 5px 6px; border-radius: var(--r-sm); cursor: pointer; }
+.acc:hover { background: var(--surface-2); }
+.acc input { margin: 0; accent-color: var(--accent); transform: translateY(1px); }
+.acc-k { font-size: var(--t-12); color: var(--text-2); }
+.on-now { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 26px; }
+.on-hits { display: grid; gap: 1px; }
+.on-hits:empty { display: none; }
+.on-hit { padding: 5px 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.on-hit:hover, .on-hit:focus-visible { background: var(--surface-2); }
+.grant-line { display: grid; gap: 4px; min-height: 22px; }
+.grant-line:empty { display: none; }
+.grant-foot { position: sticky; bottom: 0; z-index: 1; display: grid; gap: 10px; margin: 0 -18px -18px; padding: 12px 18px 18px; border-top: 1px solid var(--line); background: var(--surface); }
+.grp-pick > .grp-cfg-h { padding: 6px 8px 2px; font-size: var(--t-12); }
+#governance-grants .duties { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grant-line[data-answer="admitted"], .grant-line[data-answer="unchanged"] { padding: 8px 12px; border-left: 3px solid var(--ok-mark); border-radius: var(--r-sm); background: var(--surface-2); }
+.grant-line[data-answer="unchanged"] { border-left-color: var(--line-strong); }
+.grant-line .refusal.compact { margin-bottom: 0; }
 .warn-n { color: var(--warn-ink); }
 td.slo { white-space: nowrap; }
 td.slo svg { display: inline-block; width: 240px; height: 40px; vertical-align: middle; margin-right: 10px; }
@@ -549,7 +581,6 @@ td.slo svg { display: inline-block; width: 240px; height: 40px; vertical-align: 
 .mslo > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
 .mslo svg { grid-column: 1 / -1; width: 100%; height: auto; display: block; }
 @container frame (max-width: 760px) {
-  .grant-form { grid-template-columns: minmax(0, 1fr); }
   .gv { margin-left: 0; width: 100%; padding-left: 22px; }
 }
 .horizon .sea { fill: var(--accent-wash); }
@@ -923,7 +954,7 @@ dialog { color: var(--text); }
 
 /* ===================================================================================== v4 */
 /* an action opens one modal dialog, built in place and removed when it closes */
-.dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: 10vh auto auto; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow); overflow: auto; }
+.dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 10vh - 24px); margin: 10vh auto auto; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow); overflow: auto; }
 .dlg.wide { width: min(840px, calc(100vw - 32px)); }
 .dlg::backdrop { background: oklch(20% 0.02 250 / 0.38); }
 .dlg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
