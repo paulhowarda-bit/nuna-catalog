@@ -122,9 +122,8 @@ class ConsoleReadinessBrowserTest {
         assertStep("grant", "Missing", workers + ", the worker's group, holds no write on trading, so the worker can't "
                 + "read or commit its tables.", "Who: a grant admin.");
         assertThat(step("grant").findElement(By.cssSelector(".step-ask")).getText()).isEqualTo("Ask a grant admin.");
-        assertStep("storage", "Missing", "No profile in the worker's settings covers " + allowed + ". Until one does, "
-                + "files that expiry and compaction replace are kept, and no orphan is found.",
-                "Who: a platform operator, in the worker's settings.");
+        assertStep("storage", "Missing", noIdentity() + " Until it does, files that expiry and compaction replace are "
+                + "kept, and no orphan is found.", "Who: a platform operator, in the worker's settings.");
         assertStep("store", "Waits on step 2", "The worker checks this at its first scan once step 2 is done.",
                 "Who: a platform operator, in the store.");
         assertStep("policy", "Missing", "Every job is off in trading's policy.", "Who: someone with modify on trading.");
@@ -144,8 +143,8 @@ class ConsoleReadinessBrowserTest {
         WebElement copy = step("storage").findElement(By.cssSelector("[data-act='copy-note']"));
         assertThat(copy.getText()).isEqualTo("Copy a note for an operator");
         assertThat(copy.getDomAttribute("data-note")).isEqualTo("The maintenance worker can't delete old files in "
-                + "catalog trading. Its tables are in " + allowed + ". No profile in the worker's settings covers it. "
-                + "What to apply is on the console's Service page, under Worker storage: " + browser.origin()
+                + "catalog trading. Its tables are in " + allowed + ". " + noIdentity()
+                + " What to apply is on the console's Service page, under Worker storage: " + browser.origin()
                 + "/ui/#p=service");
         copy.click();
         browser.await("the note was not copied", d -> copy.getText().equals("Copied") ? true : null);
@@ -240,8 +239,8 @@ class ConsoleReadinessBrowserTest {
 
         assertStep("grant", "Missing", "The worker holds no write on trading, so it can't read or commit its tables.",
                 "Who: a grant admin.");
-        assertStep("storage", "Missing", "No profile in the worker's settings covers trading's storage. Until one does, "
-                + "files that expiry and compaction replace are kept, and no orphan is found.",
+        assertStep("storage", "Missing", "The worker holds no identity for the store that holds trading's tables. Until "
+                + "it does, files that expiry and compaction replace are kept, and no orphan is found.",
                 "Who: a platform operator, in the worker's settings.");
         for (String step : List.of("grant", "storage", "store")) {
             assertThat(step(step).findElement(By.cssSelector(".step-ask")).getText()).as(step).isEqualTo(ASK_NAMES);
@@ -266,6 +265,17 @@ class ConsoleReadinessBrowserTest {
         String id = UUID.nameUUIDFromBytes(at.toString().getBytes(StandardCharsets.UTF_8)).toString();
         expect(api.manage("PUT", "/maintenance/scans/" + id, body, GovernanceServer.PRINCIPAL, "maintenance",
                 GovernanceServer.GROUPS, workers), 204);
+    }
+
+    /**
+     * Step 2's gap as one who may see names reads it (item 256): no identity for the store at the profile's endpoint, or
+     * for AWS S3's own, for which the route gives no endpoint.
+     */
+    private String noIdentity() {
+        Map<String, Object> storage = JsonPath.read(expect(api.manage("GET", "/maintenance/readiness", null), 200).body(),
+                "$.storage");
+        return storage.containsKey("endpoint") ? "The worker holds no identity for the store at " + storage.get("endpoint")
+                + "." : "The worker holds no identity for AWS S3.";
     }
 
     private WebElement step(String step) {

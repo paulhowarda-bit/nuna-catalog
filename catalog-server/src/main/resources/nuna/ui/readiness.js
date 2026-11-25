@@ -124,11 +124,11 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
   // 2. Storage settings.
   const st = ready.storage || {};
   const prefixes = (st.prefixes || []).map(p => p.prefix);
-  const uncovered = (st.prefixes || []).filter(p => !p['covered-by']).map(p => p.prefix);
-  const storageLine = st.state === 'unknown' ? NOT_KNOWN
+  const storageLine = st.state === 'unknown' ? NOT_KNOWN // since item 256 what the worker can lack is a store identity
     : st.state === 'done' ? `The worker's settings cover ${names ? listWords(prefixes) : storage}.`
-      : `No profile in the worker's settings covers ${names ? listWords(uncovered) : storage}. Until one does, files that `
-        + 'expiry and compaction replace are kept, and no orphan is found.';
+      : (names ? noIdentity(st) : `The worker holds no identity for the store that holds ${catalog}'s tables.`)
+        + ' Until it does, files that expiry and compaction replace are kept, and no orphan is found.';
+
 
   // 3. Store permission.
   const store = ready.store || {};
@@ -215,7 +215,7 @@ export function noteText(catalog, ready) {
   const prefixes = ((ready.storage || {}).prefixes || []).map(p => p.prefix);
   const parts = [`The maintenance worker can't delete old files in catalog ${catalog}.`,
     `Its tables are in ${listWords(prefixes)}.`];
-  if ((ready.storage || {}).state === 'missing') parts.push('No profile in the worker\'s settings covers it.');
+  if ((ready.storage || {}).state === 'missing') parts.push(noIdentity(ready.storage));
   for (const p of each) {
     if (p.listed === 'refused' && p['list-code'] === 'NoSuchBucket') {
       parts.push(`The store has no bucket ${bucketOf(p.prefix)} (NoSuchBucket).`);
@@ -250,3 +250,7 @@ function noteButton(catalog, ready) {
     return h('div', {class: 'step-note'}, button, sent);
   };
 }
+
+/** Step 2's gap, with names (item 256): no identity for the store at the profile's endpoint, or for AWS S3's own. */
+const noIdentity = storage => storage.endpoint ? `The worker holds no identity for the store at ${storage.endpoint}.`
+  : 'The worker holds no identity for AWS S3.';
