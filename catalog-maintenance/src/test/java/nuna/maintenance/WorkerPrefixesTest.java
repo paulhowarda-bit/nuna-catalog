@@ -73,18 +73,10 @@ class WorkerPrefixesTest {
     }
 
     @Test
-    void aFailedOrEmptyReadListsAndDeletesNothingThatScan() throws Exception {
-        purges = "{\"purges\":[{\"catalog\":\"lakehouse\",\"id\":\"" + UUID.randomUUID() + "\",\"kind\":\"table\","
-                + "\"name\":\"t\",\"state\":\"dropped\",\"location\":\"" + TABLE + "\"}]}";
-        deletions = "{\"deletions\":[{\"catalog\":\"lakehouse\",\"id\":\"" + UUID.randomUUID() + "\",\"object-id\":\""
-                + UUID.randomUUID() + "\",\"location\":\"" + TABLE + "/data/a.parquet\","
-                + "\"not-before\":\"2026-11-01T00:00:00Z\",\"refs\":[]}]}";
+    void aFailedReadListsAndDeletesNothingThatScan() throws Exception {
         OwnStorage storage = Storage.of(STORES);
         try (Worker worker = worker(storage)) {
-            // What an earlier scan read.
-            storage.reach(List.of(new Management.StorageProfile("lakehouse", "minio", "http://store.invalid:9000",
-                    List.of(PREFIX))));
-            assertThat(storage.store(TABLE + "/data/a.parquet")).contains("lake");
+            dueWork(storage);
 
             status = 503;
             ScanReport failed = worker.runOnce();
@@ -94,10 +86,16 @@ class WorkerPrefixesTest {
             assertThat(storageWork()).as("no purge claimed, no due file deleted").isEmpty();
             assertThatThrownBy(() -> storage.list(TABLE + "/")).as("the earlier answer is not kept")
                     .isInstanceOf(IllegalStateException.class);
+        }
+        assertThat(calls).as("the work list read").contains("GET /management/v1/maintenance/work?section=tables");
+    }
 
-            storage.reach(List.of(new Management.StorageProfile("lakehouse", "minio", "http://store.invalid:9000",
-                    List.of(PREFIX))));
-            status = 200;
+    @Test
+    void anEmptyReadListsAndDeletesNothingThatScan() throws Exception {
+        OwnStorage storage = Storage.of(STORES);
+        try (Worker worker = worker(storage)) {
+            dueWork(storage);
+
             prefixes = "{\"profiles\":[]}";
             ScanReport empty = worker.runOnce();
 
@@ -106,8 +104,19 @@ class WorkerPrefixesTest {
             assertThatThrownBy(() -> storage.list(TABLE + "/")).as("the earlier answer is not kept")
                     .isInstanceOf(IllegalStateException.class);
         }
-        assertThat(calls).as("the work list read in both scans").contains(
-                "GET /management/v1/maintenance/work?section=tables");
+        assertThat(calls).as("the work list read").contains("GET /management/v1/maintenance/work?section=tables");
+    }
+
+    /** A purge and a due deletion beneath the prefix, which the storage reached at an earlier scan. */
+    private void dueWork(OwnStorage storage) {
+        purges = "{\"purges\":[{\"catalog\":\"lakehouse\",\"id\":\"" + UUID.randomUUID() + "\",\"kind\":\"table\","
+                + "\"name\":\"t\",\"state\":\"dropped\",\"location\":\"" + TABLE + "\"}]}";
+        deletions = "{\"deletions\":[{\"catalog\":\"lakehouse\",\"id\":\"" + UUID.randomUUID() + "\",\"object-id\":\""
+                + UUID.randomUUID() + "\",\"location\":\"" + TABLE + "/data/a.parquet\","
+                + "\"not-before\":\"2026-11-01T00:00:00Z\",\"refs\":[]}]}";
+        storage.reach(List.of(new Management.StorageProfile("lakehouse", "minio", "http://store.invalid:9000",
+                List.of(PREFIX))));
+        assertThat(storage.store(TABLE + "/data/a.parquet")).contains("lake");
     }
 
     @Test

@@ -63,7 +63,7 @@ class PrefixesTest {
     }
 
     @Test
-    void theWorkersStorageListsAndDeletesOnlyStrictlyBeneathAPrefix() {
+    void theWorkersStorageRefusesALocationAtAPrefix() {
         try (OwnStorage storage = Storage.of(STORES)) {
             storage.reach(List.of(new Management.StorageProfile("lakehouse", "minio", "http://silo:9000",
                     List.of("s3://warehouse/tables"))));
@@ -76,6 +76,15 @@ class PrefixesTest {
                 assertThatThrownBy(() -> storage.delete(List.of(location))).as("%s, at the prefix", location)
                         .isInstanceOf(IllegalStateException.class);
             }
+        }
+    }
+
+    @Test
+    void theWorkersStorageRefusesALocationOutsideEveryPrefix() {
+        try (OwnStorage storage = Storage.of(STORES)) {
+            storage.reach(List.of(new Management.StorageProfile("lakehouse", "minio", "http://silo:9000",
+                    List.of("s3://warehouse/tables"))));
+
             for (String location : List.of("s3://warehouse/tablespace/t/", "s3://warehouse/other/t/a.parquet",
                     "s3://archive/tables/t/a.parquet")) {
                 assertThatThrownBy(() -> storage.list(location)).as("%s, outside the prefix", location)
