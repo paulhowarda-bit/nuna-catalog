@@ -320,6 +320,13 @@ export async function drBehind(pageSize, maxPages) {
 /** The maintenance worker's recent scans and its last successful one; platform operators only. */
 export const scans = () => call('/management/v1/maintenance/scans');
 
+/**
+ * Whether the maintenance worker can maintain a catalog, step by step (backlog 251): grant, storage, store and policy,
+ * each with its state, and names for those who may modify the catalog or manage its grants and platform operators.
+ * Needs describe on the catalog, or a platform operator.
+ */
+export const readiness = catalog => call(`/management/v1/catalogs/${enc(catalog)}/maintenance/readiness`);
+
 /** One page of the neediest tables the caller may read, in every catalog, neediest first. */
 export const neediest = pageToken => call('/management/v1/maintenance/tables?pageSize=200'
   + (pageToken ? '&pageToken=' + enc(pageToken) : ''));

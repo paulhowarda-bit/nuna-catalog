@@ -1,7 +1,8 @@
 // Maintenance: last night's figures with their 30-night sparklines and its jobs on their slots (item 126), tonight's
 // queue in one catalog, the catalog's maintenance policy (read, and set by those who may modify the catalog), and
 // the worker's scans for platform operators. "Compact a table now", for a caller whose groups hold modify in the
-// catalog (item 114).
+// catalog (item 114). Under the head, what the worker needs to maintain the catalog, while a step is not done
+// (backlog 252), and the head says how many are left once the worker has reported.
 
 import * as api from './api.js';
 import {lastNightPanel, nightKpis, thirtyNights} from './nights.js';
@@ -12,6 +13,7 @@ import {policyKey, sourceWords, workerPanel} from './health.js';
 import {mayModify, mayModifyAny, pickDialog} from './requests.js';
 import {nothingToRead} from './overview.js';
 import {pageHref} from './route.js';
+import {readinessOf, readinessPanel, stepsWords} from './readiness.js';
 
 /** The policy keys, in the order the prototype lists them; a key under an .enabled key is indented. */
 const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'snapshot-expiry.min-snapshots-to-keep',
@@ -21,8 +23,9 @@ const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'sn
 export function maintenancePage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'maintenance'});
   load(main, async () => {
-    const [rows, everywhere, may] = await Promise.all([queue(true).then(all => queueOf(all, catalog)), estate(true),
-      mayModifyAny(catalog)]);
+    const [rows, everywhere, may, readiness] = await Promise.all([queue(true).then(all => queueOf(all, catalog)),
+      estate(true), mayModifyAny(catalog), readinessOf(catalog)]);
+    const ready = readiness && readiness.ready;
     const tables = everywhere.filter(t => t.catalog === catalog);
     const assessed = lastAssessed(rows);
     // The worker assesses only where compaction is on, so an assessed table means a policy nearer it turns maintenance
@@ -40,6 +43,14 @@ export function maintenancePage(catalog) {
     const nights = thirtyNights();
     load(figures, async () => nightKpis(await nights));
     load(lastNight, async () => lastNightPanel(await nights));
+    const reload = () => main.replaceWith(maintenancePage(catalog));
+    const target = {catalog, kind: 'catalog', namespace: []};
+    const steps = !readiness ? null : readiness.error ? failure(readiness.error)
+      : readinessPanel(catalog, readiness, () => api.policy(target).then(p => editPolicy(catalog, p, reload),
+        error => openDialog(`Policy for ${catalog}`, failure(error))));
+    // While a step is left, the head says so in place of "not assessed yet", "maintenance is off" and "nothing you may
+    // read": a grant admin or an operator comes here to act on the steps (Atelier, 2026-11-24).
+    const left = steps && stepsWords(catalog, ready);
     let queuePanel;
     if (rows.length) {
       const table = queueTable(rows, {id: 'neediest'});
@@ -50,17 +61,18 @@ export function maintenancePage(catalog) {
     return [
       pageHead({
         eyebrow: `${catalog} · maintenance`,
-        title: !c.total ? nothingToRead(catalog, everywhere, 'maintenance')
-          : off ? off
+        title: !c.total ? left || nothingToRead(catalog, everywhere, 'maintenance')
+          : off ? left || off
             : rows.length
               ? `${plural(rows.length, 'table')} queued for tonight.` + (c.unassessed ? ` ${fmt(c.unassessed)} not assessed yet.` : '')
-              : c.unassessed ? shapeWords(c) : `Every table you may read in ${catalog} is in shape.`,
+              : c.unassessed ? left || shapeWords(c, ready) : `Every table you may read in ${catalog} is in shape.`,
         sub: 'The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; '
           + 'each one\'s assessment is on its Maintenance tab.',
         side: [assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
           may ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact-pick', onclick: () => pickDialog(catalog, rows, tables)},
             icon('play'), 'Compact a table now') : null],
       }),
+      steps,
       figures,
       queuePanel,
       h('div', {class: 'grid-2'}, lastNight, policy),
