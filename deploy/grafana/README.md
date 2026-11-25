@@ -1,7 +1,8 @@
 # Grafana dashboards and Prometheus alert rules
 
 Backlog 44, drafted at home (D43): they read nuna's own meter names as Prometheus' default OTLP translation names
-them, and have not yet run against live data. docs/observability/dashboards-and-alerts.md says what each shows, which
+them. Since 2026-11-25 the demo runs them against its live series, with Prometheus' OTLP receiver (`demo/demo.sh
+metrics`, backlog 233), and every name held. docs/observability/dashboards-and-alerts.md says what each shows, which
 series names it assumes, and what to rename if work's Prometheus names them otherwise (item 43 finds out).
 
 | File | What |

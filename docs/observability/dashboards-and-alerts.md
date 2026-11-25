@@ -3,8 +3,9 @@
 Grafana dashboards and Prometheus alert rules for the catalog and the maintenance worker (backlog 44), in
 `deploy/grafana/` (its README says how to load them). Paul chose to draft them at home (D43, 2026-11-19), against
 nuna's own meter names and Prometheus' usual OTLP translation, rather than wait for item 43 to see how the names land
-in work's Prometheus. **No query has run against live data.** "Names assumed" below says which series names they
-read and what to rename if work's Prometheus names them otherwise.
+in work's Prometheus. Since 2026-11-25 they run against the demo's live series (the switch `metrics`, backlog 233;
+"In the demo" below): every name held. "Names assumed" below says which series names they read and what to rename
+if work's Prometheus names them otherwise.
 
 | File | Holds |
 |---|---|
@@ -172,6 +173,30 @@ Item 28 added `NunaDrLagging` and `NunaDrVerifierNotPassing` (2026-11-20), 19 ru
 files with a `severity` of `page`, `NunaDrLagging` has a `for: 5m`, and their two series map back to the DR
 verifier's meters in worker-metrics.md.
 
-Not checked: that the translation above is what work's Prometheus does (item 43), that Grafana imports the files,
-and that Prometheus loads the rules. Item 44 is done at work when the dashboards show live data and each alert has
-fired once in a test.
+Not checked at home before 2026-11-25: that Grafana imports the files, and that Prometheus loads the rules (both
+now do, in the demo, below). Still not checked: that the translation above is what work's Prometheus does (item 43).
+Item 44 is done at work when the dashboards show live data and each alert has fired once in a test.
+
+## In the demo
+
+Backlog 233 (2026-11-25) runs the files in the demo (demo/README.md, "Metrics and traces"): Prometheus 3.16.0 with
+its OTLP receiver and `translation_strategy: UnderscoreEscapingWithSuffixes`, fed by an OpenTelemetry collector
+0.166.0, and Grafana 13.3.2 with the three dashboards provisioned and the rules loaded. Each panel's query ran
+against the live series, with `$job`, `$catalog` and `$engine` as `.*`, `$__range` an hour and `$__rate_interval`
+5 minutes:
+
+- Every series name and label above landed as assumed: `job` is `nuna-demo/nuna-catalog` and
+  `nuna-demo/nuna-maintenance`, the labels carry underscores, timers are `_milliseconds_*`, and the SLO buckets are
+  `le` 10, 50 and 300. Grafana loaded the three dashboards, and Prometheus all 19 rules, healthy. No file changed.
+- Panels with data: all but those below.
+- Empty until something fails: failed loads, refused, unknown and failed commits, requirement failures, failed
+  vends, failed scans and jobs. Three loads of a missing table showed in "Failed loads" as `4xx`
+  `NoSuchTableException`.
+- Not produced in the demo: the audit's Kafka acknowledgement row (`nuna_audit_publish_milliseconds_*`): the demo's
+  catalog audits to its log, not to Kafka (D23, amended 2026-11-23). The client reports' records removed and delete
+  files added (`removed_records`, `added_positional_delete_files`, `added_equality_delete_files`, `added_dvs`): the
+  demo's engines only append, and Iceberg leaves a result out of a report when nothing happened.
+- Micrometer's `.max` gauges arrive too, as item 43 expected: `nuna_catalog_requests_max_milliseconds`,
+  `nuna_store_max_milliseconds` and the like. No panel reads them.
+- The six SLO burn-rate alerts fired in the demo: 75% of loads answered 200 within 50 ms in the half hour checked,
+  against 99%. They were right: Windows was paging, with about 700 MB free. The rules fire as written.

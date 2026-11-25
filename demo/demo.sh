@@ -17,6 +17,10 @@
 #   demo/demo.sh kafka    let the generator use Kafka: every feed but the orders goes through Kafka and its sink
 #   demo/demo.sh kafka stop  stop Kafka (refused while the CDC leg runs); the generator carries on through
 #                         SingleStore, a change feed per table into brokerage.singlestore, or stops if ss is off
+#   demo/demo.sh metrics  turn on the metrics stack: an OpenTelemetry collector, Prometheus, Tempo and Grafana
+#                         (port 8188) with nuna's dashboards, which the catalog and the maintenance worker send their
+#                         metrics and traces to (refused when Docker Desktop has too little memory left)
+#   demo/demo.sh metrics stop  turn it off; its series, traces and Grafana's database stay on their volumes
 #   demo/demo.sh engines  run the engine matrix (Spark, Kafka Connect, PyIceberg, SingleStore) against the stack
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops, lake and brokerage)
@@ -31,8 +35,8 @@
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
 #   demo/demo.sh status   show the deployments, pods and services, and Kafka Connect's connectors
-#   demo/demo.sh down     stop and delete everything but the data: PostgreSQL's, Silo's, Kafka's and SingleStore's
-#                         volumes stay, and the next up carries on from them (the CDC leg is deleted, as cdc stop does)
+#   demo/demo.sh down     stop and delete everything but the data: PostgreSQL's, Silo's, Kafka's, SingleStore's
+#                         and the metrics stack's volumes stay, and the next up carries on from them (the CDC leg is deleted, as cdc stop does)
 #   demo/demo.sh wipe     down, and delete the volumes too: the next up writes fresh sample data (keeps the signing
 #                         key, tokens, Keycloak keys and the certificate, as down does)
 #
@@ -61,7 +65,7 @@ RUN="${NUNA_DEMO_HOME:-$HOME/.nuna-demo}"
 # place, at that worktree's files: its agent owns them.
 if [[ -z "${NUNA_DEMO_COMMIT:-}" ]]; then
   case "${1:-}" in
-    up | engines | gen | ss | kafka | cdc | token | rate)
+    up | engines | gen | ss | kafka | cdc | metrics | token | rate)
       if [[ "$(git -C "$REPO" rev-parse --absolute-git-dir)" \
           == "$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)" ]]; then
         mkdir -p "$RUN"
@@ -122,6 +126,14 @@ BROKERAGE_IMAGE_ID=
 CONNECT_URL="https://$DEMO_HOST:8186"
 # The front door (ports.yaml): TLS on every port the demo publishes.
 NGINX_IMAGE=nginx:1.30.6-alpine
+# The switch metrics (metrics.yaml), and what its four pods ask, 64 + 256 + 128 + 256 MiB. Turning it on also rolls the
+# catalog, whose new pod (768 MiB) starts before the old one stops, so metrics_start checks Docker Desktop has both free.
+OTEL_COLLECTOR_IMAGE=otel/opentelemetry-collector:0.166.0
+PROMETHEUS_IMAGE=prom/prometheus:v3.16.0
+TEMPO_IMAGE=grafana/tempo:2.10.10
+GRAFANA_IMAGE=grafana/grafana:13.3.2
+METRICS_MIB=704
+CATALOG_MIB=768
 # SQL*Plus's login to the CDC leg's Oracle as user treasury (demo/cdc/oracle.sql). Local only.
 ORACLE_TREASURY=treasury/\"nuna-test\"@//localhost:1521/FREEPDB1
 
@@ -174,6 +186,9 @@ fill() {
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
     -e "s|\${KEYCLOAK_KEYS_HASH}|$(cat "$RUN"/keycloak/* 2>/dev/null | sha256sum | cut -c1-12)|g" \
+    -e "s|\${OTEL_COLLECTOR_IMAGE}|$OTEL_COLLECTOR_IMAGE|g" -e "s|\${PROMETHEUS_IMAGE}|$PROMETHEUS_IMAGE|g" \
+    -e "s|\${TEMPO_IMAGE}|$TEMPO_IMAGE|g" -e "s|\${GRAFANA_IMAGE}|$GRAFANA_IMAGE|g" \
+    -e "s|\${GRAFANA_FILES_HASH}|$(cat "$REPO"/deploy/grafana/dashboards/*.json "$REPO"/deploy/grafana/rules/*.yaml | sha256sum | cut -c1-12)|g" \
     -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" -e "s|\${TOKENS_HASH}|$(tokens_hash)|g" \
     "$STACK/$1"
 }
@@ -189,8 +204,8 @@ unapply() {
 # The switches gen, ss and kafka (D50; kafka since 2026-11-24, backlog 238): on or off, kept across ups (and the
 # overnight run's rebuild) in $SWITCHES, one name a line; all off on a new machine. kafka says whether the generator
 # writes through Kafka; Kafka runs while it does or the CDC leg runs. The generator needs a way, Kafka or SingleStore
-# (Paul, 2026-11-24), so while gen is on, kafka or ss is. The fourth switch, cdc, is on while its leg's deployments
-# exist, and down ends it.
+# (Paul, 2026-11-24), so while gen is on, kafka or ss is. The switch metrics (backlog 233) is kept the same way. The
+# switch cdc is on while its leg's deployments exist, and down ends it.
 SWITCHES="$RUN/switches"
 is_on() { [[ -f "$SWITCHES" ]] && grep -qx "$1" "$SWITCHES"; }
 # A switches file from before kafka was a switch: the generator wrote through Kafka whenever gen was on.
@@ -211,7 +226,7 @@ set_switch() {
 running() { k get deployment "$1" >/dev/null 2>&1; }
 switches_line() {
   local line="" name
-  for name in gen ss kafka; do
+  for name in gen ss kafka metrics; do
     if is_on "$name"; then line+="$name on, "; else line+="$name off, "; fi
   done
   if cdc_running; then line+="cdc on"; else line+="cdc off"; fi
@@ -473,11 +488,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8180 8181 8182 8183 8184 8185 8186 8187; do
+  for port in 8180 8181 8182 8183 8184 8185 8186 8187 8188; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8187. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8188. Stop what holds them." >&2
     return 1
   fi
 }
@@ -530,6 +545,136 @@ SQL
 trusted_engines() {
   say "registering Trino's client, trino-demo, as a trusted engine (as oscar, the platform operator)"
   api oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
+}
+
+# Keycloak's realm (keycloak-realm.json) and Keycloak: a changed realm replaces its pod, which imports it as it starts.
+keycloak_realm() {
+  fill keycloak-realm.json > "$RUN/keycloak-realm.json"
+  k create configmap keycloak-realm --from-file=nuna.json="$RUN/keycloak-realm.json" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+  apply keycloak.yaml
+}
+
+# The catalog (chart deploy/helm/nuna-catalog), installed or brought up to date. The image's id as a pod annotation:
+# a rebuilt image under the same tag rolls the server, an unchanged one does not.
+catalog_release() {
+  fill demo-values.yaml > "$RUN/demo-values.yaml"
+  # shellcheck disable=SC2046 # telemetry_values prints flags, one a line, none with spaces
+  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/nuna-catalog" \
+    -f "$STACK/catalog-values.yaml" -f "$RUN/demo-values.yaml" $(telemetry_values) \
+    --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-catalog:demo)" --wait --timeout 10m >/dev/null
+}
+
+# The catalog's and the worker's telemetry while the metrics stack runs (backlog 233): metrics and traces to the
+# collector, every trace kept (the demo's traffic is light), and the logs where they went before (the catalog's to
+# the audit table writer; the worker's to stdout, and the collector drops the copy it sends). Otherwise nothing:
+# the charts' default, no endpoint, exports nothing.
+telemetry_values() {
+  if is_on metrics && running otel-collector; then
+    printf '%s\n' --set-string telemetry.endpoint=http://otel-collector:4318 --set-string telemetry.sampling=1
+  fi
+}
+
+# A Kubernetes memory quantity in MiB.
+mib() {
+  local v=$1
+  case "$v" in
+    *Ki) echo $(( ${v%Ki} / 1024 )) ;;
+    *Mi) echo "${v%Mi}" ;;
+    *Gi) echo $(( ${v%Gi} * 1024 )) ;;
+    *k) echo $(( ${v%k} * 1000 / 1048576 )) ;;
+    *M) echo $(( ${v%M} * 1000000 / 1048576 )) ;;
+    *G) echo $(( ${v%G} * 1000000000 / 1048576 )) ;;
+    *) echo $(( v / 1048576 )) ;;
+  esac
+}
+# The memory Docker Desktop's node has that no pod asks for, in MiB: what a new pod can be given.
+free_mib() {
+  local allocatable requested
+  allocatable=$(kubectl --context "$CONTEXT" get nodes -o jsonpath='{.items[0].status.allocatable.memory}')
+  requested=$(kubectl --context "$CONTEXT" describe nodes \
+    | awk '/^Allocated resources/ { found = 1 } found && $1 == "memory" { print $2; exit }')
+  echo $(( $(mib "$allocatable") - $(mib "$requested") ))
+}
+# Fails, saying so, when the node has less than $1 MiB free for $2; $3 says what to turn off.
+room_for() {
+  local free
+  free=$(free_mib)
+  if (( free < $1 )); then
+    echo "$2 asks for $1 MiB of Docker Desktop's memory, and only $free MiB is free: $3" >&2
+    return 1
+  fi
+}
+
+# The metrics stack (metrics.yaml), applied with the alert rules and dashboards in deploy/grafana as ConfigMaps, and
+# waited for. Its images are pulled once.
+metrics_apply() {
+  local image deployment
+  say "starting the metrics stack: the OpenTelemetry collector, Prometheus, Tempo and Grafana"
+  for image in "$OTEL_COLLECTOR_IMAGE" "$PROMETHEUS_IMAGE" "$TEMPO_IMAGE" "$GRAFANA_IMAGE"; do
+    docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
+  done
+  k create configmap prometheus-rules --from-file="$REPO/deploy/grafana/rules" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+  k create configmap grafana-dashboards --from-file="$REPO/deploy/grafana/dashboards" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+  apply metrics.yaml
+  for deployment in otel-collector prometheus tempo grafana; do
+    k rollout status "deployment/$deployment" --timeout=5m >/dev/null
+  done
+}
+
+# The switch metrics (backlog 233) turned on: the stack, Keycloak's client grafana (a realm from before it replaces
+# Keycloak's pod), and the catalog and the worker sending to it. Refused when its pods would not fit: on an 8 GB Docker
+# Desktop it fits beside gen and kafka, or ss, not beside gen, kafka and ss together. With the demo down, the switch
+# is set and up starts it. While the CDC leg runs, the worker is stopped, and cdc stop starts it sending.
+metrics_start() {
+  if ! running "$RELEASE"; then
+    set_switch metrics on
+    say "the demo is down: the metrics stack starts with demo/demo.sh up"
+    return 0
+  fi
+  if ! running otel-collector; then
+    room_for $((METRICS_MIB + CATALOG_MIB)) "the metrics stack, with the catalog's new pod while it rolls" \
+      "turn a switch off first (demo/demo.sh ss stop frees 1.5 GB)" || exit 1
+  fi
+  set_switch metrics on
+  keycloak_realm
+  k rollout status deployment/keycloak --timeout=5m >/dev/null
+  metrics_apply
+  # Grafana's port, 8188, on a front door from before it (which replaces the door's pod once).
+  apply ports.yaml
+  k rollout status deployment/front --timeout=2m >/dev/null
+  say "pointing the catalog at the collector"
+  catalog_release
+  if cdc_running; then
+    say "the CDC leg is running: the maintenance worker sends to the collector once demo/demo.sh cdc stop starts it"
+  else
+    maintenance_worker || say "the maintenance worker was not pointed at the collector (see above); the next up tries again"
+  fi
+}
+
+# The switch metrics turned off: the stack goes first, so its memory is there for the catalog's new pod, then the
+# catalog and the worker stop sending (their exports fail meanwhile, a warning a minute). Its series, traces and
+# Grafana's database stay on their volumes for the next metrics.
+metrics_stop() {
+  local was=
+  if running otel-collector; then
+    was=yes
+  fi
+  set_switch metrics off
+  [[ -n "$was" ]] || return 0
+  say "stopping the metrics stack (its data stays on its volumes for demo/demo.sh metrics)"
+  unapply metrics.yaml
+  k delete configmap prometheus-rules grafana-dashboards --ignore-not-found >/dev/null
+  k wait --for=delete pod -l 'app in (otel-collector, prometheus, tempo, grafana)' --timeout=2m >/dev/null 2>&1 || true
+  if running "$RELEASE"; then
+    say "pointing the catalog away from the collector"
+    catalog_release
+    if ! cdc_running; then
+      maintenance_worker || say "the maintenance worker was not pointed away from the collector (see above)"
+    fi
+  fi
 }
 
 # The audit table writer (D23; chart deploy/helm/nuna-audit-tables, audit-tables-values.yaml), installed or brought
@@ -591,6 +736,7 @@ maintenance_worker() {
     -f "$RUN/maintenance-values.yaml" \
     --set-string "secrets.values.nuna\.maintenance\.token\.client-secret=$(tr -d '\r\n' < "$RUN/keycloak/maintenance-client-secret")" \
     --set-string "secrets.values.nuna\.maintenance\.storage\.s3\.secret-access-key=nuna-maintenance-secret-key" \
+    $(telemetry_values) \
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-maintenance:demo)" --wait --timeout 5m >/dev/null
 }
 
@@ -871,6 +1017,9 @@ ss_down() {
 # The switch ss turned on: SingleStore, and the generator's orders back to it.
 ss_on() {
   local before
+  if ! running singlestore && running prometheus; then
+    room_for 1536 SingleStore "demo/demo.sh metrics stop first" || exit 1
+  fi
   before=$(world_route)
   ss_start
   if is_on gen && ! cdc_running && [[ "$before" != "$(world_route)" ]]; then
@@ -1138,8 +1287,8 @@ EOF
   fi
   cat <<EOF
 
-The demo's people sign in once, through Keycloak ($DEMO_HOST:8180), and the console, kafbat, CloudBeaver and
-Studio ask no password after that: ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo.
+The demo's people sign in once, through Keycloak ($DEMO_HOST:8180), and the console, kafbat, CloudBeaver, Studio
+and Grafana ask no password after that: ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo.
 Studio asks only the username, then "Sign in with SAML". To change user, use the console's Sign out or
 CloudBeaver's Logout (both end Keycloak's session too), or sign out of each UI and of Keycloak
 ($web:8180/realms/nuna/protocol/openid-connect/logout, then Logout), or use a private window.
@@ -1174,12 +1323,14 @@ Silo:         its console on $web:8184: "Keycloak" signs ana in to browse and do
               secret nunatest-secret-key
 Kubernetes:   namespace $NS, context $CONTEXT
 
-Switches:     $(switches_line). demo/demo.sh gen, ss, kafka or cdc turns one on, and demo/demo.sh <switch> stop
+Switches:     $(switches_line). demo/demo.sh gen, ss, kafka, metrics or cdc turns one on, and demo/demo.sh <switch> stop
               off:
   gen         the brokerage world: its tables and its live generator, through Kafka or SingleStore or both, as
               kafka and ss say (turns kafka on if neither is)
   ss          SingleStore, with its sample databases and change feeds; the generator's orders go to it
   kafka       Kafka and Kafka Connect; every feed of the generator but the orders goes through them
+  metrics     Grafana on port 8188, with Prometheus and Tempo: the catalog's and the maintenance worker's metrics
+              and traces, on nuna's dashboards
   cdc         PostgreSQL, Oracle and CockroachDB into Iceberg history tables (starts Kafka; stops Trino and
               the generator while it runs)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines;
@@ -1194,6 +1345,12 @@ EOF
   if running kafka; then
     cat <<EOF
 Kafka:        kafbat on $web:8182; Kafka Connect's REST API on $CONNECT_URL
+EOF
+  fi
+  if running grafana; then
+    cat <<EOF
+Grafana:      $web:8188: nuna's dashboards (folder nuna) and Explore for Tempo's traces; oscar and presenter
+              administer it, everyone else views; admin / nuna-test at $web:8188/login?disableAutoLogin=true
 EOF
   fi
   if running singlestore; then
@@ -1511,10 +1668,7 @@ up() {
   apply stack.yaml
   apply store-silo.yaml
   k patch deployment s3 --type strategic --patch "$(fill silo-signin.yaml)" >/dev/null
-  fill keycloak-realm.json > "$RUN/keycloak-realm.json"
-  k create configmap keycloak-realm --from-file=nuna.json="$RUN/keycloak-realm.json" --dry-run=client -o yaml \
-    | k apply -f - >/dev/null
-  apply keycloak.yaml
+  keycloak_realm
   k wait --for=condition=available --timeout=8m deployment/postgres deployment/idp deployment/keycloak \
     deployment/s3 >/dev/null
   # silo-signin.yaml's patch replaces Silo's pod, and the new one waits for Keycloak: until the rollout ends,
@@ -1530,13 +1684,12 @@ up() {
     mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
     mc admin policy create l warehouse-read /tmp/warehouse-read.json >/dev/null' < "$STACK/silo-warehouse-read.json"
 
+  # The switch metrics (backlog 233) as it was, before the catalog, which then sends its metrics and traces to it.
+  if is_on metrics; then
+    metrics_apply
+  fi
   say "installing the catalog (chart deploy/helm/nuna-catalog) and publishing it on $URL"
-  # The image's id as a pod annotation: a rebuilt image under the same tag rolls the server, an unchanged
-  # one does not.
-  fill demo-values.yaml > "$RUN/demo-values.yaml"
-  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/nuna-catalog" \
-    -f "$STACK/catalog-values.yaml" -f "$RUN/demo-values.yaml" \
-    --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-catalog:demo)" --wait --timeout 10m >/dev/null
+  catalog_release
   # The server makes its tables only as it starts, so one that outlived its PostgreSQL pod is restarted.
   if [[ -z "$(k exec deployment/postgres -- psql -U catalog -d catalog -tAc "SELECT to_regclass('flyway_schema_history')")" ]]; then
     say "PostgreSQL is new and empty: restarting the catalog so it makes its tables"
@@ -1676,7 +1829,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") gen_start; print_access ;;
       stop) gen_stop ;;
-      *) sed -n '2,40p' "$0"; exit 2 ;;
+      *) sed -n '2,41p' "$0"; exit 2 ;;
     esac
     ;;
   ss)
@@ -1684,7 +1837,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") ss_on; print_access ;;
       stop) ss_stop ;;
-      *) sed -n '2,40p' "$0"; exit 2 ;;
+      *) sed -n '2,41p' "$0"; exit 2 ;;
     esac
     ;;
   kafka)
@@ -1692,7 +1845,14 @@ case "${1:-}" in
     case "${2:-}" in
       "") kafka_on ;;
       stop) kafka_off ;;
-      *) sed -n '2,40p' "$0"; exit 2 ;;
+      *) sed -n '2,41p' "$0"; exit 2 ;;
+    esac
+    ;;
+  metrics)
+    case "${2:-}" in
+      "") metrics_start; print_access ;;
+      stop) metrics_stop ;;
+      *) sed -n '2,41p' "$0"; exit 2 ;;
     esac
     ;;
   token)
@@ -1726,7 +1886,7 @@ case "${1:-}" in
   brokerage)
     case "${2:-}" in
       logs) k logs deployment/brokerage --tail=100 -f ;;
-      *) sed -n '2,40p' "$0"; exit 2 ;;
+      *) sed -n '2,41p' "$0"; exit 2 ;;
     esac
     ;;
   cdc)
@@ -1734,7 +1894,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,40p' "$0"; exit 2 ;;
+      *) sed -n '2,41p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -1784,7 +1944,7 @@ case "${1:-}" in
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,35p' "$0"
+    sed -n '2,41p' "$0"
     exit 2
     ;;
 esac

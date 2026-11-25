@@ -1,0 +1,414 @@
+# The demo's switch metrics (backlog 233; D50, amended 2026-11-25): what the catalog and the maintenance worker
+# export over OTLP, kept and shown. demo/demo.sh applies this only while the switch is on (demo.sh metrics), and
+# points the catalog's and the worker's telemetry.endpoint at the collector only while it runs.
+#
+#   catalog, worker --OTLP/HTTP--> otel-collector --metrics--> Prometheus (its OTLP receiver) --> Grafana
+#                                                 --traces---> Tempo -------------------------> Grafana
+#                                                 --logs-----> dropped (the worker's: the catalog's go to the
+#                                                              audit table writer, as without the switch)
+#
+# Prometheus loads the alert rules in deploy/grafana/rules, and Grafana the dashboards in deploy/grafana/dashboards,
+# from ConfigMaps demo.sh makes from those files (metrics_start). Prometheus is set as item 43 says work's should be:
+# the OTLP names pinned (translation_strategy), native histograms off, a 30-minute out-of-order window, and the
+# exemplars Boot sends kept, so a chart's points link to their traces in Tempo. Grafana signs the demo's people in
+# through Keycloak (realm nuna, client grafana) like kafbat; oscar's demo-operators and presenter's demo-presenters
+# administer it, everyone else views. The demo publishes it on port 8188 (ports.yaml).
+#
+# Prometheus keeps its series 7 days and Tempo its traces 2 days, each on a volume, and Grafana its own database
+# (anything made in it beyond the provisioned dashboards) on one too: metrics stop and demo.sh down keep them;
+# demo.sh wipe deletes them (backlog 237). Each image runs as its own user; the hostpath volumes let any user write.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 100
+        spike_limit_mib: 25
+      batch: {}
+    exporters:
+      # Prometheus' OTLP receiver: the exporter adds /v1/metrics.
+      otlp_http/prometheus:
+        endpoint: http://prometheus:9090/api/v1/otlp
+        tls: {insecure: true}
+      otlp_http/tempo:
+        endpoint: http://tempo:4318
+        tls: {insecure: true}
+      # The worker sends its log lines too, as Boot exports logs wherever metrics go; nothing in the demo keeps
+      # them (kubectl logs does), so a line a minute counts what arrives.
+      debug:
+        verbosity: basic
+        sampling_initial: 1
+        sampling_thereafter: 1000
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_http/prometheus]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_http/tempo]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+spec:
+  selector:
+    matchLabels: {app: otel-collector}
+  template:
+    metadata:
+      labels: {app: otel-collector}
+      annotations: {nuna-demo/config: "${MANIFEST_HASH}"}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: otel-collector
+          image: ${OTEL_COLLECTOR_IMAGE}
+          imagePullPolicy: Never
+          args: ["--config=/etc/otelcol/config.yaml"]
+          ports:
+            - containerPort: 4318
+          readinessProbe:
+            tcpSocket: {port: 4318}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: config, mountPath: /etc/otelcol, readOnly: true}
+          resources:
+            requests: {memory: 64Mi}
+            limits: {memory: 160Mi}
+      volumes:
+        - name: config
+          configMap: {name: otel-collector}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+spec:
+  selector: {app: otel-collector}
+  ports:
+    - {name: otlp-http, port: 4318}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus
+data:
+  prometheus.yml: |
+    # Nothing is scraped: every series arrives over OTLP, pushed, so none has `up` or a staleness marker.
+    global:
+      evaluation_interval: 30s
+    otlp:
+      # How OTLP names become Prometheus names, which deploy/grafana's queries assume; pinned, as item 43 says.
+      translation_strategy: UnderscoreEscapingWithSuffixes
+      # Off, or every _bucket query returns nothing.
+      convert_histograms_to_nhcb: false
+    storage:
+      tsdb:
+        out_of_order_time_window: 30m
+    rule_files:
+      - /etc/prometheus/rules/*.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  # One server at a time on the volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: prometheus}
+  template:
+    metadata:
+      labels: {app: prometheus}
+      # A changed configuration or rule file replaces the pod.
+      annotations: {nuna-demo/config: "${MANIFEST_HASH}", nuna-demo/grafana-files: "${GRAFANA_FILES_HASH}"}
+    spec:
+      enableServiceLinks: false
+      securityContext: {runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534}
+      containers:
+        - name: prometheus
+          image: ${PROMETHEUS_IMAGE}
+          imagePullPolicy: Never
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=7d
+            - --web.enable-otlp-receiver
+            - --enable-feature=exemplar-storage
+          ports:
+            - containerPort: 9090
+          readinessProbe:
+            httpGet: {path: /-/ready, port: 9090}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus/prometheus.yml, subPath: prometheus.yml, readOnly: true}
+            - {name: rules, mountPath: /etc/prometheus/rules, readOnly: true}
+            - {name: data, mountPath: /prometheus}
+          resources:
+            requests: {memory: 256Mi}
+            limits: {memory: 512Mi}
+      volumes:
+        - name: config
+          configMap: {name: prometheus}
+        - name: rules
+          configMap: {name: prometheus-rules}
+        - name: data
+          persistentVolumeClaim: {claimName: prometheus-data}
+---
+# Prometheus' series, 7 days of them. metrics stop and demo.sh down keep it; demo.sh wipe deletes it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+spec:
+  selector: {app: prometheus}
+  ports:
+    - port: 9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo
+data:
+  tempo.yaml: |
+    # One process does everything, its blocks on the volume.
+    stream_over_http_enabled: true
+    server:
+      http_listen_port: 3200
+      log_level: warn
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            http:
+              endpoint: 0.0.0.0:4318
+    ingester:
+      max_block_duration: 5m
+    compactor:
+      compaction:
+        block_retention: 48h
+    storage:
+      trace:
+        backend: local
+        wal:
+          path: /var/tempo/wal
+        local:
+          path: /var/tempo/blocks
+    usage_report:
+      reporting_enabled: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: tempo}
+  template:
+    metadata:
+      labels: {app: tempo}
+      annotations: {nuna-demo/config: "${MANIFEST_HASH}"}
+    spec:
+      enableServiceLinks: false
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+      containers:
+        - name: tempo
+          image: ${TEMPO_IMAGE}
+          imagePullPolicy: Never
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
+          ports:
+            - {name: http, containerPort: 3200}
+            - {name: otlp-http, containerPort: 4318}
+          readinessProbe:
+            httpGet: {path: /ready, port: 3200}
+            periodSeconds: 5
+          volumeMounts:
+            - {name: config, mountPath: /etc/tempo, readOnly: true}
+            - {name: data, mountPath: /var/tempo}
+          resources:
+            requests: {memory: 128Mi}
+            limits: {memory: 512Mi}
+      volumes:
+        - name: config
+          configMap: {name: tempo}
+        - name: data
+          persistentVolumeClaim: {claimName: tempo-data}
+---
+# Tempo's traces, 2 days of them. metrics stop and demo.sh down keep it; demo.sh wipe deletes it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tempo-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+spec:
+  selector: {app: tempo}
+  ports:
+    - {name: http, port: 3200}
+    - {name: otlp-http, port: 4318}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        url: http://prometheus:9090
+        isDefault: true
+        editable: false
+        jsonData:
+          # A point's exemplar opens its trace in Tempo.
+          exemplarTraceIdDestinations:
+            - {name: trace_id, datasourceUid: tempo}
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        url: http://tempo:3200
+        editable: false
+        jsonData:
+          tracesToMetrics: {datasourceUid: prometheus}
+          serviceMap: {datasourceUid: prometheus}
+          nodeGraph: {enabled: true}
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: nuna
+        folder: nuna
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards/nuna
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: grafana}
+  template:
+    metadata:
+      labels: {app: grafana}
+      annotations: {nuna-demo/config: "${MANIFEST_HASH}", nuna-demo/grafana-files: "${GRAFANA_FILES_HASH}"}
+    spec:
+      enableServiceLinks: false
+      securityContext: {runAsUser: 472, runAsGroup: 0, fsGroup: 0}
+      containers:
+        - name: grafana
+          image: ${GRAFANA_IMAGE}
+          imagePullPolicy: Never
+          env:
+            - {name: GF_SERVER_ROOT_URL, value: "https://${DEMO_HOST}:8188/"}
+            - {name: GF_SECURITY_ADMIN_USER, value: admin}
+            - {name: GF_SECURITY_ADMIN_PASSWORD, value: nuna-test}
+            - {name: GF_USERS_DEFAULT_THEME, value: system}
+            - {name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH, value: /var/lib/grafana/dashboards/nuna/nuna-catalog.json}
+            # Nothing leaves the machine.
+            - {name: GF_ANALYTICS_REPORTING_ENABLED, value: "false"}
+            - {name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false"}
+            - {name: GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES, value: "false"}
+            - {name: GF_NEWS_NEWS_FEED_ENABLED, value: "false"}
+            # Keycloak, as kafbat signs in (kafka-ui-signin.yaml): the browser on the front door's 8180, Grafana's
+            # own calls inside the cluster. Straight to Keycloak; /login?disableAutoLogin=true for admin.
+            - {name: GF_AUTH_GENERIC_OAUTH_ENABLED, value: "true"}
+            - {name: GF_AUTH_GENERIC_OAUTH_NAME, value: Keycloak}
+            - {name: GF_AUTH_GENERIC_OAUTH_CLIENT_ID, value: grafana}
+            - {name: GF_AUTH_GENERIC_OAUTH_SCOPES, value: openid}
+            - {name: GF_AUTH_GENERIC_OAUTH_USE_PKCE, value: "true"}
+            - {name: GF_AUTH_GENERIC_OAUTH_AUTH_URL, value: "https://${DEMO_HOST}:8180/realms/nuna/protocol/openid-connect/auth"}
+            - {name: GF_AUTH_GENERIC_OAUTH_TOKEN_URL, value: "http://keycloak:8080/realms/nuna/protocol/openid-connect/token"}
+            - {name: GF_AUTH_GENERIC_OAUTH_API_URL, value: "http://keycloak:8080/realms/nuna/protocol/openid-connect/userinfo"}
+            - {name: GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH, value: preferred_username}
+            - {name: GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH, value: preferred_username}
+            - {name: GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH, value: groups}
+            - name: GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH
+              value: "contains(groups[*], 'demo-operators') && 'Admin' || contains(groups[*], 'demo-presenters') && 'Admin' || 'Viewer'"
+            - {name: GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP, value: "true"}
+            - {name: GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN, value: "true"}
+            - name: GF_AUTH_SIGNOUT_REDIRECT_URL
+              value: "https://${DEMO_HOST}:8180/realms/nuna/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=https%3A%2F%2F${DEMO_HOST}%3A8188%2Flogin"
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet: {path: /api/health, port: 3000}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: provisioning, mountPath: /etc/grafana/provisioning/datasources/datasources.yaml, subPath: datasources.yaml, readOnly: true}
+            - {name: provisioning, mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml, subPath: dashboards.yaml, readOnly: true}
+            - {name: dashboards, mountPath: /var/lib/grafana/dashboards/nuna, readOnly: true}
+            - {name: data, mountPath: /var/lib/grafana}
+          # Grafana 13 starts its many built-in apps at once: at 384 MiB it stalled for minutes, short of memory.
+          resources:
+            requests: {memory: 256Mi}
+            limits: {memory: 768Mi}
+      volumes:
+        - name: provisioning
+          configMap: {name: grafana-provisioning}
+        - name: dashboards
+          configMap: {name: grafana-dashboards}
+        - name: data
+          persistentVolumeClaim: {claimName: grafana-data}
+---
+# Grafana's own database: its users and anything made in it beyond the provisioned dashboards. metrics stop and
+# demo.sh down keep it; demo.sh wipe deletes it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  selector: {app: grafana}
+  ports:
+    - port: 3000
