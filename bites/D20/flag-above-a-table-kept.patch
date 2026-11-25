@@ -1,0 +1,16 @@
+Breaks: the startup cleanup leaves the row-column-policy flags on a catalog or a view, so they still read as protection that is not enforced (backlog 239).
+Module: catalog-server
+Test: FlagOnTablesOnlyTest#startupRemovesEveryFlagAboveATableAndRecordsEach
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/FlagsAboveTables.java b/catalog-server/src/main/java/nuna/catalog/server/governance/FlagsAboveTables.java
+index 123d53af..bbfad2ad 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/FlagsAboveTables.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/FlagsAboveTables.java
+@@ -72,7 +72,7 @@ class FlagsAboveTables {
+         for (int from = 0; from < all.size(); from += BATCH) {
+             store.attributesOf(Set.copyOf(all.subList(from, Math.min(all.size(), from + BATCH)))).stream()
+                     .filter(a -> a.kind() == GovernanceAttribute.Kind.ROW_COLUMN_POLICY)
+-                    .filter(a -> a.target().kind() != Securable.Kind.TABLE)
++                    .filter(a -> a.target().kind() == Securable.Kind.NAMESPACE)
+                     .forEach(flags::add);
+         }
+         List<nuna.catalog.audit.Securable> removed = new ArrayList<>();

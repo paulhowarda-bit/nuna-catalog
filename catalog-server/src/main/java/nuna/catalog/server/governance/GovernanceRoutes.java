@@ -167,7 +167,11 @@ class GovernanceRoutes {
         ObjectNode effective = Management.JSON.createObjectNode();
         for (GovernanceAttribute attribute : target.chain().attributes()) {
             attributes.add(attribute(attribute));
-            effective.putIfAbsent(name(attribute.kind()), effective.stringNode(attribute.value()));
+            // The row/column-policy flag counts only on the table it is set on (D20, backlog 239): none is inherited.
+            if (attribute.kind() != GovernanceAttribute.Kind.ROW_COLUMN_POLICY
+                    || attribute.target().equals(target.securable())) {
+                effective.putIfAbsent(name(attribute.kind()), effective.stringNode(attribute.value()));
+            }
         }
         body.set("effective", effective);
         ArrayNode holds = body.putArray("holds");
@@ -413,6 +417,9 @@ class GovernanceRoutes {
 
     private ResponseEntity<String> put(Target target, GovernanceAttribute.Kind kind, String attribute, String value,
                                        String provenance, Request request) {
+        if (kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.securable().kind() != Securable.Kind.TABLE) {
+            throw flagOnTablesOnly(target);
+        }
         Instant now = now();
         GovernanceAttribute record = new GovernanceAttribute(target.securable(), kind, value, provenance,
                 request.actor().principal(), now);
@@ -458,6 +465,16 @@ class GovernanceRoutes {
     private static CatalogError rulesStand(Target target) {
         return CatalogError.of(409, "RowColumnRulesExistException", "The table has row filters or column masks;"
                 + " the grant admin removes them before its row/column-policy flag can be removed or set false");
+    }
+
+    /**
+     * The row/column-policy flag goes on a table only (D20, backlog 239): only a table's own flag closes its files to
+     * clients that are no trusted engine, so one on a catalog, namespace or view would read as protection that is not
+     * there. Removing one set there before is still allowed ({@link FlagsAboveTables} removes them at startup).
+     */
+    private static CatalogError flagOnTablesOnly(Target target) {
+        return CatalogError.badRequest("The row-column-policy flag goes on a table, not on a " + kind(target.securable())
+                + ": only a table's own flag is enforced, so set it on each table to protect");
     }
 
     /**
