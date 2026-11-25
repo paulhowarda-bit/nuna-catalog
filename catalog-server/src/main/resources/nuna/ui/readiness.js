@@ -7,6 +7,7 @@
 import * as api from './api.js';
 import {at, code, copyText, fill, h, icon, pill, plural} from './dom.js';
 import {may, operates} from './access.js';
+import {grantAccess} from './grant.js';
 import {ownGrants} from './requests.js';
 import {pageHref} from './route.js';
 
@@ -76,9 +77,10 @@ const NOT_KNOWN = 'No maintenance worker has reported, so the catalog can\'t che
 
 /**
  * The panel "What the worker needs to maintain <catalog>", while any step is not done; null when every one is.
- * `answer` is `readinessOf`'s; `editPolicy` opens the catalog's policy, for a caller whose groups hold modify on it.
+ * `answer` is `readinessOf`'s; `editPolicy` opens the catalog's policy, for a caller whose groups hold modify on it, and
+ * `reload` redraws the page once a grant is made.
  */
-export function readinessPanel(catalog, answer, editPolicy) {
+export function readinessPanel(catalog, answer, {editPolicy, reload}) {
   const {ready, rights} = answer;
   const left = notDone(ready);
   if (!left.length) return null;
@@ -110,10 +112,13 @@ export function readinessPanel(catalog, answer, editPolicy) {
       : `None of the worker's groups (${groups.map(g => g.group).join(', ')}) holds write on ${catalog}, so the worker `
         + 'can\'t read or commit its tables.';
   }
+  // Item 248's dialog, filled in: the worker's one group, or none when it carries several, since the first may be a broad
+  // one (Atelier, 2026-11-24); "Read and write rows" on the catalog. The person still presses Grant.
   const grantTo = groups.length === 1 ? groups[0].group : null;
   const grantAction = grant.state === 'missing' ? (!names ? askNames() : rights.grant
-    ? h('a', {class: 'btn sm', href: pageHref('grants', catalog, null, grantTo), 'data-act': 'grant-write'},
-      grantTo ? `Grant write to ${grantTo}` : `Grant write on ${catalog}`)
+    ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'grant-write', onclick: () => grantAccess(
+      {catalog, kind: 'catalog', namespace: []}, {group: grantTo, privilege: 'write', closed: reload})},
+    grantTo ? `Grant write to ${grantTo}` : `Grant write on ${catalog}`)
     : h('p', {class: 'fine step-ask'}, 'Ask a grant admin.')) : null;
 
   // 2. Storage settings.

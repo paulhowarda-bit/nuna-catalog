@@ -46,8 +46,8 @@ export function maintenancePage(catalog) {
     const reload = () => main.replaceWith(maintenancePage(catalog));
     const target = {catalog, kind: 'catalog', namespace: []};
     const steps = !readiness ? null : readiness.error ? failure(readiness.error)
-      : readinessPanel(catalog, readiness, () => api.policy(target).then(p => editPolicy(catalog, p, reload),
-        error => openDialog(`Policy for ${catalog}`, failure(error))));
+      : readinessPanel(catalog, readiness, {reload, editPolicy: () => api.policy(target).then(p => editPolicy(catalog, p, reload),
+        error => openDialog(`Policy for ${catalog}`, failure(error)))});
     // While a step is left, the head says so in place of "not assessed yet", "maintenance is off" and "nothing you may
     // read": a grant admin or an operator comes here to act on the steps (Atelier, 2026-11-24).
     const left = steps && stepsWords(catalog, ready);
