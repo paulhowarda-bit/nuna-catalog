@@ -20,6 +20,7 @@ import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitOutcomeUnknownException;
 import nuna.catalog.store.Grant;
+import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.OutboxEvent;
@@ -32,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,8 +55,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Grant administration (D18, D19): grant and revoke to groups, a grant's preview (backlog 246), list by principal (its
- * groups), list by object, the effective grants on an object (D45), the batch check, and the export for access
- * certification. Every refusal is audited; one on a namespace, table
+ * groups), list by object, the effective grants on an object (D45), the groups that hold grants (backlog 247), the
+ * batch check, and the export for access certification. Every refusal is audited; one on a namespace, table
  * or view the caller holds nothing on is answered as if it did not exist (D18, item 73), as is every route on a
  * catalog the caller holds nothing on ({@link Holdings#catalog}, item 68). Every grant change goes
  * through the outbox in the same transaction (D23). The separation-of-duties check runs inside the store's write
@@ -71,8 +73,12 @@ class GrantRoutes {
     private static final Operation LIST = new Operation("listGrants", Privilege.MANAGE_GRANTS, false);
     private static final Operation EXPORT = new Operation("exportGrants", Privilege.MANAGE_GRANTS, false);
     private static final Operation EFFECTIVE = new Operation("listEffectiveGrants", Privilege.MANAGE_GRANTS, false);
+    private static final Operation LIST_GROUPS = new Operation("listGrantGroups", Privilege.MANAGE_GRANTS, false);
     private static final Operation PREVIEW = new Operation("previewGrant", Privilege.MANAGE_GRANTS, false);
     private static final int EXPORT_PAGE = 500;
+    private static final String GROUPS_NOTE = "Only groups that hold a grant in this catalog are listed, and the"
+            + " deployment's grant-admin and platform-operator groups: the catalog knows groups from its grants and"
+            + " does not read the directory, so a group that holds nothing here is not listed.";
 
     record GrantSpec(Securables.Spec securable, String group, String privilege) {
     }
@@ -209,6 +215,35 @@ class GrantRoutes {
         out.put("securable", securables.render(on.stored()));
         out.put("grants", authorizer.effectiveGrants(on.target()).stream().map(g -> render(g, securables)).toList());
         out.put("grant-admin-groups", separation.grantAdminGroups().stream().sorted().toList());
+        return json(out);
+    }
+
+    /**
+     * The groups that hold a grant in the catalog, for the console's group picker (backlog 247), paged by group:
+     * each with its duties (D18: {@code read}, {@code data}, {@code grants}, {@code tags}, as {@link Separation.Duty}
+     * names them) and the privileges it holds anywhere in the catalog, by wire name; a privilege this version does
+     * not know is listed but gives no duty. With them, on every page, the deployment's grant-admin and
+     * platform-operator groups, which hold their duty by configuration, not by a grant, and may be granted nothing.
+     * The catalog knows groups only from its grants, never the directory's, and {@code note} says so. Needs
+     * {@code manage-grants} on the catalog, as the export does; a refusal is answered as there.
+     */
+    @GetMapping(GRANTS + "/groups")
+    ResponseEntity<String> listGroups(@PathVariable String catalog,
+                                      @RequestParam(required = false) String pageToken,
+                                      @RequestParam(required = false) String pageSize,
+                                      HttpServletRequest http) {
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), LIST_GROUPS.name(),
+                LIST_GROUPS.privilege());
+        Securables securables = new Securables(store, record);
+        require(request, securables.catalogItself(), LIST_GROUPS);
+        Page<GrantGroup> page = paged(() -> store.listGrantGroups(record.id(), page(pageToken, pageSize)));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("groups", page.items().stream().map(GrantRoutes::render).toList());
+        out.put("grant-admin-groups", separation.grantAdminGroups().stream().sorted().toList());
+        out.put("platform-operator-groups", separation.platformOperatorGroups().stream().sorted().toList());
+        out.put("note", GROUPS_NOTE);
+        page.nextToken().ifPresent(token -> out.put("next-page-token", token));
         return json(out);
     }
 
@@ -517,6 +552,22 @@ class GrantRoutes {
         out.put("privilege", grant.grant().privilege());
         out.put("granted-by", grant.grantedBy());
         out.put("granted-at", grant.grantedAt().toString());
+        return out;
+    }
+
+    private static Map<String, Object> render(GrantGroup group) {
+        Set<Separation.Duty> duties = EnumSet.noneOf(Separation.Duty.class);
+        for (String name : group.privileges()) {
+            try {
+                duties.add(Separation.Duty.of(Privilege.fromWireName(name)));
+            } catch (IllegalArgumentException e) {
+                // A privilege from a newer version: listed, but no duty this version knows.
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("group", group.group());
+        out.put("duties", duties.stream().map(Separation.Duty::wireName).toList());
+        out.put("privileges", group.privileges());
         return out;
     }
 

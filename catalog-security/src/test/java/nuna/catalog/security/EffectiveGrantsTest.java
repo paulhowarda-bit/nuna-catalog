@@ -268,6 +268,11 @@ class EffectiveGrantsTest {
             throw new UnsupportedOperationException();
         }
 
+        @Override
+        public Page<nuna.catalog.store.GrantGroup> listGrantGroups(UUID catalogId, PageRequest page) {
+            throw new UnsupportedOperationException();
+        }
+
         /** By group, then privilege; the token is the index of the next grant. */
         @Override
         public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {

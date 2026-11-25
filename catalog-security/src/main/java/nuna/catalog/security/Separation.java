@@ -22,11 +22,19 @@ import java.util.Set;
  */
 public final class Separation {
 
-    /** The duties of D18; reading is no duty and goes with anything but grant administration. */
-    enum Duty {
+    /**
+     * The duties of D18; reading is no duty and goes with anything but grant administration. The console names them
+     * Reading, Data, Grants and Tags.
+     */
+    public enum Duty {
         READ, DATA, GRANTS, TAGS;
 
-        static Duty of(Privilege privilege) {
+        /** The name on the wire, e.g. {@code read}. */
+        public String wireName() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+
+        public static Duty of(Privilege privilege) {
             return switch (privilege) {
                 case DESCRIBE, SELECT -> READ;
                 case WRITE, MODIFY, CREATE -> DATA;
