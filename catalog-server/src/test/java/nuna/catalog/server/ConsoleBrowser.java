@@ -118,7 +118,7 @@ public final class ConsoleBrowser implements AutoCloseable {
                     + "it Docker and Windows run short of memory, and the console's browser tests have run past half an "
                     + "hour with Chrome unreachable and their waits running out (backlog 209). Take the demo down and "
                     + "run them (D49, backlog 218): tell every active session, run demo/demo.sh down, run these tests "
-                    + "again, then run demo/demo.sh up from a checkout of main and tell them again. "
+                    + "again, then run demo/demo.sh up from the main checkout and tell them again. "
                     + "-Pnuna.demo-beside runs them beside it anyway.");
         }
     }
