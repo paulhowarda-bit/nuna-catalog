@@ -1,0 +1,15 @@
+Breaks: the storage prefixes route answers every caller, not only a maintenance principal acting as itself, and audits no denial (item 256).
+Module: catalog-server
+Test: StoragePrefixRoutesTest#onlyTheWorkerActingAsItselfReadsThePrefixes
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java
+index ca1b5e93..2f78331f 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/StoragePrefixRoutes.java
+@@ -40,7 +40,6 @@ class StoragePrefixRoutes {
+     /** {@code {"profiles": [{"name", "kind", "endpoint", "prefixes": [...]}, ...]}}, by name. */
+     @GetMapping(path = STORAGE_PREFIXES, produces = MediaType.APPLICATION_JSON_VALUE)
+     ResponseEntity<String> prefixes(HttpServletRequest http) {
+-        guard.requireMaintenance(management.request(http), null, "listMaintenanceStoragePrefixes");
+         ObjectNode body = Management.JSON.createObjectNode();
+         ArrayNode profiles = body.putArray("profiles");
+         for (Map.Entry<String, StorageSettings.Profile> entry : new TreeMap<>(settings.profiles()).entrySet()) {

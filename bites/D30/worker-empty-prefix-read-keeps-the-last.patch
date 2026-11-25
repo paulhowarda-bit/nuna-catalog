@@ -1,0 +1,17 @@
+Breaks: a scan whose read names no storage prefix keeps the prefixes an earlier scan read, so its storage still lists and deletes beneath them (item 256).
+Module: catalog-maintenance
+Test: WorkerPrefixesTest#anEmptyReadListsAndDeletesNothingThatScan
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java b/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
+index 71e6b52b..cdc917a9 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/OwnStorage.java
+@@ -32,6 +32,9 @@ final class OwnStorage implements Storage {
+ 
+     @Override
+     public Prefixes reach(List<Management.StorageProfile> profiles) {
++        if (profiles.isEmpty()) {
++            return reached;
++        }
+         Prefixes now = Prefixes.resolve(profiles, stores);
+         reached = now;
+         return now;

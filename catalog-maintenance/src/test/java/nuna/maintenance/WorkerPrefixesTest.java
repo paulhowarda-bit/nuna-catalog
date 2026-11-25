@@ -188,9 +188,9 @@ class WorkerPrefixesTest {
                 Duration.ofHours(2), 2, new SimpleMeterRegistry(), ObservationRegistry.NOOP);
     }
 
-    /** The calls that would claim a purge or delete a due file. */
+    /** The calls that would claim a purge or report due files deleted. */
     private List<String> storageWork() {
-        return calls.stream().filter(call -> call.contains("/purge") || call.contains("/deletions")).toList();
+        return calls.stream().filter(call -> call.contains("/purge") || call.contains("/pending-deletions")).toList();
     }
 
     private List<String> lines(Level level) {

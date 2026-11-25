@@ -1,0 +1,16 @@
+Breaks: the worker matches a profile to a store by endpoint alone, so a MinIO profile at a Ceph store's endpoint is served with the Ceph identity (item 256).
+Module: catalog-maintenance
+Test: PrefixesTest#aProfileIsServedByTheOneStoreOfItsKindAndEndpoint
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+index 6563050e..62b9cb89 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Prefixes.java
+@@ -95,7 +95,7 @@ final class Prefixes {
+ 
+     /** Whether the identity serves the profile: the same kind, and the same endpoint however either is written. */
+     private static boolean serves(WorkerSettings.Store store, Management.StorageProfile profile) {
+-        if (!store.kind().name().equals(profile.kind().toUpperCase(Locale.ROOT))) {
++        if (profile.kind().isEmpty()) {
+             return false;
+         }
+         try {
