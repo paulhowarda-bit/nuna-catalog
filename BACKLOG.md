@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**54 open:** 15 S, 20 M, 14 L, 5 XL.
+**61 open:** 18 S, 23 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -66,6 +66,13 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [247](backlog/247.md) | M | Grants: a route listing the groups that hold a grant in a catalog, with their duties, and the configured grant-admin and operator groups | a distinct-groups query in each store (PostgreSQL, CockroachDB, Oracle, MongoDB), with the conformance suite and route tests | 2026-11-24 |
 | [248](backlog/248.md) | M | Console: one Grant access dialog for the Grants page and every Access tab, with a group picker, privileges in plain words, a path search and a preview line | one dialog replacing two forms, with browser tests; waits on items 246 and 247 | 2026-11-24 |
 | [249](backlog/249.md) | S | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | a paragraph in the demo's README | 2026-11-24 |
+| [250](backlog/250.md) | M | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | a new field on the scan report kept by all four stores with the conformance suite, and one list call per prefix per scan | 2026-11-24 |
+| [251](backlog/251.md) | S | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | one route reading item 250's record, the catalog's storage profile, the grants and the resolved policy; waits on item 250 | 2026-11-24 |
+| [252](backlog/252.md) | M | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button | 2026-11-24 |
+| [253](backlog/253.md) | S | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250 | 2026-11-24 |
+| [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
+| [255](backlog/255.md) | S | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | one setting and a change to `maintenance_worker()`, checked with `demo.sh up` | 2026-11-24 |
+| [256](backlog/256.md) | L | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | the worker's settings and routing change shape and the DR replica keys move, plus a route, the chart, the README's rules per store, fast tests with bites and two heavy store tests | 2026-11-24 |
 
 ## Open items in full
 
@@ -3217,6 +3224,292 @@ refuse one person in every group, but not that this person can then grant to non
 `demo/README.md`, beside the users table, says that `presenter` and `gary` cannot grant to their own groups. To show a
 grant, they grant to `demo-loaders` or to a new group name such as `demo-readers`. Grants go to group names, so
 Keycloak needs no change.
+
+### 250. Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-maintenance/src/main/java/nuna/maintenance/, catalog-maintenance/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, catalog-store-api/, catalog-store-sql/, catalog-store-oracle/, catalog-store-mongo/, catalog-tests-conformance/, bites/
+- Effort: M, a new field on the scan report kept by all four stores with the conformance suite, and one list call per prefix per scan
+
+## What is missing
+
+Paul set up a second catalog, `ledger`, at work and opened Maintenance for it: nothing happened, and nothing said why
+(2026-11-24). The worker cannot maintain a catalog until four steps are done: a write grant for its group, a storage
+profile covering the catalog's bucket, the store's permission to list and delete there, and a policy that turns a job
+on. The catalog can check the first and the last; it cannot see the middle two, because only the worker meets them
+(Atelier, 2026-11-24):
+
+- When no worker profile covers a location, `Storage.io()` throws "no nuna.maintenance.storage profile covers …"; when
+  the store refuses, the worker gets AccessDenied. Both reach the catalog only as counts by kind on the scan report
+  (`orphan-scan 3`) and as failed night jobs, with no reason, table, catalog or bucket (`HealthReports`,
+  `Management.reportScan`, `reportJob`). The catalog never learns the worker's groups either.
+- Meanwhile the Maintenance page says "N tables not assessed yet: the maintenance worker has not reported"
+  (`queue.js:122`), even while the worker reports every scan.
+- With only the grant done, maintenance looks healthy and deletes nothing. Expiry, manifest rewrite, assessment and
+  compaction run on credentials the catalog vends; only deletion, orphan scans and purges use the worker's own storage
+  identity. Every replaced file waits on the pending list for ever, and the first deletion falls due only after the
+  PITR window (7 days by default), so deletion results alone are a week-late signal. A list check at each scan is not.
+
+## Done when
+
+- At the start of each scan, `PUT /management/v1/maintenance/scans/{id}` carries `storage`: for each profile its name,
+  endpoint and prefixes, and for each prefix `listed`, `ok` or `refused` with the store's code (AccessDenied,
+  NoSuchBucket). The worker lists at most one key per prefix for this, which its policy already allows.
+- At the end of the scan, for each profile, the deletes done and refused, with the first refusal's code.
+- The catalog records the worker's groups from its token.
+- A test shows no key or secret in the body. The conformance suite passes on all four databases. A bite shows a
+  refused list is kept as refused.
+- If item 256 lands first, the report is per store identity, with the prefixes the catalog gave it.
+
+### 251. Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, bites/
+- Effort: S, one route reading item 250's record, the catalog's storage profile, the grants and the resolved policy; waits on item 250
+
+## What is missing
+
+Nothing tells a catalog's owner which of the four steps the maintenance worker needs is missing (item 250 has the
+evidence). The console's checklist (item 252) needs one answer per step (Atelier, 2026-11-24).
+
+## Done when
+
+`GET /management/v1/catalogs/{catalog}/maintenance/readiness`, for those who may `describe` the catalog, answers four
+steps, each `done`, `missing`, `refused` or `unknown`, and the time of the worker's last report:
+
+- `grant`: the worker's last-reported groups hold `write` on the catalog.
+- `storage`: each allowed prefix of the catalog's storage profile lies beneath a prefix the worker reported, matched
+  the way `Storage.io()` matches. (If item 256 has landed: the worker holds an identity for the profile's store.)
+- `store`: the worker's last list check there succeeded and no delete there was refused.
+- `policy`: the catalog's resolved policy turns at least one job on.
+
+Before any worker has reported, the first three are `unknown`. Names (the worker's group, prefixes, profiles) go only to
+those who may modify the catalog or manage its grants, and to platform operators. Route tests cover each state, and a
+bite shows an uncovered prefix is reported `missing`.
+
+### 252. Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js, catalog-server/src/main/resources/nuna/ui/queue.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/panels.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/
+- Effort: M, one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button
+
+## What is wrong
+
+Paul: "I should be able to do this stuff from the UI" (2026-11-24), on the four steps the worker needs before it
+maintains a new catalog (item 250). Today the Maintenance page of such a catalog shows nothing happening and says the
+worker "has not reported" (`queue.js:122`), which is wrong while it reports every scan. Two of the steps are edits
+outside the catalog that D21 and D30 keep there (the worker's settings, the store's policy), so the console cannot do
+them; it can prove each step, show the gap and hand the work to whoever may do it (Atelier, 2026-11-24).
+
+## Atelier's design
+
+**Page head**, in place of `shapeWords` once a worker has reported:
+
+- Step 1 or 4 missing: "The worker can't maintain ledger yet: {n} of 4 steps left."
+- Only step 2 or 3 left: "The worker maintains ledger but can't delete its old files: {n} of 4 steps left."
+
+**A panel under the head**, shown while any step is not done and again if one goes wrong later. Heading "What the
+worker needs to maintain ledger", note "{k} of 4 done · as of its scan at {14:05}". Each row: a pill, one line,
+"Who: …" and an action.
+
+1. **Write access.** Done: "demo-maintenance, the worker's group, holds write on ledger." Missing: "demo-maintenance,
+   the worker's group, holds no write on ledger, so the worker can't read or commit its tables." Who: a grant admin.
+   Action, for those who may manage grants: **Grant write to demo-maintenance**, opening item 248's dialog filled in
+   with that group, "Read and write rows", on ledger. Everyone else: "Ask a grant admin."
+2. **Storage settings.** Done: "The worker's profile s3 covers s3://ledger-warehouse/tables." Missing: "No profile in
+   the worker's settings covers s3://ledger-warehouse/tables. Until one does, files that expiry and compaction replace
+   are kept, and no orphan is found." After item 256: "The worker holds no identity for the store at {endpoint}." Who:
+   a platform operator, in the worker's settings. Action: **What to add** for operators (item 254); **Copy a note for
+   an operator** for others.
+3. **Store permission.** Done: "The store let the worker list s3://ledger-warehouse/tables at 14:05", plus " and
+   delete {n} files since {09:00}." when it has. Refused listing: "The store refused the worker's listing of … at
+   14:05: AccessDenied." Missing bucket: "The store has no bucket ledger-warehouse." Refused deletes: "The store
+   refused {n} of the worker's deletes in … since {09:00}: {code}." Pill "Waits on step 2": "The worker checks this at
+   its first scan once step 2 is done." Who: a platform operator, in the store. Action: **What to apply** for
+   operators; the note for others.
+4. **Maintenance policy.** Done: "On in ledger: snapshot expiry, compaction, …" Missing: "Every job is off in ledger's
+   policy." Action: the existing **Edit the catalog's policy**.
+
+- Before any worker has reported, rows 1 to 3 show the pill "Not known": "No maintenance worker has reported, so the
+  catalog can't check this."
+- Callers who may not see names get "ledger's storage" and "the worker's group" in their place, and the action "Ask
+  someone with modify on ledger or a platform operator."
+- Fine line at the foot: "The catalog can't change the worker's settings or the store's policies: the worker's keys
+  stay out of the catalog, and a catalog that could set store policies could undo the one that keeps delete from it."
+- The copied note: "The maintenance worker can't delete old files in catalog ledger. Its tables are in
+  s3://ledger-warehouse/tables. [No profile in the worker's settings covers it.] [The store refused the worker's
+  listing there (AccessDenied).] What to apply is on the console's Service page, under Worker storage: {link}". After
+  copying the button reads "Copied", and a line says "Send it to a platform operator."
+
+## Done when
+
+The head, panel and note work as above, from item 251's route, and browser tests pass as `ana`, `gary` and `oscar` on a
+catalog with no grant and no storage. Item 248's dialog accepts a filled-in group, access and object.
+
+### 253. Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/
+- Effort: S, one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250
+
+## What is missing
+
+`GET /management/v1/maintenance/delete-policies` (`DeletePolicyRoutes.java`) is read by no console page, names no
+commands, gives nothing for a profile with no `maintenance-principal` but "unprotected", and nothing produces the
+worker's settings for a new bucket (Atelier, 2026-11-24). The operator dialog (item 254) needs all of it. D21 and D30
+stand: the catalog writes these, never applies them.
+
+## Done when
+
+`GET /management/v1/maintenance/storage-setup`, for platform operators only, gives for each catalog storage profile:
+
+- its catalogs and prefixes, and the worker's coverage and reach there (item 250);
+- `worker-settings`: the prefix added to the worker's profile on the same store, or a new profile for a new store with
+  the key's place marked, never a key. After item 256, a new store only;
+- `store`: each delete policy with its commands for the store's kind (`mc admin policy create/attach` for MinIO,
+  `aws s3api put-bucket-policy`, with `--endpoint-url` for Ceph), or `unprotected` with the catalog setting to add
+  (`nuna.storage.profiles.<name>.maintenance-principal`).
+
+Route tests cover MinIO, AWS S3 and Ceph, a bucket on a store the worker already reaches and one on a new store, and an
+unprotected profile.
+
+### 254. Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/main/resources/nuna/ui/dom.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/
+- Effort: M, one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253
+
+## What is missing
+
+The two maintenance steps done outside the catalog (the worker's settings, the store's policy: item 252) leave the
+operator to work out what to change by reading `deploy/README.md`. The console can hand over the exact text from item
+253's route (Atelier, 2026-11-24).
+
+## Atelier's design
+
+**Dialog "Set up the worker's storage for ledger"**, opened by **What to add** and **What to apply** on Maintenance
+(item 252) and by **What to set up** on Service. Intro: "Two changes outside the catalog, one in the worker's settings
+and one in the store. The steps on the Maintenance page turn to Done at the worker's next scan after each."
+
+- **"1. The worker's settings"**
+  - A store the worker already reaches: "Add s3://ledger-warehouse/tables to the worker's profile s3, which already
+    reaches http://s3:9000:", the YAML with both prefixes, then "Then upgrade the nuna-maintenance release. The worker
+    reads its settings only when it starts." Button **Copy the settings**. After item 256 this case needs nothing, and
+    the block is not shown.
+  - A new store: "Add a profile for {endpoint}. Its key and secret are the worker's own on that store, never the
+    catalog's:", the YAML with `access-key-id: <the worker's access key on this store>`, then "Put the secret in the
+    release's secrets as nuna.maintenance.storage.{name}.secret-access-key, then upgrade the release. On AWS S3 with a
+    role for the worker (IRSA or Pod Identity), leave both keys out."
+- **"2. The store's policy"**
+  - MinIO: "As a store admin, let the worker's user list and delete beneath …:", the `mc admin policy create/attach`
+    commands with `<alias>` marked, buttons **Copy the commands** and **Copy the policy**, the policy itself folded.
+    Then "Then attach nuna-no-delete to every other user of the store, the catalog's own included, so only the worker
+    deletes there:" with its own commands.
+  - AWS S3 and Ceph: "As an identity that may, put this policy on bucket ledger-warehouse. A bucket holds one policy:
+    merge these statements into any it already has.", then `aws s3api put-bucket-policy …`, with `--endpoint-url` for
+    Ceph.
+  - No maintenance principal on the profile: "The catalog's profile {name} names no maintenance principal, so the
+    catalog generates no delete policy for it and nothing stops other keys deleting there. Name the worker's storage
+    identity in the catalog's settings, then upgrade the catalog and come back:", then
+    `nuna.storage.profiles.{name}.maintenance-principal`.
+- Foot: "The catalog writes these policies but never applies them: its own keys would then need the right to undo
+  them."
+
+**Service page, a "Worker storage" panel, operators only.** One row per catalog storage profile, those with something
+not done first. Columns: Profile · Catalogs · Prefixes · Worker settings ("Covered by s3" / "Not covered") · Store
+("Listed 14:05" / "Refused: AccessDenied" / "Not checked") · Delete policy ("Generated for nuna-maintenance; the catalog
+can't see whether it is applied" / "Unprotected"). Each row has **What to set up**, opening the dialog.
+
+## Done when
+
+The dialog and panel work as above, and browser tests as `oscar` show a store in each state. The note's link from item
+252 opens the Service page on the Worker storage panel.
+
+### 255. Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates
+
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: demo/k8s/demo-values.yaml, demo/demo.sh, demo/k8s/silo-maintenance.json, demo/README.md
+- Effort: S, one setting and a change to `maintenance_worker()`, checked with `demo.sh up`
+
+## What is wrong
+
+The demo's catalog storage profile `s3` (`demo/k8s/demo-values.yaml`) names no `maintenance-principal`, so
+`GET /management/v1/maintenance/delete-policies` lists it as unprotected and generates no policy for it. `demo.sh`
+(`maintenance_worker()`) applies a hand-written `demo/k8s/silo-maintenance.json` instead, so the demo never shows the
+path an operator takes for a second catalog's bucket (items 253, 254). The demo's catalog signs in to Silo as its root
+user (`nunatest`), which no user policy can restrict, so the `except` policy cannot be applied there (Atelier,
+2026-11-24).
+
+## Done when
+
+- Profile `s3` names `maintenance-principal: nuna-maintenance`.
+- `maintenance_worker()` applies the `to` policy that `/delete-policies` generates for the worker's user, and
+  `silo-maintenance.json` is gone.
+- `demo/README.md` says the demo's catalog is Silo's root user, so the `except` policy is not applied, and that a
+  second catalog's bucket is set up the same way, from the console (items 252, 254).
+- After `demo.sh up`, item 251's readiness route shows 4 of 4 for `lakehouse`.
+
+### 256. Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30)
+
+- Decided: 2026-11-24, D30
+- Added: 2026-11-24 by Paul, via Atelier
+- Touches: catalog-maintenance/, catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, catalog-objectstore/src/test/, deploy/helm/nuna-maintenance/, deploy/README.md, demo/k8s/maintenance-values.yaml, bites/
+- Effort: L, the worker's settings and routing change shape and the DR replica keys move, plus a route, the chart, the README's rules per store, fast tests with bites and two heavy store tests
+
+## What is wrong
+
+To maintain a new catalog, an operator adds its bucket's prefix to the worker's settings
+(`nuna.maintenance.storage.<profile>.prefixes`, `WorkerSettings.StorageProfile`) and upgrades the release, since the
+worker reads its settings only at start. The catalog already knows every bucket and prefix, and which identity should
+delete there (each catalog storage profile's `maintenance-principal`, D21). Paul, on setting up catalog `ledger` at
+work: "I should be able to do this stuff from the UI" (2026-11-24). With this change a bucket on a store the worker
+already reaches needs no worker edit and no restart (Atelier, 2026-11-24).
+
+**What it costs** (catalog-security, 2026-11-24). Today `Storage.io()` is the worker's only check of its own on where it
+lists and deletes. Afterwards, if the catalog server is compromised, only the store's policy on the worker's identity
+limits what it lists and deletes. That fits D30 (7), which makes the store the enforcer, so the README's rules per store
+below carry the weight. A compromised catalog gains nothing more where the store holds the worker's identity to the
+generated prefixes.
+
+## Done when
+
+- **The route.** A new route gives the worker the prefixes of every catalog storage profile that names a
+  `maintenance-principal`, never a credential. It answers only a maintenance principal acting as itself; every other
+  caller gets an audited 403 (D18), with a fast test and a bite in `bites/D18/`.
+- **The worker's settings** keep one identity per store: kind, endpoint, region, keys or role, CA bundle, and those come
+  only from the settings, never the route. The worker matches each profile to an identity by its own configured
+  endpoint and kind; a profile matching none, or two, is skipped and reported (item 250). DR replica keys move to the
+  same store identities.
+- **The worker checks what it is sent.** It parses every prefix with `ObjectLocation.parse`, after turning `s3a`/`s3n`
+  into `s3`, and refuses any that fails: a bare `s3://`, a bucket containing `:`, empty or dot segments, wildcards.
+  Fast test and bite.
+- **It lists and deletes only strictly beneath a prefix.** A location equal to a prefix is refused, as the catalog
+  already refuses one (`StorageProfile.approve`), so a purge or orphan scan rooted at a prefix cannot wipe the profile.
+  Today `Storage.java:102` accepts it, and today's refusal has no test or bite. Fast test and bite for each.
+- **A failed or empty prefix read** lists and deletes nothing that scan: no cached or default list. Fast test and bite.
+- **The worker logs its prefix set** at start and whenever it changes, added prefixes at WARN: the one record the
+  catalog cannot suppress.
+- **`deploy/README.md`, "Delete rights",** says the worker deletes wherever the store lets its identity, and requires:
+  - AWS: the worker role's own policies allow no `s3:DeleteObject`, `s3:DeleteObjectVersion` or `s3:ListBucket`
+    outside the generated prefixes (best none in the bucket's own account), and no wildcard buckets.
+  - MinIO: the worker's user is not root, is in no group, holds only the `to` policies, and uses its own keys, not a
+    service account of a broader user.
+  - Ceph: the worker's user owns no bucket, and no ACL or user policy grants it, or all authenticated users, write.
+  - Every store: one worker identity per nuna install, granted by nothing else; DR replica keys read only the same
+    prefixes.
+- **Heavy tests.** AWS (`-Ps3=aws`): a worker role with no S3 policy of its own lists and deletes beneath the prefix
+  and is refused in a second bucket (`DeletePolicyAwsTest` gives the worker role its own policy today, so the README's
+  claim that the bucket policy alone is enough is untested). Silo: a worker user holding only `to` is refused outside
+  it.
+- Items 251, 252 and 253 change as they say: step 2 is done whenever the worker holds an identity for the profile's
+  store, and the settings block is for new stores only.
+- If the console ever sets a catalog profile's prefixes (no item does), that write is for platform operators only and
+  audited, refusals included.
+
+Not checked by catalog-security: whether a bucket-policy allow naming a role ARN is enough on its own for a role
+session on AWS; on Ceph, a bucket owner against an explicit deny, IAM accounts and whether S3FileIO sends
+`tenant:bucket`; MinIO's group and service-account inheritance on Silo; whether S3FileIO's client resolves `..` in
+keys (the catalog refuses dot segments, the worker does not check).
 
 ## Done and dropped
 
