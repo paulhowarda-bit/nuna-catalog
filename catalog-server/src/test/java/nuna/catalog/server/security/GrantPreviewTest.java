@@ -60,7 +60,7 @@ class GrantPreviewTest {
 
     /** Manage-grants on the namespace sales; also in sam-team, which holds nothing. */
     private static final Caller SAM = person("sam", "stewards", "sam-team");
-    /** Select on sales: something there, but not manage-grants. */
+    /** Select on sales and describe on lobby: something there, but not manage-grants. */
     private static final Caller ANN = person("ann", "analysts");
     /** Describe on the namespace lobby only: something in the catalog, nothing on sales. */
     private static final Caller OTTO = person("otto", "outsiders");
@@ -91,6 +91,7 @@ class GrantPreviewTest {
         grant(onSales, "analysts", Privilege.SELECT);
         grant(onSales, "taggers", Privilege.MANAGE_TAGS);
         grant(new Securable(Securable.Kind.NAMESPACE, lobby.id()), "outsiders", Privilege.DESCRIBE);
+        grant(new Securable(Securable.Kind.NAMESPACE, lobby.id()), "analysts", Privilege.DESCRIBE);
 
         CatalogStore store = store();
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
@@ -125,10 +126,14 @@ class GrantPreviewTest {
 
     @Test
     void aGrantToAGroupTheCallerBelongsToIsRefused() {
-        Map<String, Object> answer = preview(body(namespaceSpec("sales"), "sam-team", "select"));
+        String body = body(namespaceSpec("sales"), "sam-team", "select");
+        Map<String, Object> answer = preview(body);
         assertThat(answer).containsOnlyKeys("securable", "group", "privilege", "answer", "refusal", "reason");
         assertThat(answer).containsEntry("answer", "refused").containsEntry("refusal", "self-grant")
                 .containsEntry("reason", "no one grants to a group they belong to: sam-team");
+        assertThat(answer(() -> routes.grant(CATALOG, body, http))).as("the grant route, through the same check")
+                .isEqualTo(new Answer(403, "ForbiddenException", "no one grants to a group they belong to: sam-team"));
+        assertThat(writes).isZero();
     }
 
     @Test
@@ -141,6 +146,11 @@ class GrantPreviewTest {
                 .containsEntry("answer", "refused").containsEntry("refusal", "separation-of-duties")
                 .containsEntry("reason", "group grant-admins administers grants on every catalog and may hold no"
                         + " other grant");
+        assertThat(preview(body(namespaceSpec("sales"), "analysts", "manage-grants")))
+                .as("of two conflicts, the first in the privileges' order, as the grant route names it")
+                .containsEntry("refusal", "separation-of-duties")
+                .containsEntry("reason", "group analysts holds describe in this catalog, a read duty that"
+                        + " manage-grants (grants) must stay separate from");
     }
 
     @Test
@@ -185,7 +195,7 @@ class GrantPreviewTest {
             }
         }
         assertThat(denials()).as("the grant route audits its self-grant and separation refusals")
-                .extracting(Denial::operation).containsExactly("grant", "grant", "grant");
+                .extracting(Denial::operation).containsExactly("grant", "grant", "grant", "grant");
     }
 
     @Test
@@ -280,6 +290,7 @@ class GrantPreviewTest {
                 body(namespaceSpec("sales"), "sam-team", "select"),
                 body(namespaceSpec("sales"), "taggers", "write"),
                 body(namespaceSpec("sales"), "grant-admins", "select"),
+                body(namespaceSpec("sales"), "analysts", "manage-grants"),
                 body(tableSpec("sales", "orders"), "builders", "create"),
                 body(viewSpec("sales", "weekly"), "builders", "create"),
                 body(namespaceSpec("sales"), "builders", "create"));
@@ -354,7 +365,8 @@ class GrantPreviewTest {
 
     /**
      * The estate above and the groups' grants on it, written as the stores write a grant: {@code admits} asked of
-     * the privileges the group holds in the catalog, then unchanged for a grant already held. Any other call fails.
+     * the privileges the group holds in the catalog, read in another order than the listing's (the stores promise
+     * none), then unchanged for a grant already held. Any other call fails.
      */
     @SuppressWarnings("unchecked")
     private CatalogStore store() {
@@ -382,7 +394,8 @@ class GrantPreviewTest {
                         writes++;
                         Grant grant = (Grant) args[0];
                         List<String> held = grants.stream().filter(g -> g.grant().catalogId().equals(grant.catalogId())
-                                && g.grant().group().equals(grant.group())).map(g -> g.grant().privilege()).toList();
+                                && g.grant().group().equals(grant.group())).map(g -> g.grant().privilege()).toList()
+                                .reversed();
                         if (!((Predicate<List<String>>) args[3]).test(held)) {
                             yield new WriteResult.Refused(WriteResult.Reason.NOT_ADMITTED);
                         }

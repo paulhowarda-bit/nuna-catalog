@@ -301,6 +301,10 @@ class GrantRoutes {
      * not manage grants on the securable is refused as the grant route refuses it, audited. The answers are a
      * question, not a refused request, so they are not audited, as the batch check's are not. The separation of
      * duties is read here, not inside a write, so a grant made meanwhile may still change the grant's own answer.
+     * What that tells: a caller that may manage grants on any one securable learns, for any group it names, which
+     * duties the group holds anywhere in the catalog, and one privilege giving each, never where. The grant route's
+     * 403 says the same, but each try there leaves a {@code Denial} or a grant; a preview leaves nothing (the
+     * security review of backlog 246, 2026-11-24).
      */
     @PostMapping(GRANTS + "/preview")
     ResponseEntity<String> preview(@PathVariable String catalog, @RequestBody(required = false) String body,
