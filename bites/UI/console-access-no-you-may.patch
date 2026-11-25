@@ -3,14 +3,14 @@ Module: catalog-server
 Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
-index 3a8b8e85..d672daf1 100644
+index 014376e8..73915f83 100644
 --- a/catalog-server/src/main/resources/nuna/ui/panels.js
 +++ b/catalog-server/src/main/resources/nuna/ui/panels.js
-@@ -496,7 +496,6 @@ async function youMay(target) {
+@@ -497,7 +497,6 @@ async function youMay(target) {
  export function accessTab(target, reload) {
    const you = h('div');
    const gov = h('div');
 -  load(you, () => youMay(target));
    load(gov, () => governanceTab(target, reload));
-   return h('div', {class: 'stack', id: 'access-tab'}, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grantsTab(target));
- }
+   const [grants, listAgain] = grantsPart(target);
+   // Once the dialog closes after a grant, the grant's row is brought to the middle of the view, once the list has it.
