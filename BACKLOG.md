@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**56 open:** 16 S, 20 M, 15 L, 5 XL.
+**60 open:** 18 S, 22 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -68,6 +68,10 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
+| [268](backlog/268.md) | S | Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest | two assertions to bring up to the PostgreSQL schema's latest version, and a look at whether RollingUpgradeTest's v9-to-v15 path should name v17 | 2026-11-25 |
+| [269](backlog/269.md) | S | MutatingRoutesAuditTest: the OPA routes (item 115) have no case | the test's route discovery counts the three OPA query routes as mutating; exclude them, or give them cases, in one test class | 2026-11-25 |
+| [270](backlog/270.md) | M | SecurityGateTest: the grant and engine routes' audit lines never reach the log capture | the cause is not known yet: finding whether the grant and engine routes no longer write their audit records or the capture misses them, then the fix | 2026-11-25 |
+| [271](backlog/271.md) | M | ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch | the cause is not known yet: finding whether the console or the test changed (items 109, 212 to 217, 254 touched the header), then the fix | 2026-11-25 |
 
 ## Open items in full
 
@@ -2967,6 +2971,7 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\met
 Done when the test bounds its paging and fails on an assertion under this break, `bites/run.sh` on the bite reports
 BITES in under a few minutes, the judge no longer reports NO BITE for an executor crash (with a case in
 `bites/test-run.sh`), and the overnight run shows the bite biting.
+Seen again in the overnight run of 2026-11-25: NO BITE (1 passed), restored.
 
 ### 227. Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot
 
@@ -2984,6 +2989,7 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\mon
 
 Done when the test (or a new one in the shared refs suite) lands a drop between the two reads every time, fails
 on an assertion with the patch applied, and the overnight run shows the bite biting.
+Seen again in the overnight run of 2026-11-25: NO BITE (1 passed), restored.
 
 ### 228. Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only
 
@@ -3433,6 +3439,58 @@ profile), which readiness says and Overview does not.
 - A browser test, as `ConsoleReadinessBrowserTest` does on a catalog with no grant and no storage, shows Overview's
   head and KPI line say steps are left, not "has not reported", as a caller who may read readiness, and the old words
   for one who may not.
+
+### 268. Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/test/java/nuna/catalog/server/SchemaAtStartupTest.java, catalog-tests-load/src/test/java/nuna/catalog/load/RollingUpgradeTest.java
+- Effort: S, two assertions to bring up to the PostgreSQL schema's latest version, and a look at whether RollingUpgradeTest's v9-to-v15 path should name v17
+
+PostgreSQL's migrations now end at V17 (`V16__row_column_rule_version.sql`, item 244; `V17__worker_reach.sql`, item 250), but two tests still expect version 15. Neither runs in the fast build, so the landings did not see it.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5:
+- Heavy build: `SchemaAtStartupTest#theJournalIsPartitionedWithMonthsAhead`: expected: 15 but was: 17 (`SchemaAtStartupTest.java:29`).
+- Nightly: `RollingUpgradeTest#upgradingOneServerAtATimeAcrossV9ToV15LosesNothing`: [the schema once a server of this release started] expected: "15" but was: "17" (`RollingUpgradeTest.java:91`).
+- Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server, nightly.log, nightly-results\catalog-tests-load.
+- The overnight agents for catalog-server and catalog-tests-load both ended at once with an expired OAuth session and claimed nothing.
+
+Done when both tests pass in the overnight run, and they read the latest version from the migrations rather than a number that every new migration breaks.
+
+### 269. MutatingRoutesAuditTest: the OPA routes (item 115) have no case
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/MutatingRoutesAuditTest.java
+- Effort: S, the test's route discovery counts the three OPA query routes as mutating; exclude them, or give them cases, in one test class
+
+`MutatingRoutesAuditTest#everyMutatingRouteEmitsItsAuditRecord` finds every POST, PUT and DELETE route and wants a case for each. Item 115 added `OpaRoutes` (`POST /opa/v1/allow`, `/opa/v1/row-filters`, `/opa/v1/column-masks`), which are Trino's access-control queries, POSTed but changing nothing, and the test has no case for them. It is heavy, so the landing's fast build did not run it.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5: heavy build, `[a case for every mutating route] ... could not find the following elements: ["POST /opa/v1/allow", "POST /opa/v1/column-masks", "POST /opa/v1/row-filters"]`. Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server. Bites `D30/pending-deletions-complete-open` and `D30/pending-deletions-open` were not run because of it. The catalog-server agent ended at once with an expired OAuth session.
+
+Done when the test passes in the overnight run, with the OPA routes named as non-mutating (or audited, if catalog-security says they should be), and the two D30 bites bite.
+
+### 270. SecurityGateTest: the grant and engine routes' audit lines never reach the log capture
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/test/java/nuna/catalog/server/SecurityGateTest.java, catalog-server/src/test/java/nuna/catalog/server/governance/AuditLogCapture.java, catalog-server/src/main/java/nuna/catalog/server/ (if the routes really emit nothing)
+- Effort: M, the cause is not known yet: finding whether the grant and engine routes no longer write their audit records or the capture misses them, then the fix
+
+Two `SecurityGateTest` tests wait 30 s for audit lines that never come: `grantsAreListedByPrincipalAndByObjectCheckedInBatchAndExported` (`0 audit lines, not 3, hold all of ["type":"nuna.catalog.grant"]`, line 724) and `theEngineRegistryIsForPlatformOperatorsOnly` (`0 audit lines, not 1, hold all of ["type":"nuna.catalog.engine"]`, line 683). Item 224 fixed this class the night before for item 195's move of audit to logs; these two still fail, so either those routes no longer write their records or `AuditLogCapture` misses them.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5: heavy build; logs C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server\build\test-results\test\TEST-nuna.catalog.server.SecurityGateTest.xml. 22 bites (D13, D15, D20, D30, M5) were not run because of the class's failures. The catalog-server agent ended at once with an expired OAuth session.
+
+Done when both tests pass in the overnight run and the 22 SecurityGateTest bites run and bite.
+
+### 271. ConsoleBrowserTest: the reading slot's main-only control is not shown while reading a branch
+
+- Added: 2026-11-25 by overnight run 2026-11-25
+- Touches: catalog-server/src/main/resources/ (the console), catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: M, the cause is not known yet: finding whether the console or the test changed (items 109, 212 to 217, 254 touched the header), then the fix
+
+`ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged` times out waiting for `#top #reading-slot [data-main-only]` while the console reads branch `dev_6be71299` on catalog trading's governance page: the header shows "Reading @ dev_6be71299" but no displayed main-only control.
+
+Evidence, the overnight run of 2026-11-25 on 639b0da5: heavy build, `org.openqa.selenium.TimeoutException: Expected condition failed: no displayed By.cssSelector: #top #reading-slot [data-main-only]`. Logs: C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-25\heavy.log, heavy-results\catalog-server. Bite `D33/ref-page-delete-counts-nothing` was not run because of it. The catalog-server agent ended at once with an expired OAuth session.
+
+Done when the test passes in the overnight run and the D33 bite runs and bites.
 
 ## Done and dropped
 
