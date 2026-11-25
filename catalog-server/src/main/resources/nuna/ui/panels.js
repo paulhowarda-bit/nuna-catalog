@@ -103,6 +103,16 @@ export async function governanceOf(target) {
   return {g, levels};
 }
 
+/**
+ * Whether the table itself is flagged for row and column rules (D20): only its own flag set true closes its storage to
+ * all but a trusted engine, so a flag on a level above does not count.
+ */
+export const flaggedHere = g => (g.attributes || []).some(a => a.attribute === 'row-column-policy'
+  && String(a.level).endsWith(':' + g.target.id) && String(a.value).toLowerCase() === 'true');
+
+/** What a flagged table's Overview, Schema and History say in place of the refused load (Atelier, 2026-11-24; backlog 241). */
+export const TRINO_WORDS = 'Its data is read through Trino, which applies each group\'s rules. The console shows no rows.';
+
 /** The governance facts on a table's overview: its holds, a DR freeze, its classification and owner, with where each was set. */
 export async function governanceSummary(target) {
   const {g, levels} = await governanceOf(target);
@@ -132,6 +142,7 @@ export async function governanceTab(target, reload) {
   const view = target.kind === 'view';
   const nearest = name => attrs.find(a => a.attribute === name);
   const ownRegulated = attrs.some(a => a.attribute === 'regulated' && String(a.level).endsWith(':' + here) && a.value === 'true');
+  const flagged = flaggedHere(g);
   const valueWithSource = name => {
     const a = nearest(name);
     const v = effective[name];
@@ -161,7 +172,10 @@ export async function governanceTab(target, reload) {
       effective['retention-class'] ? 'Change the retention class' : 'Set a retention class') : null,
       target.kind === 'catalog' || target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'regulated',
         onclick: () => setRegulated(target, ownRegulated, effective.regulated === 'true', reload)},
-      ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null),
+      ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null,
+      // The row and column flag is a table's own (backlog 239): set and removed here, on the table only (backlog 241).
+      target.kind === 'table' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'row-column-policy',
+        onclick: () => setFlag(target, flagged, reload)}, flagged ? 'Remove the flag' : 'Flag for row and column rules') : null),
     !tags && !freezes ? null : h('div', {class: 'refusal-acts'},
       tags ? h('button', {class: 'btn sm', type: 'button', onclick: () => placeHold(target, reload)}, icon('lock'),
         target.kind === 'namespace' ? 'Place a hold here' : 'Place a hold') : null,
@@ -294,6 +308,34 @@ function setRegulated(target, marked, inherited, reload) {
       const answer = await api.setAttribute(target, 'regulated', marked ? 'false' : 'true', reason);
       forgetMarks(target.catalog);
       fill(out, granted(marked ? `${what(target)} is no longer a regulated area` : `${what(target)} is a regulated area`, answer));
+      reload();
+    })));
+}
+
+/**
+ * Flags a table for row and column rules, or removes its flag (D20; backlog 241). The catalog refuses the removal while
+ * the grant admin's rules stand on the table, which the dialog says in words.
+ */
+function setFlag(target, flagged, reload) {
+  openDialog(flagged ? `Remove the flag on ${lastWord(target)}` : `Flag ${lastWord(target)} for row and column rules`, h('div', null,
+    h('p', null, flagged
+      ? 'Removing the flag lets any client that may read this table read its files again. The grant admin removes its '
+        + 'rules first.'
+      : 'Once flagged, only a trusted engine reads or writes its files. ' + TRINO_WORDS + ' The grant admin sets each '
+        + 'group\'s rules.'),
+    h('p', {class: 'fine'}, RECORDED),
+    dialogForm(null, flagged ? 'Remove the flag' : 'Flag for row and column rules', async (form, out) => {
+      let answer;
+      try {
+        answer = flagged ? await api.removeAttribute(target, 'row-column-policy')
+          : await api.setAttribute(target, 'row-column-policy', 'true', 'console');
+      } catch (error) {
+        if (error.status !== 409 || error.type !== 'RowColumnRulesExistException') throw error;
+        fill(out, h('div', {class: 'refusal compact', role: 'alert', 'data-rules-stand': ''},
+          h('p', {class: 'refusal-h'}, icon('x'), 'Rules stand: the grant admin removes them first.')));
+        return;
+      }
+      fill(out, granted(flagged ? `${what(target)} is no longer flagged` : `${what(target)} is flagged for row and column rules`, answer));
       reload();
     })));
 }
@@ -582,12 +624,14 @@ export function describe(type, d, catalog) {
     case 'rename': return `renamed from ${(d.fromPath || []).join('.')}`;
     case 'namespace': return `namespace ${String(d.action).toLowerCase()}`;
     case 'audit-read': return `read ${d.returned} audit records`;
+    case 'row-column-rule': return `${(d.actor || {}).principal || 'Someone'} ${String(d.action).toUpperCase() === 'REMOVED' ? 'removed' : 'set'} `
+      + `the rule for group ${d.group} on table ${((d.table || {}).path || []).join('.')}`;
     default: return '';
   }
 }
 
 /** Every record type that changes something, for the Audit page's Changes figure. */
-export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
+export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'row-column-rule', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
   'purge-claim', 'file-deletion', 'maintenance-exemption', 'unregister', 'storage-setup', 'engine', 'break-glass'];
 
 /**
@@ -599,10 +643,11 @@ export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'label', 'drop'
 export const AUDIT_KINDS = [
   ['all', 'All', null, null],
   ['grant', 'Grants', 'Grant', ['grant']],
+  ['rule', 'Row and column rules', 'Rule', ['row-column-rule']],
   ['hold', 'Governance', 'Governance', ['hold', 'governance']],
   ['ref', 'Branches and tags', 'Branch or tag', ['ref']],
   ['commit', 'Commits', 'Commit', ['commit']],
-  ['change', 'Other changes', 'Change', CHANGES.filter(t => !['grant', 'hold', 'governance', 'ref', 'commit'].includes(t))],
+  ['change', 'Other changes', 'Change', CHANGES.filter(t => !['grant', 'row-column-rule', 'hold', 'governance', 'ref', 'commit'].includes(t))],
   ['read', 'Reads', 'Read', ['read', 'audit-read']],
   ['cred', 'Credentials', 'Credential', ['credential-issue']],
   ['refusal', 'Refusals', 'Refusal', ['denial', 'auth-failure']],
