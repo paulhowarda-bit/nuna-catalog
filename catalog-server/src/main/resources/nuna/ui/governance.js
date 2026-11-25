@@ -1,29 +1,24 @@
 // Governance in one catalog: the summary (tables classified, closed, held and frozen; the holds and freezes
-// standing; each regulated area), grants (made, listed by group, revoked and exported for an access review), and
-// every hold and freeze, standing and lifted, with the catalog's own governance (item 128).
+// standing; each regulated area), and every hold and freeze, standing and lifted, with the catalog's own governance
+// (item 128). Grants (made, listed by group, revoked and exported for an access review) are the rail's own page for
+// those who manage them (backlog 245).
 
 import * as api from './api.js';
 import {at, code, failure, fill, fmt, frozenPill, granted, h, heldPill, icon, load, muted, openDialog, pageHead, panel,
   pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre, opensRow} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
 import {drFreeze, governanceTab, PRIVILEGES, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
-import {closedNote, may, operates} from './access.js';
+import {may, operates} from './access.js';
 
 const DUTY = {describe: 'read', select: 'read', write: 'data', modify: 'data', create: 'data', 'manage-grants': 'grants', 'manage-tags': 'tags'};
 const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write, modify, create'], ['grants', 'Grants', 'manage-grants'],
   ['tags', 'Tags', 'manage-tags']];
 
-export function governancePage(catalog, tab, group) {
-  const key = tab === 'holds' || tab === 'grants' ? tab : '';
-  const grants = may(catalog, 'manage-grants');
-  const tabs = tabsNav('Governance', [['', 'Summary'], ['grants', 'Grants'], ['holds', 'Holds and freezes']]
-    .filter(([k]) => k !== 'grants' || grants), key, k => pageHref('governance', catalog, k || null));
+export function governancePage(catalog, tab) {
+  const key = tab === 'holds' ? tab : '';
+  const tabs = tabsNav('Governance', [['', 'Summary'], ['holds', 'Holds and freezes']], key,
+    k => pageHref('governance', catalog, k || null));
   if (key === 'holds') return holdsPage(catalog, tabs);
-  if (key === 'grants' && !grants) {
-    return h('div', {class: 'nc-main', id: 'governance-page'}, pageHead({eyebrow: `${catalog} · governance`, title: 'Grants'}), tabs,
-      closedNote(`Grants in ${catalog} are open to those who manage its grants.`));
-  }
-  if (key === 'grants') return grantsPage(catalog, tabs, group);
   return summaryPage(catalog, tabs);
 }
 
@@ -151,7 +146,8 @@ function onWords(securable) {
   return path ? [code(path), ' ', muted('· ' + securable.type)] : muted('the whole catalog');
 }
 
-function grantsPage(catalog, tabs, group) {
+/** The rail's Grants, for those who manage the catalog's grants; it was Governance's tab until backlog 245. */
+export function grantsPage(catalog, group) {
   const main = h('div', {class: 'nc-main', id: 'governance-grants'});
   const result = h('div', {'aria-live': 'polite', id: 'grant-result'});
   const hint = h('p', {class: 'fine grant-hint', hidden: true});
@@ -195,7 +191,7 @@ function grantsPage(catalog, tabs, group) {
     });
   };
   groupIn.addEventListener('change', () => {
-    const want = pageHref('governance', catalog, 'grants', groupIn.value.trim() || null);
+    const want = pageHref('grants', catalog, null, groupIn.value.trim() || null);
     if (location.hash !== want) history.replaceState(null, '', want);
     fill(result);
     showList();
@@ -222,12 +218,12 @@ function grantsPage(catalog, tabs, group) {
   });
   showList();
   main.append(pageHead({
-    eyebrow: `${catalog} · governance`,
+    eyebrow: `${catalog} · grants`,
     title: `Grants in ${catalog}`,
     sub: 'Grants go to groups, never to people. A group that manages grants holds no other duty, and data and tags never share a group: '
       + 'the catalog refuses a grant that would break that.',
     side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-grants', onclick: () => exportGrants(catalog)}, icon('down'), 'Export every grant'),
-  }), tabs, h('div', {class: 'grid-21'},
+  }), h('div', {class: 'grid-21'},
     h('div', {class: 'stack'},
       h('div', {class: 'panel'}, h('h2', null, 'Grant a privilege'), form, hint),
       result,

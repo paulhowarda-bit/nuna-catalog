@@ -1,0 +1,17 @@
+Breaks: The rail draws no Grants item for those who manage the catalog's grants.
+Module: catalog-server
+Test: ConsoleBrowserTest#grantsHaveARailItemAndAGrantAdminOpensATableOrViewOnAccess
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index bb364698..1295b4ae 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -191,7 +191,7 @@ function setChrome(navKey, ref) {
+   // read, Grants is for those who manage the catalog's grants (backlog 245), Audit for audit readers and them, Service
+   // for platform operators. Branches and tags are listed to anyone who holds anything in the catalog (backlog 221).
+   const open = {overview: readsData(), catalog: true, refs: !!cat, maintenance: readsData(), governance: true,
+-    grants: !!cat && may(cat, 'manage-grants'), audit: !!cat && auditOpen(cat), service: operates()};
++    grants: false, audit: !!cat && auditOpen(cat), service: operates()};
+   // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
+   const home = cat ? homeKey(cat) : 'service';
+   const end = $('.drawer-x', navEl);

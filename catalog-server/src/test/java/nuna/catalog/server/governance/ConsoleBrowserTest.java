@@ -231,7 +231,7 @@ class ConsoleBrowserTest {
         browser.open("/ui/");
         browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
         // The home comes first in the rail (Atelier's re-walk after phase 2, backlog 217).
-        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance");
+        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance", "grants");
 
         signIn(api.operator());
         browser.open("/ui/");
@@ -254,7 +254,65 @@ class ConsoleBrowserTest {
         browser.open("/ui/");
         browser.await("the caller with every duty did not land on the overview",
                 d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
-        assertThat(rail()).containsExactly("overview", "catalog", "refs", "maintenance", "governance", "audit", "service");
+        assertThat(rail())
+                .containsExactly("overview", "catalog", "refs", "maintenance", "governance", "grants", "audit", "service");
+    }
+
+    /**
+     * Grants have a place in the rail, after Governance, for those who manage them, and a table or view opens on
+     * Access for one who may manage its grants but not read it (Paul, 2026-11-24: how to add grants from the console;
+     * backlog 245). As the demo's people: gary, a grant admin who reads no data, and ana, who reads and changes it and
+     * manages no grants.
+     */
+    @Test
+    void grantsHaveARailItemAndAGrantAdminOpensATableOrViewOnAccess() {
+        signIn(gary());
+        browser.open("/ui/#c=trading");
+        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance", "grants");
+        browser.await(By.cssSelector("#nav a[data-k='grants']")).click();
+        browser.await("the rail did not open Grants", d -> d.getCurrentUrl().endsWith("#p=grants&c=trading"));
+        browser.await(By.cssSelector("#nav a[data-k='grants'][aria-current='page']"));
+        assertThat(textContent(browser.await(By.cssSelector("#governance-grants h1")))).isEqualTo("Grants in trading");
+        assertThat(driver.findElements(By.cssSelector("#governance-grants form.grant-form"))).hasSize(1);
+        assertThat(driver.findElements(By.cssSelector("#governance-grants nav.tabs"))).isEmpty();
+        // Governance keeps Summary and Holds and freezes.
+        browser.await(By.cssSelector("#nav a[data-k='governance']")).click();
+        browser.await(By.cssSelector("#governance-summary nav.tabs a[data-tab]"));
+        assertThat(driver.findElements(By.cssSelector("#governance-summary nav.tabs a[data-tab]")))
+                .extracting(ConsoleBrowser::textContent).containsExactly("Summary", "Holds and freezes");
+        // A link to Governance's old Grants tab opens the rail's Grants.
+        browser.open("/ui/#p=governance&c=trading&tab=grants");
+        browser.await(By.cssSelector("#nav a[data-k='grants'][aria-current='page']"));
+        browser.awaitText(By.cssSelector("#governance-grants h1"), "Grants in trading");
+
+        // A table opens on Access, where he grants on it; Overview, which refuses him, is a tab away by its own link.
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='access'][aria-current='page']"));
+        browser.await(By.xpath("//div[@id='access-tab']//h2[normalize-space()='Grant on this table']"));
+        WebElement overview = driver.findElement(By.cssSelector("#table-page nav.tabs a[data-tab='overview']"));
+        assertThat(overview.getDomAttribute("href")).isEqualTo("#" + at("table", eu, "trades", "overview"));
+        overview.click();
+        browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='overview'][aria-current='page']"));
+        refusal("#table-page .tab-body");
+        // So does a view.
+        browser.open("/ui/#" + at("view", equities, "daily", null));
+        browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='access'][aria-current='page']"));
+        browser.await(By.xpath("//div[@id='access-tab']//h2[normalize-space()='Grant on this view']"));
+
+        // ana manages no grants: no Grants in her rail, a link to it says why, and a table and a view open on Overview.
+        signIn(ana());
+        browser.open("/ui/#c=trading");
+        assertThat(rail()).containsExactly("overview", "catalog", "refs", "maintenance", "governance");
+        browser.open("/ui/#p=grants&c=trading");
+        assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                .isEqualTo("Grants in trading are open to those who manage its grants.");
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='overview'][aria-current='page']"));
+        assertThat(driver.findElement(By.cssSelector("#table-page nav.tabs a[data-tab='overview']"))
+                .getDomAttribute("href")).isEqualTo("#" + at("table", eu, "trades", null));
+        browser.await(By.cssSelector("#overview-tab"));
+        browser.open("/ui/#" + at("view", equities, "daily", null));
+        browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='overview'][aria-current='page']"));
     }
 
     /**
@@ -684,9 +742,10 @@ class ConsoleBrowserTest {
         assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab='audit']"))).isEmpty();
         expect(api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null, AUTH, tester()), 403);
 
-        // Grant administrators are kept away from the data itself (D18).
+        // Grant administrators are kept away from the data itself (D18): a table opens on Access for them (backlog
+        // 245), and its Overview shows the refusal.
         signIn(api.grantAdmin());
-        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.open("/ui/#" + at("table", eu, "trades", "overview"));
         assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
                 + "/tables/trades?snapshots=all", null, AUTH, api.grantAdmin(), "X-Iceberg-Access-Delegation", "none"));
     }
@@ -1401,8 +1460,23 @@ class ConsoleBrowserTest {
 
     /** The tester: create and modify on the catalog, so may read everything but the audit trail. */
     private String tester() {
+        return person("tester", IssuerForTests.GROUP);
+    }
+
+    /** The demo's ana (demo/README.md): create and modify on the catalog, and no grant to manage. */
+    private String ana() {
+        return person("ana", IssuerForTests.GROUP);
+    }
+
+    /** The demo's gary (demo/README.md): a grant admin, who reads no data (D18). */
+    private String gary() {
+        return person("gary", GovernanceServer.GRANT_ADMINS);
+    }
+
+    /** A console sign-in's token for {@code name} in {@code groups}. */
+    private String person(String name, String... groups) {
         Instant now = clock.instant();
-        return IssuerForTests.sign(IssuerForTests.claims("tester", "nuna-console", IssuerForTests.GROUP)
+        return IssuerForTests.sign(IssuerForTests.claims(name, "nuna-console", groups)
                 .issueTime(Date.from(now.minusSeconds(5)))
                 .expirationTime(Date.from(now.plus(Duration.ofHours(1))))
                 .build());

@@ -192,6 +192,13 @@ the directory's to prevent. In kafbat `presenter` administers, as `demo-operator
 have no `presenter`: Keycloak signs them in, and both refuse them; use `oscar` there. CloudBeaver shows its
 administrator every person's connections, so `oscar` can show each person's view there without changing user.
 
+No one grants to a group they belong to: the catalog refuses it as separation of duties ("no one grants to a
+group they belong to"). So `presenter`, in all five groups, can grant to none of them, and `gary` cannot grant to
+`demo-grant-admins` or `demo-auditors`. To show a grant, sign in as `gary` or `presenter` and grant to a new group
+name, such as `select` on a namespace to `demo-readers`: grants go to group names, and the catalog does not check
+that the directory has the group, so Keycloak needs no change. To show the separation-of-duties refusal itself,
+sign in as `gary` and grant `manage-tags` to `demo-analysts`: data and tags never share a group.
+
 ### The same people in the other UIs
 
 The four people sign in once, through Keycloak, and every UI that has users lets them in after that without
