@@ -197,7 +197,9 @@ group they belong to"). So `presenter`, in all five groups, can grant to none of
 `demo-grant-admins` or `demo-auditors`. To show a grant, sign in as `gary` or `presenter` and grant to a new group
 name, such as `select` on a namespace to `demo-readers`: grants go to group names, and the catalog does not check
 that the directory has the group, so Keycloak needs no change. To show the separation-of-duties refusal itself,
-sign in as `gary` and grant `manage-tags` to `demo-analysts`: data and tags never share a group.
+sign in as `gary` and grant `manage-tags` to `demo-analysts`: data and tags never share a group. In the console,
+Grant access (on the Grants page, and at the top of every Access tab) says each of these before Grant is pressed:
+what the grant will give, that it is held already, or why it is refused, and a refused grant cannot be sent.
 
 ### The same people in the other UIs
 
