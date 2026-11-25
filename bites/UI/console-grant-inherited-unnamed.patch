@@ -3,11 +3,11 @@ Module: catalog-server
 Test: ConsoleBrowserTest#theGrantAccessDialogShowsAGrantMadeOneAlreadyHeldAndOneRefused
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/grant.js b/catalog-server/src/main/resources/nuna/ui/grant.js
-index b8d2a26f..44af858b 100644
+index 6c3193e4..9b675435 100644
 --- a/catalog-server/src/main/resources/nuna/ui/grant.js
 +++ b/catalog-server/src/main/resources/nuna/ui/grant.js
-@@ -265,7 +265,7 @@ export function grantAccess(target, {pick, after} = {}) {
-         h('p', {class: 'refusal-h'}, icon('x'), words), h('p', {class: 'fine'}, 'The catalog: ', answer.reason)));
+@@ -303,7 +303,7 @@ export function grantAccess(target, {pick, after, closed} = {}) {
+         plain ? null : h('p', {class: 'fine'}, `The catalog says “${answer.reason}”.`)));
      }
      ok.disabled = false;
 -    const through = reached.find(g => g.group === group && covers(g.privilege, privilege));

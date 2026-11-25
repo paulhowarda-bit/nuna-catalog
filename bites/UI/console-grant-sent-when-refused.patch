@@ -3,14 +3,14 @@ Module: catalog-server
 Test: ConsoleBrowserTest#theGrantAccessDialogShowsAGrantMadeOneAlreadyHeldAndOneRefused+grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownBeforeGrant
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/grant.js b/catalog-server/src/main/resources/nuna/ui/grant.js
-index b8d2a26f..f44a84c1 100644
+index 6c3193e4..f94f9ddb 100644
 --- a/catalog-server/src/main/resources/nuna/ui/grant.js
 +++ b/catalog-server/src/main/resources/nuna/ui/grant.js
-@@ -256,6 +256,7 @@ export function grantAccess(target, {pick, after} = {}) {
+@@ -290,6 +290,7 @@ export function grantAccess(target, {pick, after, closed} = {}) {
        return say('unchanged', h('p', null, `Already held: ${privilege} on ${n}, granted by ${answer['granted-by']} ${onDay(answer['granted-at'])}.`));
      }
      if (answer.answer === 'refused') {
 +      ok.disabled = false;
-       const words = answer.refusal === 'self-grant'
-         ? `You belong to ${group}. No one grants to their own group: ask another grant admin.`
-         : answer.refusal === 'separation-of-duties'
+       // The dialog says why in the group's own terms when it knows them; only when it does not is the catalog's reason
+       // shown, beneath its general rule.
+       const plain = answer.refusal === 'self-grant'
