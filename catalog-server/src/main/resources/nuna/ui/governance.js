@@ -45,7 +45,8 @@ const pct = (n, of) => of ? Math.floor(100 * n / of) + '%' : '–';
 export function governanceFigures(sum) {
   const t = sum.tables || {};
   return {classified: t.classified || 0, total: t.total || 0, closed: t.closed || 0, held: t.held || 0, frozen: t.frozen || 0,
-    holds: sum.holds || 0, freezes: sum.freezes || 0, regulated: (sum.regulated || []).length};
+    holds: sum.holds || 0, freezes: sum.freezes || 0, regulated: (sum.regulated || []).length, flagged: t.flagged || 0,
+    rules: (sum.flagged || []).reduce((n, x) => n + (x.rules || 0), 0)};
 }
 
 function summaryPage(catalog, tabs) {
@@ -56,6 +57,7 @@ function summaryPage(catalog, tabs) {
     const standing = hf.standing || [];
     const regulated = sum.regulated || [];
     const closed = sum.closed || [];
+    const flagged = sum.flagged || [];
     const kpi = (key, ic, label, value, more) => h('div', {class: 'kpi', 'data-kpi': key}, h('p', {class: 'kpi-l'}, icon(ic), label),
       h('p', {class: 'kpi-v'}, value), h('p', {class: 'kpi-d'}, more));
     return [
@@ -69,12 +71,14 @@ function summaryPage(catalog, tabs) {
           + 'them, with holds and freezes, on every load, commit and maintenance job.',
       }),
       tabs,
-      h('div', {class: 'kpis', id: 'governance-kpis'},
+      h('div', {class: 'kpis five', id: 'governance-kpis'},
         kpi('classified', 'check', 'Classified', pct(f.classified, f.total), [h('b', null, fmt(f.classified)), ` of ${plural(f.total, 'table')}`]),
         kpi('holds', 'lock', 'Legal holds', String(f.holds), f.holds ? `on ${plural(f.held, 'table')} · nothing may be removed` : 'nothing held'),
         kpi('freezes', 'snow', 'DR freezes', String(f.freezes), f.freezes ? `${plural(f.frozen, 'table')} beneath` : 'none standing'),
         kpi('regulated', 'reg', 'Regulated areas', String(f.regulated), f.regulated
-          ? `${plural(regulated.reduce((n, r) => n + (r.tables || 0), 0), 'table')}, ${fmt(f.closed)} closed` : 'none in this catalog')),
+          ? `${plural(regulated.reduce((n, r) => n + (r.tables || 0), 0), 'table')}, ${fmt(f.closed)} closed` : 'none in this catalog'),
+        // Tables flagged for row and column rules, read through Trino (D20; Atelier, 2026-11-24; backlog 243).
+        kpi('flagged', 'table', 'Flagged tables', String(f.flagged), f.flagged ? plural(f.rules, 'rule') : 'none in this catalog')),
       h('div', {class: 'grid-2'},
         panel('Holds and freezes', 'standing now', standingTable(catalog, standing, show),
           h('p', {class: 'fine'}, 'A hold stops snapshot expiry, orphan removal, drops and purges. A freeze stops every cleanup and write '
@@ -91,6 +95,11 @@ function summaryPage(catalog, tabs) {
           closed.length ? [h('h3', null, 'Closed until classified'), h('ul', {class: 'stack closed-list'}, closed.map(on =>
             h('li', {'data-on': (on.path || []).join('.')}, onLink(catalog, on))))] : null,
           h('p', {class: 'fine'}, 'Until a table in a regulated area has its own classification, people can find it but not read or change it.'))),
+      h('div', {class: 'panel', id: 'flagged'}, h('h2', null, 'Flagged tables'),
+        flagged.length ? tbl('stack-line', ['Table', ['Rules', 'num']], flagged.map(x => h('tr', {class: 'opens', onclick: opensRow,
+          'data-on': (x.on.path || []).join('.')},
+        h('td', {class: 'name'}, onLink(catalog, x.on)), h('td', {class: 'num'}, fmt(x.rules || 0)))))
+          : h('p', {class: 'muted'}, 'No table in this catalog is flagged.')),
     ];
   });
   show();

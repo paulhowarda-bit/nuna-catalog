@@ -258,6 +258,31 @@ export const revoke = (catalog, securableSpec, group, privilege) =>
   send(`/management/v1/catalogs/${enc(catalog)}/grants/revoke`,
     {method: 'POST', body: {securable: securableSpec, group, privilege}});
 
+// ---- row filters and column masks (D20, backlog 115; the console's, backlog 243) ----
+
+const rulesPath = catalog => `/management/v1/catalogs/${enc(catalog)}/row-column-rules`;
+
+/** Every group's rule on a table, with its filter and masks: {table, rules}. Needs manage-grants on the table or above. */
+export function rules(target) {
+  const query = new URLSearchParams();
+  for (const level of target.namespace) query.append('namespace', level);
+  query.set('name', target.name);
+  return call(`${rulesPath(target.catalog)}?${query}`);
+}
+
+/** Sets a group's rule on a table, replacing the one it had: `rule` is {group, row-filter, column-masks}. */
+export const setRule = (target, rule) => send(rulesPath(target.catalog),
+  {method: 'POST', body: Object.assign({table: securable(target)}, rule)});
+
+export const removeRule = (target, group) => send(rulesPath(target.catalog) + '/remove',
+  {method: 'POST', body: {table: securable(target), group}});
+
+/** A table's current schema and properties, flagged or not, for anyone who may describe it (backlog 242). */
+export const tableSchema = target => call(managed(target) + '/schema');
+
+/** What the caller's own rules do to them on a table: {flagged, rows, masked-columns}; needs select (backlog 242). */
+export const myRuleView = target => call(managed(target) + '/row-column-rules/mine');
+
 /** Every grant in a catalog, for an access review; needs manage-grants on the catalog. */
 export const exportGrants = catalog => call(`/management/v1/catalogs/${enc(catalog)}/grants/export`);
 
