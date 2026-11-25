@@ -183,6 +183,9 @@ export const governance = target => call(managed(target) + '/governance');
 export const setAttribute = (target, attribute, value, provenance) =>
   send(managed(target) + '/attributes/' + enc(attribute), {method: 'PUT', body: {value, provenance}});
 
+/** Removes an attribute set on the target itself; the levels above keep theirs. */
+export const removeAttribute = (target, attribute) => send(managed(target) + '/attributes/' + enc(attribute), {method: 'DELETE'});
+
 export const placeHold = (target, reason) => send(managed(target) + '/holds', {method: 'POST', body: {reason}});
 
 /** Releases a hold on the level it was placed on. */
