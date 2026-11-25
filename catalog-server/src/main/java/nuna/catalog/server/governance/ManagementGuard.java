@@ -119,7 +119,8 @@ class ManagementGuard {
         return denials.refuse(request.actor(), operation, target, null, "dr_freeze", message);
     }
 
-    private boolean operator(Request request) {
+    /** Whether the caller is a platform operator (D18), asked to decide what an answer holds: nothing is audited. */
+    boolean operator(Request request) {
         return request.caller().subject().groups().stream().anyMatch(separation.platformOperatorGroups()::contains);
     }
 
