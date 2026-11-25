@@ -195,7 +195,10 @@ against the live series, with `$job`, `$catalog` and `$engine` as `.*`, `$__rang
 - Not produced in the demo: the audit's Kafka acknowledgement row (`nuna_audit_publish_milliseconds_*`): the demo's
   catalog audits to its log, not to Kafka (D23, amended 2026-11-23). The client reports' records removed and delete
   files added (`removed_records`, `added_positional_delete_files`, `added_equality_delete_files`, `added_dvs`): the
-  demo's engines only append, and Iceberg leaves a result out of a report when nothing happened.
+  demo's engines only append, and Iceberg leaves a result out of a report when nothing happened. The archive's
+  `nuna_audit_archive_highest`: the demo configures no audit archive, so its check never runs; `nuna_audit_logged`
+  arrives (checked after the rebuild at c173aa42), so "Records logged and archived" draws the logged line alone,
+  and "still not archived" stays empty.
 - Micrometer's `.max` gauges arrive too, as item 43 expected: `nuna_catalog_requests_max_milliseconds`,
   `nuna_store_max_milliseconds` and the like. No panel reads them.
 - The six SLO burn-rate alerts fired in the demo: 75% of loads answered 200 within 50 ms in the half hour checked,

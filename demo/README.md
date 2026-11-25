@@ -929,7 +929,8 @@ catalog, worker --OTLP--> OpenTelemetry collector --metrics--> Prometheus --> Gr
   The failure panels (failed loads, commits and vends, requirement failures, failed scans and jobs) stay empty until
   something fails; a load of a missing table shows in "Failed loads". The audit's Kafka acknowledgement row reads
   `nuna_audit_publish_*`, which the demo never makes: its catalog audits to the log, not to Kafka (D23). "Records
-  logged and archived" reads `nuna_audit_logged`, which a catalog built from 2026-11-25 on exports (backlog 272).
+  logged and archived" shows `nuna_audit_logged` alone: `nuna_audit_archive_highest` comes from the archive check,
+  and the demo configures no audit archive.
   Records removed and delete files added stay empty in the client reports: the demo's engines only append, and
   Iceberg leaves out of a report what did not happen.
 
