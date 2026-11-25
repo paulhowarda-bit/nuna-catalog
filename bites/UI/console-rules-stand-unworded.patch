@@ -1,0 +1,17 @@
+Breaks: Removing the flag while rules stand shows the catalog's error, not the words.
+Module: catalog-server
+Test: ConsoleFlaggedTableBrowserTest#aStewardFlagsATableItsTabsSayItIsReadThroughTrinoAndTheFlagStaysWhileRulesStand
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index 7b424743..0ec2490b 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -330,7 +330,7 @@ function setFlag(target, flagged, reload) {
+         answer = flagged ? await api.removeAttribute(target, 'row-column-policy')
+           : await api.setAttribute(target, 'row-column-policy', 'true', 'console');
+       } catch (error) {
+-        if (error.status !== 409 || error.type !== 'RowColumnRulesExistException') throw error;
++        throw error;
+         fill(out, h('div', {class: 'refusal compact', role: 'alert', 'data-rules-stand': ''},
+           h('p', {class: 'refusal-h'}, icon('x'), 'Rules stand: the grant admin removes them first.')));
+         return;
