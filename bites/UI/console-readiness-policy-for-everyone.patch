@@ -1,0 +1,17 @@
+Breaks: Maintenance's policy step offers Edit the catalog's policy to a caller who may not modify the catalog, a grant admin among them, so saving draws an audited refusal.
+Module: catalog-server
+Test: ConsoleReadinessBrowserTest#garyGrantsWriteToTheWorkersGroupFromItsDialogFilledIn
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/readiness.js b/catalog-server/src/main/resources/nuna/ui/readiness.js
+index b6e6f963..492932ca 100644
+--- a/catalog-server/src/main/resources/nuna/ui/readiness.js
++++ b/catalog-server/src/main/resources/nuna/ui/readiness.js
+@@ -181,7 +181,7 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
+   const policy = ready.policy || {};
+   const jobs = (policy.jobs || []).map(j => JOB_WORDS[j] || j);
+   const policyLine = policy.state === 'done' ? `On in ${catalog}: ${jobs.join(', ')}.` : `Every job is off in ${catalog}'s policy.`;
+-  const policyAction = policy.state === 'done' ? null : rights.modify
++  const policyAction = policy.state === 'done' ? null : true
+     ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'edit-policy', onclick: editPolicy}, 'Edit the catalog\'s policy')
+     : h('p', {class: 'fine step-ask'}, 'Ask someone with ', code('modify'), ` on ${catalog}.`);
+ 

@@ -115,10 +115,11 @@ function reachCache() {
 
 /**
  * Opens Grant access on `target`. On an Access tab the object is fixed; with `pick` (the Grants page) it starts on the
- * catalog and a path search changes it. `after({group, privilege, target})` runs once a grant is made, and `closed()`
- * when the dialog closes after one.
+ * catalog and a path search changes it. `group` and `privilege` fill the dialog in, as Maintenance's "Grant write to
+ * demo-maintenance" does (backlog 252); the person still presses Grant. `after({group, privilege, target})` runs once a
+ * grant is made, and `closed()` when the dialog closes after one.
  */
-export function grantAccess(target, {pick, after, closed} = {}) {
+export function grantAccess(target, {pick, after, closed, group, privilege} = {}) {
   const catalog = target.catalog;
   let on = target;
   let known;
@@ -130,7 +131,7 @@ export function grantAccess(target, {pick, after, closed} = {}) {
 
   // ---- group ----
   const groupIn = h('input', {name: 'g', type: 'text', placeholder: 'Pick one below, or type a group', 'aria-label': 'Group',
-    autocomplete: 'off', spellcheck: 'false'});
+    autocomplete: 'off', spellcheck: 'false', value: group || null});
   const groupList = h('div', {class: 'grp-pick', role: 'group', 'aria-label': `Groups in ${catalog}`});
   const newGroup = h('p', {class: 'fine grp-new', 'data-new-group': '', hidden: true});
   const drawGroups = () => {
@@ -169,8 +170,10 @@ export function grantAccess(target, {pick, after, closed} = {}) {
   // ---- access ----
   const accessBox = h('div', {class: 'acc-pick', role: 'radiogroup', 'aria-label': 'Access'});
   const chosen = () => (accessBox.querySelector('input:checked') || {}).value || '';
+  let preset = privilege;
   const drawAccess = () => {
-    const was = chosen();
+    const was = chosen() || preset || '';
+    preset = null;
     fill(accessBox, ACCESS.filter(([, , kinds]) => kinds.includes(on.kind)).map(([p, words]) => h('label', {class: 'acc'},
       h('input', {type: 'radio', name: 'pv', value: p, checked: p === was, onchange: changed}),
       // A view has no rows, schema or maintenance of its own: changing it is its definition and properties.

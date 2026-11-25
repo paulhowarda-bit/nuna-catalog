@@ -19,7 +19,7 @@ Six routes, all answering JSON. Times are ISO-8601 instants, kept to the millise
 | `GET /management/v1/maintenance/estate` | Anyone; each table is shown only to a caller with `select` on it | Every table, one row each, a page at a time |
 | `GET /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health` | `select` on the table | One table's health |
 | `GET /management/v1/maintenance/scans` | Platform operators (`nuna.security.platform-operator-groups`) | The worker's recent scans and its last successful one |
-| `GET /management/v1/catalogs/{catalog}/maintenance/readiness` | `describe` on the catalog; names only to those who may `modify` it or manage its grants, and platform operators | Whether the worker can maintain the catalog, step by step |
+| `GET /management/v1/catalogs/{catalog}/maintenance/readiness` | `describe` on the catalog, or a platform operator; names only to those who may `modify` it or manage its grants, and platform operators | Whether the worker can maintain the catalog, step by step |
 | `GET /management/v1/maintenance/storage-setup` | Platform operators | For each storage profile, what to set up outside the catalog so the worker can maintain its catalogs |
 
 A refusal is 403 `ForbiddenException`, except on a table's health to a caller that holds nothing on the table: that is
@@ -282,6 +282,7 @@ it maintains a catalog, whether it is done (backlog 251; the console's checklist
   "store": {
     "state": "refused",
     "code": "AccessDenied",
+    "deletes-since": "2026-11-24T14:00:02.117Z",
     "prefixes": [
       { "prefix": "s3://ledger-warehouse/tables", "listed": "refused", "list-code": "AccessDenied",
         "deleted": 0, "delete-refused": 0, "delete-failed": 0 }
@@ -306,11 +307,16 @@ The first three steps come from the newest scan that reported `storage` ("The sc
 - The listing is judged by the newest scan with `storage`, the deletes by the newest such scan that has ended: a scan
   reports its deletes only at its end, so one under way does not hide the refusals of the one before.
 - A `refused` anywhere outweighs an `unknown` elsewhere. `code` is the first such code among the allowed prefixes.
+- **Who reads it.** Those who may `describe` the catalog, and platform operators, who need no grant: they read it for
+  every catalog, as they read the worker's scans and the delete policies, unaudited (catalog-security, 2026-11-24,
+  backlog 252). D18 lets operators see every catalog's name, and the answer names no namespace, table or view; no
+  field of it ever may.
 - **Names.** `names` is true for a caller who may `modify` the catalog or manage its grants, and for platform
   operators. Only then does the answer carry the worker's `groups` (each with whether it holds `write`), the profile's
-  name, its `endpoint` (absent for AWS S3's own), the allowed `prefixes`, what covers each (`covered-by`) and what the
-  store answered beneath each (from the scans as above). Anyone else who may `describe` the catalog gets each step's
-  `state`, the store's `code` and the policy's `jobs`.
+  name, its `endpoint` (absent for AWS S3's own), the allowed `prefixes`, what covers each (`covered-by`), what the
+  store answered beneath each (from the scans as above) and `deletes-since`, when the scan whose deletes are counted
+  started (absent before one has ended). Anyone else who may `describe` the catalog gets each step's `state`, the
+  store's `code` and the policy's `jobs`.
 
 ### Storage setup
 
@@ -460,7 +466,7 @@ fields separated by tabs; `WorkerStorage.write`). MongoDB keeps them as arrays i
 | `HealthSuite` (catalog-store-api, run on each store) | The latest assessment kept; reports for gone tables refused; the last compaction kept; the neediest order and paging; a purge deletes the health; recent scans and the last success kept; a scan's groups and storage kept, a refused listing as refused, the end's in place of the start's. |
 | `catalog-server` `HealthRoutesTest` | The worker's reports make a table's health; only the worker reports; a report for a table gone or now another is refused; a reader sees only the neediest tables they may select; operators read the scans, with the groups and storage each kept; a storage report holding a code where nothing was refused, a message for a code, or an unknown listing is a bad request. |
 | `catalog-store-api` `WorkerStorageTest` (fast) | What a storage report may hold, the text the SQL and Oracle stores keep it as, and the reported prefix that covers a location. |
-| `catalog-server` `ReadinessRoutesTest` (heavy) | Readiness: the first three steps unknown before a scan reports storage; every step done; write on a namespace or select on the catalog leaves the grant missing, a policy with every job off leaves the policy missing; a reported prefix beneath, beside or in another bucket leaves the storage missing and the store unknown; a refused listing or delete is refused with the store's code, a scan under way keeps the last ended scan's refused deletes, no answer is unknown with the client's failure; names only to the tester (modify), the grant admin and an operator, states without names to a describer and a tag steward; refused to an outsider (404), a bystander and an operator without describe (403), the refusal audited and the read not. |
+| `catalog-server` `ReadinessRoutesTest` (heavy) | Readiness: the first three steps unknown before a scan reports storage; every step done; write on a namespace or select on the catalog leaves the grant missing, a policy with every job off leaves the policy missing; a reported prefix beneath, beside or in another bucket leaves the storage missing and the store unknown; a refused listing or delete is refused with the store's code, a scan under way keeps the last ended scan's refused deletes, no answer is unknown with the client's failure, and `deletes-since` is when the counted deletes' scan started; names only to the tester (modify), the grant admin and an operator, states without names to a describer and a tag steward; an operator with no grant reads it with names, unaudited; refused to an outsider (404) and a bystander (403), the refusal audited and the read not. |
 | `catalog-server` `StorageSetupRoutesTest` (fast) | Storage setup, through the real route and guard over profiles as configured and a stand-in store of scans: refused to an analyst, a grant admin and the worker, each refusal audited, read by an operator unaudited; profiles by name with their catalogs, kind, endpoint, prefixes and principal; a new bucket on a MinIO or AWS S3 store the worker reaches (its endpoint spelled otherwise) gets no worker settings, a Ceph store behind a private CA, another AWS region and a MinIO store it does not reach get them, with the key's place marked, the secret's name and on AWS the note; before any report every store gets them, and an identity of another kind at the endpoint serves none; the listing from the newest report, the deletes from the newest ended one; MinIO's two policies named per profile with their `mc` commands, AWS S3's and Ceph's bucket policies (one shared by two profiles) with `put-bucket-policy`, `--endpoint-url` on Ceph; an unprotected profile's setting; no key, secret, role, KMS key or CA path. |
 | `catalog-maintenance` `StorageReportTest` (fast) | Through `Storage.of` and stand-in stores: each scan reports, by kind and endpoint, a listing let, refused (AccessDenied, NoSuchBucket) or failed, and the deletes done and refused with the store's code, counted afresh each scan; no key, credential or store message in any report. |
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
@@ -502,7 +508,10 @@ What the worker reaches (backlog 250) has eight bites in `bites/D30/`:
 
 Readiness (backlog 251) has one bite in `bites/D30/`: `readiness-uncovered-prefix-done`
 (`ReadinessRoutesTest#aPrefixNoReportedPrefixCoversIsMissingAndItsStoreUnknown`), the storage step done whenever the
-worker has reported any storage, so an allowed prefix no reported prefix covers is never `missing`.
+worker has reported any storage, so an allowed prefix no reported prefix covers is never `missing`. Who reads it
+(backlog 252) has one in `bites/D18/`: `readiness-admits-every-caller`
+(`ReadinessRoutesTest#aCallerWhoMayNotDescribeTheCatalogIsRefusedAndAudited`), the `describe` check dropped with the
+platform operator's way past it, so a bystander reads the readiness and no refusal is audited.
 
 Storage setup (backlog 253) has two bites, each against `StorageSetupRoutesTest`:
 

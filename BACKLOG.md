@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**55 open:** 17 S, 19 M, 14 L, 5 XL.
+**54 open:** 17 S, 18 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,7 +60,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [252](backlog/252.md) | M | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button | 2026-11-24 |
 | [253](backlog/253.md) | S | Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply | one route beside DeletePolicyRoutes built from the catalog's profiles, item 250's report and the delete-policy generators; waits on item 250 | 2026-11-24 |
 | [254](backlog/254.md) | M | Console: "What to set up" for operators, from the Maintenance steps and a Worker storage panel on Service | one dialog of copyable blocks and one table, with browser tests; waits on items 252 and 253 | 2026-11-24 |
 | [255](backlog/255.md) | S | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | one setting and a change to `maintenance_worker()`, checked with `demo.sh up` | 2026-11-24 |
@@ -3057,65 +3056,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 252. Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens
-
-- Added: 2026-11-24 by Paul, via Atelier
-- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js, catalog-server/src/main/resources/nuna/ui/queue.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/panels.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/
-- Effort: M, one panel of four rows with several states each, three kinds of caller and browser tests; waits on item 251, and on item 248 for the Grant button
-
-## What is wrong
-
-Paul: "I should be able to do this stuff from the UI" (2026-11-24), on the four steps the worker needs before it
-maintains a new catalog (item 250). Today the Maintenance page of such a catalog shows nothing happening and says the
-worker "has not reported" (`queue.js:122`), which is wrong while it reports every scan. Two of the steps are edits
-outside the catalog that D21 and D30 keep there (the worker's settings, the store's policy), so the console cannot do
-them; it can prove each step, show the gap and hand the work to whoever may do it (Atelier, 2026-11-24).
-
-## Atelier's design
-
-**Page head**, in place of `shapeWords` once a worker has reported:
-
-- Step 1 or 4 missing: "The worker can't maintain ledger yet: {n} of 4 steps left."
-- Only step 2 or 3 left: "The worker maintains ledger but can't delete its old files: {n} of 4 steps left."
-
-**A panel under the head**, shown while any step is not done and again if one goes wrong later. Heading "What the
-worker needs to maintain ledger", note "{k} of 4 done · as of its scan at {14:05}". Each row: a pill, one line,
-"Who: …" and an action.
-
-1. **Write access.** Done: "demo-maintenance, the worker's group, holds write on ledger." Missing: "demo-maintenance,
-   the worker's group, holds no write on ledger, so the worker can't read or commit its tables." Who: a grant admin.
-   Action, for those who may manage grants: **Grant write to demo-maintenance**, opening item 248's dialog filled in
-   with that group, "Read and write rows", on ledger. Everyone else: "Ask a grant admin."
-2. **Storage settings.** Done: "The worker's profile s3 covers s3://ledger-warehouse/tables." Missing: "No profile in
-   the worker's settings covers s3://ledger-warehouse/tables. Until one does, files that expiry and compaction replace
-   are kept, and no orphan is found." After item 256: "The worker holds no identity for the store at {endpoint}." Who:
-   a platform operator, in the worker's settings. Action: **What to add** for operators (item 254); **Copy a note for
-   an operator** for others.
-3. **Store permission.** Done: "The store let the worker list s3://ledger-warehouse/tables at 14:05", plus " and
-   delete {n} files since {09:00}." when it has. Refused listing: "The store refused the worker's listing of … at
-   14:05: AccessDenied." Missing bucket: "The store has no bucket ledger-warehouse." Refused deletes: "The store
-   refused {n} of the worker's deletes in … since {09:00}: {code}." Pill "Waits on step 2": "The worker checks this at
-   its first scan once step 2 is done." Who: a platform operator, in the store. Action: **What to apply** for
-   operators; the note for others.
-4. **Maintenance policy.** Done: "On in ledger: snapshot expiry, compaction, …" Missing: "Every job is off in ledger's
-   policy." Action: the existing **Edit the catalog's policy**.
-
-- Before any worker has reported, rows 1 to 3 show the pill "Not known": "No maintenance worker has reported, so the
-  catalog can't check this."
-- Callers who may not see names get "ledger's storage" and "the worker's group" in their place, and the action "Ask
-  someone with modify on ledger or a platform operator."
-- Fine line at the foot: "The catalog can't change the worker's settings or the store's policies: the worker's keys
-  stay out of the catalog, and a catalog that could set store policies could undo the one that keeps delete from it."
-- The copied note: "The maintenance worker can't delete old files in catalog ledger. Its tables are in
-  s3://ledger-warehouse/tables. [No profile in the worker's settings covers it.] [The store refused the worker's
-  listing there (AccessDenied).] What to apply is on the console's Service page, under Worker storage: {link}". After
-  copying the button reads "Copied", and a line says "Send it to a platform operator."
-
-## Done when
-
-The head, panel and note work as above, from item 251's route, and browser tests pass as `ana`, `gary` and `oscar` on a
-catalog with no grant and no storage. Item 248's dialog accepts a filled-in group, access and object.
-
 ### 253. Operators: a route giving, per catalog storage profile, the worker's coverage and exactly what to apply
 
 - Added: 2026-11-24 by Paul, via Atelier
@@ -3494,5 +3434,6 @@ page, sees `stewards` with "Tags", and opens its grants from it.
 | [249](backlog/249.md) | Demo: say that presenter and gary cannot grant to their own groups, and which group to grant to when showing a grant | done | 2026-11-24 |
 | [250](backlog/250.md) | Worker: report what storage it reaches at each scan: its profiles' prefixes, whether the store let it list each, its deletes done and refused; never a key | done | 2026-11-24 |
 | [251](backlog/251.md) | Maintenance readiness: a route saying, step by step, whether the worker can maintain a catalog | done | 2026-11-24 |
+| [252](backlog/252.md) | Console: "What the worker needs to maintain <catalog>" on Maintenance, and a page head that says why nothing happens | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |

@@ -1296,3 +1296,16 @@ textarea.expr:disabled { opacity: 0.55; }
 .mask-line .field { width: 100%; height: 34px; }
 .mask-line .custom { grid-column: 1 / -1; }
 .tbl.rules td .refusal-acts { flex-wrap: nowrap; }
+
+/* What the worker needs to maintain a catalog (backlog 252): one row per step, its pill beside it, then its line, who
+   does it and the action. */
+.steps { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 12px; }
+.steps .step { display: grid; grid-template-columns: 136px minmax(0, 1fr); gap: 12px; align-items: start; padding-top: 12px; border-top: 1px solid var(--line); }
+.steps .step:first-child { border-top: 0; padding-top: 0; }
+.steps h3 { font: 600 var(--t-13)/1.3 var(--f-ui); margin-bottom: 2px; }
+.steps .step-line { font-size: var(--t-13); margin-bottom: 2px; overflow-wrap: anywhere; }
+.steps .step-act, .steps .step-note { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.steps .step-note .step-sent { margin: 0; }
+@media (max-width: 760px) {
+  .steps .step { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}

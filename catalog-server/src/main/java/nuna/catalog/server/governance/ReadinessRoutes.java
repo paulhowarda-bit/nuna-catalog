@@ -34,9 +34,12 @@ import tools.jackson.databind.node.ObjectNode;
  * (backlog 252): its groups hold {@code write} on the catalog, its own storage identity covers every allowed prefix of
  * the catalog's storage profile, the store lets it list and delete there, and the catalog's policy turns a job on. The
  * first three come from the newest scan the worker reported with what it reaches (backlog 250); before one, they are
- * unknown. Needs {@code describe} on the catalog, as its other governance reads do; names (the worker's groups, the
- * catalog's profile and prefixes, what covers them) go only to those who may {@code modify} the catalog or manage its
- * grants, and to platform operators. Like those reads, it writes no audit record; a refusal is audited.
+ * unknown. Needs {@code describe} on the catalog, as its other governance reads do, except from a platform operator,
+ * who reads it for every catalog without a grant, as the worker's scans and the delete policies (catalog-security,
+ * 2026-11-24, backlog 252; D18: operators see every catalog's name, and readiness names no namespace, table or view).
+ * Names (the worker's groups, the catalog's profile and prefixes, what covers them) go only to those who may
+ * {@code modify} the catalog or manage its grants, and to platform operators. Like those reads, it writes no audit
+ * record; a refusal is audited.
  */
 @RestController
 class ReadinessRoutes {
@@ -72,9 +75,12 @@ class ReadinessRoutes {
     ResponseEntity<String> readiness(@PathVariable("catalog") String prefix, HttpServletRequest http) {
         Request request = management.request(http);
         Target target = management.target(request, OPERATION, Privilege.DESCRIBE, prefix, null, null, null);
-        guard.require(request, target, OPERATION, Privilege.DESCRIBE);
-        boolean names = guard.allows(request, target, OPERATION, Privilege.MODIFY)
-                || guard.allows(request, target, OPERATION, Privilege.MANAGE_GRANTS) || guard.operator(request);
+        boolean operator = guard.operator(request);
+        if (!operator) {
+            guard.require(request, target, OPERATION, Privilege.DESCRIBE);
+        }
+        boolean names = operator || guard.allows(request, target, OPERATION, Privilege.MODIFY)
+                || guard.allows(request, target, OPERATION, Privilege.MANAGE_GRANTS);
         List<MaintenanceScan> reached = store.listScans().stream().filter(scan -> scan.storage().isPresent()).toList();
         Optional<MaintenanceScan> last = reached.stream().findFirst();
         Optional<MaintenanceScan> ended = reached.stream().filter(scan -> scan.endedAt().isPresent()).findFirst();
@@ -154,7 +160,8 @@ class ReadinessRoutes {
      * {@code done} when the store let the worker list beneath every allowed prefix and refused none of its deletes
      * there; {@code refused} with the store's code when it refused either; {@code unknown} while a prefix is not
      * covered, or when the store did not answer the listing, with the client's failure as the code. A refusal
-     * anywhere outweighs what is unknown elsewhere.
+     * anywhere outweighs what is unknown elsewhere. With names, {@code deletes-since} is when the scan whose deletes
+     * are counted started (the console's "since 09:00", backlog 252).
      */
     private static ObjectNode storeStep(List<String> prefixes, Optional<MaintenanceScan> last,
                                         Optional<MaintenanceScan> ended, boolean names) {
@@ -182,6 +189,7 @@ class ReadinessRoutes {
         judged.stream().filter(each -> each.state() == state).flatMap(each -> each.code().stream()).findFirst()
                 .ifPresent(code -> node.put("code", code));
         if (names) {
+            ended.ifPresent(scan -> node.put("deletes-since", scan.startedAt().toString()));
             node.set("prefixes", named);
         }
         return node;
