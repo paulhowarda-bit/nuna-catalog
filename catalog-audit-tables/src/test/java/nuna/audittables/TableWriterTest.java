@@ -183,7 +183,8 @@ class TableWriterTest {
         Table table = catalog.loadTable(EVENTS);
         assertThat(table.schema().columns()).extracting(Types.NestedField::name).containsExactly("event_id", "time",
                 "type", "source", "principal", "end_user", "engine", "request_id", "catalog", "object_kind", "object_id",
-                "object_path", "operation", "privilege", "reason", "data", "topic_partition", "topic_offset");
+                "object_path", "operation", "privilege", "reason", "data", "topic_partition", "topic_offset", "log_run",
+                "log_seq");
         assertThat(table.schema().findType("time")).isEqualTo(Types.TimestampType.withZone());
         assertThat(table.schema().findType("object_path").toString()).isEqualTo("list<string>");
         assertThat(table.spec().fields()).singleElement().satisfies(field -> {
