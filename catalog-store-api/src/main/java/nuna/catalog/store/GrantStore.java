@@ -38,4 +38,10 @@ public interface GrantStore {
 
     /** Grants on one securable, by group, privilege. */
     Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page);
+
+    /**
+     * The groups that hold any grant in the catalog, by group, each with every privilege it holds anywhere there
+     * (backlog 247). A group that holds nothing in the catalog is not listed: the store knows groups only from grants.
+     */
+    Page<GrantGroup> listGrantGroups(UUID catalogId, PageRequest page);
 }
