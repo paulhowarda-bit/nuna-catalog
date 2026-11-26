@@ -137,7 +137,7 @@ of their own and name it in `databaseTls.secretName`. The chart mounts it at `da
 |---|---|
 | `ca.crt` | the certificates of the CA that issued the database's certificate, to its root (PEM): the driver checks the server against them |
 | `client.crt` | the catalog's certificate, then any intermediate certificates (PEM) |
-| `client.pk8` | its private key, unencrypted, as PKCS #8 DER: `openssl pkcs8 -topk8 -nocrypt -in client.key -outform DER -out client.pk8` |
+| `client.pk8` | its private key, unencrypted, as PKCS #8 DER: `openssl pkcs8 -topk8 -inform PEM -outform DER -nocrypt -in client.key -out client.pk8` |
 
 ```bash
 kubectl -n <namespace> create secret generic nuna-catalog-db-tls \

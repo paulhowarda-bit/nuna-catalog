@@ -631,7 +631,7 @@ db_tls() {
       -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 397 -subj "/CN=catalog" \
       -addext "extendedKeyUsage=clientAuth" -addext "basicConstraints=critical,CA:FALSE" \
       -keyout client.key -out client.crt 2>/dev/null)
-    (cd "$dir" && openssl pkcs8 -topk8 -nocrypt -in client.key -outform DER -out client.pk8)
+    (cd "$dir" && openssl pkcs8 -topk8 -inform PEM -outform DER -nocrypt -in client.key -out client.pk8)
   fi
   [[ -f "$dir/initdb-password" ]] || openssl rand -hex 24 | tr -d '\r\n' > "$dir/initdb-password"
   k create secret generic postgres-tls --from-file=server.crt="$dir/server.crt" \
