@@ -196,29 +196,38 @@ public abstract class CatalogObjectSuite extends GroupSuite {
 
     @Test
     @DisplayName("Objects: a purge claim waits for a hold being placed on a namespace above the object, or on its"
-            + " catalog, and then is refused (backlog 171)")
+            + " catalog, or a DR freeze on that namespace, and then is refused (backlog 171)")
     void aPurgeClaimWaitsForAnOpenHoldAboveTheObject() throws Exception {
         UUID catalog = newCatalog();
         NamespaceRecord outer = newNamespace(catalog, "outer");
         NamespaceRecord inner = newNamespace(outer, "inner");
-        for (Securable level : List.of(new Securable(Securable.Kind.NAMESPACE, outer.id()),
-                new Securable(Securable.Kind.CATALOG, catalog))) {
-            CatalogObject table = newTable(inner, "t-" + level.kind());
+        Securable namespace = new Securable(Securable.Kind.NAMESPACE, outer.id());
+        record Placement(Securable level, boolean freeze) {
+        }
+        for (Placement placement : List.of(new Placement(namespace, false),
+                new Placement(new Securable(Securable.Kind.CATALOG, catalog), false), new Placement(namespace, true))) {
+            Securable level = placement.level();
+            String what = (placement.freeze() ? "a DR freeze" : "a hold") + " on the " + level.kind();
+            CatalogObject table = newTable(inner, "t-" + level.kind() + (placement.freeze() ? "-frozen" : ""));
             Change drop = change();
             assertApplied(store.dropObject(table.id(), drop.at(), drop));
             LegalHold hold = new LegalHold(UUID.randomUUID(), level, "matter", "legal", now());
+            GovernanceAttribute freeze = new GovernanceAttribute(level, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                    "suite", "admin", now());
             Change place = change();
             Change due = new Change(UUID.randomUUID(), drop.at().plusSeconds(1), change().outbox(), Optional.empty());
 
-            Overlap raced = whileOpen(place, held -> held.placeHold(hold, place),
-                    () -> store.claimPurge(table.id(), "worker", due));
+            Overlap raced = whileOpen(place, placing -> placement.freeze() ? placing.putAttribute(freeze, place)
+                    : placing.placeHold(hold, place), () -> store.claimPurge(table.id(), "worker", due));
 
             assertThat(raced.open()).isEqualTo(WriteResult.APPLIED);
-            assertThat(raced.meanwhile()).as("a hold on the %s", level.kind())
-                    .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+            assertThat(raced.meanwhile()).as(what).isEqualTo(new WriteResult.Refused(placement.freeze()
+                    ? WriteResult.Reason.FROZEN : WriteResult.Reason.HELD));
             assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
-            assertThat(raced.waited()).as("the claim waited for the hold on the %s", level.kind()).isTrue();
-            assertApplied(store.releaseHold(hold.id(), "counsel", change()));
+            assertThat(raced.waited()).as("the claim waited for %s", what).isTrue();
+            assertApplied(placement.freeze()
+                    ? store.removeAttribute(level, GovernanceAttribute.Kind.DR_FREEZE, "steward", change())
+                    : store.releaseHold(hold.id(), "counsel", change()));
         }
     }
 
