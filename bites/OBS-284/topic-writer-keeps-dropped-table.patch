@@ -1,0 +1,20 @@
+Breaks: The topic writer keeps the table it cached when the catalog answers that the table does not exist, so every reload fails again and the table is never made again (backlog 284).
+Module: catalog-audit-tables
+Test: TableWriterTest#aTableDroppedBetweenCommitsIsMadeAgainWithBothCommitsRecords
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+index 9302297f..e13c6811 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+@@ -175,12 +175,10 @@ final class TableWriter implements AutoCloseable {
+             committed = table.reload();
+         } catch (NoSuchTableException e) {
+             // Only this answer makes the table again: a refusal is thrown, so a revoked grant shows (backlog 284).
+-            table = null;
+             LOG.warn("The audit table is gone ({}); making it again and writing {} into it from the earliest record"
+                     + " Kafka keeps. A dropped audit table should be undropped rather than replaced: rows older than"
+                     + " the topic keeps are only in the dropped one (undrop needs the name free).", e.getMessage(),
+                     topic);
+-            table = opener.get();
+             committed = table.reload();
+         }
+         stale = false;

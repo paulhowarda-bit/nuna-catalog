@@ -9,13 +9,17 @@ import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.encryption.EncryptionManager;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
+import org.apache.iceberg.exceptions.ForbiddenException;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.inmemory.InMemoryCatalog;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.LocationProvider;
 
 /**
  * The catalog the writer's Java-only tests write to: Iceberg's in-memory catalog, whose next commit that adds rows can
- * be made to fail, before it lands or after (its answer lost).
+ * be made to fail, before it lands or after (its answer lost), and which can refuse the writer as a 403 would. A table
+ * dropped since it was loaded answers its next refresh with {@link NoSuchTableException}, as the REST catalog's 404
+ * does; Iceberg's in-memory catalog would keep the dropped table's metadata instead.
  */
 final class FaultyCatalog extends InMemoryCatalog {
 
@@ -28,6 +32,7 @@ final class FaultyCatalog extends InMemoryCatalog {
 
     private Fault next;
     private int faults;
+    private boolean refusing;
 
     FaultyCatalog() {
         initialize("audit", Map.of(CatalogProperties.WAREHOUSE_LOCATION, "mem://" + UUID.randomUUID()));
@@ -36,6 +41,17 @@ final class FaultyCatalog extends InMemoryCatalog {
     /** Makes the next commit that adds rows fail so. */
     synchronized void failNextRows(Fault fault) {
         next = fault;
+    }
+
+    /** Makes every refresh and commit of a table answer 403 until called again with false. */
+    synchronized void refuse(boolean refuse) {
+        refusing = refuse;
+    }
+
+    private synchronized void checkAllowed() {
+        if (refusing) {
+            throw new ForbiddenException("injected: the writer may not use this table");
+        }
     }
 
     /** How many commits were made to fail. */
@@ -67,11 +83,16 @@ final class FaultyCatalog extends InMemoryCatalog {
 
             @Override
             public TableMetadata refresh() {
+                checkAllowed();
+                if (!tableExists(identifier)) {
+                    throw new NoSuchTableException("Table does not exist: %s", identifier);
+                }
                 return ops.refresh();
             }
 
             @Override
             public void commit(TableMetadata base, TableMetadata metadata) {
+                checkAllowed();
                 Fault fault = take(base, metadata);
                 if (fault == Fault.LOST) {
                     // Not a CommitFailedException, which Iceberg's client would retry at once.
