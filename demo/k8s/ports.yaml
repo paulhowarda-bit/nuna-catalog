@@ -1,6 +1,6 @@
 # The demo's ports on localhost, where Docker Desktop serves LoadBalancer Services, all HTTPS through one front
 # door: 8180 Keycloak, 8181 the catalog and its console, 8182 kafbat, 8183 SingleStore Studio, 8184 Silo's
-# console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's REST API (connect.yaml), 8187
+# console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's REST API (connect.yaml; with a password, below), 8187
 # Silo's S3 API, for engines on other machines, 8188 Grafana (metrics.yaml, while the switch metrics is on). Only demo.sh applies this; a matrix run publishes nothing.
 #
 # The front door is nginx (Deployment front): it ends TLS with the certificate in Secret demo-tls, which demo.sh
@@ -10,6 +10,12 @@
 # addresses, and nginx turns any http:// redirect a service sends into https://. Plain http to a port is sent to
 # https. nginx looks each Service up as a request arrives, so it starts before SingleStore, CloudBeaver and
 # Kafka Connect exist and answers 502 for one that does not run.
+#
+# Kafka Connect's REST API has no sign-in of its own, and a connector it is given can run code and read the worker's
+# environment, the catalog token among it. So 8186 asks for a password (HTTP basic, user operator; backlog 283): the
+# htpasswd entry in Secret connect-auth, which demo.sh makes from the password it keeps in
+# ~/.nuna-demo/secrets/connect (with connect.curlrc beside it for curl -K). Without the Secret, 8186 answers 500, never
+# the API. The people see the connectors in kafbat, on 8182, after Keycloak's sign-in.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -55,6 +61,7 @@ spec:
           volumeMounts:
             - {name: config, mountPath: /etc/nginx/templates, readOnly: true}
             - {name: tls, mountPath: /etc/nginx/tls, readOnly: true}
+            - {name: connect-auth, mountPath: /etc/nginx/connect-auth, readOnly: true}
           resources:
             requests: {memory: 16Mi}
             limits: {memory: 64Mi, cpu: "2"}
@@ -63,6 +70,8 @@ spec:
           configMap: {name: front}
         - name: tls
           secret: {secretName: demo-tls}
+        - name: connect-auth
+          secret: {secretName: connect-auth, optional: true}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -100,7 +109,8 @@ data:
     server { listen 8184 ssl; location / { set $to s3.${NAMESPACE}.svc.cluster.local:9001; proxy_pass http://$to; } }
     # CloudBeaver's sign-in proxy (cloudbeaver.yaml); CloudBeaver itself answers on the pod's 127.0.0.1.
     server { listen 8185 ssl; location / { set $to cloudbeaver.${NAMESPACE}.svc.cluster.local:4180; proxy_pass http://$to; } }
-    server { listen 8186 ssl; location / { set $to connect.${NAMESPACE}.svc.cluster.local:8083; proxy_pass http://$to; } }
+    server { listen 8186 ssl; auth_basic "Kafka Connect"; auth_basic_user_file /etc/nginx/connect-auth/htpasswd;
+      location / { set $to connect.${NAMESPACE}.svc.cluster.local:8083; proxy_pass http://$to; } }
     # Silo's S3 API, for an engine off this machine: the catalog vends http://s3:9000, which resolves only in the
     # cluster, so such an engine sets s3.endpoint to https://<host>:8187 itself. Its signatures cover the Host
     # header, which passes through unchanged, so Silo checks them against the address the engine used.

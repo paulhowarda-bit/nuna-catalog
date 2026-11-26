@@ -5,15 +5,19 @@
 # stop deletes them, with their offsets.
 #
 #   backoffice  PostgreSQL 18 (logical WAL), database backoffice, table settlement.instructions
-#               (demo/cdc/backoffice.sql, ConfigMap backoffice-initdb)
+#               (demo/cdc/backoffice.sql, Secret backoffice-initdb)
 #   oracle      Oracle Database Free, PDB FREEPDB1, table TREASURY.PAYMENTS, archive log mode
-#               (demo/cdc/oracle.sql, ConfigMap oracle-startdb)
+#               (demo/cdc/oracle.sql, Secret oracle-startdb)
 #   cockroach   CockroachDB, one node, database custody, table positions.holdings, captured through a
-#               changefeed (demo/cdc/cockroach.sql, ConfigMap cockroach-initdb)
+#               changefeed (demo/cdc/cockroach.sql, Secret cockroach-initdb)
 #
 # Memory: 1.75 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
 # demo.sh cdc stops Trino, the audit table writer and the brokerage world's generator while the leg runs.
 # CloudBeaver stays, to query the databases. No volumes: the databases last as long as the pods.
+#
+# No password is in this file or the SQL (backlog 282): the databases' own and Debezium's are in Secret demo-secrets,
+# and the people's are their Keycloak ones (~/.nuna-demo/people), all made once per machine; demo.sh puts them into
+# the SQL files as it publishes them as Secrets, and the connectors name theirs as ${env:...} (connect.yaml).
 #
 # Each Deployment stops its old pod before starting the new one (Recreate): a changed SQL file or image
 # replaces the pod, and there is no room for two Oracles at once.
@@ -40,7 +44,8 @@ spec:
           env:
             - {name: POSTGRES_DB, value: backoffice}
             - {name: POSTGRES_USER, value: backoffice}
-            - {name: POSTGRES_PASSWORD, value: nuna-test}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: backoffice}}
           ports:
             - containerPort: 5432
           volumeMounts:
@@ -56,7 +61,7 @@ spec:
             limits: {memory: 256Mi}
       volumes:
         - name: initdb
-          configMap: {name: backoffice-initdb}
+          secret: {secretName: backoffice-initdb}
 ---
 apiVersion: v1
 kind: Service
@@ -106,7 +111,11 @@ spec:
               SQL
               exec container-entrypoint.sh
           env:
-            - {name: ORACLE_PASSWORD, value: nuna-test}
+            - name: ORACLE_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: oracle}}
+            # treasury's, for demo.sh's own sign-in (oracle_sql, demo.sh sqlplus), read in the pod.
+            - name: TREASURY_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: treasury}}
           ports:
             - containerPort: 1521
           volumeMounts:
@@ -126,7 +135,7 @@ spec:
             limits: {memory: 1792Mi}
       volumes:
         - name: startdb
-          configMap: {name: oracle-startdb}
+          secret: {secretName: oracle-startdb}
 ---
 apiVersion: v1
 kind: Service
@@ -181,7 +190,7 @@ spec:
             limits: {memory: 768Mi}
       volumes:
         - name: initdb
-          configMap: {name: cockroach-initdb}
+          secret: {secretName: cockroach-initdb}
 ---
 apiVersion: v1
 kind: Service

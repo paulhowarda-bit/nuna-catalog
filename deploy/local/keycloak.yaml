@@ -5,7 +5,8 @@
 # in nuna.security.maintenance-principals), the group nuna-workers and the audience nuna-catalog. Their issuer is
 # always http://keycloak:8080/realms/nuna (--hostname), however Keycloak is reached: the worker and its compaction Jobs
 # reach it from other namespaces as keycloak.<namespace>.svc. Development mode, in-memory database, realm imported at
-# each start. Test client secret only; never use any of this outside a laptop.
+# each start. The client secret and the admin password are in Secret nuna-local-secrets, which run.sh makes from the
+# ones it keeps in ~/.nuna-k8s/secrets (backlog 282); never use any of this outside a laptop.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -32,7 +33,7 @@ data:
           "enabled": true,
           "publicClient": false,
           "clientAuthenticatorType": "client-secret",
-          "secret": "nuna-maintenance-client-secret",
+          "secret": "${NUNA_MAINTENANCE_CLIENT_SECRET}",
           "serviceAccountsEnabled": true,
           "standardFlowEnabled": false,
           "implicitFlowEnabled": false,
@@ -96,7 +97,11 @@ spec:
                  "--hostname=http://keycloak:8080"]
           env:
             - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
-            - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: nuna-test}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: nuna-local-secrets, key: keycloak-admin}}
+            # The realm file names the client secret as ${NUNA_MAINTENANCE_CLIENT_SECRET}, which Keycloak fills from here.
+            - name: NUNA_MAINTENANCE_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: nuna-local-secrets, key: worker-client-secret}}
             - {name: JAVA_OPTS_KC_HEAP, value: "-XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=25"}
           ports:
             - containerPort: 8080

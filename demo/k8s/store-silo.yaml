@@ -1,6 +1,8 @@
 # -Ps3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000). Its console, MinIO's, is on the
 # pod's 9001 (otherwise a random port at each start); the demo publishes it on port 8184 (ports.yaml). It keeps its
-# objects, buckets, users and policies on a volume (claim s3-data, below; backlog 237).
+# objects, buckets, users and policies on a volume (claim s3-data, below; backlog 237). Its root user, nunatest,
+# takes its secret key from Secret s3-root (key secret-key): demo.sh makes it from the key it keeps in
+# ~/.nuna-demo/secrets (backlog 282), and the engine matrix from the one TestS3 makes for its JVM.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,7 +25,8 @@ spec:
           args: ["server", "/data", "--console-address", ":9001"]
           env:
             - {name: MINIO_ROOT_USER, value: nunatest}
-            - {name: MINIO_ROOT_PASSWORD, value: "${S3_SECRET_KEY}"}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: s3-root, key: secret-key}}
           ports:
             - containerPort: 9000
             - containerPort: 9001

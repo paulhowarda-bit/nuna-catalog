@@ -1,7 +1,9 @@
 # The demo's Kafka Connect, in every demo.sh up: distributed mode on the stack's Kafka, image connect.Dockerfile
 # (Debezium 3.7.1's sources and the Apache Iceberg 1.12.0 sink). It runs the brokerage world's sink, brokerage-lake
 # (demo/brokerage/connector.json), and, while demo.sh cdc runs, the CDC leg's six connectors (demo/cdc/connectors).
-# demo.sh adds and deletes connectors through its REST API, which ports.yaml publishes on port 8186. Only demo.sh
+# demo.sh adds and deletes connectors through its REST API, which ports.yaml publishes on port 8186 behind a password
+# (backlog 283): without it the front door answers 401. kafbat (port 8182, Keycloak's sign-in) shows the connectors to
+# the demo's people and lets the operators change them; inside the cluster the API has no sign-in. Only demo.sh
 # applies this.
 #
 # The worker's own topics are connect-configs, connect-offsets and connect-status, its group nuna-demo-connect.
@@ -64,6 +66,11 @@ spec:
             - name: NUNA_TOKEN
               valueFrom:
                 secretKeyRef: {name: demo-cdc-token, key: token}
+            # The CDC leg's source connectors sign in with these (demo/cdc/connectors, ${env:...}; backlog 282).
+            - name: CDC_BACKOFFICE_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: backoffice}}
+            - name: CDC_DEBEZIUM_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: debezium}}
           ports:
             - containerPort: 8083
           volumeMounts:

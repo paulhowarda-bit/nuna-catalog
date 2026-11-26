@@ -8,7 +8,8 @@
 #
 # Needs bash (Git Bash on Windows), Docker, kubectl, helm, curl and JDK 25. Works on Docker Desktop's cluster,
 # which runs images from the local Docker engine; kubectl and helm are always pointed at NUNA_K8S_CONTEXT
-# (default docker-desktop), never at the current context. Test keys and tokens are kept in NUNA_K8S_HOME
+# (default docker-desktop), never at the current context. Test keys and tokens, and every password and key it uses
+# (values; none is in the repository), are kept in NUNA_K8S_HOME
 # (default ~/.nuna-k8s).
 set -euo pipefail
 
@@ -26,11 +27,32 @@ SPARK_IMAGE=nuna-engines/spark:4.1.4-iceberg-1.12.0
 # The catalog's and the worker's own Silo users, as values.yaml and worker-values.yaml name them (D21). Silo's root
 # user, whom no policy binds, only manages users here.
 CATALOG_USER=nuna-catalog
-CATALOG_SECRET=nuna-catalog-secret-key
-WORKER_SECRET=nuna-maintenance-secret-key
+# The passwords and keys, made once per machine (values; backlog 282).
+SECRETS="$RUN/secrets"
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 say() { printf '\n== %s\n' "$*"; }
+
+secret_of() { tr -d '\r\n' < "$SECRETS/$1"; }
+
+# Every password and key the runner uses, made once per machine in $SECRETS, one file each without a newline, none
+# in the repository (backlog 282), and published as Secret nuna-local-secrets (backing.yaml, keycloak.yaml):
+#   postgres-password     the catalog's database user, catalog: the runner takes the documented production path, a
+#                         password (deploy/README.md), passed to the chart by --set-file
+#   silo-root             Silo's root key, user nunademo
+#   catalog-silo          the catalog's Silo user's key, $CATALOG_USER (--set-file)
+#   worker-silo           the worker's Silo user's key, $WORKER (--set-file)
+#   worker-client-secret  the worker's Keycloak client secret (keycloak.yaml, and the worker's --set-file)
+#   keycloak-admin        Keycloak's administrator, admin
+values() {
+  local name args=()
+  mkdir -p "$SECRETS"
+  for name in postgres-password silo-root catalog-silo worker-silo worker-client-secret keycloak-admin; do
+    [[ -s "$SECRETS/$name" ]] || openssl rand -hex 24 | tr -d '\r\n' > "$SECRETS/$name"
+    args+=("--from-file=$name=$SECRETS/$name")
+  done
+  k create secret generic nuna-local-secrets "${args[@]}" --dry-run=client -o yaml | k apply -f - >/dev/null
+}
 
 # Forwards a free local port to port $2 of $1 (a pod or svc/<name>) and sets $port to it. kubectl itself runs in the
 # background, so $! is the process to stop. They are stopped when the script exits, since a failed call exits it
@@ -52,13 +74,15 @@ forward() {
   rm -f "$log"
 }
 
-# Gives Silo user $1, made with secret key $2 if it is new, the user policy named $3, whose text comes on stdin. Runs
-# in the Silo pod as Silo's root user, and may run again: re-adding a user keeps the policies attached to it.
+# Gives Silo user $1, made with the secret key in $SECRETS/$2 if it is new, the user policy named $3, whose text comes
+# on stdin. Runs in the Silo pod as Silo's root user, with its key from the pod's environment; the user's key goes
+# on stdin too, never on a command line. May run again: re-adding a user keeps the policies attached to it.
 silo_policy() {
-  k exec -i deployment/silo -- sh -ec "
+  { secret_of "$2"; echo; cat; } | k exec -i deployment/silo -- sh -ec "
+    read -r key
     cat > /tmp/$3.json
-    mc alias set local http://localhost:9000 nunademo nunademo-secret-key >/dev/null
-    mc admin user add local $1 $2
+    mc alias set local http://localhost:9000 nunademo \"\$MINIO_ROOT_PASSWORD\" >/dev/null
+    mc admin user add local $1 \"\$key\" >/dev/null
     mc admin policy create local $3 /tmp/$3.json
     mc admin policy detach local $3 --user $1 >/dev/null 2>&1 || true
     mc admin policy attach local $3 --user $1"
@@ -82,6 +106,7 @@ up() {
   say "starting PostgreSQL, Kafka and Silo in namespace $NS (context $CONTEXT)"
   kubectl --context "$CONTEXT" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$CONTEXT" apply -f -
   k create configmap nuna-idp --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f -
+  values
   k apply -f "$REPO/deploy/local/backing.yaml"
   k wait --for=condition=available --timeout=5m deployment/postgres deployment/kafka deployment/silo
   k wait --for=condition=complete --timeout=3m job/seed
@@ -90,7 +115,7 @@ up() {
   # Its vended credentials are cut down from these rights. Delete is in them on purpose, as some other grant may give
   # it elsewhere: the delete policy with except, applied once the catalog is up to give it, takes it away again
   # (D21), so the catalog's refused delete in smoke is that policy's doing.
-  silo_policy "$CATALOG_USER" "$CATALOG_SECRET" "$CATALOG_USER" <<'JSON'
+  silo_policy "$CATALOG_USER" catalog-silo "$CATALOG_USER" <<'JSON'
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::warehouse/tables/*"]},{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::warehouse"]}]}
 JSON
 
@@ -99,6 +124,8 @@ JSON
   # credentials, and the maintenance worker and its compaction Jobs read tables from namespaces of their own.
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/nuna-catalog" \
     -f "$REPO/deploy/local/values.yaml" --set "config.nuna.storage.profiles.silo.endpoint=http://silo.$NS.svc:9000" \
+    --set-file "secrets.values.spring\.datasource\.password=$SECRETS/postgres-password" \
+    --set-file "secrets.values.nuna\.storage\.profiles\.silo\.secret-access-key=$SECRETS/catalog-silo" \
     --wait --timeout 10m
   # A new image under the same tag is not a change Helm sees.
   k rollout restart deployment/"$RELEASE"
@@ -115,9 +142,9 @@ JSON
   to=$(user_policy to "$policies")
   [[ -n "$except" && -n "$to" ]] || { echo "the catalog gave no user policies for $WORKER: $policies" >&2; return 1; }
   echo "except $WORKER: $except"
-  silo_policy "$CATALOG_USER" "$CATALOG_SECRET" nuna-no-delete <<<"$except"
+  silo_policy "$CATALOG_USER" catalog-silo nuna-no-delete <<<"$except"
   echo "to $WORKER: $to"
-  silo_policy "$WORKER" "$WORKER_SECRET" "$WORKER" <<<"$to"
+  silo_policy "$WORKER" worker-silo "$WORKER" <<<"$to"
 
   say "registering Trino's client, trino-demo, as a trusted engine (as oscar, as demo/demo.sh does)"
   # Its token's group holds no grant, so only as a registered engine (D17) does it see lakehouse and read its
@@ -212,9 +239,9 @@ smoke() {
   echo "silo on localhost:$port"
   s3 "$port" "lake's vended credentials" "$key" "$secret" "$token" PUT "$object" 200
   s3 "$port" "lake's vended credentials" "$key" "$secret" "$token" DELETE "$object" 403
-  s3 "$port" "$CATALOG_USER" "$CATALOG_USER" "$CATALOG_SECRET" "" DELETE "$object" 403
+  s3 "$port" "$CATALOG_USER" "$CATALOG_USER" "$(secret_of catalog-silo)" "" DELETE "$object" 403
   s3 "$port" "lake's vended credentials" "$key" "$secret" "$token" GET "$object" 200
-  s3 "$port" "$WORKER" "$WORKER" "$WORKER_SECRET" "" DELETE "$object" 204
+  s3 "$port" "$WORKER" "$WORKER" "$(secret_of worker-silo)" "" DELETE "$object" 204
   call "$b" lake DELETE "/v1/lakehouse/namespaces/$ns/tables/events" "" 204
   call "$a" lake DELETE "/v1/lakehouse/namespaces/$ns" "" 204
   echo "smoke passed on ${pods[0]#pod/} and ${pods[1]#pod/}"
@@ -254,6 +281,8 @@ SQL
   done
   helm --kube-context "$CONTEXT" -n "$WORKER_NS" upgrade --install "$WORKER" "$REPO/deploy/helm/nuna-maintenance" \
     -f "$REPO/deploy/local/worker-values.yaml" \
+    --set-file "secrets.values.nuna\.maintenance\.token\.client-secret=$SECRETS/worker-client-secret" \
+    --set-file "secrets.values.nuna\.maintenance\.storage\.silo\.secret-access-key=$SECRETS/worker-silo" \
     --set "config.nuna.maintenance.catalog-uri=http://$RELEASE.$NS.svc:8181/" \
     --set "config.nuna.maintenance.token.endpoint=http://keycloak.$NS.svc:8080/realms/nuna/protocol/openid-connect/token" \
     --set "config.nuna.maintenance.storage.silo.endpoint=http://silo.$NS.svc:9000" \

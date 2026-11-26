@@ -38,14 +38,15 @@
 #   demo/demo.sh down     stop and delete everything but the data: PostgreSQL's, Silo's, Kafka's, SingleStore's
 #                         and the metrics stack's volumes stay, and the next up carries on from them (the CDC leg is deleted, as cdc stop does)
 #   demo/demo.sh wipe     down, and delete the volumes too: the next up writes fresh sample data (keeps the signing
-#                         key, tokens, Keycloak keys and the certificates, as down does)
+#                         key, tokens, Keycloak keys, the passwords and the certificates, as down does)
 #
 # Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
 # Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use NUNA_DEMO_CONTEXT (default
 # docker-desktop), never the current context, and the stack is namespace NUNA_DEMO_NAMESPACE (default
 # nuna-demo). Docker Desktop's cluster runs images from the local Docker engine and serves LoadBalancer
 # Services on localhost. The signing key, tokens, Keycloak's keys, the certificate and the catalog's database's CA
-# and certificates (db_tls) are kept in NUNA_DEMO_HOME (default ~/.nuna-demo).
+# and certificates (db_tls), and every password and key the demo uses (demo_secrets: none is in the repository) are
+# kept in NUNA_DEMO_HOME (default ~/.nuna-demo); the people's passwords are listed in its file people.
 #
 # Every page is HTTPS, at https://<NUNA_DEMO_HOST>:<port> (default localhost), with the certificate in
 # $NUNA_DEMO_HOME/tls (publish_tls). At work, put work's certificate there and set NUNA_DEMO_HOST to its name
@@ -108,10 +109,11 @@ URL="https://$DEMO_HOST:8181"
 CURL_TLS=(--cacert "$TLS/ca.crt" --ssl-revoke-best-effort --connect-to "$DEMO_HOST::127.0.0.1:")
 CATALOG=lakehouse
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
-# SingleStore's root password, as demo/k8s/singlestore.yaml sets it. Local only.
-S2_ROOT_PASSWORD=nuna-test
-# Silo's root key, which store-silo.yaml, seed.yaml and demo-values.yaml take as ${S3_SECRET_KEY}. Local only.
-SILO_ROOT_KEY=nunatest-secret-key
+# The demo's passwords and keys, made once per machine and kept by down and wipe (demo_secrets; backlog 282), and the
+# people's passwords, which up writes to $PEOPLE_FILE.
+SECRETS="$RUN/secrets"
+PEOPLE_FILE="$RUN/people"
+PEOPLE=(ana gary stella oscar presenter)
 # The catalog's database's CA and certificates (db_tls), kept by down and wipe.
 DB_TLS="$RUN/db-tls"
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
@@ -128,6 +130,8 @@ BROKERAGE_IMAGE=
 BROKERAGE_IMAGE_ID=
 # Kafka Connect's REST API (connect.yaml, ports.yaml).
 CONNECT_URL="https://$DEMO_HOST:8186"
+# Its password, user operator, which the front door asks for (backlog 283), as a curl config file.
+CONNECT_AUTH=(-K "$SECRETS/connect.curlrc")
 # The front door (ports.yaml): TLS on every port the demo publishes.
 NGINX_IMAGE=nginx:1.30.6-alpine
 # The switch metrics (metrics.yaml), and what its four pods ask, 64 + 256 + 128 + 256 MiB. Turning it on also rolls the
@@ -138,8 +142,6 @@ TEMPO_IMAGE=grafana/tempo:2.10.10
 GRAFANA_IMAGE=grafana/grafana:13.3.2
 METRICS_MIB=704
 CATALOG_MIB=768
-# SQL*Plus's login to the CDC leg's Oracle as user treasury (demo/cdc/oracle.sql). Local only.
-ORACLE_TREASURY=treasury/\"nuna-test\"@//localhost:1521/FREEPDB1
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 
@@ -181,7 +183,6 @@ fill() {
     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
     -e "s|\${BROKERAGE_IMAGE}|$BROKERAGE_IMAGE|g" -e "s|\${BROKERAGE_IMAGE_ID}|$BROKERAGE_IMAGE_ID|g" \
     -e "s|\${BROKERAGE_ROUTE}|$(world_route)|g" \
-    -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$S2_ROOT_PASSWORD|g" \
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
     -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
     -e "s|\${ORACLE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/oracle.sql" | cut -c1-12)|g" \
@@ -189,12 +190,12 @@ fill() {
     -e "s|\${COCKROACH_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/cockroach.sql" | cut -c1-12)|g" \
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
-    -e "s|\${KEYCLOAK_KEYS_HASH}|$(cat "$RUN"/keycloak/* 2>/dev/null | sha256sum | cut -c1-12)|g" \
+    -e "s|\${KEYCLOAK_KEYS_HASH}|$(cat "$RUN"/keycloak/* "$SECRETS"/* 2>/dev/null | sha256sum | cut -c1-12)|g" \
     -e "s|\${OTEL_COLLECTOR_IMAGE}|$OTEL_COLLECTOR_IMAGE|g" -e "s|\${PROMETHEUS_IMAGE}|$PROMETHEUS_IMAGE|g" \
     -e "s|\${TEMPO_IMAGE}|$TEMPO_IMAGE|g" -e "s|\${GRAFANA_IMAGE}|$GRAFANA_IMAGE|g" \
     -e "s|\${GRAFANA_FILES_HASH}|$(cat "$REPO"/deploy/grafana/dashboards/*.json "$REPO"/deploy/grafana/rules/*.yaml | sha256sum | cut -c1-12)|g" \
     -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" -e "s|\${TOKENS_HASH}|$(tokens_hash)|g" \
-    -e "s|\${S3_SECRET_KEY}|$SILO_ROOT_KEY|g" -e "s|\${DB_TLS_HASH}|$(db_tls_hash)|g" \
+    -e "s|\${S3_SECRET_KEY}|$(secret_of silo-root 2>/dev/null)|g" -e "s|\${DB_TLS_HASH}|$(db_tls_hash)|g" \
     "$STACK/$1"
 }
 
@@ -287,17 +288,24 @@ api() {
   rm -f "$out"
 }
 
-# Runs SQL from stdin in SingleStore as root; prints rows tab-separated, without column names.
+# Runs SQL from stdin in SingleStore as root; prints rows tab-separated, without column names. Root's password is
+# read in the pod, from its environment (Secret singlestore-root), never on this machine's command lines.
 s2() {
-  MSYS_NO_PATHCONV=1 k exec -i deployment/singlestore -- singlestore -uroot -p"$S2_ROOT_PASSWORD" -N -B \
+  MSYS_NO_PATHCONV=1 k exec -i deployment/singlestore -- sh -c 'exec singlestore -uroot -p"$ROOT_PASSWORD" -N -B' \
     2> >(grep -v -e 'getopt: command not found' -e 'Using a password on the command line' >&2)
 }
 
-# A SQL file from demo/singlestore, with the singlestore user's catalog token and the root password put in.
+# A SQL file from demo/singlestore, with the singlestore user's catalog token and the root password put in (the
+# pipelines' CREDENTIALS).
 s2_file() {
-  sed -e "s|\${SINGLESTORE_TOKEN}|$(token_of singlestore)|g" -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$S2_ROOT_PASSWORD|g" \
-    "$REPO/demo/singlestore/$1" | s2
+  sed -e "s|\${SINGLESTORE_TOKEN}|$(token_of singlestore)|g" \
+    -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$(secret_of singlestore-root)|g" "$REPO/demo/singlestore/$1" | s2
 }
+
+# The pipelines carry root's password as they were made with (feeds.sql): a record of which, as a hash, so a new one
+# has them made again.
+feeds_key() { secret_of singlestore-root | sha256sum | cut -c1-16; }
+feeds_current() { [[ "$(cat "$RUN/singlestore-feeds-key" 2>/dev/null)" == "$(feeds_key)" ]]; }
 
 # The images the last up built ($RUN/images.env, written by build), for the switches outside up: gen, ss and cdc
 # start pods from them.
@@ -425,6 +433,80 @@ publish_keycloak_keys() {
     --from-literal=maintenance-client-secret="$(tr -d '\r\n' < "$dir/maintenance-client-secret")" \
     --from-literal=audit-otlp-token="$(tr -d '\r\n' < "$dir/audit-otlp-token")" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
+  # Without their newlines, as helm's --set-file passes a file whole (audit_writer, maintenance_worker).
+  local name value
+  for name in audit-tables-client-secret maintenance-client-secret audit-otlp-token; do
+    value=$(tr -d '\r\n' < "$dir/$name")
+    [[ "$(wc -c < "$dir/$name")" == "${#value}" ]] || printf '%s' "$value" > "$dir/$name"
+  done
+}
+
+# A value from $SECRETS, and a person's password from $PEOPLE_FILE.
+secret_of() { tr -d '\r\n' < "$SECRETS/$1"; }
+password_of() { secret_of "person-$1"; }
+
+# A password a person can type: three groups of four lower-case letters (56 bits), which every image here takes,
+# Oracle's quoted identifiers among them.
+typeable() {
+  local h out=""
+  for h in $(openssl rand -hex 12 | tr -d '\r\n' | sed 's/../& /g'); do
+    out+=$(printf "\\$(printf '%03o' $((97 + 16#$h % 26)))")
+  done
+  printf '%s' "${out:0:4}-${out:4:4}-${out:8:4}"
+}
+
+# Every password and key of the demo but Keycloak's (publish_keycloak_keys) and the database certificates' (db_tls),
+# made once per machine in $SECRETS, one file each without a newline, and kept by down and wipe (backlog 282): none
+# is in the repository, so the repository's never sign anyone in.
+#   person-<name>      each person's password, in Keycloak and in the CDC leg's databases; up lists them in
+#                      $PEOPLE_FILE, which the README names instead of the passwords
+#   keycloak-admin     Keycloak's administrator, admin (master realm)
+#   grafana-admin      Grafana's administrator, admin
+#   silo-root          Silo's root key, access key nunatest
+#   silo-maintenance   the maintenance worker's Silo key, user nuna-maintenance
+#   singlestore-root   SingleStore's root
+#   connect            Kafka Connect's REST API on 8186, user operator (backlog 283); connect.curlrc beside it gives
+#                      it to curl -K, connect.htpasswd to the front door
+#   backoffice         the CDC leg's PostgreSQL owner, backoffice, which Debezium signs in as
+#   oracle, treasury   the CDC leg's Oracle SYS and SYSTEM, and its schema user treasury
+#   debezium           Debezium's own users in the CDC leg's Oracle (c##dbzuser) and CockroachDB (debezium)
+# Published as Secrets demo-secrets (the passwords and cloudbeaver-users, for keycloak.yaml, cloudbeaver.yaml,
+# metrics.yaml, cdc.yaml and connect.yaml), s3-root (store-silo.yaml, seed.yaml), singlestore-root (singlestore.yaml,
+# brokerage.yaml) and connect-auth (ports.yaml): every value from a file, none on a command line.
+demo_secrets() {
+  local name person users=""
+  mkdir -p "$SECRETS"
+  for name in keycloak-admin grafana-admin silo-root oracle treasury debezium \
+      $(printf 'person-%s ' "${PEOPLE[@]}"); do
+    [[ -s "$SECRETS/$name" ]] || typeable > "$SECRETS/$name"
+  done
+  for name in silo-maintenance singlestore-root connect backoffice; do
+    [[ -s "$SECRETS/$name" ]] || openssl rand -hex 24 | tr -d '\r\n' > "$SECRETS/$name"
+  done
+  printf 'user = "operator:%s"\n' "$(secret_of connect)" > "$SECRETS/connect.curlrc"
+  [[ -s "$SECRETS/connect.htpasswd" ]] \
+    || printf 'operator:%s\n' "$(openssl passwd -apr1 -stdin < "$SECRETS/connect" | tr -d '\r\n')" > "$SECRETS/connect.htpasswd"
+  for person in "${PEOPLE[@]}"; do
+    [[ "$person" == oscar ]] || users+="${users:+ }$person:$(password_of "$person")"
+  done
+  printf '%s' "$users" > "$SECRETS/cloudbeaver-users"
+  {
+    echo "# The demo's people and their passwords, made once on this machine by demo/demo.sh up (backlog 282)."
+    echo "# Each signs in through Keycloak, and to the CDC leg's databases, with the same password."
+    for person in "${PEOPLE[@]}"; do printf '%-10s %s\n' "$person" "$(password_of "$person")"; done
+  } > "$PEOPLE_FILE"
+  local args=()
+  for name in keycloak-admin grafana-admin oracle treasury debezium backoffice cloudbeaver-users \
+      $(printf 'person-%s ' "${PEOPLE[@]}"); do
+    args+=("--from-file=$name=$SECRETS/$name")
+  done
+  k create secret generic demo-secrets "${args[@]}" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic s3-root --from-file=secret-key="$SECRETS/silo-root" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+  k create secret generic singlestore-root --from-file=password="$SECRETS/singlestore-root" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+  k create secret generic connect-auth --from-file=htpasswd="$SECRETS/connect.htpasswd" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
 }
 
 # Whether $TLS holds the demo's own CA: its key beside it, and ca.crt still the demo's, not work's.
@@ -741,6 +823,12 @@ metrics_apply() {
   for deployment in otel-collector prometheus tempo grafana; do
     k rollout status "deployment/$deployment" --timeout=5m >/dev/null
   done
+  # Grafana takes its administrator's password from the environment only when it makes its database, and keeps
+  # its database on a volume: set again, from stdin, so a kept one takes the password made on this machine
+  # (backlog 282). Setting the same one again changes nothing.
+  k exec -i deployment/grafana -- grafana cli admin reset-admin-password --password-from-stdin \
+      < "$SECRETS/grafana-admin" >/dev/null \
+    || say "Grafana's administrator password was not set (see above); the next metrics or up tries again (backlog 282)"
 }
 
 # The switch metrics (backlog 233) turned on: the stack, Keycloak's client grafana (a realm from before it replaces
@@ -804,8 +892,8 @@ audit_writer() {
   say "starting the audit table writer (chart deploy/helm/nuna-audit-tables), for the console's Audit page"
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-audit-tables "$REPO/deploy/helm/nuna-audit-tables" \
     -f "$STACK/audit-tables-values.yaml" \
-    --set-string "secrets.values.nuna\.audit-tables\.token\.client-secret=$(tr -d '\r\n' < "$RUN/keycloak/audit-tables-client-secret")" \
-    --set-string "secrets.values.nuna\.audit-tables\.otlp\.token=$(tr -d '\r\n' < "$RUN/keycloak/audit-otlp-token")" \
+    --set-file "secrets.values.nuna\.audit-tables\.token\.client-secret=$RUN/keycloak/audit-tables-client-secret" \
+    --set-file "secrets.values.nuna\.audit-tables\.otlp\.token=$RUN/keycloak/audit-otlp-token" \
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-audit-tables:demo)" --wait --timeout 5m >/dev/null
 }
 
@@ -827,13 +915,13 @@ worker_policy() {
     name=$(sed -E 's/^.*"name":"([^"]+)".*$/\1/' <<<"$entry")
     policy=$(sed -E -e 's/^.*"policy":"(.*)"$/\1/' -e 's/\\"/"/g' <<<"$entry")
     k exec -i deployment/s3 -c silo -- sh -c "cat > /tmp/$name.json &&
-      mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+      mc alias set l http://127.0.0.1:9000 \"\$MINIO_ROOT_USER\" \"\$MINIO_ROOT_PASSWORD\" >/dev/null &&
       mc admin policy create l $name /tmp/$name.json >/dev/null &&
       { mc admin policy attach l $name --user nuna-maintenance >/dev/null 2>&1 || true; }" <<<"$policy" || return 1
   done <<<"$entries"
   # The hand-written policy up attached before backlog 255, still on a Silo volume kept since: the worker holds only
   # the `to` policies (deploy/README.md).
-  k exec deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+  k exec deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null &&
     { mc admin policy detach l nuna-maintenance --user nuna-maintenance >/dev/null 2>&1 || true; } &&
     { mc admin policy rm l nuna-maintenance >/dev/null 2>&1 || true; }'
 }
@@ -846,15 +934,15 @@ worker_policy() {
 # annotation, as for the catalog. One replica: an upgrade also starts it again after cdc stopped it.
 maintenance_worker() {
   say "starting the maintenance worker (chart deploy/helm/nuna-maintenance), its compaction Jobs in namespace $NS-compaction"
-  k exec deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
-    mc admin user add l nuna-maintenance nuna-maintenance-secret-key >/dev/null'
+  k exec -i deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null &&
+    { read -r key || [ -n "$key" ]; } && mc admin user add l nuna-maintenance "$key" >/dev/null' < "$SECRETS/silo-maintenance"
   worker_policy || say "the worker's Silo policy was not applied (see above): its scans may be refused, and readiness says so; the next up tries again (backlog 255)"
   fill maintenance-jobs.yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
   fill maintenance-values.yaml > "$RUN/maintenance-values.yaml"
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-maintenance "$REPO/deploy/helm/nuna-maintenance" \
     -f "$RUN/maintenance-values.yaml" \
-    --set-string "secrets.values.nuna\.maintenance\.token\.client-secret=$(tr -d '\r\n' < "$RUN/keycloak/maintenance-client-secret")" \
-    --set-string "secrets.values.nuna\.maintenance\.storage\.s3\.secret-access-key=nuna-maintenance-secret-key" \
+    --set-file "secrets.values.nuna\.maintenance\.token\.client-secret=$RUN/keycloak/maintenance-client-secret" \
+    --set-file "secrets.values.nuna\.maintenance\.storage\.s3\.secret-access-key=$SECRETS/silo-maintenance" \
     $(telemetry_values) \
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-maintenance:demo)" --wait --timeout 5m >/dev/null
 }
@@ -949,6 +1037,7 @@ feeds() {
   start_pipeline lake fx_rates_feed
   start_pipeline ops orders_to_lake
   start_pipeline brokerage brokerage_orders_to_lake
+  feeds_key > "$RUN/singlestore-feeds-key"
   if is_on gen && ! is_on kafka; then
     world_feeds_start
   fi
@@ -1091,7 +1180,7 @@ ss_start() {
   k rollout status deployment/singlestore --timeout=15m >/dev/null
   s2_file users.sql >/dev/null
   ss_seed
-  if [[ -n "$minted" || "$(echo "SELECT COUNT(*) FROM information_schema.PIPELINES WHERE DATABASE_NAME = 'brokerage';" | s2)" == 0* ]]; then
+  if [[ -n "$minted" ]] || ! feeds_current || [[ "$(echo "SELECT COUNT(*) FROM information_schema.PIPELINES WHERE DATABASE_NAME = 'brokerage';" | s2)" == 0* ]]; then
     feeds
   fi
 }
@@ -1366,7 +1455,7 @@ start_connect() {
 
 wait_for_connect() {
   for _ in $(seq 1 30); do
-    curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors" >/dev/null 2>&1 && return 0
+    curl -fs "${CURL_TLS[@]}" "${CONNECT_AUTH[@]}" "$CONNECT_URL/connectors" >/dev/null 2>&1 && return 0
     sleep 2
   done
   echo "Kafka Connect did not answer on $CONNECT_URL; see: kubectl --context $CONTEXT -n $NS logs deployment/connect" >&2
@@ -1407,11 +1496,11 @@ EOF
   cat <<EOF
 
 The demo's people sign in once, through Keycloak ($DEMO_HOST:8180), and the console, kafbat, CloudBeaver, Studio
-and Grafana ask no password after that: ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo.
-Studio asks only the username, then "Sign in with SAML". To change user, use the console's Sign out or
+and Grafana ask no password after that: ana, gary, stella and oscar, with the passwords in $PEOPLE_FILE,
+made on this machine. Studio asks only the username, then "Sign in with SAML". To change user, use the console's Sign out or
 CloudBeaver's Logout (both end Keycloak's session too), or sign out of each UI and of Keycloak
 ($web:8180/realms/nuna/protocol/openid-connect/logout, then Logout), or use a private window.
-To show everything in one sign-in, use presenter / presenter-demo, everywhere: every group, every privilege on
+To show everything in one sign-in, use presenter, everywhere: every group, every privilege on
 every catalog, grants and rules for their own groups too; Silo's and Keycloak's administrator; CloudBeaver's and
 Studio's too.
 
@@ -1435,11 +1524,11 @@ Refs:         lakehouse has branch dev (the next day's trades and rates) and tag
 Trino:        CloudBeaver on $web:8185: each person's connections sign in as them, to nuna through
               Trino with their own token, and to the CDC leg's databases
 Keycloak:     $web:8180/admin/nuna/console/ for oscar, who reads realm nuna's users, groups, sessions and events
-              there without a second sign-in; $web:8180/admin to change it   (user admin, password nuna-test)
+              there without a second sign-in; $web:8180/admin to change it   (user admin, password in $SECRETS/keycloak-admin)
 Silo:         its console on $web:8184: "Keycloak" signs ana in to browse and download the warehouse
               bucket's files, read-only, oscar to the server's health, metrics, logs and traces, no data, and
               presenter as Silo's administrator; the S3 store's root, which sees every bucket, signs in with access key nunatest,
-              secret nunatest-secret-key
+              secret key in $SECRETS/silo-root
 Kubernetes:   namespace $NS, context $CONTEXT
 
 Switches:     $(switches_line). demo/demo.sh gen, ss, kafka, metrics or cdc turns one on, and demo/demo.sh <switch> stop
@@ -1463,18 +1552,20 @@ EOF
   fi
   if running kafka; then
     cat <<EOF
-Kafka:        kafbat on $web:8182; Kafka Connect's REST API on $CONNECT_URL
+Kafka:        kafbat on $web:8182; Kafka Connect's connectors there too; its REST API on
+              $CONNECT_URL, user operator, password in $SECRETS/connect (curl -K $SECRETS/connect.curlrc)
 EOF
   fi
   if running grafana; then
     cat <<EOF
 Grafana:      $web:8188: nuna's dashboards (folder nuna) and Explore for Tempo's traces; oscar and presenter
-              administer it, everyone else views; admin / nuna-test at $web:8188/login?disableAutoLogin=true
+              administer it, everyone else views; admin, password in $SECRETS/grafana-admin, at
+              $web:8188/login?disableAutoLogin=true
 EOF
   fi
   if running singlestore; then
     cat <<EOF
-SingleStore:  Studio on $web:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD;
+SingleStore:  Studio on $web:8183, or demo/demo.sh sql   (as root, password in $SECRETS/singlestore-root;
               Studio takes no passwords, so not root)
 EOF
   fi
@@ -1503,7 +1594,7 @@ connect_api() {
   local method=$1 path=$2 out in status
   out=$(mktemp)
   in=$(mktemp)
-  local args=(-s -o "$out" -w '%{http_code}' -X "$method" "$CONNECT_URL$path")
+  local args=(-s "${CONNECT_AUTH[@]}" -o "$out" -w '%{http_code}' -X "$method" "$CONNECT_URL$path")
   if [[ "$method" == PUT ]]; then
     # From a file, so a second try sends it again.
     cat > "$in"
@@ -1544,7 +1635,7 @@ wait_for_rows() {
     sleep 2
   done
   echo "${ns//%1F/.}.$table holds $have rows, not $want. The connectors: curl -s --cacert '$TLS/ca.crt'" \
-    "--ssl-revoke-best-effort '$CONNECT_URL/connectors?expand=status'" >&2
+    "--ssl-revoke-best-effort -K '$SECRETS/connect.curlrc' '$CONNECT_URL/connectors?expand=status'" >&2
   return 1
 }
 
@@ -1552,7 +1643,8 @@ wait_for_rows() {
 backoffice_sql() { k exec -i deployment/backoffice -- psql -q -v ON_ERROR_STOP=1 -U backoffice -d backoffice; }
 oracle_sql() {
   { echo 'WHENEVER SQLERROR EXIT SQL.SQLCODE'; cat; echo 'EXIT'; } \
-    | MSYS_NO_PATHCONV=1 k exec -i deployment/oracle -- sqlplus -s -l "$ORACLE_TREASURY" >/dev/null
+    | MSYS_NO_PATHCONV=1 k exec -i deployment/oracle -- sh -c \
+      'exec sqlplus -s -l "treasury/\"$TREASURY_PASSWORD\"@//localhost:1521/FREEPDB1"' >/dev/null
 }
 # As root, with the client certificate the image's entrypoint made; it names the node 127.0.0.1, not localhost.
 cockroach_sql() {
@@ -1586,12 +1678,24 @@ cockroach_history_table() {
 # The leg's databases and connectors, as cdc.yaml and demo/cdc have them; the connectors' configs are put in place
 # on the running worker (the same config twice changes nothing).
 cdc_apply() {
-  k create configmap backoffice-initdb --from-file=backoffice.sql="$REPO/demo/cdc/backoffice.sql" \
+  demo_secrets
+  # The SQL files with the passwords put in (backlog 282), as Secrets: written to $SECRETS/cdc, which only this
+  # user reads, and published from there.
+  local sql dir="$SECRETS/cdc" person subst=()
+  mkdir -p "$dir"
+  for person in "${PEOPLE[@]}"; do
+    subst+=(-e "s|\${PASSWORD_$(tr a-z A-Z <<<"$person")}|$(password_of "$person")|g")
+  done
+  subst+=(-e "s|\${PASSWORD_DEBEZIUM}|$(secret_of debezium)|g" -e "s|\${PASSWORD_TREASURY}|$(secret_of treasury)|g")
+  for sql in backoffice oracle cockroach; do sed "${subst[@]}" "$REPO/demo/cdc/$sql.sql" > "$dir/$sql.sql"; done
+  k create secret generic backoffice-initdb --from-file=backoffice.sql="$dir/backoffice.sql" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
-  k create configmap oracle-startdb --from-file=cdc.sql="$REPO/demo/cdc/oracle.sql" --dry-run=client -o yaml \
+  k create secret generic oracle-startdb --from-file=cdc.sql="$dir/oracle.sql" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
-  k create configmap cockroach-initdb --from-file=cockroach.sql="$REPO/demo/cdc/cockroach.sql" \
+  k create secret generic cockroach-initdb --from-file=cockroach.sql="$dir/cockroach.sql" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
+  # ConfigMaps of the same names from before backlog 282.
+  k delete configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
   apply cdc.yaml
   apply ports.yaml
   k rollout status deployment/backoffice --timeout=3m >/dev/null
@@ -1721,7 +1825,8 @@ The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
   PostgreSQL backoffice, settlement.instructions  ->  history.postgres.settlement.instructions   (demo/demo.sh psql)
   Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
   CockroachDB custody, positions.holdings          ->  history.cockroach.positions.holdings      (demo/demo.sh cockroach)
-Kafka Connect: curl -s --cacert '$TLS/ca.crt' --ssl-revoke-best-effort '$CONNECT_URL/connectors?expand=status'.
+Kafka Connect: in kafbat (https://$DEMO_HOST:8182), or curl -s --cacert '$TLS/ca.crt' --ssl-revoke-best-effort
+  -K '$SECRETS/connect.curlrc' '$CONNECT_URL/connectors?expand=status' (8186 asks for that password).
 kafbat (https://$DEMO_HOST:8182) shows Debezium's change events as they arrive, and the console shows each sink
 commit as a snapshot of its history table.
 Query the source databases in CloudBeaver (https://$DEMO_HOST:8185): each person's backoffice, treasury and
@@ -1742,7 +1847,7 @@ cdc_delete() {
   say "deleting the CDC leg: its connectors, databases and Kafka topics (Kafka Connect and the history tables stay)"
   cdc_connectors_delete
   k delete deployment,service,configmap -l nuna-demo/cdc=true --ignore-not-found >/dev/null
-  k delete configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
+  k delete secret,configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
   k wait --for=delete pod -l 'app in (backoffice, oracle, cockroach)' --timeout=3m >/dev/null 2>&1 || true
   k delete pod cdc-cleanup --ignore-not-found >/dev/null
   MSYS_NO_PATHCONV=1 k run cdc-cleanup -i --rm --quiet --restart=Never --image="$(image_of kafka.image)" \
@@ -1779,6 +1884,7 @@ up() {
   check_ports
   publish_tokens
   publish_keycloak_keys
+  demo_secrets
   publish_tls
   db_tls
   # Kafka Connect and the generator stop for up's memory; gen starts them again last.
@@ -1801,7 +1907,7 @@ up() {
   # Silo's policy warehouse-read, which Keycloak's client role of that name gives ana and presenter in Silo's
   # console (silo-signin.yaml): Silo keeps it on its volume, and making it again replaces it with the file's.
   k exec -i deployment/s3 -c silo -- sh -c 'cat > /tmp/warehouse-read.json &&
-    mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+    mc alias set l http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null &&
     mc admin policy create l warehouse-read /tmp/warehouse-read.json >/dev/null' < "$STACK/silo-warehouse-read.json"
 
   # The switch metrics (backlog 233) as it was, before the catalog, which then sends its metrics and traces to it.
@@ -1995,7 +2101,7 @@ case "${1:-}" in
       echo "SingleStore is off: demo/demo.sh ss first" >&2
       exit 1
     fi
-    MSYS_NO_PATHCONV=1 k exec -it deployment/singlestore -- singlestore -uroot -p"$S2_ROOT_PASSWORD" ops
+    MSYS_NO_PATHCONV=1 k exec -it deployment/singlestore -- sh -c 'exec singlestore -uroot -p"$ROOT_PASSWORD" ops'
     ;;
   rate)
     refuse_while_cdc "the lake writer"
@@ -2025,17 +2131,23 @@ case "${1:-}" in
     k exec -it deployment/backoffice -- psql -U "${2:-backoffice}" -d backoffice
     ;;
   sqlplus)
-    # A person's Oracle password is their Keycloak one, <user>-demo (demo/cdc/oracle.sql).
-    login=$ORACLE_TREASURY
-    if [[ -n "${2:-}" ]]; then login="$2/\"$2-demo\"@//localhost:1521/FREEPDB1"; fi
-    MSYS_NO_PATHCONV=1 k exec -it deployment/oracle -- sqlplus -l "$login"
+    # treasury signs in with the password in the pod's environment; a person with their Keycloak password
+    # (demo/cdc/oracle.sql), which SQL*Plus asks for: it is in $PEOPLE_FILE.
+    if [[ -n "${2:-}" ]]; then
+      echo "$2's password is in $PEOPLE_FILE"
+      MSYS_NO_PATHCONV=1 k exec -it deployment/oracle -- sqlplus -l "$2@//localhost:1521/FREEPDB1"
+    else
+      MSYS_NO_PATHCONV=1 k exec -it deployment/oracle -- sh -c \
+        'exec sqlplus -l "treasury/\"$TREASURY_PASSWORD\"@//localhost:1521/FREEPDB1"'
+    fi
     ;;
   cockroach)
-    # Root signs in with the client certificate the image made; a person with their Keycloak password,
-    # <user>-demo (demo/cdc/cockroach.sql).
+    # Root signs in with the client certificate the image made; a person with their Keycloak password
+    # (demo/cdc/cockroach.sql), which the prompt asks for: it is in $PEOPLE_FILE.
     if [[ -n "${2:-}" ]]; then
+      echo "$2's password is in $PEOPLE_FILE"
       MSYS_NO_PATHCONV=1 k exec -it deployment/cockroach -- ./cockroach sql \
-        --url "postgresql://$2:$2-demo@localhost:26257/custody?sslmode=disable"
+        --url "postgresql://$2@localhost:26257/custody?sslmode=disable"
     else
       MSYS_NO_PATHCONV=1 k exec -it deployment/cockroach -- ./cockroach sql --certs-dir=certs --host=127.0.0.1 -d custody
     fi
@@ -2047,9 +2159,9 @@ case "${1:-}" in
     echo "Switches: $(switches_line)"
     echo
     echo "Kafka Connect's connectors (the connector's state, then its tasks'):"
-    if names=$(curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors" 2>/dev/null); then
+    if names=$(curl -fs "${CURL_TLS[@]}" "${CONNECT_AUTH[@]}" "$CONNECT_URL/connectors" 2>/dev/null); then
       for name in $(grep -o '"[^"]*"' <<<"$names" | tr -d '"'); do
-        printf '  %-22s %s\n' "$name" "$(curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors/$name/status" \
+        printf '  %-22s %s\n' "$name" "$(curl -fs "${CURL_TLS[@]}" "${CONNECT_AUTH[@]}" "$CONNECT_URL/connectors/$name/status" \
           | grep -o '"state":"[A-Z_]*"' | cut -d'"' -f4 | tr '\n' ' ')"
       done
     elif running connect; then

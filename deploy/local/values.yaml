@@ -73,7 +73,6 @@ config:
     ui:
       dev-token-login: true
 
-secrets:
-  values:
-    spring.datasource.password: catalog
-    nuna.storage.profiles.silo.secret-access-key: nuna-catalog-secret-key
+# secrets.values, the database's password (spring.datasource.password) and the catalog's Silo key
+# (nuna.storage.profiles.silo.secret-access-key), are not here: run.sh makes them once per machine in
+# ~/.nuna-k8s/secrets and passes each with helm's --set-file (backlog 282).

@@ -344,7 +344,10 @@ spec:
           env:
             - {name: GF_SERVER_ROOT_URL, value: "https://${DEMO_HOST}:8188/"}
             - {name: GF_SECURITY_ADMIN_USER, value: admin}
-            - {name: GF_SECURITY_ADMIN_PASSWORD, value: nuna-test}
+            # Made once per machine (~/.nuna-demo/secrets/grafana-admin; backlog 282). Grafana takes it only when it
+            # makes its database; demo.sh sets it again on a kept one (metrics_apply).
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: grafana-admin}}
             - {name: GF_USERS_DEFAULT_THEME, value: system}
             - {name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH, value: /var/lib/grafana/dashboards/nuna/nuna-catalog.json}
             # Nothing leaves the machine.

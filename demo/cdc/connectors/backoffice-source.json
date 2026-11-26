@@ -4,7 +4,7 @@
   "database.hostname": "backoffice",
   "database.port": "5432",
   "database.user": "backoffice",
-  "database.password": "nuna-test",
+  "database.password": "${env:CDC_BACKOFFICE_PASSWORD}",
   "database.dbname": "backoffice",
   "topic.prefix": "backoffice",
   "plugin.name": "pgoutput",

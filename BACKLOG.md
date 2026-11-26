@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**33 open:** 7 S, 11 M, 9 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**31 open:** 6 S, 11 M, 8 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -42,8 +42,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
-| [282](backlog/282.md) | L | The demo's and the laptop runner's fixed passwords made once per machine, people's included | about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first | 2026-11-25 |
-| [283](backlog/283.md) | S | Kafka Connect's REST API is published on 8186 with no sign-in | oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check | 2026-11-25 |
 | [285](backlog/285.md) | ? | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on | 2026-11-25 |
 
 ## Open items in full
@@ -2001,46 +1999,6 @@ Left: the overnight heavy build has to pass the two `CommitSuite` cases on all f
 have to bite. The CockroachDB select-only bite assumes `SELECT … FOR UPDATE` on a missing key locks nothing under
 READ COMMITTED; if it reports NO BITE, record that store's bite another way. Then `./backlog.sh done 278`.
 
-### 282. The demo's and the laptop runner's fixed passwords made once per machine, people's included
-
-- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
-- Touches: demo/ deploy/local/
-- Effort: L, about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first
-
-The work note (`docs/from-work/005-github-secret-scanning.md`) expects the demo's fixed passwords to be flagged next:
-Silo's secret key, Keycloak's admin's and SingleStore's root's. catalog-security's sweep
-(2026-11-25) adds Grafana's and CloudBeaver's admins, the worker's Silo key, the CDC leg's database passwords and
-connector settings, and the people's passwords in `keycloak-realm.json`, `backoffice.sql`, `cdc/*.sql` and
-`cloudbeaver.yaml`. The people's passwords matter beyond the scanner: `presenter` may do everything, grants to their
-own groups included, so at work, with `NUNA_DEMO_HOST` set, anyone who has read the repository can sign in as them.
-
-`deploy/local` (the laptop runner) holds seven: backing.yaml:23/106-107, keycloak.yaml:35/99 (a client secret in a
-ConfigMap), values.yaml:78-79, worker-values.yaml:50-51. The note's fix reads the database password from
-`backing.yaml` with `sed`, which keeps the literal in git. It stays on a password: it is the one runner that takes
-the documented production path (`deploy/README.md`).
-
-Done when `up` makes each value once per machine under `~/.nuna-demo` (as `publish_keycloak_keys` does) and passes it
-with `--set-file` or a Secret, never on Helm's command line; people's passwords are typeable and printed by `up` to
-`~/.nuna-demo/people`, and the README names that file instead of listing them; kept volumes take the new values
-(PostgreSQL's ALTER ROLE, Grafana's reset; one `wipe` where an image cannot); every person signs in and `cdc` passes;
-`deploy/local/run.sh` makes its values in `~/.nuna-k8s`, and `up`, `smoke` and `worker` pass.
-
-### 283. Kafka Connect's REST API is published on 8186 with no sign-in
-
-- Added: 2026-11-25 by catalog-security, from its review of work note 005
-- Touches: demo/k8s/ports.yaml demo/k8s/connect.yaml demo/README.md
-- Effort: S, oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check
-
-Found while reviewing `docs/from-work/005-github-secret-scanning.md` (2026-11-25). While the CDC leg runs, the front
-door publishes Kafka Connect's REST API on 8186 with no sign-in (`ports.yaml:103`), and `EnvVarConfigProvider` is on
-(`connect.yaml:34-35`). Anyone who reaches 8186 can create a connector and copy the worker's environment into its
-settings, the catalog token `NUNA_TOKEN` included, and with the database's published superuser password Debezium's
-`database.initial.statements` would run SQL on the catalog's database (read from Debezium's documented option, not
-tried). Item 281 closes the database part; the API itself stays open.
-
-Done when an unauthenticated request to 8186 is refused (or nothing listens there) and a signed-in operator can still
-see the connectors.
-
 ### 285. Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub
 
 - Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
@@ -2312,5 +2270,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [279](backlog/279.md) | Console: take a table out of refs, item 156's route, from the table page (item 156's Left) | done | 2026-11-25 |
 | [280](backlog/280.md) | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | done | 2026-11-25 |
 | [281](backlog/281.md) | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | done | 2026-11-25 |
+| [282](backlog/282.md) | The demo's and the laptop runner's fixed passwords made once per machine, people's included | done | 2026-11-26 |
+| [283](backlog/283.md) | Kafka Connect's REST API is published on 8186 with no sign-in | done | 2026-11-26 |
 | [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |
 | [286](backlog/286.md) | demo.sh takes a deployment for gone only when kubectl says NotFound, so gen stop never stops Kafka under a running generator | done | 2026-11-25 |

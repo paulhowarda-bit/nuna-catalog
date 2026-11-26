@@ -87,7 +87,7 @@ demo/demo.sh up
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free and CockroachDB.
 - Ports on localhost, from Docker Desktop's LoadBalancer Services, all HTTPS: **8180** (Keycloak), **8181**
   (catalog and console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185**
-  (CloudBeaver), **8186** (Kafka Connect's REST API), **8187** (Silo's S3 API, for
+  (CloudBeaver), **8186** (Kafka Connect's REST API, with a password), **8187** (Silo's S3 API, for
   engines on other machines) and **8188** (Grafana, while `metrics` is on). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
   An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
   `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
@@ -120,7 +120,7 @@ demo/demo.sh up
   lasts until its pod goes; the catalog names people by their user names, which the realm file fixes. The CDC
   leg's databases keep none either: `cdc stop` and `down` delete the leg, its topics and its offsets.
 
-At the end it prints the console URL, <https://localhost:8181/ui/>, the passwords and the tokens.
+At the end it prints the console URL, <https://localhost:8181/ui/>, where the passwords are, and the tokens.
 
 ## HTTPS and the certificate
 
@@ -192,11 +192,11 @@ The console offers two ways in:
 
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
-| `ana` | `ana-demo` | `demo-analysts` | create and modify on both catalogs: create namespaces, tables and views, read and write data, change, rename and drop them; make, merge and delete branches and tags, as `up` does as her (Branches and tags of the catalog, below) |
-| `gary` | `gary-demo` | `demo-grant-admins`, `demo-auditors` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused. As an auditor, the console's Audit page, and the audit table itself (below) |
-| `stella` | `stella-demo` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
-| `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
-| `presenter` | `presenter-demo` | all five groups above, and `demo-presenters` | everything, in one sign-in, for showing the demo (below) |
+| `ana` | in `~/.nuna-demo/people` | `demo-analysts` | create and modify on both catalogs: create namespaces, tables and views, read and write data, change, rename and drop them; make, merge and delete branches and tags, as `up` does as her (Branches and tags of the catalog, below) |
+| `gary` | in `~/.nuna-demo/people` | `demo-grant-admins`, `demo-auditors` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused. As an auditor, the console's Audit page, and the audit table itself (below) |
+| `stella` | in `~/.nuna-demo/people` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
+| `oscar` | in `~/.nuna-demo/people` | `demo-operators` | platform operator: DR freeze |
+| `presenter` | in `~/.nuna-demo/people` | all five groups above, and `demo-presenters` | everything, in one sign-in, for showing the demo (below) |
 | `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
 | `brokerage` | token only | `demo-loaders` | create and modify; the brokerage world's generator, whose bootstrap makes its namespaces, tables and views |
@@ -317,20 +317,27 @@ its own terms, and how Silo's and Keycloak's own consoles do:
   SingleStore's certificate and Silo's console sign-in get pointed at work's identity provider, with TLS from work's certificate
   authority, and that can only be done on site.
 
+No password is in the repository (backlog 282). `up` makes each once per machine and keeps it: the people's in
+`~/.nuna-demo/secrets/person-<name>`, which it lists, one person a line, in `~/.nuna-demo/people`; the rest in
+`~/.nuna-demo/secrets`, one file each. They reach the pods only through Secrets (`demo-secrets`, `s3-root`,
+`singlestore-root`, `connect-auth`) and the charts only by `--set-file`. The people's are three groups of four
+lower-case letters, to type. To change one, delete its file and run `up` (for the CDC leg's, `cdc` again);
+SingleStore, Silo, Keycloak and Grafana take the new one on their kept volumes.
+
 Accounts that run the demo rather than people in it:
 
 | Account | Password | For |
 |---|---|---|
-| Keycloak `admin` | `nuna-test` | Keycloak's admin console, <https://localhost:8180/admin>, in the master realm: the only account that changes realm `nuna` |
-| SingleStore `root` | `nuna-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
-| Silo `nunatest` | `nunatest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>, by its access-key form: every bucket, its objects, users, policies and settings |
+| Keycloak `admin` | `~/.nuna-demo/secrets/keycloak-admin` | Keycloak's admin console, <https://localhost:8180/admin>, in the master realm: the only account that changes realm `nuna` |
+| SingleStore `root` | `~/.nuna-demo/secrets/singlestore-root` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
+| Silo `nunatest` | `~/.nuna-demo/secrets/silo-root` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>, by its access-key form: every bucket, its objects, users, policies and settings |
 | PostgreSQL `catalog` | none: the catalog's client certificate | the catalog's database, which only the catalog reaches over the network; not published outside the cluster (The catalog's database, above) |
-| PostgreSQL `backoffice` | `nuna-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
-| Oracle `treasury` | `nuna-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
-| Oracle `SYS`, `SYSTEM` | `nuna-test` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
-| Oracle `c##dbzuser` | `dbz` | Debezium's LogMiner user |
+| PostgreSQL `backoffice` | `~/.nuna-demo/secrets/backoffice` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
+| Oracle `treasury` | `~/.nuna-demo/secrets/treasury` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
+| Oracle `SYS`, `SYSTEM` | `~/.nuna-demo/secrets/oracle` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
+| Oracle `c##dbzuser` | `~/.nuna-demo/secrets/debezium` | Debezium's LogMiner user |
 | CockroachDB `root` | none: the node's client certificate | the CDC leg's CockroachDB; `demo/demo.sh cockroach` |
-| CockroachDB `debezium` | `dbz` | Debezium's login: `SELECT` and `CHANGEFEED` on `positions.holdings` |
+| CockroachDB `debezium` | `~/.nuna-demo/secrets/debezium` | Debezium's login: `SELECT` and `CHANGEFEED` on `positions.holdings` |
 
 Tokens are valid for 7 days, and `up` mints new ones only when they are about to expire. Print them again
 (re-minted if they are about to expire; SingleStore's running pipelines are then replaced and Trino,
@@ -878,8 +885,11 @@ ORDER BY "_cdc"."offset";
 - The first `cdc` pulls Oracle's image (about 5 GB); `up` builds Kafka Connect's image from Maven Central.
 - kafbat shows the connectors under Kafka Connect, cluster `connect`: each one's status, tasks and config, with
   restart, pause and resume for `oscar`.
-- Kafka Connect's REST API is on <https://localhost:8186>:
-  `curl -s --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort 'https://localhost:8186/connectors?expand=status'`.
+- Kafka Connect's REST API is on <https://localhost:8186>, which asks for a password (user `operator`, the
+  password in `~/.nuna-demo/secrets/connect`; backlog 283): it has no sign-in of its own, and a connector it is
+  given runs code with the worker's environment, the catalog token among it. Without the password the front door
+  answers 401. Inside the cluster it stays open, for kafbat and the brokerage world's generator:
+  `curl -s --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort -K ~/.nuna-demo/secrets/connect.curlrc 'https://localhost:8186/connectors?expand=status'`.
 
 ```bash
 demo/demo.sh cdc stop
@@ -931,7 +941,8 @@ catalog, worker --OTLP--> OpenTelemetry collector --metrics--> Prometheus --> Gr
   and presenter administer it; ana, gary and stella view. The home page is the catalog's dashboard; folder `nuna`
   holds all three from `deploy/grafana/dashboards`, and Explore, with data source Tempo, searches the traces. A
   chart's exemplar points (Prometheus keeps the ones Boot sends) open the trace of that request. Grafana's own admin
-  signs in at <https://localhost:8188/login?disableAutoLogin=true> as `admin` / `nuna-test`.
+  signs in at <https://localhost:8188/login?disableAutoLogin=true> as `admin`, with the password in `~/.nuna-demo/secrets/grafana-admin`, which `metrics` sets again on a kept Grafana
+  database (backlog 282).
 - **Prometheus** takes the metrics over OTLP, as item 43 says work's should: `translation_strategy:
   UnderscoreEscapingWithSuffixes`, native histograms off, a 30-minute out-of-order window, exemplars kept. It loads
   the alert rules in `deploy/grafana/rules`; no Alertmanager runs, so they show in Grafana's Alerting page and in

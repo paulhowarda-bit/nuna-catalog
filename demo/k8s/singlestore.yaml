@@ -28,7 +28,10 @@ spec:
           image: ${SINGLESTORE_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: ROOT_PASSWORD, value: nuna-test}
+            # Root's password, which the start script sets at every start: Secret singlestore-root, which demo.sh makes
+            # from the one it keeps per machine (backlog 282) and the engine matrix for its run.
+            - name: ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: singlestore-root, key: password}}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES, value: "1"}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_ICEBERG_INGEST, value: "1"}
             # The dev image's license turns this on at every start: crash reports, DDL and table metadata to

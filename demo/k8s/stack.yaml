@@ -59,6 +59,10 @@ spec:
             exec:
               command: ["pg_isready", "-U", "catalog", "-d", "catalog"]
             periodSeconds: 2
+            # Not the default 1 s: under memory pressure on 2026-11-25 pg_isready outlasted it 1,172 times in 79
+            # minutes, each time taking PostgreSQL out of its Service, and the catalog restarted 9 times on
+            # "connection refused".
+            timeoutSeconds: 5
           # PostgreSQL 18's image keeps its data in /var/lib/postgresql/18/docker, beneath this mount.
           volumeMounts:
             - {name: data, mountPath: /var/lib/postgresql}

@@ -10,7 +10,8 @@
 # Only demo.sh applies this; a matrix run has none.
 #
 # The realm file names its secrets as ${NUNA_...} placeholders, which Keycloak fills from the environment as it
-# imports: Secret keycloak-keys, which demo.sh makes once per machine (~/.nuna-demo/keycloak). Among them is the
+# imports: Secrets keycloak-keys and demo-secrets, which demo.sh makes once per machine (~/.nuna-demo/keycloak,
+# ~/.nuna-demo/secrets and the people's passwords in ~/.nuna-demo/people; backlog 282). Among them is the
 # realm's signing key. A key generated at each start would change with every pod, and SingleStore checks Studio's
 # SAML sign-ins against the key's certificate, which it reads only as it starts (singlestore.Dockerfile).
 apiVersion: apps/v1
@@ -41,7 +42,8 @@ spec:
                  "--hostname-backchannel-dynamic=true"]
           env:
             - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
-            - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: nuna-test}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: keycloak-admin}}
             - {name: JAVA_OPTS_KC_HEAP, value: "-XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=25"}
             - name: NUNA_REALM_PRIVATE_KEY
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: realm-private-key}}
@@ -55,6 +57,17 @@ spec:
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: silo-client-secret}}
             - name: NUNA_MAINTENANCE_CLIENT_SECRET
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: maintenance-client-secret}}
+            # The people's passwords, made once per machine and listed in ~/.nuna-demo/people (backlog 282).
+            - name: NUNA_PASSWORD_ANA
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: person-ana}}
+            - name: NUNA_PASSWORD_GARY
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: person-gary}}
+            - name: NUNA_PASSWORD_STELLA
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: person-stella}}
+            - name: NUNA_PASSWORD_OSCAR
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: person-oscar}}
+            - name: NUNA_PASSWORD_PRESENTER
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: person-presenter}}
           ports:
             - containerPort: 8080
             - containerPort: 9000

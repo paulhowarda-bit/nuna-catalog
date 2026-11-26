@@ -43,7 +43,7 @@
       "email": "ana@nuna.demo",
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
-      "credentials": [{"type": "password", "value": "ana-demo", "temporary": false}],
+      "credentials": [{"type": "password", "value": "${NUNA_PASSWORD_ANA}", "temporary": false}],
       "clientRoles": {"silo": ["warehouse-read"]},
       "groups": ["/demo-analysts"]
     },
@@ -55,7 +55,7 @@
       "email": "gary@nuna.demo",
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
-      "credentials": [{"type": "password", "value": "gary-demo", "temporary": false}],
+      "credentials": [{"type": "password", "value": "${NUNA_PASSWORD_GARY}", "temporary": false}],
       "groups": ["/demo-grant-admins", "/demo-auditors"]
     },
     {
@@ -66,7 +66,7 @@
       "email": "stella@nuna.demo",
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
-      "credentials": [{"type": "password", "value": "stella-demo", "temporary": false}],
+      "credentials": [{"type": "password", "value": "${NUNA_PASSWORD_STELLA}", "temporary": false}],
       "groups": ["/demo-stewards"]
     },
     {
@@ -77,7 +77,7 @@
       "email": "oscar@nuna.demo",
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
-      "credentials": [{"type": "password", "value": "oscar-demo", "temporary": false}],
+      "credentials": [{"type": "password", "value": "${NUNA_PASSWORD_OSCAR}", "temporary": false}],
       "groups": ["/demo-operators"]
     },
     {
@@ -88,7 +88,7 @@
       "email": "presenter@nuna.demo",
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
-      "credentials": [{"type": "password", "value": "presenter-demo", "temporary": false}],
+      "credentials": [{"type": "password", "value": "${NUNA_PASSWORD_PRESENTER}", "temporary": false}],
       "clientRoles": {"silo": ["warehouse-read", "consoleAdmin"], "realm-management": ["realm-admin"]},
       "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators", "/demo-auditors",
                  "/demo-presenters"]
