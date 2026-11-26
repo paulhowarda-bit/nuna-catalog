@@ -71,18 +71,22 @@ public final class TestS3 implements AutoCloseable {
     }
 
     public static final String REGION = "us-east-1";
-    /** The keys of Silo's root user and Ceph's S3 user. */
+    /**
+     * The keys of Silo's root user and Ceph's S3 user. The secret keys here are made for each test JVM, so none is
+     * written in the source (backlog 281): a store this class starts takes them as it starts, and the engine matrix
+     * fills them into the stack's manifests ({@code ${S3_SECRET_KEY}} in {@code demo/k8s}).
+     */
     public static final String ACCESS_KEY = "nunatest";
-    public static final String SECRET_KEY = "nunatest-secret-key";
+    public static final String SECRET_KEY = "s3-" + UUID.randomUUID();
     /** The role vended credentials assume on Ceph. */
     public static final String CEPH_ROLE_ARN = "arn:aws:iam:::role/nuna-vending";
     private static final String CEPH_ROLE = "nuna-vending";
     /** RGW's key for signing session tokens: 16 characters. */
-    private static final String CEPH_STS_KEY = "nunastskey012345";
+    public static final String CEPH_STS_KEY = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     /** The maintenance worker's own storage identity (D30): a user on Ceph, whose keys these are. */
     public static final String MAINTENANCE_USER = "nuna-maintenance";
     public static final String MAINTENANCE_ACCESS_KEY = "nunamaintenance";
-    public static final String MAINTENANCE_SECRET_KEY = "nunamaintenance-secret-key";
+    public static final String MAINTENANCE_SECRET_KEY = "s3-" + UUID.randomUUID();
 
     private static TestS3 shared;
 
