@@ -73,16 +73,38 @@ from the catalog's log (`otlp`), so the page needs no Kafka:
   be pointed at it, directly or through a collector that forwards the `nuna.audit` records.
 - Every request carries the shared token `nuna.audit-tables.otlp.token` in `X-Nuna-Audit-Token`, or is refused with 401
   and nothing in it read: without it anything that reaches the port could add rows to the console's Audit page.
-- Rows are deduplicated by CloudEvent id: an id seen in the last `nuna.audit-tables.otlp.dedup-window` (15 minutes) is
-  left out, whether the exporter sent its batch twice or the relay wrote a change twice.
+- Rows are deduplicated by CloudEvent id, however late a copy comes: whether the exporter sent its batch twice, the
+  relay wrote a change twice, or a collector's persistent queue re-sent its batches after a crash or drained a backlog
+  hours after an outage (OTLP accepts duplicates by design). An id seen in the last
+  `nuna.audit-tables.otlp.dedup-window` (15 minutes) is left out as it arrives. Before each commit, a waiting record
+  whose own time is older than that is looked up among the table's rows of its day, the table's partition, and left
+  out if it is there (backlog 263). Only records that late are looked up, and the lookup reads the event ids of those
+  days alone: measured on Iceberg's in-memory catalog, 10,000 rows in 1,000 files took 5 s to read, about what a day
+  of one-minute commits holds before the nightly compaction, a compacted day far less.
 - A row from the log is in no topic partition: its `topic_partition` is `-1` and its `topic_offset` a number the writer
   gives it, the time in microseconds or one more than the last, which rises and never repeats. The feed's reader orders
   and finds rows by that pair. It also keeps the record's stamp, the server run that logged it and its number there,
   in `log_run` and `log_seq` (backlog 272), which place it in its run's archive chain. A row from the topic keeps
   them too, since the Kafka copy is the log's line (backlog 276); a copy an older server sent has neither.
-- Records wait in memory a commit interval and are answered at once; a writer that dies before its commit loses them
-  (they are still on the catalog's stdout), and a shutdown commits them first. catalog-audit-tables/README.md has the
-  detail.
+- Records wait in memory a commit interval and are answered when they are taken, before their commit; a shutdown
+  commits them first. **A writer that dies before its commit loses them from the table**, though its sender was told
+  they were taken: at most what arrived since its last commit, a `commit-interval` (1 minute) or `max-rows`, up to
+  twice `max-rows` while commits fail. They are still on the catalog's stdout, so the record of audit is whole; the
+  console's Audit page lacks them. Answering after the commit would close that window, but the catalog caps its own
+  export at 10 s, retries included, so the commit interval would have to come down to a few seconds, a commit every
+  3 s or so under steady traffic such as the demo's: about 28,800 commits a day, each a snapshot, a data file and a
+  manifest, against 1,440 at one minute. Each snapshot adds about 920 bytes to the metadata file every commit rewrites
+  (measured on Iceberg's in-memory catalog: 919 KB after 1,000 commits), so a day's snapshots alone make it about 26
+  MB, and the nightly compaction rewrites data files, not snapshots: it would not keep up (backlog 263). So the writer
+  answers at once, and this is the window:
+  - **Which rows.** The records the writer took after its last commit: from its last `Wrote <n> audit records from the
+    log to the audit table` line before it died to its death. The archive, written by the same process, loses its
+    waiting segment too (up to `segment-age`), and the archive check shows that as missing numbers.
+  - **How to find them.** Each row keeps its record's run and number, `log_run` and `log_seq` (backlog 272). For each
+    run that logged in that span, take its numbers from the catalog's stdout (`nunarun`, `nunaseq` on each
+    `nuna.audit` line) and look for them in the table, `SELECT log_seq FROM nuna_audit.audit.events WHERE log_run =
+    '<run>' AND log_seq BETWEEN <first> AND <last>`. A number with no row is a lost row, unless its line's principal
+    is the writer's own or the writer logged it as a type it cannot map, both left out by design.
 - A table gone under the writer (dropped, or the catalog's database new while it runs) is made again, with a WARN
   that a dropped audit table should be undropped rather than replaced, and the waiting records written to it; the
   rows committed before stay only in the dropped table and on stdout (backlog 284). A refusal never makes it again.
@@ -167,7 +189,7 @@ The limits of what shows:
 | `catalog-server` `AuditFeedRoutesTest` | The archive status: the last check's checkpoints and counts, and only the chains with something to show. Each feed row verified, unverified with the missing records that hold it back, or not placeable; a record's place looked up, audited and limited, with its 400s and 503s; the logged and archived gauges. |
 | `catalog-server` `ConsoleBrowserTest` (heavy) | A logged record says whether its run is verified up to it, or that an earlier record is missing, and looks up its place; a record from Kafka without a run says it cannot be checked; without an archive a record says so. |
 | `catalog-audit-tables` `OtlpLogsReceiverTest` | Protobuf and JSON, gzip, the scope filter, the token, and the partial success naming rejected records; every audit record archived as it came, those the table leaves out included; a request the archive cannot take turned away whole; each row keeping the run and number its record was logged with. |
-| `catalog-audit-tables` `LogWriterTest` | Each record once, across repeats, a lost answer and a restart; rows in partition -1 with rising numbers; a failed commit keeps its rows; the writer's own records left out; each row's run and number, a repeat keeping its first. |
+| `catalog-audit-tables` `LogWriterTest` | Each record once, across repeats, a lost answer and a restart, and a copy an hour late or after a restart past the dedup window, looked up in the table (backlog 263); rows in partition -1 with rising numbers; a failed commit keeps its rows; the writer's own records left out; each row's run and number, a repeat keeping its first. |
 | `catalog-audit-tables` `EventsReaderTest` | A row's run and number read back; a table made before those columns given them, its earlier rows null there. |
 | `catalog-audit` `PlacementTest` | A record found in its run's chain by its number and id, with its hash and neighbours, across segments, arrived late or far from where its number puts it; another record's id not taken for it; a changed record's hash not matching. |
 | `catalog-audit` `ArchiveSinkTest` | Segments sealed by count, age and run end; refused bodies; the unstamped chain; a busy writer refusing; an unreachable store and a lost answer; a second writer; checkpoints linked across a restart and written when idle; a repeat left out. |
