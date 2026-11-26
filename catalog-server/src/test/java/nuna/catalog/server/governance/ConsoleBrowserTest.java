@@ -138,6 +138,9 @@ class ConsoleBrowserTest {
         assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
         assertThat(textContent(driver.findElement(By.id("who")))).contains("tester", IssuerForTests.GROUP);
         browser.await(By.cssSelector("#catalog-page table.contents tr[data-kind='namespace'][data-name='" + top + "']"));
+        // The header's copy button names what it copies, the warehouse name (backlog 220).
+        assertThat(textContent(driver.findElement(By.cssSelector(
+                "#catalog-page .ph .side button[aria-label='Copy the warehouse name trading']")))).isEqualTo("Copy trading");
 
         // Opening a namespace in the tree opens its page and lists what is in it.
         browser.await(node("namespace:" + top)).click();
@@ -1041,7 +1044,9 @@ class ConsoleBrowserTest {
               const u = new URL(url, location.origin);
               if (u.pathname.endsWith('/audit/summary')) {
                 return json({'by-type': {'nuna.catalog.audit-read': 2, 'nuna.catalog.grant': 1, 'nuna.catalog.commit': 1},
-                  from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+                  from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(),
+                  busiest: [{kind: 'TABLE', path: ['equities', 'eu', 'positions_end_of_day_by_desk_and_book'], records: 1140,
+                    reads: 1024, writer: 'svc-positions-loader-eu-west'}]});
               }
               if (u.pathname.endsWith('/audit/archive')) return json({chains: [], configured: false});
               if (u.pathname.endsWith('/audit/feed')) {
@@ -1075,6 +1080,17 @@ class ConsoleBrowserTest {
         // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
         assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
                 .map(row -> cell(row, 1) + " " + cell(row, 2)).toList()).containsExactly("Grants 1", "Commits 1", "All 2");
+        // The headline counts every record; the chips leave out the hidden reads, and the checkbox says how many
+        // (Atelier's re-walk after 212 to 217, backlog 220).
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip())
+                .isEqualTo("Show audit reads · 2 records hidden");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("4");
+        // Most recorded keeps its number columns in its card at 1440 px: the long path wraps (backlog 220).
+        driver.manage().window().setSize(new Dimension(1440, 900));
+        WebElement busiest = browser.await(By.cssSelector("#audit-busiest"));
+        browser.await("Most recorded overflows its card", d -> (Boolean) driver.executeScript(
+                "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+        assertThat(textContent(busiest.findElement(By.cssSelector("thead")))).contains("Records", "Reads");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='hold']")))).isEqualTo("Governance 0");
         WebElement grantBadge = driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .badge"));
         assertThat(textContent(grantBadge)).isEqualTo("Grant");
@@ -1107,6 +1123,7 @@ class ConsoleBrowserTest {
         browser.await("the feed did not show every kind", d -> feedTypes().equals(List.of("grant", "commit")));
         driver.findElement(By.cssSelector("#audit-feed input[name='audit-reads']")).click();
         browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip()).isEqualTo("Show audit reads");
         assertThat(lastAsked()).isNull();
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
     }
@@ -1530,6 +1547,14 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector("#ref-changes tr[data-path='" + ns + ".orders']"));
         assertThat(textContent(driver.findElement(By.cssSelector("button[aria-label='Copy the warehouse name trading@" + branch + "']"))))
                 .isEqualTo("Copy trading@" + branch);
+        // So does the catalog's page read through the branch: it copies the warehouse name with the branch (backlog 220).
+        browser.open("/ui/#c=trading&r=" + branch);
+        assertThat(textContent(browser.await(By.cssSelector(
+                "#catalog-page .ph .side button[aria-label='Copy the warehouse name trading@" + branch + "']"))))
+                .isEqualTo("Copy trading@" + branch);
+        browser.open("/ui/#c=trading&k=ref&n=" + branch);
+        onChanges = browser.awaitText(By.cssSelector(".tab-body .merge-verdict[data-verdict='ready']"),
+                "Ready to merge: 1 table would move to main in one transaction.");
         WebElement preview = onChanges.findElement(By.linkText("Preview the merge"));
         assertThat(preview.getDomAttribute("href")).isEqualTo("#c=trading&k=ref&n=" + branch + "&tab=merge");
         preview.click();

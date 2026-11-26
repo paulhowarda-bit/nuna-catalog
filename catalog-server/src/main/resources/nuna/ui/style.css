@@ -1060,6 +1060,8 @@ tr[data-line]:not([data-line="main"]) .mlog-line { color: var(--cref-ink); }
 .kpi-v.na { color: var(--text-2); }
 .props-tbl td.name { overflow-wrap: anywhere; }
 td.wrap { overflow-wrap: anywhere; }
+/* Audit's Most recorded sits in the side column: its paths and writers wrap so Records and Reads stay in view (backlog 220). */
+#audit-busiest td.name { overflow-wrap: anywhere; }
 /* a settings table (item 141): what each setting does under its name, its value, then Change and Reset */
 .tbl.settings td { vertical-align: top; }
 .tbl.settings td.setting code { font-size: var(--t-12); color: var(--text-2); }
