@@ -129,7 +129,8 @@ spec:
       initContainers:
         # The image keeps its ready-made database (faststart) in /opt/oracle/oradata, which the volume hides; so it
         # is copied onto the volume while the volume is empty, as Docker does for a new named volume. The file
-        # copied last says the copy finished; a copy cut short starts again.
+        # copied last says the copy finished; a copy cut short starts again. What the folder holds is copied, not
+        # the folder: the volume's own folder belongs to root, whose times the image's user may not set.
         - name: oradata
           image: ${ORACLE_IMAGE}
           imagePullPolicy: Never
@@ -139,7 +140,7 @@ spec:
             - |
               [ -f /mnt/oradata/.nuna-copied ] && exit 0
               rm -rf /mnt/oradata/* /mnt/oradata/.[!.]*
-              cp -a /opt/oracle/oradata/. /mnt/oradata/
+              cp -a /opt/oracle/oradata/* /mnt/oradata/
               touch /mnt/oradata/.nuna-copied
           volumeMounts:
             - {name: data, mountPath: /mnt/oradata}
