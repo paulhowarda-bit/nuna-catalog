@@ -1,17 +1,17 @@
-Breaks: a ref record of schema version 1, as the log, the outbox and the archive already hold them, is refused once version 2 adds the description (backlog 167).
+Breaks: a ref record of schema version 1, as every ref record without a description is written and as the log, the outbox and the archive already hold them, is refused (backlog 167).
 Module: catalog-audit
-Test: EventCodecTest#aRefRecordOfThePreviousVersionIsReadWithNoDescription
+Test: EventCodecTest#aRefRecordWithNoDescriptionIsWrittenAndReadAsVersion1
 
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
-index 45ea7b06..da391057 100644
+index a91548a2..293d566a 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
-@@ -126,7 +126,7 @@ public final class EventCodec {
+@@ -127,7 +127,7 @@ public final class EventCodec {
              }
              EventType type = EventType.fromTypeName(text(envelope, "type"));
              String schema = text(envelope, "dataschema");
--            boolean previous = type.previousSchema().map(URI::toString).filter(schema::equals).isPresent();
-+            boolean previous = false;
-             if (!type.dataSchema().toString().equals(schema) && !previous) {
+-            boolean earlier = !type.added().isEmpty() && type.dataSchema(type.version() - 1).toString().equals(schema);
++            boolean earlier = false;
+             if (!earlier && !type.dataSchema().toString().equals(schema)) {
                  throw new IllegalArgumentException("unsupported data schema " + schema + " for " + type.typeName());
              }

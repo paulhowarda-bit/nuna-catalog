@@ -3,13 +3,13 @@ Module: catalog-audit
 Test: AuditRowsTest#aRecordFromTheLogKeepsItsRunAndNumberAndOneFromTheTopicHasNeither
 
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java b/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
-index d8a825a6..dc082609 100644
+index dd2eceb5..498d6746 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
-@@ -80,8 +80,7 @@ public final class AuditRows {
+@@ -81,8 +81,7 @@ public final class AuditRows {
                  object == null ? null : object.catalog(), object == null ? null : object.kind().name(),
                  object == null ? null : object.id().toString(), object == null ? null : object.path(),
-                 parts.operation(), parts.privilege(), parts.reason(), EventCodec.MAPPER.writeValueAsString(event.data()),
+                 parts.operation(), parts.privilege(), parts.reason(), EventCodec.payload(event),
 -                partition, offset, stamp.map(s -> s.run().toString()).orElse(null),
 -                stamp.map(LogStamp::sequence).orElse(null));
 +                partition, offset, null, null);
