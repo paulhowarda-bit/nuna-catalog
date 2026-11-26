@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**47 open:** 13 S, 17 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**45 open:** 11 S, 17 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,8 +39,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
-| [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
-| [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
 | [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
@@ -1602,44 +1600,6 @@ Done when the purge claim and the removal lock the held levels (or the catalog r
 stores; a store suite case holds a namespace hold's write open while each runs and sees them serialized; bites
 recorded.
 
-### 172. Console: export a table's metadata and log as a catalog ref reads it (item 109's review)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/MetadataLogRefTest.java catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/table.js bites/D33/
-- Effort: S, the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name
-
-The table page's "Export metadata" (`panels.js`, `exportDialog`) calls `GET …/objects/{id}/export`, which reads main's
-pointer, main's metadata file and main's whole journal. Read through a catalog ref, the button exported main's, with no
-`@ref` in the file name, so the UI review of item 109 found it misleading; item 109 hides the button through a ref.
-
-Done looks like:
-- `GET …/objects/{id}/export?ref=<name>`: the ref's pointer (its own head on a branch, else its cut), that file checked
-  against its recorded hash, and the journal as the metadata log reads it through the ref (backlog 109: the ref's own
-  versions, then its source's, then main's at and below the cut, stopping at a cut from a ref that has ended), with
-  `ref {name, kind, cut-version}`; 404 as the log answers for a ref that is not live or does not hold the object.
-  The read is audited on the ref (`through @name`). A fast test with a bite in `bites/D33/`.
-- The console offers the button through a ref again, exporting through it, the file named `{path}@{ref}`.
-
-### 177. Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-core/src/test/java/nuna/catalog/core/commit/ bites/D33/
-- Effort: S, one check on the metadata location in two CommitEngine operations, a fast test and a bite
-
-Low, from the security review of item 107's merge-base fix (Nuna Security Expert session, 2026-11-23). Not a
-go-to-work condition.
-
-What is wrong: `CommitEngine.register` and `revive` take the client's `metadataLocation` and never check
-`TableFiles.onBranch`. So main's pointer, and main's journal, can be set to a branch's metadata file
-(`<v>-<uuid>.branch-<refid>.metadata.json`). Reconcile skips marked files when it builds main's chain (item 111), so
-after a regional failover a main pointer at a branch file is invisible to recovery. The merge's base walk (item 107)
-also accepts main's journal entry for such a file as main's position at a cut. That is true (main really was at that
-file), so no commit is overwritten, but it is a file main should never hold. Doing it needs create and drop on main.
-
-Done when register and revive refuse a location `TableFiles.onBranch` marks, with 400 `BadRequestException`, on main
-and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
-checked with `git apply --check`, not run).
-
 ### 197. After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's
 
 - Added: 2026-11-23 by Paul
@@ -2290,10 +2250,12 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
 | [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
 | [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
+| [172](backlog/172.md) | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | done | 2026-11-25 |
 | [173](backlog/173.md) | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | done | 2026-11-23 |
 | [174](backlog/174.md) | Demo: every UI signs in through Keycloak, Silo's console and Keycloak's admin console included | done | 2026-11-23 |
 | [175](backlog/175.md) | Brokerage world: the bootstrap fixes the world's settings on a brokerage namespace the change feed made | done | 2026-11-23 |
 | [176](backlog/176.md) | The fast build re-checks every bite each time, and agents run it again and again before landing | done | 2026-11-23 |
+| [177](backlog/177.md) | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | done | 2026-11-25 |
 | [179](backlog/179.md) | The demo catalog is OOMKilled under the brokerage world's load: 768Mi with a 75% heap leaves too little outside the heap | done | 2026-11-23 |
 | [180](backlog/180.md) | Demo: ana and presenter browse Silo's console, read-only | done | 2026-11-23 |
 | [181](backlog/181.md) | The brokerage world on the real clock: each event at its own time of day, quiet off-hours, its sink restarted when it fails | done | 2026-11-23 |

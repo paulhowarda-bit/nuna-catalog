@@ -5,6 +5,7 @@ import static nuna.catalog.server.governance.Management.NAMESPACE;
 import static nuna.catalog.server.governance.Management.ROOT;
 
 import nuna.catalog.audit.ObjectRead;
+import nuna.catalog.audit.PointerState;
 import nuna.catalog.audit.Purge;
 import nuna.catalog.audit.PurgeClaim;
 import nuna.catalog.audit.Undrop;
@@ -45,6 +46,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -86,20 +88,28 @@ class LifecycleRoutes {
     private final ManagementGuard guard;
     private final GovernanceSettings settings;
     private final AuditTrail trail;
-    private final CatalogStorage storage;
+    private final RowColumnReadRoutes.Metadata metadata;
     private final Clock clock;
     private final CatalogNames catalogs;
     private final Deque<Instant> recentPurges = new ArrayDeque<>();
 
+    @Autowired
     LifecycleRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
                     AuditTrail trail, CatalogStorage storage, CatalogNames catalogs, Clock clock) {
+        this(store, management, guard, settings, trail, catalogs, clock,
+                (catalogId, location, sha256) -> storage.forCatalog(catalogId).files().read(location, sha256));
+    }
+
+    /** As the server has it, with {@code metadata} reading the metadata files an export returns. */
+    LifecycleRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
+                    AuditTrail trail, CatalogNames catalogs, Clock clock, RowColumnReadRoutes.Metadata metadata) {
         this.store = store;
         this.catalogs = catalogs;
         this.management = management;
         this.guard = guard;
         this.settings = settings;
         this.trail = trail;
-        this.storage = storage;
+        this.metadata = metadata;
         this.clock = clock;
     }
 
@@ -294,31 +304,48 @@ class LifecycleRoutes {
     /**
      * The object's current snapshot and its whole commit journal (D9): its metadata JSON, checked
      * against the pointer's hash, and every journal entry, oldest first. Works for dropped objects too.
+     *
+     * <p>With {@code ref}, the object as the catalog's branch or tag of that name reads it (D33, backlog 172): the
+     * ref's pointer, its own head on a branch, else its cut, with that file checked against its recorded hash as
+     * main's is, and the journal as the metadata log reads it through the ref ({@link #stretches}), oldest first, each
+     * entry naming its line. {@code ref} is named as the log names it, and the read is audited through the ref. 404 as
+     * the log answers, when no live ref has the name or the ref's cut does not hold the object.
      */
     @GetMapping(path = EXPORT, produces = MediaType.APPLICATION_JSON_VALUE)
-    ResponseEntity<String> export(@PathVariable("catalog") String prefix, @PathVariable String id, HttpServletRequest http) {
+    ResponseEntity<String> export(@PathVariable("catalog") String prefix, @PathVariable String id,
+                                  @RequestParam(required = false) String ref, HttpServletRequest http) {
         Request request = management.request(http);
         CatalogRecord catalog = management.catalog(prefix, request, "exportObject", Privilege.SELECT);
         CatalogObject object = existing(catalog, id);
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
-        guard.require(request, Authorizer.Target.of(object),
-                Management.audit(catalog, levels, object.name().display(), object), "exportObject", Privilege.SELECT);
+        nuna.catalog.audit.Securable audited = Management.audit(catalog, levels, object.name().display(), object);
+        guard.require(request, Authorizer.Target.of(object), audited, "exportObject", Privilege.SELECT);
         ObjectNode body = Management.JSON.createObjectNode();
         body.set("object", object(catalog, object));
+        if (ref != null && !ref.isEmpty()) {
+            Through through = through(catalog, object, ref);
+            RefEntry.At reads = through.reads();
+            exported(body, catalog, id, reads.metadataLocation(), reads.version(), reads.sha256());
+            trail.record(new ObjectRead(audited, through.on().name().display(),
+                    new PointerState(reads.metadataLocation(), reads.version(), reads.sha256()), request.actor()));
+            named(body, through);
+            List<JournalRecord> entries = new ArrayList<>();
+            Optional<Cursor> from = Optional.empty();
+            do {
+                RefLogPage page = refLogPage(from, LOG_PAGE_MAX, through.stretches());
+                entries.addAll(page.entries());
+                from = page.next();
+            } while (from.isPresent());
+            Collections.reverse(entries);
+            ArrayNode journal = body.putArray("journal");
+            entries.forEach(entry -> journal.add(journal(entry).put("branch", through.line(entry))));
+            return GovernanceRoutes.json(200, body);
+        }
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         if (pointer.isPresent()) {
-            TableFiles.Read read = storage.forCatalog(catalog.id()).files().read(pointer.get().metadataLocation(), pointer.get().sha256());
-            if (!read.intact()) {
-                throw CatalogError.of(500, "MetadataIntegrityException", "The metadata file of " + id
-                        + " does not match its recorded hash");
-            }
-            ObjectNode node = body.putObject("pointer");
-            node.put("metadata-location", pointer.get().metadataLocation());
-            node.put("version", pointer.get().version());
-            node.put("sha256", pointer.get().sha256());
-            body.set("metadata", Management.JSON.readTree(read.json()));
-            trail.record(new ObjectRead(Management.audit(catalog, levels, object.name().display(), object),
-                    PointerKey.MAIN, ReadAudit.state(pointer.get()), request.actor()));
+            exported(body, catalog, id, pointer.get().metadataLocation(), pointer.get().version(),
+                    pointer.get().sha256());
+            trail.record(new ObjectRead(audited, PointerKey.MAIN, ReadAudit.state(pointer.get()), request.actor()));
         }
         ArrayNode journal = body.putArray("journal");
         PageRequest page = PageRequest.first(PAGE);
@@ -332,6 +359,21 @@ class LifecycleRoutes {
             page = page.after(entries);
         }
         return GovernanceRoutes.json(200, body);
+    }
+
+    /** The export's {@code pointer} and {@code metadata}: the file it names, refused when it does not match its hash. */
+    private void exported(ObjectNode body, CatalogRecord catalog, String id, String location, long version,
+                          String sha256) {
+        TableFiles.Read read = metadata.read(catalog.id(), location, sha256);
+        if (!read.intact()) {
+            throw CatalogError.of(500, "MetadataIntegrityException", "The metadata file of " + id
+                    + " does not match its recorded hash");
+        }
+        ObjectNode node = body.putObject("pointer");
+        node.put("metadata-location", location);
+        node.put("version", version);
+        node.put("sha256", sha256);
+        body.set("metadata", Management.JSON.readTree(read.json()));
     }
 
     /**
@@ -367,32 +409,16 @@ class LifecycleRoutes {
         Function<PageRequest, Page<JournalRecord>> mains = next -> store.readJournal(object.mainKey(),
                 JournalStore.EARLIEST, JournalStore.LATEST, next);
         if (ref != null && !ref.isEmpty()) {
-            Instant now = clock.instant();
-            Ref on = store.findRef(catalog.id(), Names.normalize(ref)).filter(r -> !r.expiredAt(now))
-                    .orElseThrow(() -> CatalogError.of(404, "NoSuchRefException", "Ref does not exist: " + ref));
-            List<RefPointers> holding = store.listRefPointers(object.id());
-            RefPointers held = holding.stream()
-                    .filter(pointers -> pointers.ref().id().equals(on.id())).findFirst()
-                    .orElseThrow(() -> CatalogError.of(404, "NoSuchObjectException", "No table or view " + id
-                            + " on ref " + on.name().display() + " of " + catalog.name()));
-            RefEntry.At reads = held.head().orElse(held.cut());
+            Through through = through(catalog, object, ref);
+            RefEntry.At reads = through.reads();
             ObjectNode node = body.putObject("pointer");
             node.put("metadata-location", reads.metadataLocation());
             node.put("version", reads.version());
             node.put("sha256", reads.sha256());
-            ObjectNode named = body.putObject("ref");
-            named.put("name", on.name().display());
-            named.put("kind", on.kind().name().toLowerCase(Locale.ROOT));
-            named.put("cut-version", held.cut().version());
-            List<Stretch> stretches = stretches(held, holding, now, object.id(), mains);
-            if (stretches.isEmpty() || !stretches.getLast().branch().equals(PointerKey.MAIN)) {
-                named.put("log-stops-at-cut", true);
-            }
+            named(body, through);
             ArrayNode journal = body.putArray("journal");
-            RefLogPage page = refLogPage(token.map(LifecycleRoutes::cursor), size, stretches);
-            page.entries().forEach(entry -> journal.add(journal(entry).put("branch", stretches.stream()
-                    .filter(stretch -> stretch.branch().equals(entry.key().branch())).findFirst().orElseThrow()
-                    .name())));
+            RefLogPage page = refLogPage(token.map(LifecycleRoutes::cursor), size, through.stretches());
+            page.entries().forEach(entry -> journal.add(journal(entry).put("branch", through.line(entry))));
             page.next().ifPresent(next -> body.put("next-page-token",
                     PageToken.encode(next.branch(), Long.toString(next.before()))));
             return GovernanceRoutes.json(200, body);
@@ -413,6 +439,51 @@ class LifecycleRoutes {
             page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
         }
         return GovernanceRoutes.json(200, body);
+    }
+
+    /**
+     * The catalog's live branch or tag named {@code ref} as it reads {@code object} (D33): the ref, what it holds of
+     * the object, and the journals its log reads ({@link #stretches}). 404 when no live ref has the name, or the ref's
+     * cut does not hold the object.
+     */
+    private Through through(CatalogRecord catalog, CatalogObject object, String ref) {
+        Instant now = clock.instant();
+        Ref on = store.findRef(catalog.id(), Names.normalize(ref)).filter(r -> !r.expiredAt(now))
+                .orElseThrow(() -> CatalogError.of(404, "NoSuchRefException", "Ref does not exist: " + ref));
+        List<RefPointers> holding = store.listRefPointers(object.id());
+        RefPointers held = holding.stream()
+                .filter(pointers -> pointers.ref().id().equals(on.id())).findFirst()
+                .orElseThrow(() -> CatalogError.of(404, "NoSuchObjectException", "No table or view " + object.id()
+                        + " on ref " + on.name().display() + " of " + catalog.name()));
+        Function<PageRequest, Page<JournalRecord>> mains = next -> store.readJournal(object.mainKey(),
+                JournalStore.EARLIEST, JournalStore.LATEST, next);
+        return new Through(on, held, stretches(held, holding, now, object.id(), mains));
+    }
+
+    /** A ref as it reads an object ({@link #through}). */
+    record Through(Ref on, RefPointers held, List<Stretch> stretches) {
+
+        /** The pointer the ref reads: a branch's own head, else its cut. */
+        RefEntry.At reads() {
+            return held.head().orElse(held.cut());
+        }
+
+        /** The name of the line {@code entry} is on: the ref's, or main. */
+        String line(JournalRecord entry) {
+            return stretches.stream().filter(stretch -> stretch.branch().equals(entry.key().branch())).findFirst()
+                    .orElseThrow().name();
+        }
+    }
+
+    /** The body's {@code ref}: the ref's name, kind and cut's version, and whether its log stops at the cut. */
+    private static void named(ObjectNode body, Through through) {
+        ObjectNode named = body.putObject("ref");
+        named.put("name", through.on().name().display());
+        named.put("kind", through.on().kind().name().toLowerCase(Locale.ROOT));
+        named.put("cut-version", through.held().cut().version());
+        if (through.stretches().isEmpty() || !through.stretches().getLast().branch().equals(PointerKey.MAIN)) {
+            named.put("log-stops-at-cut", true);
+        }
     }
 
     /**
