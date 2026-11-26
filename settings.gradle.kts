@@ -18,6 +18,7 @@ rootProject.name = "nuna-catalog"
 
 include(
     "catalog-tests-s3",
+    "catalog-tests-docker",
     "catalog-core",
     "catalog-iceberg",
     "catalog-store-api",
