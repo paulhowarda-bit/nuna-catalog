@@ -77,6 +77,16 @@ const PILLS = {
 const NOT_KNOWN = 'No maintenance worker has reported, so the catalog can\'t check this.';
 
 /**
+ * Steps 1 to 3 while they are not known: no scan at all, or a newest scan that reported no storage (`scanned-at` without
+ * `reported-at`), as when the worker could not get a token just after a restart (items 275, 277). That one says when,
+ * and promises no time, since a worker of an earlier release never reports its storage.
+ */
+const notKnown = ready => ready['scanned-at']
+  ? `The worker's last scan, at ${at(ready['scanned-at'])}, did not report its access, so the catalog can't check this `
+    + 'until a scan does.'
+  : NOT_KNOWN;
+
+/**
  * The panel "What the worker needs to maintain <catalog>", while any step is not done; null when every one is.
  * `answer` is `readinessOf`'s; `editPolicy` opens the catalog's policy, for a caller whose groups hold modify on it, and
  * `reload` redraws the page once a grant is made.
@@ -87,6 +97,7 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
   if (!left.length) return null;
   const names = !!ready.names;
   const reported = ready['reported-at'];
+  const unknownLine = notKnown(ready);
   const storage = `${catalog}'s storage`;
   const askNames = () => h('p', {class: 'fine step-ask'}, `Ask someone with modify on ${catalog} or a platform operator.`);
   // What to add and What to apply open the operator's dialog for the catalog's profile (backlog 254); Open Worker
@@ -104,7 +115,7 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
   const groups = grant.groups || [];
   const writers = groups.filter(g => g.write);
   let grantLine;
-  if (grant.state === 'unknown') grantLine = NOT_KNOWN;
+  if (grant.state === 'unknown') grantLine = unknownLine;
   else if (!names || !groups.length) {
     grantLine = grant.state === 'done' ? `The worker holds write on ${catalog}.`
       : `The worker holds no write on ${catalog}, so it can't read or commit its tables.`;
@@ -129,7 +140,7 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
   // 2. Storage settings.
   const st = ready.storage || {};
   const prefixes = (st.prefixes || []).map(p => p.prefix);
-  const storageLine = st.state === 'unknown' ? NOT_KNOWN // since item 256 what the worker can lack is a store identity
+  const storageLine = st.state === 'unknown' ? unknownLine // since item 256 what the worker can lack is a store identity
     : st.state === 'done' ? `The worker's settings cover ${names ? listWords(prefixes) : storage}.`
       : (names ? noIdentity(st) : `The worker holds no identity for the store that holds ${catalog}'s tables.`)
         + ' Until it does, files that expiry and compaction replace are kept, and no orphan is found.';
@@ -147,7 +158,7 @@ export function readinessPanel(catalog, answer, {editPolicy, reload}) {
   let storeLine;
   if (store.state === 'unknown' && !reported) {
     storeState = 'not-known';
-    storeLine = NOT_KNOWN;
+    storeLine = unknownLine;
   } else if (store.state === 'unknown' && store.code) {
     storeState = 'no-answer';
     storeLine = names

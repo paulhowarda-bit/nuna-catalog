@@ -46,7 +46,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * </ul>
  *
  * <p>Also a tag steward, who may see no names: "the worker" and "trading's storage" in their place. Before any worker
- * reports, the first three steps are not known.
+ * reports, the first three steps are not known; after a scan that did not report its access (item 277), they are still
+ * not known, and say that scan's time in place of "No maintenance worker has reported".
  */
 @Tag("heavy")
 @GovernanceServer
@@ -55,6 +56,9 @@ class ConsoleReadinessBrowserTest {
 
     private static final String NOT_KNOWN = "No maintenance worker has reported, so the catalog can't check this.";
     private static final String ASK_NAMES = "Ask someone with modify on trading or a platform operator.";
+    /** Steps 1 to 3 after a scan that did not report its access (item 277), at a time the console writes. */
+    private static final String UNREAD = "The worker's last scan, at (\\d{1,2} [A-Z][a-z]{2}( \\d{4})? )?\\d\\d:\\d\\d, did "
+            + "not report its access, so the catalog can't check this until a scan does\\.";
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -209,6 +213,21 @@ class ConsoleReadinessBrowserTest {
         }
         assertThat(head()).isEqualTo("Nothing in trading you may read.");
 
+        // A scan that could not read its storage prefixes, as just after a restart (items 275, 277): the steps are still
+        // not known, but a worker did report, and when.
+        reportUnreadPrefixes();
+        browser.open("/ui/#p=maintenance&c=trading");
+        browser.await("the scan without storage is not shown", d -> step("grant").findElement(
+                By.cssSelector(".step-line")).getText().matches(UNREAD) ? true : null);
+        for (String step : List.of("grant", "storage", "store")) {
+            assertThat(step(step).findElement(By.cssSelector(".pill")).getText()).as(step).isEqualTo("Not known");
+            assertThat(step(step).findElement(By.cssSelector(".step-line")).getText()).as(step).matches(UNREAD);
+            assertThat(step(step).findElements(By.cssSelector(".step-act"))).as(step).isEmpty();
+        }
+        assertThat(textContent(browser.await(By.id("readiness")).findElement(By.cssSelector("h2"))))
+                .isEqualTo("What the worker needs to maintain trading 0 of 4 done");
+        assertThat(head()).isEqualTo("Nothing in trading you may read.");
+
         reportNoStorage();
         browser.open("/ui/#p=maintenance&c=trading");
         browser.await("the worker's report is not shown", d -> "missing".equals(step("grant").getDomAttribute(
@@ -262,6 +281,19 @@ class ConsoleReadinessBrowserTest {
                 + "\"delete-refused\":0,\"delete-failed\":0}]}";
         String body = "{\"started-at\":\"" + at.minusSeconds(20) + "\",\"ended-at\":\"" + at + "\",\"outcome\":"
                 + "\"succeeded\",\"failures\":{},\"storage\":[" + storage + "]}";
+        String id = UUID.nameUUIDFromBytes(at.toString().getBytes(StandardCharsets.UTF_8)).toString();
+        expect(api.manage("PUT", "/maintenance/scans/" + id, body, GovernanceServer.PRINCIPAL, "maintenance",
+                GovernanceServer.GROUPS, workers), 204);
+    }
+
+    /**
+     * A scan in {@link #workers} that could not read its storage prefixes (item 275), as the worker reports it: no
+     * {@code storage} at all, and a {@code storage-prefixes} failure.
+     */
+    private void reportUnreadPrefixes() {
+        Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        String body = "{\"started-at\":\"" + at.minusSeconds(20) + "\",\"ended-at\":\"" + at + "\",\"outcome\":"
+                + "\"succeeded\",\"failures\":{\"storage-prefixes\":1}}";
         String id = UUID.nameUUIDFromBytes(at.toString().getBytes(StandardCharsets.UTF_8)).toString();
         expect(api.manage("PUT", "/maintenance/scans/" + id, body, GovernanceServer.PRINCIPAL, "maintenance",
                 GovernanceServer.GROUPS, workers), 204);

@@ -3379,3 +3379,4 @@ profile), which readiness says and Overview does not.
 | [274](backlog/274.md) | demo.sh up builds from one pinned commit, so a landing during the run cannot stop it or mix commits | done | 2026-11-25 |
 | [275](backlog/275.md) | The worker's first scan after a restart can't get a token, and readiness then says storage is missing | done | 2026-11-25 |
 | [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |
+| [277](backlog/277.md) | The console says no worker has reported when its newest scan reported no storage | done | 2026-11-25 |

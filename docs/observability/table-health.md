@@ -270,6 +270,7 @@ it maintains a catalog, whether it is done (backlog 251; the console's checklist
 {
   "catalog": "ledger",
   "names": true,
+  "scanned-at": "2026-11-24T14:05:31.204Z",
   "reported-at": "2026-11-24T14:05:31.204Z",
   "grant": { "state": "missing", "groups": [ { "group": "nuna-maintenance", "write": false } ] },
   "storage": {
@@ -307,6 +308,10 @@ restarted), they are `unknown`, never `missing`.
 
 - `reported-at` is when the worker last reported what it reaches: the end of that scan, or its start while it runs.
   Absent before any report, and while the newest scan reported no `storage`.
+- `scanned-at` is when the worker last reported a scan, judged the same way, whether or not it reported `storage`;
+  absent before any scan (item 277). With no `reported-at`, it tells a newest scan that reported no storage from no
+  scan at all: the console then says the worker's last scan did not report its access, not that no worker has
+  reported. It names nothing, so it goes to every caller who may read the readiness.
 - The listing is judged by the newest scan, the deletes by the newest scan with `storage` that has ended: a scan
   reports its deletes only at its end, so one under way does not hide the refusals of the one before.
 - A `refused` anywhere outweighs an `unknown` elsewhere. `code` is the first such code among the allowed prefixes.
@@ -334,6 +339,7 @@ does. The policy texts are shortened here.
 
 ```json
 {
+  "scanned-at": "2026-11-24T14:05:31.204Z",
   "reported-at": "2026-11-24T14:05:31.204Z",
   "profiles": [
     {
@@ -384,6 +390,7 @@ does. The policy texts are shortened here.
 
 | Field | What it holds |
 |---|---|
+| `scanned-at` | When the worker last reported a scan, as for readiness; absent before any scan (item 277) |
 | `reported-at` | When the worker last reported what it reaches, as for readiness; absent before any report |
 | `name`, `kind`, `endpoint`, `prefixes` | The profile: its kind (`s3` for AWS S3, `minio`, `ceph`), its endpoint as the catalog's settings write it, its allowed prefixes |
 | `catalogs` | The catalogs bound to the profile (`nuna.storage.catalogs`), by name; never a namespace, table or view (D18) |
@@ -471,7 +478,7 @@ fields separated by tabs; `WorkerStorage.write`). MongoDB keeps them as arrays i
 | `catalog-store-api` `WorkerStorageTest` (fast) | What a storage report may hold, the text the SQL and Oracle stores keep it as, and the reported prefix that covers a location. |
 | `catalog-server` `ReadinessRoutesTest` (heavy) | Readiness: the first three steps unknown before a scan reports storage; every step done; write on a namespace or select on the catalog leaves the grant missing, a policy with every job off leaves the policy missing; a reported prefix beneath, beside or in another bucket leaves the storage missing and the store unknown; a refused listing or delete is refused with the store's code, a scan under way keeps the last ended scan's refused deletes, no answer is unknown with the client's failure, and `deletes-since` is when the counted deletes' scan started; names only to the tester (modify), the grant admin and an operator, states without names to a describer and a tag steward; an operator with no grant reads it with names, unaudited; refused to an outsider (404) and a bystander (403), the refusal audited and the read not. |
 | `catalog-server` `StorageSetupRoutesTest` (fast) | Storage setup, through the real route and guard over profiles as configured and a stand-in store of scans: refused to an analyst, a grant admin and the worker, each refusal audited, read by an operator unaudited; profiles by name with their catalogs, kind, endpoint, prefixes and principal; a new bucket on a MinIO or AWS S3 store the worker reaches (its endpoint spelled otherwise) gets no worker settings, a Ceph store behind a private CA, another AWS region and a MinIO store it does not reach get them, with the key's place marked, the secret's name and on AWS the note; before any report every store gets them, and an identity of another kind at the endpoint serves none; the listing from the newest report, the deletes from the newest ended one; MinIO's two policies named per profile with their `mc` commands, AWS S3's and Ceph's bucket policies (one shared by two profiles) with `put-bucket-policy`, `--endpoint-url` on Ceph; an unprotected profile's setting; no key, secret, role, KMS key or CA path. |
-| `catalog-server` `ReadinessUnreadPrefixesTest` (fast) | A scan that could not read its storage prefixes (item 275), through the real routes and guard over a stand-in store: readiness gives storage and store `unknown`, no `reported-at`, nothing of the scan before; a scan that read them and reached none leaves the storage `missing`; storage setup calls the worker's identity `unknown` with no worker settings after the first, `not-reported` with them after the second. |
+| `catalog-server` `ReadinessUnreadPrefixesTest` (fast) | A scan that could not read its storage prefixes (item 275), through the real routes and guard over a stand-in store: readiness gives storage and store `unknown`, no `reported-at`, nothing of the scan before; a scan that read them and reached none leaves the storage `missing`; storage setup calls the worker's identity `unknown` with no worker settings after the first, `not-reported` with them after the second; both routes give `scanned-at` after a scan without storage and none before any scan (item 277). |
 | `catalog-maintenance` `StorageReportTest` (fast) | Through `Storage.of` and stand-in stores: each scan reports, by kind and endpoint, a listing let, refused (AccessDenied, NoSuchBucket) or failed, and the deletes done and refused with the store's code, counted afresh each scan; no key, credential or store message in any report. |
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
 | `catalog-server` `MaintenanceEstateTest` (fast) | Every table: a row for each table the caller may select and none for another; its assessment; a hold or freeze from any level above; a closed table counted only for a caller whose grants give select; fixed last night only by a compaction that succeeded; paging, the 500-row page and the 2,000 tables a page looks at. |
@@ -531,3 +538,10 @@ A scan that could not read its storage prefixes (item 275) has three bites in `b
   the scan before.
 - `storage-setup-settings-after-unread-scan` (`ReadinessUnreadPrefixesTest`): storage setup gives the worker's settings
   after it.
+
+Telling such a scan from none (item 277) has two bites in `bites/D30/`, each against
+`ReadinessUnreadPrefixesTest#scannedAtTellsANewestScanWithoutStorageFromNoScanAtAll`:
+
+- `readiness-scanned-at-only-with-storage`: readiness gives `scanned-at` only from a scan that reported storage, so
+  the console says no worker has reported.
+- `storage-setup-no-scanned-at`: storage setup gives no `scanned-at`.
