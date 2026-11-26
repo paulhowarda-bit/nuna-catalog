@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Compaction as a Kubernetes Job (D30 (3), amended 2026-11-15), in Docker Desktop's cluster: the worker, signed in to
+ * Compaction as a Kubernetes Job (D30 (3), amended 2026-11-15), in the kind cluster: the worker, signed in to
  * the API server as the chart's service account with only the chart's Role in the Jobs' namespace, finds a table of
  * six small Avro files needs compaction in its cleanup window and launches the repo's Spark image as a Job there,
  * running as the chart's Job service account, that runs rewrite_data_files on it, signed in to the catalog as the
@@ -37,7 +37,7 @@ import org.junit.jupiter.api.io.TempDir;
  * ({@link CompactionCluster}); it never touches another (nuna-demo least of all). The Jobs reach the catalog and the S3
  * store as {@code host.docker.internal} ({@link TestCatalog#forPods}, the settings' {@code catalogUri}); the worker and
  * the test, on this machine, as {@code localhost}.
- * Needs Docker, kubectl and Helm on the PATH and the kubectl context {@value CompactionCluster#CONTEXT}. Heavy: it
+ * Needs Podman, kubectl and Helm on the PATH and the kind cluster running ({@link CompactionCluster}). Heavy: it
  * builds an image and waits for a Spark job.
  */
 @Tag("heavy")

@@ -11,7 +11,7 @@
 #   cockroach   CockroachDB, one node, database custody, table positions.holdings, captured through a
 #               changefeed (demo/cdc/cockroach.sql, Secret cockroach-initdb)
 #
-# Memory: 1.75 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
+# Memory: 1.75 GiB of requests in all, more than the cluster's 8 GB node has free beside the rest of the demo, so
 # demo.sh cdc stops Trino, the audit table writer and the brokerage world's generator while the leg runs.
 # CloudBeaver stays, to query the databases. No volumes: the databases last as long as the pods.
 #

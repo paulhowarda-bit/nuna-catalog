@@ -12,11 +12,11 @@
 # Everything lives in $NUNA_OVERNIGHT_HOME (default: .overnight in the main checkout, which .gitignore covers):
 #   worktree/        a worktree of this repo, detached at main's tip each run and locked; the bites patch its files
 #   runs/<date>/     summary.md, one log per leg, the logs of bites that did not bite, and for each leg that did
-#                    not pass, <leg>-results/: its test result files and what docker info said just after
+#                    not pass, <leg>-results/: its test result files and what podman info said just after
 #   last-tested      the commit the last run tested (a dry run records nothing)
 #   bites-next       the bite the next run starts from: the bites rotate, so nights that cannot fit all 212
 #                    still cover every one in turn
-#   running          present while a run is going: Docker belongs to the run until it is gone
+#   running          present while a run is going: Podman belongs to the run until it is gone
 #
 # The legs, each logged, each run whatever the one before did:
 #   1. ./gradlew build -Pheavy, with --continue, so one failing module does not hide the others (backlog 122)
@@ -39,8 +39,8 @@
 #      next run removes an agent's worktree and branch once its work is on main.
 # NUNA_OVERNIGHT_LEGS picks legs by name (default "heavy ceph nightly bites"); with heavy left out, the bites run.
 # Nothing starts after $NUNA_OVERNIGHT_DEADLINE (default 06:30), and a leg still running then is stopped, so
-# the day starts with Docker free. Each leg, and the bites, start once the containers of the leg before are gone,
-# and Testcontainers is given 60 s, not 10, to reach Docker (backlog 32).
+# the day starts with Podman free. Each leg, and the bites, start once the containers of the leg before are gone,
+# and Testcontainers is given 60 s, not 10, to reach Podman (backlog 32).
 #
 # If the nuna-demo stack is running, the run takes it down first (demo/demo.sh down) and rebuilds it at the end
 # (demo/demo.sh up), no CDC leg. down keeps the data on the demo's volumes, so up carries on from it (backlog
@@ -55,7 +55,7 @@ main() {
     main_checkout=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
     home=${NUNA_OVERNIGHT_HOME:-$main_checkout/.overnight}
     deadline_at=${NUNA_OVERNIGHT_DEADLINE:-06:30}
-    context=${NUNA_DEMO_CONTEXT:-docker-desktop}
+    context=${NUNA_DEMO_CONTEXT:-kind-nuna}
     demo_ns=${NUNA_DEMO_NAMESPACE:-nuna-demo}
     legs=${NUNA_OVERNIGHT_LEGS:-heavy ceph nightly bites}
     demo_sh=${NUNA_DEMO_SCRIPT:-$main_checkout/demo/demo.sh}
@@ -63,7 +63,7 @@ main() {
     agent_budget=${NUNA_OVERNIGHT_AGENT_BUDGET:-10}
     agents_until_at=${NUNA_OVERNIGHT_AGENTS_UNTIL:-07:45}
     claude_cli=${NUNA_OVERNIGHT_CLAUDE:-claude}
-    # How long a test JVM's Testcontainers keeps asking Docker before it gives up, for good: every later test in
+    # How long a test JVM's Testcontainers keeps asking Podman before it gives up, for good: every later test in
     # that JVM fails at once. Its default, 10 s, ran out in the Ceph leg of 2026-11-15 (backlog 32).
     export TESTCONTAINERS_CLIENT_PING_TIMEOUT=${TESTCONTAINERS_CLIENT_PING_TIMEOUT:-60}
 
@@ -145,10 +145,14 @@ main() {
         fi
     fi
 
-    # --- Docker, and the worktree at main's tip -----------------------------------------------------------------
+    # --- Podman and the kind cluster, and the worktree at main's tip ---------------------------------------------
+    # kind.sh up starts the Podman machine and the cluster if they are stopped (backlog 287).
     for try in $(seq 1 20); do
-        docker info >/dev/null 2>&1 && kubectl --context "$context" get nodes >/dev/null 2>&1 && break
-        [ "$try" -eq 20 ] && { say "Docker or its Kubernetes is not running"; echo "# Overnight run $day: FAILED, Docker or its Kubernetes is not running" >"$summary"; exit 1; }
+        if [ "$context" = kind-nuna ]; then
+            bash "$repo/deploy/kind/kind.sh" up >/dev/null 2>&1
+        fi
+        podman info >/dev/null 2>&1 && kubectl --context "$context" get nodes >/dev/null 2>&1 && break
+        [ "$try" -eq 20 ] && { say "Podman or the kind cluster is not running"; echo "# Overnight run $day: FAILED, Podman or the kind cluster is not running" >"$summary"; exit 1; }
         sleep 30
     done
 
@@ -241,30 +245,30 @@ main() {
             END { exit !found }' "$failed_classes"
     }
 
-    # Keeps the result files written since marker $1 in folder $2, at their paths in the worktree, with docker info.
+    # Keeps the result files written since marker $1 in folder $2, at their paths in the worktree, with podman info.
     # The bites run the same tests later and overwrite them in the worktree, and each holds its test's output: the
     # Ceph leg of 2026-11-15 found no Docker, and the files that said why were gone by morning (backlog 32).
     keep_results() {
         mkdir -p "$2"
         (cd "$tree" && find . -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 |
             xargs -0 -r cp --parents -t "$2")
-        timeout 60 docker info >"$2/docker-info.txt" 2>&1
+        timeout 60 podman info >"$2/podman-info.txt" 2>&1
     }
 
     # Waits, up to 3 minutes, until no container a test started is left (Ryuk removes them about 10 s after their
-    # JVM exits) and Docker answers. The Ceph leg of 2026-11-15 started 9 s after the heavy build ended, while Docker
+    # JVM exits) and Podman answers. The Ceph leg of 2026-11-15 started 9 s after the heavy build ended, while Docker
     # was still removing that build's containers, and its maintenance tests found no Docker; run on its own, the
     # same leg found it (backlog 32).
     settle() {
         local until=$(( $(date +%s) + 180 ))
         while [ "$(date +%s)" -lt "$until" ]; do
-            if [ -z "$(timeout 30 docker ps -q --filter label=org.testcontainers=true 2>/dev/null)" ] &&
-                timeout 30 docker info >/dev/null 2>&1; then
+            if [ -z "$(timeout 30 podman ps -q --filter label=org.testcontainers=true 2>/dev/null)" ] &&
+                timeout 30 podman info >/dev/null 2>&1; then
                 return 0
             fi
             sleep 5
         done
-        say "Docker still held test containers, or did not answer, after 3 min; starting anyway"
+        say "Podman still held test containers, or did not answer, after 3 min; starting anyway"
     }
 
     wanted() { [[ " $legs " == *" $1 "* ]]; }
@@ -300,7 +304,7 @@ You work in your own worktree, $main_checkout/.claude/worktrees/$name, on branch
 
 1. Run ./backlog.sh list. If an open item already covers these failures, take it: if another agent holds it, stop there and say so. Otherwise claim it. If none covers them, add one (./backlog.sh add "<title>" "overnight run $day"), written as backlog/README.md asks, and claim it.
 2. Find the cause from the result files, the log and the code, and fix it here. Commit on your branch. If you cannot find it, write what you found in the item and commit that.
-3. Until you are told that the run has ended, run no Gradle command and no test, start no container and do not use Docker: the run holds Docker and the machine's memory, and a build beside it makes its tests fail. Do not land yet.
+3. Until you are told that the run has ended, run no Gradle command and no test, start no container and do not use Podman: the run holds Podman and the machine's memory, and a build beside it makes its tests fail. Do not land yet.
 
 End with what you found and what you changed. Once the run has ended you will be resumed in this session, to run the fast build and land.
 EOF
@@ -604,7 +608,7 @@ EOF
     say "summary in $summary"
     $dry || echo "$target" >"$home/last-tested"
 
-    # Docker and the machine are free: the agents may build and land.
+    # Podman and the machine are free: the agents may build and land.
     rm -f "$lock"
     land_agents
     exit 0

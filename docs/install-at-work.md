@@ -22,10 +22,10 @@ today.
     `OrphanRaceTest`, `KillMidPurgeTest`, `KafkaDownTest`, and the store races
     (`commitRacingTheUnregisterExactlyOneApplies`, `lostReviveAnswerResolvesToCommitted`).
   - About 70 of the 200 recorded bites (`bites/`), which have never been run.
-  - The `nuna-maintenance` Helm chart beyond Docker Desktop's Kubernetes. On 2026-11-19 (backlog 5) it was installed
-    there beside the local catalog (`deploy/local/run.sh worker`): Keycloak's client-credentials grant, a Silo user
-    of its own, one compaction Job that succeeded. Never against a real IdP, a real store or a cluster of more than
-    one node.
+  - The `nuna-maintenance` Helm chart beyond a one-node local cluster. On 2026-11-19 (backlog 5) it was installed
+    in Docker Desktop's Kubernetes beside the local catalog (`deploy/local/run.sh worker`): Keycloak's
+    client-credentials grant, a Silo user of its own, one compaction Job that succeeded. Never against a real IdP,
+    a real store or a cluster of more than one node.
   - The AWS S3 and MinIO delete policies, which have never been applied to a real store.
 - Paul will run the heavy pass (`./heavy.sh`) after the install to harden these. Do not run `-Pheavy`, the
   bites or `-Pnightly` unless he asks.
@@ -52,9 +52,10 @@ today.
 Its rules hold at work. Some of its facts describe Paul's home machine:
 
 - The absolute paths (`C:/Users/paulh/code/nuna-catalog`) mean your main checkout.
-- `org.gradle.workers.max=2` and "Docker has 8 GB" are sized for his laptop. Leave the setting unless Paul
+- `org.gradle.workers.max=2` and "the Podman machine has 8 GB" are sized for his laptop. Leave the setting unless Paul
   changes it.
-- `docker-desktop` is his laptop's Kubernetes context. At work, name your cluster's context wherever a test or
+- `kind-nuna` is his laptop's Kubernetes context, a kind cluster on Podman (`deploy/kind`; Docker Desktop's
+  `docker-desktop` until 2026-11-26). At work, name your cluster's context wherever a test or
   script asks for one (`-Pengines.cluster=<context>`, `NUNA_K8S_CONTEXT`).
 - The repository and its folder are `nuna-catalog`, short for nunatak (renamed from `keel-catalog` on 2026-11-18,
   and from `fidice-catalog` before that; GitHub redirects the old URLs).
@@ -71,7 +72,9 @@ Its rules hold at work. Some of its facts describe Paul's home machine:
   dependencies. Replace both with the internal Maven-format repository:
   `maven { url = uri("https://<internal repository>") }`. Every library and plugin resolves from it, so
   each must be an approved artifact (PLT-6). A missing one fails the build by name; list those for Paul.
-- **Docker** for the tests (Testcontainers) and the images; **kubectl** and **helm** for the install.
+- **Docker or Podman** for the tests (Testcontainers) and the images; **kubectl** and **helm** for the install.
+  The scripts that build images (`demo/demo.sh`, `deploy/local/run.sh`) and the tests that run pods call
+  `podman`, and **kind** for the local cluster.
 - **Telemetry (backlog 38)** added these to the server's and the worker's class paths; the mirror must hold them
   (docs/observability/README.md). Spring Boot's BOM manages all but the two marked, whose versions are in
   `gradle.properties`:
@@ -364,7 +367,7 @@ helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <wo
   `catalog-uri`), the token endpoint, and the store endpoint the catalog vends must all resolve from there; the
   worker reads tables at that store endpoint too. An in-cluster service needs its `<service>.<namespace>.svc` name:
   the first local install failed on a short one (`UnknownHostException: silo`, backlog 5).
-- `deploy/local/run.sh worker` is a working example of the whole install on Docker Desktop: `deploy/local/keycloak.yaml`
+- `deploy/local/run.sh worker` is a working example of the whole install on a local kind cluster: `deploy/local/keycloak.yaml`
   for the IdP's client and `deploy/local/worker-values.yaml` for the values.
 - Then a platform operator applies the delete policies, once, and again after any change of a profile's
   prefixes: read `GET /management/v1/maintenance/delete-policies` and apply each entry as `deploy/README.md`
@@ -406,7 +409,7 @@ From `build-plan.md`; the open questions are in its section 6.
 - A scheduled overnight job in work CI running `./nightly.sh`: the `overnight` tests and the CAS test at 1,000
   rounds, nothing else, in two steps (the engine matrix on its own), then how many tests each module ran. Any
   Gradle option given to it goes to both steps. The engine matrix needs a Kubernetes cluster whose nodes see
-  locally built images (`./nightly.sh -Pengines.cluster=<context>`, default `docker-desktop`; see
+  locally built images (`./nightly.sh -Pengines.cluster=<context>`, default `kind-nuna`; see
   `catalog-tests-engines/README.md`). On Paul's
   machine the whole nightly takes about two hours.
 
@@ -416,17 +419,17 @@ Paul will harden with the heavy pass: `./heavy.sh` in a worktree of its own (`-P
 the Ceph leg, then every bite), about 3 to 3.5 hours if it is green. Report anything at work that would stop it
 running there, but start it only when he asks. Two things to check:
 
-- Docker memory: the pass runs a three-node cluster beside one other stack.
-- `KubernetesCompactionTest` and `PrivateCaCompactionTest` name the `docker-desktop` context in their shared
-  harness (`CompactionCluster.CONTEXT`), so they need a cluster
-  of that name or a change in a branch.
+- Container memory: the pass runs a three-node cluster beside one other stack.
+- `KubernetesCompactionTest` and `PrivateCaCompactionTest` name the `kind-nuna` context in their shared
+  harness (`CompactionCluster.CONTEXT`, from `KindCluster`), so they need that kind cluster
+  (`deploy/kind/kind.sh up`) or a change in a branch.
 
 ## 10. The demo
 
 `demo/demo.sh up` (`demo/README.md`) runs the demo on a local Kubernetes cluster (`NUNA_DEMO_CONTEXT`,
-default `docker-desktop`). That cluster never pulls: every image comes from the local Docker engine. So pull
-each image below from the internal registry and tag it with the name shown
-(`docker tag <registry>/postgres:18.7 postgres:18.7`). `demo.sh` then pulls nothing, and its Dockerfiles build on
+default `kind-nuna`, the kind cluster `deploy/kind/kind.sh` makes on Podman). That cluster never pulls: Podman
+builds and pulls every image, and `up` puts each on the cluster's node. So pull each image below from the internal
+registry into Podman and tag it with the name shown (`podman tag <registry>/postgres:18.7 postgres:18.7`). `demo.sh` then pulls nothing, and its Dockerfiles build on
 the tagged images. `demo.sh` also needs `openssl`, which Git Bash has: it makes Keycloak's signing key and
 CloudBeaver's sign-in secrets once, in `~/.nuna-demo/keycloak`.
 
@@ -493,7 +496,7 @@ certificates at work that I just want to plug into this"):
    `demo/demo.sh up`. `up` refuses a certificate that does not name the host, has expired, is not its key's, or
    was not issued by `ca.crt`, and says which.
 3. Open `https://<NUNA_DEMO_HOST>:8181/ui/`. The name has to reach this machine: if it resolves to an address
-   Docker Desktop does not publish the ports on, a hosts-file line `127.0.0.1 <name>` (an administrator's
+   the cluster's node does not publish the ports on, a hosts-file line `127.0.0.1 <name>` (an administrator's
    change) points it here. `demo.sh`'s own calls go to 127.0.0.1 whatever the name resolves to.
 
 The browser trusts work's certificate as it trusts work's sites, since the laptop already trusts work's CA.

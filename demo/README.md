@@ -1,6 +1,6 @@
 # Local demo: the catalog, its console, SingleStore both ways, Trino, CDC, and the engine matrix, on Kubernetes
 
-One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Silo, the catalog server
+One stack on a kind cluster on Podman (`deploy/kind`), shared with the engine matrix: PostgreSQL, Silo, the catalog server
 (with the console), Keycloak for signing in by username and password, and Trino with CloudBeaver as its UI. `up`
 starts that core, writes sample Iceberg tables, makes a branch and a tag of the catalog, and prints how to sign in.
 Five switches add the rest, each on with `demo/demo.sh <switch>` and off with `demo/demo.sh <switch> stop` (D50):
@@ -25,12 +25,17 @@ with `gen`, `kafka` and `ss` on. Everything is local and uses test keys; nothing
 demo/demo.sh up
 ```
 
-- Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, `kubectl`, `helm`, `curl`, `unzip`,
+- Needs bash (Git Bash on Windows), Podman Desktop's Podman machine, `kind`, `kubectl`, `helm`, `curl`, `unzip`,
   and JDK 25 (`JAVA_HOME`, or `java` on the path). Every `up` builds the server jar, the audit table writer's and
   the maintenance worker's jars, the change-feed connector jar and the brokerage world's classpath (`demo-datagen`)
   from this checkout (no tests run) and the images below, so the stack never runs code older
-  than the checkout; when nothing changed, Gradle and Docker do nothing. The cluster never pulls an image: it
-  runs them from the local Docker engine, and `up` pulls the public ones there.
+  than the checkout; when nothing changed, Gradle and Podman do nothing. The cluster never pulls an image: Podman
+  builds the demo's own and pulls the public ones, and `up` puts each on the cluster's node unless the node has it
+  already (the first `up` takes some minutes more for that).
+- The cluster is kind cluster `nuna`, context `kind-nuna`: one node, the Podman container `nuna-control-plane`
+  (backlog 287; Docker Desktop's Kubernetes until 2026-11-26). `up` starts the Podman machine and the node if they
+  are stopped, and makes the cluster the first time, from `deploy/kind/cluster.yaml`. `deploy/kind/kind.sh` does
+  this, and `deploy/local/run.sh`, the overnight run and the tests that run pods use it too.
 - Run in the main checkout, where other sessions land all day, `up` builds one commit (backlog 274): the main
   checkout's HEAD when it starts. It runs from `~/.nuna-demo/checkout`, a worktree it keeps detached at that
   commit and locked, so a landing during its run neither stops it nor mixes commits into the images. `engines`,
@@ -38,7 +43,7 @@ demo/demo.sh up
   time holds that worktree, and another is refused until it ends. `up` says which commit it builds, and the URLs
   and tokens it prints (and `token`) start with the commit the demo runs. Run from any other worktree, `demo.sh`
   runs from that worktree's files as they are. `demo/test-pin.sh` checks this in a scratch repository.
-- Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `docker-desktop`
+- Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `kind-nuna`
   (`NUNA_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
   - `stack.yaml`: PostgreSQL, which lets the catalog in over the network only by its client certificate (The
@@ -85,10 +90,11 @@ demo/demo.sh up
   - `brokerage-bootstrap.yaml` and `brokerage.yaml`: the brokerage world's bootstrap job and its generator, image
     `nuna-demo-brokerage:<hash>` (`brokerage.Dockerfile`; below).
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free and CockroachDB.
-- Ports on localhost, from Docker Desktop's LoadBalancer Services, all HTTPS: **8180** (Keycloak), **8181**
+- Ports on localhost, all HTTPS, which the cluster's node publishes to NodePort Services of the same numbers: **8180** (Keycloak), **8181**
   (catalog and console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185**
   (CloudBeaver), **8186** (Kafka Connect's REST API, with a password), **8187** (Silo's S3 API, for
-  engines on other machines) and **8188** (Grafana, while `metrics` is on). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
+  engines on other machines) and **8188** (Grafana, while `metrics` is on). The node holds them from the cluster's
+  creation, which fails if something else holds one of them.
   An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
   `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
   `s3.endpoint` to `https://<host>:8187`: the catalog vends one address per profile (D21, amended 2026-11-20).
@@ -100,7 +106,7 @@ demo/demo.sh up
   table writer's 384 MB, of up to 512 MB, and the maintenance worker's 192 MB, of up to 512 MB (6.6 GB in all),
   plus Kafka Connect's 512 MB, of up to 1 GB, and the brokerage world's generator's 256 MB, of up to 384 MB
   (7.3 GB in all), plus one job at a time: the lake writer 768 MB, the brokerage world's bootstrap 384 MB, or an
-  engine up to 2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, which leaves about 200 MB beside Kafka
+  engine up to 2 GB (Spark). The cluster's node has about 7.6 GB, which leaves about 200 MB beside Kafka
   Connect and the generator: too little for the lake writer, Spark, or a catalog server rolling to a new image (its
   new pod starts before the old one stops). So `up`, `rate` and `engines` stop both while they run and start them
   again after; `up` starts them last. A compaction Job asks for only 64 MB, of up to 1.25 GB, so it schedules
@@ -112,10 +118,12 @@ demo/demo.sh up
   Kubernetes to within about 20 MB, so CloudBeaver is replaced by stopping the old pod first.
 - The data stays (backlog 237): PostgreSQL (the catalog's database, with the audit tables' catalog), Silo (the
   warehouse's files), Kafka (its topics, Kafka Connect's offsets among them) and SingleStore keep their data on
-  volumes of their own, claims `postgres-data`, `s3-data`, `kafka-data` and `singlestore-data` in Docker Desktop's
-  `hostpath` storage. `down`, `ss stop`, `gen stop`, a pod's restart and a Docker Desktop restart keep them, and the
+  volumes of their own, claims `postgres-data`, `s3-data`, `kafka-data` and `singlestore-data` in kind's StorageClass
+  `standard`, which keeps them under the node's `/var`, itself a Podman volume, not in the node container's own
+  files. `down`, `ss stop`, `gen stop`, a pod's restart and a restart of the node, the Podman machine or Windows
+  keep them, and the
   next `up` carries on from them: it writes the sample data only into a lake that lacks it. `wipe` deletes them
-  (Stop, below). Resetting Docker Desktop's Kubernetes cluster deletes them too. Keycloak keeps no volume: it imports
+  (Stop, below). Deleting the cluster (`kind delete cluster --name nuna`) deletes them too. Keycloak keeps no volume: it imports
   its realm, people and clients from `keycloak-realm.json` at every start, so a change made in its admin console
   lasts until its pod goes; the catalog names people by their user names, which the realm file fixes. The CDC
   leg's databases keep none either: `cdc stop` and `down` delete the leg, its topics and its offsets.
@@ -632,7 +640,7 @@ storage credentials the catalog vends them:
   the token of whoever asks:
 
   ```bash
-  kubectl --context docker-desktop -n nuna-demo exec deployment/trino -- trino --user ana --debug \
+  kubectl --context kind-nuna -n nuna-demo exec deployment/trino -- trino --user ana --debug \
     --extra-credential "token=$(cat ~/.nuna-demo/tokens/ana.jwt)" --execute '<the query>'
   ```
 
@@ -955,7 +963,7 @@ catalog, worker --OTLP--> OpenTelemetry collector --metrics--> Prometheus --> Gr
   database on a third; `metrics stop` and `down` keep them, `wipe` deletes them.
 - Memory: the four pods ask for 704 MB (collector 64 MB, Prometheus 256 MB, Tempo 128 MB, Grafana 256 MB, which
   stalled for minutes at a 384 MB limit and now has 768 MB). Turning the switch on rolls the catalog, so `metrics`
-  checks that Docker Desktop has 1.5 GB no pod asks for, and refuses otherwise. It fits beside `gen` and `kafka`
+  checks that the cluster has 1.5 GB no pod asks for, and refuses otherwise. It fits beside `gen` and `kafka`
   (1.7 GB free before it, measured 2026-11-25) or beside `ss`, not beside `gen`, `kafka` and `ss` together; `ss`
   refuses to start beside it when SingleStore's 1.5 GB is not free. Windows itself had about 700 MB free with
   `gen`, `kafka` and `metrics` on, and paged: the demo answers slowly then, and the SLO burn-rate alerts fire.

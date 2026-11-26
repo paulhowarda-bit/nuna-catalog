@@ -331,8 +331,8 @@ public final class TestS3 implements AutoCloseable {
      * Silo serving TLS, as an on-prem store whose certificate a private CA signed does (backlog 89): a store of its
      * own, apart from the run's ({@link #get}) and whatever {@code -Ps3} names, started on each call and stopped when
      * the JVM exits. Its certificate, which {@code ca} signs ({@link PrivateCa#issue}), names this machine as tests
-     * reach it ({@code localhost}, {@code 127.0.0.1}, the Docker host's address) and as pods of Docker Desktop's
-     * Kubernetes do, {@code host.docker.internal}: a catalog serving those pods names the store by that name (the
+     * reach it ({@code localhost}, {@code 127.0.0.1}, the Docker host's address) and as pods of the kind cluster
+     * ({@link KindCluster}) do, {@code host.docker.internal}: a catalog serving those pods names the store by that name (the
      * maintenance worker's {@code TestCatalog}), and a pod's TLS client checks that name against the certificate.
      * Silo reads the certificate and its key from {@code --certs-dir}, as {@code public.crt} and {@code private.key}.
      * Its clients trust {@code ca} ({@link #client}); a server's storage profile for it requires TLS and names
@@ -384,7 +384,7 @@ public final class TestS3 implements AutoCloseable {
      * Ceph RGW in one container (mon, mgr, osd, rgw), with an S3 user created at startup. The image sets
      * {@code rgw dns name = demo}; RGW then reads any other host name as a bucket (CNAME hosting), so the
      * DNS names are set to the host the tests connect through and {@code host.docker.internal}, the name a
-     * catalog serving Docker Desktop's pods gives the store (the maintenance worker's TestCatalog.forPods).
+     * catalog serving the kind cluster's pods gives the store (the maintenance worker's TestCatalog.forPods).
      */
     private static TestS3 ceph() {
         GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse(image("ceph.image")))

@@ -21,7 +21,7 @@
 # catalog request also carries Trino's own token in X-Nuna-Engine-Authorization, so nuna sees Trino acting for the
 # user the Authorization token names, with that token's groups. A client reading nuna without Trino gets 403 on a
 # flagged table's data. jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit
-# beside the rest of the demo on an 8 GB Docker Desktop; demo.sh engines stops Trino for the run, as Spark needs
+# beside the rest of the demo on the cluster's 8 GB node; demo.sh engines stops Trino for the run, as Spark needs
 # the room.
 apiVersion: v1
 kind: ConfigMap

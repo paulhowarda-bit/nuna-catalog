@@ -14,7 +14,7 @@
 # store's root, nunatest, still signs in with its access key and secret.
 #
 # Silo reads the discovery document only as it starts, and offers no Keycloak button if it cannot, so it waits up
-# to 5 minutes for Keycloak first, as when every pod starts at once after Docker Desktop restarts; after that it
+# to 5 minutes for Keycloak first, as when every pod starts at once after the cluster restarts; after that it
 # starts anyway, with its access-key form alone.
 spec:
   template:
