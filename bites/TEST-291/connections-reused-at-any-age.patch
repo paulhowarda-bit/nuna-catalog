@@ -1,0 +1,15 @@
+Breaks: the Docker client reuses pooled connections of any age, which Podman closes after 10 s idle.
+Module: catalog-tests-docker
+Test: FreshPipeStrategyTest
+diff --git a/catalog-tests-docker/src/main/java/nuna/catalog/tests/docker/FreshPipeStrategy.java b/catalog-tests-docker/src/main/java/nuna/catalog/tests/docker/FreshPipeStrategy.java
+index f68fd99f..7018ada5 100644
+--- a/catalog-tests-docker/src/main/java/nuna/catalog/tests/docker/FreshPipeStrategy.java
++++ b/catalog-tests-docker/src/main/java/nuna/catalog/tests/docker/FreshPipeStrategy.java
+@@ -54,7 +54,6 @@ public final class FreshPipeStrategy extends DockerClientProviderStrategy {
+     public DockerClient getDockerClient() {
+         DockerClient client = super.getDockerClient();
+         if (fresh.compareAndSet(false, true)) {
+-            limitConnectionAge(client);
+         }
+         return client;
+     }
