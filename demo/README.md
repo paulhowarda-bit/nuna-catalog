@@ -892,7 +892,9 @@ ORDER BY "_cdc"."offset";
 - The history tables are written as `cdc`, group `demo-loaders`: `ana` reads them like any other table.
 - The first `cdc` starts the databases from their SQL files on new volumes, and writes configmap `cdc-begun` once
   its changes reach Iceberg. Every later `cdc` starts the databases from their volumes, and the connectors carry
-  on from their offsets into the same history tables, without snapshotting again. `demo.sh cdc` while the leg runs
+  on from their offsets into the same history tables, without snapshotting again. CockroachDB's connector carries
+  on from the last point its changefeed marked as done, so the changes made just before a stop can arrive again:
+  its history may repeat them (checked 2026-11-26: the three changes before a stop came again after it). `demo.sh cdc` while the leg runs
   only brings it up to date (a changed connector config, image or manifest). A changed SQL file reaches the
   databases only after `cdc reset`.
 - Oracle keeps its archived logs in a 4 GB recovery area on its volume, and its connector carries on only from logs
