@@ -109,12 +109,17 @@ function storeBlock(profile) {
  */
 export function setupDialog(forWords, profile) {
   const settings = !!profile['worker-settings'];
+  // While the newest scan reported no storage (items 275, 277), the route gives no worker settings, though the worker
+  // may yet need them.
+  const unknown = (profile.worker || {}).state === 'unknown';
   return openDialog(`Set up the worker's storage for ${forWords}`, h('div', {class: 'setup', 'data-profile': profile.name},
     h('p', {class: 'setup-intro'}, settings
       ? 'Two changes outside the catalog, one in the worker\'s settings and one in the store. The steps on the Maintenance '
         + 'page turn to Done at the worker\'s next scan after each.'
-      : 'One change outside the catalog, in the store. Its step on the Maintenance page turns to Done at the worker\'s next '
-        + 'scan after it.'),
+      : unknown ? 'One change outside the catalog, in the store, and perhaps one in the worker\'s settings: the worker\'s '
+        + 'last scan did not report its access, so the catalog can\'t tell until a scan does.'
+        : 'One change outside the catalog, in the store. Its step on the Maintenance page turns to Done at the worker\'s '
+          + 'next scan after it.'),
     settings ? settingsBlock(profile) : null,
     storeBlock(profile),
     h('p', {class: 'fine setup-foot'}, 'The catalog writes these policies but never applies them: its own keys would then '
@@ -135,8 +140,14 @@ export async function setupDialogFor(catalog) {
 
 // ---- Service's "Worker storage" panel ----
 
-/** The worker's identity on the profile's store: [state, words]. */
-function identityOf(profile, reported) {
+/**
+ * The worker's identity on the profile's store: [state, words]. `unknown` when the newest scan reported no storage, as
+ * just after a restart (items 275, 277): a worker reported, so not "No report yet".
+ */
+function identityOf(profile, reported, scanned) {
+  if ((profile.worker || {}).state === 'unknown') {
+    return ['not-known', `Not known: the worker's last scan, at ${at(scanned)}, did not report it`];
+  }
   if (!reported) return ['no-report', 'No report yet'];
   return (profile.worker || {}).state === 'reported' ? ['identity', 'Has an identity'] : ['no-identity', 'No identity'];
 }
@@ -166,7 +177,7 @@ const policyOf = profile => (profile.store || {}).state === 'unprotected' ? ['un
   : ['generated', `Generated for ${profile['maintenance-principal']}; the catalog can't see whether it is applied`];
 
 /** Whether something is not done for the profile: the worker's identity, the store's answer or its delete policy. */
-const notDone = (profile, reported) => identityOf(profile, reported)[0] !== 'identity' || storeOf(profile, reported)[0] !== 'listed'
+const notDone = (profile, reported) => identityOf(profile, reported, null)[0] !== 'identity' || storeOf(profile, reported)[0] !== 'listed'
   || policyOf(profile)[0] === 'unprotected';
 
 /**
@@ -182,6 +193,7 @@ export async function workerStoragePanel(focus) {
     throw error;
   }
   const reported = body['reported-at'];
+  const scanned = body['scanned-at'];
   const profiles = (body.profiles || []).map((p, i) => ({p, i, open: notDone(p, reported)}))
     .sort((a, b) => (b.open - a.open) || (a.i - b.i)).map(x => x.p);
   const cell = ([state, words], cls) => h('td', {'data-state': state, class: cls || null}, words);
@@ -189,7 +201,7 @@ export async function workerStoragePanel(focus) {
     h('td', {class: 'name'}, p.name),
     h('td', null, (p.catalogs || []).length ? (p.catalogs || []).join(', ') : h('span', {class: 'muted'}, '–')),
     h('td', {class: 'setup-prefixes'}, (p.prefixes || []).map(x => h('div', null, code(x)))),
-    cell(identityOf(p, reported)),
+    cell(identityOf(p, reported, scanned)),
     cell(storeOf(p, reported)),
     cell(policyOf(p)),
     h('td', null, h('button', {class: 'btn sm', type: 'button', 'data-act': 'what-to-set-up',

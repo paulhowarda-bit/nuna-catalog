@@ -66,9 +66,10 @@ class ReadinessRoutes {
     }
 
     /**
-     * The four steps, each {@code done}, {@code missing}, {@code refused} or {@code unknown}, and when the worker last
-     * reported what it reaches (docs/observability/table-health.md, "Readiness"), judged by the scans
-     * {@link Reported} names.
+     * The four steps, each {@code done}, {@code missing}, {@code refused} or {@code unknown}, when the worker last
+     * reported what it reaches ({@code reported-at}), judged by the scans {@link Reported} names, and when it last
+     * reported a scan ({@code scanned-at}), so the console can tell a newest scan that reported no storage from no
+     * scan at all (item 277; docs/observability/table-health.md, "Readiness").
      */
     @GetMapping(path = READINESS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> readiness(@PathVariable("catalog") String prefix, HttpServletRequest http) {
@@ -80,7 +81,8 @@ class ReadinessRoutes {
         }
         boolean names = operator || guard.allows(request, target, OPERATION, Privilege.MODIFY)
                 || guard.allows(request, target, OPERATION, Privilege.MANAGE_GRANTS);
-        Reported reported = Reported.of(store.listScans());
+        List<MaintenanceScan> scans = store.listScans();
+        Reported reported = Reported.of(scans);
         Optional<MaintenanceScan> last = reported.last();
         Optional<MaintenanceScan> ended = reported.ended();
         CatalogStorage.Bound profile = storage.forCatalog(target.catalog().id());
@@ -89,12 +91,18 @@ class ReadinessRoutes {
         ObjectNode body = Management.JSON.createObjectNode();
         body.put("catalog", target.catalog().name());
         body.put("names", names);
-        last.ifPresent(scan -> body.put("reported-at", scan.endedAt().orElse(scan.startedAt()).toString()));
+        scans.stream().findFirst().ifPresent(scan -> body.put("scanned-at", reportedAt(scan)));
+        last.ifPresent(scan -> body.put("reported-at", reportedAt(scan)));
         body.set("grant", grantStep(target, last, names));
         body.set("storage", storageStep(profile, prefixes, last, names));
         body.set("store", storeStep(prefixes, last, ended, names));
         body.set("policy", policyStep(target));
         return GovernanceRoutes.json(200, body);
+    }
+
+    /** When a scan reported: its end, or its start while it runs. Shared with {@link StorageSetupRoutes}. */
+    static String reportedAt(MaintenanceScan scan) {
+        return scan.endedAt().orElse(scan.startedAt()).toString();
     }
 
     /**
