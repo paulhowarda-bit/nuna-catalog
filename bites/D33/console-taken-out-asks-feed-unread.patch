@@ -2,11 +2,11 @@ Breaks: the table page asks the audit feed who took a table out of a ref for a c
 Module: catalog-server
 Test: ConsoleRefWordsTest#throughARefATableMadeAfterThePointOrTakenOutOfItSaysWhich
 diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
-index 837bfe49..5d3ea6d1 100644
+index a46c646c..6c84c7a8 100644
 --- a/catalog-server/src/main/resources/nuna/ui/refs.js
 +++ b/catalog-server/src/main/resources/nuna/ui/refs.js
-@@ -336,7 +336,7 @@ function keptChips(c, o) {
-  * a feed without it lists every ref's, which the match below sorts the same, over fewer of them.
+@@ -338,7 +338,7 @@ function keptChips(c, o) {
+  * below (this ref's id, the action, the object's id) sorts the same, over fewer of them.
   */
  async function takenOutBy(c, r, objectId) {
 -  if (!r.id || !auditOpen(c)) return null;
