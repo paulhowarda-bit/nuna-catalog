@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**52 open:** 14 S, 18 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**50 open:** 13 S, 17 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -34,8 +34,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
-| [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
-| [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
 | [151](backlog/151.md) | L | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150 | 2026-11-22 |
 | [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
@@ -2259,131 +2257,6 @@ table's own files; two users in different groups get different results; the copi
 expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
 table's own prefix.
 
-### 123. Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker
-
-- Added: 2026-11-22 by heavy runs 2026-11-22
-- Touches: catalog-server/src/test/java/nuna/catalog/server/ catalog-server/src/test/resources/spring.properties CLAUDE.md
-- Effort: M, finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs
-
-Of three full heavy builds run on 2026-11-22 with the nuna-demo stack down (`./gradlew --continue build -Pheavy`, two
-modules under test at a time by `org.gradle.workers.max=2`), the second lost five tests to waits that ran out, and
-the first and third lost none of them. Each failed beside another Docker-heavy module and passed when its classes
-were run alone straight after (`AuditReadRouteTest` 6/6, `ManagementAuthorizationTest` 23/23, `WorkerTraceTest` 1/1).
-
-- `AuditReadRouteTest` (three cases, 16:00 to 16:02 UTC, beside `catalog-store-mongo`) and
-  `ManagementAuthorizationTest#aRefusalIsAuditedAsADenialOfTheRoute` (16:06, beside `catalog-store-oracle`): the test
-  JVM's Kafka clients sent requests to the shared broker that went unanswered for the whole 30 s request timeout ("due
-  to node -1 being disconnected (elapsed time since send: 30017ms ... request timeout: 30000ms)", and the same for the
-  group coordinator). The audit route answered 503 "The audit topic cannot be read now" (`RecentAudit`'s 10 s
-  metadata wait: "Timeout expired while fetching topic metadata"), and the test's own consumer read no record in its
-  30 s (`Api.awaitRecord`: "no matching audit record among 0 read").
-- `WorkerTraceTest#aScanAndTheCatalogsSpansForItsCallsAreOneTrace` (15:53, beside `catalog-server`): the worker's scan
-  loaded the test's empty table at 15:53:37 and logged nothing more until the test gave up at 15:54:07, 30 s
-  (`ARRIVAL`) later; its expiry of a table with no snapshots should have taken milliseconds.
-
-Item 55 is the same kind in the nightly (one 15 s stall reaching Docker's containers, beside the CockroachDB cluster),
-and the overnight run of 2026-11-19 lost `TelemetryTest#theStandardVariablesAloneTurnExportOn` to a 20 s metric wait.
-The logs were in the session's scratch folder and the worktree's build folders, which are gone; the quotes above are
-from them.
-
-Done looks like: what stalls is known, and either the heavy build keeps such modules apart or the waits that meet it
-outlast it; ten overnight heavy builds in a row lose no test to a wait running out.
-
-**2026-11-22, what stalls: Docker's memory.** The same four test tasks as the second run (`:catalog-server:test`,
-`:catalog-maintenance:test`, `:catalog-store-mongo:test`, `:catalog-store-oracle:test` with `-Pheavy --continue`, two at
-a time, the demo down) ran twice with a sampler logging, each second, the Docker VM's pressure-stall counters
-(`/proc/pressure`), free memory and swap, and the time of a fresh request to a container through a mapped port.
-
-- Before the fix (30m41s): two tests failed, `TwoIssuersTest#aTokenForAnotherAudienceIsRefused` (Keycloak sent no
-  bytes for 30 s) and `DrRewindRouteTest#aFrozenTableAboveItsWatermarkIsRewoundToIt` ("no matching audit record among 0
-  read", the second run's failure). Both fell in minutes when the VM's 2 GB of swap was filling, from 0.4 GB to 2.0 GB,
-  and every task in it stalled on memory for 10 to 50% of each second (312 s at 10% or more). The mapped-port probe
-  answered within about 1 s throughout: the port forwarding did not stall; the processes behind it did. The memory
-  was catalog-server's test JVM's: it held every container it had started until it exited, an Oracle (2.5 GB limit),
-  a MongoDB, two Keycloaks (one with 471 MB swapped out), a Kafka for each governance context and a PostgreSQL for
-  each of its contexts (twelve by mid-run), about 4 GB idle beside the Mongo and Oracle suites. Once that JVM exited,
-  swap fell to 0.4 GB and 4.5 GB was free with the Oracle suite still running.
-- The fix: catalog-server's tests keep one Spring context at a time (`spring.properties`, `maxSize=1`), so Spring
-  closes the last context, and its PostgreSQL and Kafka, when a class needs another; and the four initializers that
-  start containers for one class (`OracleBackendTest`, `MongodbBackendTest`, `TwoIssuersTest`, `ConsoleSignInTest`)
-  register their stop with that context (`StopWithContext`), after its beans. Neither keeps modules apart nor
-  lengthens a wait: it removes the overcommit. CLAUDE.md (Builds) gives the rule for new tests.
-- After the fix (20m50s): every test passed (catalog-server 343, maintenance 89, Mongo 223, Oracle 247 with 3
-  skipped as always). Swap stayed at 0.4 GB, at least 2.7 GB was free, memory stalls fell from 77 s to 20 s, and
-  catalog-server held at most two PostgreSQLs, one Keycloak and one Kafka at a time; its tests took 14.8 min instead of
-  23.6. The short stalls left came with Oracle starting.
-
-The item stays open for its last test: ten overnight heavy builds in a row that lose no test to a wait running out.
-
-A second cause, found on 2026-11-22 by two nightlies run by hand (`status/2026-11-22-nightly-2026-11-22.md`): Windows
-out of RAM. With other sessions' fast builds running, Windows had 241 to 760 MB available and paged in a median 22,700
-pages a second, and the Docker VM was resident at as little as 991 MB of its 8 GB; containers took 44 to 95 s to
-start, a Kafka never did, and the VM's own pressure stalls stayed near 0, since a guest stalled on a host page fault
-counts it as CPU. This hits the heavy build as it hit the nightly, so a heavy build that loses a wait should be
-read beside Windows' numbers, not only the VM's. Item 135 is the host's memory (Paul decides the remedy); item 136
-keeps other sessions' builds off a run by hand.
-
-### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
-
-- Added: 2026-11-22 by nightly by hand 2026-11-22
-- Decided: 2026-11-22, D46
-- Touches: none
-- Effort: S, once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul
-
-The machine has 15.7 GB, and during both nightlies of 2026-11-22 Windows was paging the Docker VM's memory out
-(`status/2026-11-22-nightly-2026-11-22.md`). A container whose memory is in Windows' page file stalls on every touch
-of it, and inside the VM that shows as CPU, never as memory pressure, so the VM's own numbers look healthy.
-
-Evidence, from `Get-Counter` and `Get-Process` every 10 s:
-
-- With other sessions' fast builds running (nightly 1, 16:10 to 16:30): 241 to 760 MB available, a median 22,700
-  page-ins a second, peak 160,000; the VM resident at 991 MB of 8 GB at worst. Thirteen tests lost a wait: PostgreSQL
-  and Kafka not started in 60 to 90 s, CockroachDB statements past their 15 s, the CAS on PostgreSQL and CockroachDB.
-- With no other build (nightly 2, 16:30 to 17:58): 65 to 1,700 MB available (median 655), a median 16,800 page-ins a
-  second, peak 136,000; the VM resident at a median 2.9 GB. Every test passed, but the CockroachDB CAS took 1,277 s
-  for 1,000 rounds, against 342 s on an idle host on 2026-11-16.
-- Who holds the memory: the Docker VM commits 8 GB, 27 Claude processes 5.8 GB, Edge WebView and ChatGPT 2 GB
-  each, VS Code 1.1 GB, Chrome 0.8 GB. Windows' non-paged pool was 1.76 GB (a few hundred MB is usual) and WUDFHost,
-  a host for user-mode drivers, had 3.2 GB committed: both look like a driver leaking, which a restart clears.
-
-The remedies are changes to Paul's machine, so Paul picks:
-
-1. Before midnight, close what the run does not need (ChatGPT, Chrome, VS Code, idle Claude sessions), and restart
-   Windows now and then to clear the non-paged pool and WUDFHost.
-2. Let WSL give the VM's idle memory back to Windows: WSL's `autoMemoryReclaim` setting in
-   `%UserProfile%\.wslconfig` (none exists now; check the installed WSL version's documentation for its section),
-   which needs `wsl --shutdown` once, so Docker Desktop restarts.
-3. Fewer containers at once in the nightly's step 1 (`--max-workers=1`): a smaller peak for the VM, and a longer run.
-
-Done looks like: the remedy Paul picks is in place, and an overnight run's nightly passes with Windows above 1.5 GB
-available and the VM resident at its working size throughout (sampled as `status/2026-11-22-nightly-2026-11-22.md`
-says).
-
-Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-135):
-
-1. Closing ChatGPT, Chrome, VS Code and idle Claude sessions before midnight, and restarting Windows now and then,
-   are Paul's to do: nothing in the repo does them.
-2. `%UserProfile%\.wslconfig` now sets `autoMemoryReclaim=dropCache` under `[experimental]`. WSL 3.0.5 is installed,
-   and Microsoft's page on `.wslconfig` (dated 2026-10-16) gives `dropCache` as the default already: the VM's cached
-   memory goes back to Windows as soon as the VM is idle. So the file pins the behaviour rather than changing it, and
-   WSL was not restarted for it. It returns nothing while the VM is busy, which is the whole of a nightly.
-3. `nightly.sh` runs its first step with `--max-workers=1`: one module's containers and one test JVM at a time. From
-   the second nightly's module times, step 1 takes about 2 h 15 min instead of 1 h 15 min, which still leaves the
-   overnight run hours for its bites before 06:30. `./nightly.sh --test-dry-run` passes. CLAUDE.md (Builds) says so,
-   and says to check Windows' memory when a container-backed test loses a wait.
-
-The decision is D46 in `decision-ledger.md`. The item stays open until an overnight run's nightly passes with
-Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
-be taken by hand.
-
-**Seen in the overnight run of 2026-11-23 (sampled by hand every 10 s, 20:10 on 2026-11-22 to 07:00): not met.**
-The nightly passed (91 min), but Windows was below 1.5 GB available in 449 of the nightly's 490 samples (00:44 to
-02:17), at 200 MB at its lowest (02:00:31), and paging in over 1,000 pages a second in 350 of them; the VM's working
-set swung between 1.3 and 5.5 GB, so it was being paged out. The heavy build and Ceph leg before it (00:00 to 00:44)
-were worse: below 1.5 GB in 228 of 232 samples, 47 MB at the lowest. The host stayed short after the run too (21 MB
-at 02:41, 1.15 GB at 07:00), so something besides the run held Windows' memory overnight. The remedies of D46 are in
-place; they are not enough. The log is the session's scratch file, not kept in the repo.
-
 ### 151. Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB
 
 - Decided: 2026-11-22, D48
@@ -3416,6 +3289,7 @@ storage `missing` and store `unknown`. The scan at 19:11:25 read all four `done`
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
 | [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
 | [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
+| [123](backlog/123.md) | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | dropped | 2026-11-25 |
 | [124](backlog/124.md) | Console: rebuild every page to the redesign prototype (D45) | done | 2026-11-22 |
 | [125](backlog/125.md) | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | done | 2026-11-22 |
 | [126](backlog/126.md) | Maintenance: each night's summary and each job's run on its worker slot (D45) | done | 2026-11-22 |
@@ -3427,6 +3301,7 @@ storage `missing` and store `unknown`. The scan at 19:11:25 read all four `done`
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
 | [133](backlog/133.md) | Keep released holds and lifted DR freezes in the store, so their history is complete | done | 2026-11-23 |
 | [134](backlog/134.md) | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | done | 2026-11-22 |
+| [135](backlog/135.md) | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | dropped | 2026-11-22 |
 | [136](backlog/136.md) | A nightly or heavy run by hand does not hold other sessions' builds | done | 2026-11-22 |
 | [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
 | [138](backlog/138.md) | Console Health: the DR replication panel, from the DR readout, for platform operators | done | 2026-11-22 |
