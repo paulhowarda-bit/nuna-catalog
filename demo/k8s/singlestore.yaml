@@ -5,7 +5,7 @@
 # Dockerfile so a change replaces the pod; a matrix run on its own uses the plain image, and has no Secret
 # keycloak-keys, so the certificate's volume is optional. Its databases are on a volume (claim singlestore-data,
 # below; backlog 237), which ss stop and demo.sh down keep and demo.sh wipe deletes. The demo publishes Studio on port 8183. It reserves 1.5 GB though it uses over 2 GB:
-# with Keycloak, a fuller reservation leaves no room on Docker Desktop's node for Spark's 2 GB job.
+# with Keycloak, a fuller reservation leaves no room on the cluster's node for Spark's 2 GB job.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

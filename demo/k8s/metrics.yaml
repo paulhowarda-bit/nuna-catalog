@@ -16,7 +16,7 @@
 #
 # Prometheus keeps its series 7 days and Tempo its traces 2 days, each on a volume, and Grafana its own database
 # (anything made in it beyond the provisioned dashboards) on one too: metrics stop and demo.sh down keep them;
-# demo.sh wipe deletes them (backlog 237). Each image runs as its own user; the hostpath volumes let any user write.
+# demo.sh wipe deletes them (backlog 237). Each image runs as its own user; the volumes (kind's local-path) let any user write.
 apiVersion: v1
 kind: ConfigMap
 metadata:

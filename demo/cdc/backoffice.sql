@@ -1,6 +1,6 @@
 -- The CDC leg's PostgreSQL source (demo/k8s/cdc.yaml, database backoffice): settlement instructions, which
 -- Debezium captures into the Iceberg history table history.postgres.settlement.instructions. Run once, by the
--- image's entrypoint, as the database is made.
+-- image's entrypoint, as the database is made on an empty volume.
 --
 -- REPLICA IDENTITY FULL: a delete's event then carries the whole row, not only its key, so the history row of a
 -- delete holds what was deleted. updated_at is timestamp(3), not timestamptz: Debezium sends timestamptz as a

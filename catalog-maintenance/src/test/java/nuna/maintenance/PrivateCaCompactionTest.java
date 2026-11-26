@@ -22,7 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * A compaction Job against a store behind a private CA, end to end (backlog 89; D21, amended 2026-11-20 for backlog
- * 88), in Docker Desktop's cluster as {@link KubernetesCompactionTest} has it ({@link CompactionCluster}). The store is
+ * 88), in the kind cluster as {@link KubernetesCompactionTest} has it ({@link CompactionCluster}). The store is
  * Silo serving TLS with a certificate a private CA signed ({@link TestS3#siloBehindTls}, {@link PrivateCa}); the
  * catalog's storage profile names that CA's bundle, and so does the worker's ({@link TestCatalog#onStore}), and the
  * chart's Role is the one it renders for a profile with a {@code ca-bundle}, which lets the worker create ConfigMaps
@@ -34,9 +34,9 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>First, as a control, the same Job without the bundle (the worker's Jobs as a worker whose storage profiles name
  * none launches them) fails to reach the store and leaves the table as it was: the store is behind a CA that neither
  * the image nor its JDK trusts, so the second Job, the same but for the bundle, succeeding against the same address
- * is the bundle's doing. The control's log cannot show the certificate refused: Docker Desktop gives pods an IPv4 and
- * an IPv6 address for {@code host.docker.internal}, and pods have no route for IPv6 (checked 2026-11-21 with
- * {@code nslookup} and {@code ip -6 route} in a pod). The S3 client's HttpClient (5.6.4 in iceberg-aws-bundle 1.12.0)
+ * is the bundle's doing. The control's log could not show the certificate refused in Docker Desktop's cluster, where
+ * this test ran until 2026-11-26: it gave pods an IPv4 and an IPv6 address for {@code host.docker.internal}, and pods
+ * had no route for IPv6 (checked 2026-11-21 with {@code nslookup} and {@code ip -6 route} in a pod). The S3 client's HttpClient (5.6.4 in iceberg-aws-bundle 1.12.0)
  * handshakes TLS inside its loop over a host's addresses, so a refused certificate on the IPv4 address sends it on to
  * the IPv6 one, and it reports only that last error: {@code Network is unreachable}, never the PKIX error. So the
  * control asserts that every attempt at the S3 request failed, which with the IPv4 address reachable (the second Job

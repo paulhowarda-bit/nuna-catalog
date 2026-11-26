@@ -2254,3 +2254,10 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |
 | [285](backlog/285.md) | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | done | 2026-11-26 |
 | [286](backlog/286.md) | demo.sh takes a deployment for gone only when kubectl says NotFound, so gen stop never stops Kafka under a running generator | done | 2026-11-25 |
+| [287](backlog/287.md) | Move from Docker Desktop to Podman: kind cluster nuna for the demo, the local install and the compaction and engine tests | done | 2026-11-26 |
+| [288](backlog/288.md) | Oracle reads every branch grant's ref as "?": V20's any_grant view lost its regex back-references | done | 2026-11-26 |
+| [289](backlog/289.md) | Gate heavy failures: the audit table writer needs modify, the archive's written times, SecurityGateTest's poisoned outbox | done | 2026-11-26 |
+| [290](backlog/290.md) | Failover and fault tests fail on Podman: a POST on a pooled pipe connection Podman closed | done | 2026-11-26 |
+| [291](backlog/291.md) | Heavy tests on Podman: a Docker call made after 10 s without one fails, since Podman's API closes idle connections and Testcontainers reuses them (TwoIssuersTest) | done | 2026-11-26 |
+| [292](backlog/292.md) | GitHub's push protection refuses the openssl pkcs8 command's argument order | done | 2026-11-26 |
+| [293](backlog/293.md) | The CDC leg and CloudBeaver keep their data on volumes: cdc stop and down pause the leg, the next cdc carries on, cdc reset starts it anew | done | 2026-11-26 |

@@ -8,6 +8,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import nuna.catalog.security.TestIdp;
+import nuna.catalog.tests.s3.KindCluster;
 import nuna.catalog.tests.s3.PrivateCa;
 import nuna.catalog.tests.s3.TestS3;
 import nuna.maintenance.MatrixCompaction;
@@ -62,13 +63,14 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * table of its own (delete, overwrite, upsert); SingleStore (through its Iceberg pipelines) reads Spark's tables
  * and PyIceberg's. Results, timings and every command go to {@code build/engines-run/}.
  *
- * <p>Needs Docker, kubectl and Helm on the PATH, and kind only with {@code -Pengines.cluster=kind}.
+ * <p>Needs Podman, kubectl and Helm on the PATH, and kind only with {@code -Pengines.cluster=kind}.
  * On its own, everything runs in namespace {@value #NAMESPACE}.
  * <ul>
- *   <li>By default the harness deploys into the existing cluster of kubectl context {@value #DEFAULT_CLUSTER},
- *       Docker Desktop's Kubernetes; {@code -Pengines.cluster=<kubectl context>} names another. Namespace
- *       {@value #NAMESPACE} is recreated at the start and deleted at the end. The cluster's nodes must see the
- *       locally built images, as Docker Desktop's do; nothing is pushed.</li>
+ *   <li>By default the harness deploys into the existing cluster of kubectl context {@code kind-nuna}, the kind
+ *       cluster {@code deploy/kind/kind.sh up} makes on Podman; {@code -Pengines.cluster=<kubectl context>} names
+ *       another. Namespace {@value #NAMESPACE} is recreated at the start and deleted at the end. The harness puts
+ *       the images Podman built and pulled on a kind cluster's node ({@link KindCluster#load}); another cluster's
+ *       nodes must see them already. Nothing is pushed.</li>
  *   <li>{@code -Pengines.cluster=kind} creates kind cluster {@value #CLUSTER} instead, with its own kubeconfig
  *       in the run directory, so the current kubectl context is never changed, and deletes the cluster at the
  *       end.</li>
@@ -86,8 +88,8 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class EngineMatrixTest {
 
-    /** The kubectl context deployed into without {@code -Pengines.cluster}: Docker Desktop's Kubernetes. */
-    private static final String DEFAULT_CLUSTER = "docker-desktop";
+    /** The kubectl context deployed into without {@code -Pengines.cluster}: the kind cluster on Podman. */
+    private static final String DEFAULT_CLUSTER = KindCluster.CONTEXT;
     /** The kind cluster made with {@code -Pengines.cluster=kind}. */
     private static final String CLUSTER = "nuna-engines";
     private static final String NAMESPACE = "nuna-engines";
@@ -175,7 +177,8 @@ class EngineMatrixTest {
                     + " cluster");
         }
         context = kind ? "kind-" + CLUSTER : cluster;
-        cli = new Cli(kind ? Map.of("KUBECONFIG", kubeconfig.toAbsolutePath().toString()) : Map.of(), log);
+        cli = new Cli(kind ? Map.of("KUBECONFIG", kubeconfig.toAbsolutePath().toString(),
+                "KIND_EXPERIMENTAL_PROVIDER", "podman") : Map.of(), log);
         TestS3.Kind store = TestS3.kindFromSystemProperty();
         placeholders = new LinkedHashMap<>(Map.of(
                 "SILO_IMAGE", System.getProperty("silo.image"),
@@ -201,6 +204,7 @@ class EngineMatrixTest {
         long started = System.nanoTime();
         if (existing) {
             buildEngineImages();
+            load(List.of(SPARK_IMAGE, KAFKA_CONNECT_IMAGE, PYTHON_IMAGE));
             // The engines' Jobs read the token from Secret engine-token, as on a stack of the harness's own.
             kubectl(Duration.ofMinutes(1), "delete", "secret", "engine-token", "--ignore-not-found");
             kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "engine-token", "--from-literal=token=" + token);
@@ -225,7 +229,7 @@ class EngineMatrixTest {
             images.add(System.getProperty("ceph.image"));
         }
         for (String image : images) {
-            cli.ok(Duration.ofMinutes(10), "docker", "pull", "-q", image);
+            cli.ok(Duration.ofMinutes(10), "podman", "pull", "-q", KindCluster.ref(image));
         }
         // The server's own image (deploy/image/Dockerfile), from the folder holding the runnable jar.
         build(CATALOG_IMAGE, "-f", repo.resolve("deploy/image/Dockerfile").toString(),
@@ -717,7 +721,7 @@ class EngineMatrixTest {
     void singlestore() {
         Map<String, String> results = runEngine("singlestore", () -> {
             if (!existing) {
-                cli.ok(Duration.ofMinutes(20), "docker", "pull", "-q", SINGLESTORE_IMAGE);
+                cli.ok(Duration.ofMinutes(20), "podman", "pull", "-q", KindCluster.ref(SINGLESTORE_IMAGE));
                 load(List.of(SINGLESTORE_IMAGE));
                 // Root's password, which singlestore.yaml takes from this Secret, made for this run.
                 String root = "pw-" + UUID.randomUUID();
@@ -846,19 +850,14 @@ class EngineMatrixTest {
         if (Boolean.getBoolean("engines.skip-build")) {
             return;
         }
-        List<String> command = new ArrayList<>(List.of("docker", "build", "-q", "-t", image));
+        List<String> command = new ArrayList<>(List.of("podman", "build", "-q", "-t", image));
         command.addAll(List.of(source));
         cli.ok(Duration.ofMinutes(20), command.toArray(String[]::new));
     }
 
-    /** Loads images into the kind cluster; an existing cluster's nodes must already see them. */
+    /** Puts images on a kind cluster's node ({@link KindCluster#load}); another cluster's nodes must see them already. */
     private static void load(List<String> images) {
-        if (!kind) {
-            return;
-        }
-        List<String> command = new ArrayList<>(List.of("kind", "load", "docker-image", "--name", CLUSTER));
-        command.addAll(images);
-        cli.ok(Duration.ofMinutes(20), command.toArray(String[]::new));
+        KindCluster.load(context, runDir, images);
     }
 
     /** Applies a manifest from {@code dir} with this run's {@code ${...}} values filled in. */

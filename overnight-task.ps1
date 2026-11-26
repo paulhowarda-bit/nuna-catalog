@@ -2,7 +2,8 @@
 The Windows side of the overnight run (overnight.sh, which says what the run does).
 
   .\overnight-task.ps1 -Register     registers the task "nuna overnight": every day at 00:00, waking the PC,
-                                     while Paul is signed in (Docker Desktop runs only then)
+                                     while Paul is signed in (overnight.sh starts the Podman machine and the
+                                     kind cluster if they are stopped)
   .\overnight-task.ps1 -Unregister   removes it
   .\overnight-task.ps1               what the task runs: overnight.sh, with Windows kept awake until it ends
   .\overnight-task.ps1 -Dry          the same with --dry (-Force: with --force)

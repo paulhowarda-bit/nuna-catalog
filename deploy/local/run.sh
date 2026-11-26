@@ -6,15 +6,17 @@
 #   deploy/local/run.sh worker  after up: the maintenance worker's chart, with Keycloak for its sign-in
 #   deploy/local/run.sh down    uninstall and delete the namespaces
 #
-# Needs bash (Git Bash on Windows), Docker, kubectl, helm, curl and JDK 25. Works on Docker Desktop's cluster,
-# which runs images from the local Docker engine; kubectl and helm are always pointed at NUNA_K8S_CONTEXT
-# (default docker-desktop), never at the current context. Test keys and tokens, and every password and key it uses
+# Needs bash (Git Bash on Windows), Podman, kind, kubectl, helm, curl and JDK 25. Works on the kind cluster on Podman
+# (deploy/kind/kind.sh), which up starts or creates and puts the images it builds on; kubectl and helm are always
+# pointed at NUNA_K8S_CONTEXT (default kind-nuna), never at the current context. Test keys and tokens, and every password and key it uses
 # (values; none is in the repository), are kept in NUNA_K8S_HOME
 # (default ~/.nuna-k8s).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONTEXT="${NUNA_K8S_CONTEXT:-docker-desktop}"
+# shellcheck source=../kind/kind.sh
+source "$REPO/deploy/kind/kind.sh"
+CONTEXT="${NUNA_K8S_CONTEXT:-$KIND_CONTEXT}"
 NS="${NUNA_K8S_NAMESPACE:-nuna-local}"
 RUN="${NUNA_K8S_HOME:-$HOME/.nuna-k8s}"
 RELEASE=nuna-catalog
@@ -97,7 +99,11 @@ user_policy() {
 up() {
   say "building the server jar (no tests run) and the image nuna-catalog:local"
   (cd "$REPO" && ./gradlew -q :catalog-server:bootJar)
-  docker build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:local "$REPO/catalog-server/build/libs"
+  podman build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:local "$REPO/catalog-server/build/libs"
+  if [[ "$CONTEXT" == "$KIND_CONTEXT" ]]; then
+    kind_up
+    kind_load nuna-catalog:local
+  fi
 
   say "minting the test issuer's key and tokens into $RUN"
   mkdir -p "$RUN"
@@ -254,13 +260,16 @@ smoke() {
 worker() {
   say "building the worker jar (no tests run) and the image nuna-maintenance:local"
   (cd "$REPO" && ./gradlew -q :catalog-maintenance:bootJar)
-  docker build -q -f "$REPO/deploy/image/maintenance.Dockerfile" -t nuna-maintenance:local \
+  podman build -q -f "$REPO/deploy/image/maintenance.Dockerfile" -t nuna-maintenance:local \
     "$REPO/catalog-maintenance/build/libs"
-  docker image inspect "$SPARK_IMAGE" >/dev/null 2>&1 || {
-    echo "no image $SPARK_IMAGE for the compaction Jobs: docker build -t $SPARK_IMAGE" \
+  podman image exists "$SPARK_IMAGE" || {
+    echo "no image $SPARK_IMAGE for the compaction Jobs: podman build -t $SPARK_IMAGE" \
       "catalog-tests-engines/images/spark" >&2
     return 1
   }
+  if [[ "$CONTEXT" == "$KIND_CONTEXT" ]]; then
+    kind_load nuna-maintenance:local "$SPARK_IMAGE"
+  fi
 
   say "starting Keycloak, the worker's identity provider, in namespace $NS"
   k apply -f "$REPO/deploy/local/keycloak.yaml"
