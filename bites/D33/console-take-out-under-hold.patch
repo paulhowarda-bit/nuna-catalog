@@ -1,0 +1,15 @@
+Breaks: the Access panel offers the button for a table under a legal hold, instead of saying its refs keep it until the hold is released (backlog 279).
+Module: catalog-server
+Test: ConsoleRefWordsTest#theAccessPanelListsTheRefsThatKeepItAndOffersTheControlOnlyToAStewardFreeOfHoldAndFreeze
+diff --git a/catalog-server/src/main/resources/nuna/ui/kept.js b/catalog-server/src/main/resources/nuna/ui/kept.js
+index fdebb209..80d99d56 100644
+--- a/catalog-server/src/main/resources/nuna/ui/kept.js
++++ b/catalog-server/src/main/resources/nuna/ui/kept.js
+@@ -46,7 +46,6 @@ async function heldOrFrozen(target, o) {
+   if (dropped(o)) return null;
+   try {
+     const g = await api.governance(objectTarget(target, o, null));
+-    if ((g.holds || []).length) return 'held';
+     if ((g.effective || {})['dr-freeze']) return 'frozen';
+   } catch {
+     // Unknown: the button shows, and the route refuses a hold or a freeze in the dialog, verbatim.

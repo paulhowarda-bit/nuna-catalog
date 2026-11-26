@@ -1,0 +1,16 @@
+Breaks: the table page asks the audit feed who took a table out of a ref for a caller who may not read the feed, a refusal audited as a denial (backlog 170).
+Module: catalog-server
+Test: ConsoleRefWordsTest#throughARefATableMadeAfterThePointOrTakenOutOfItSaysWhich
+diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
+index e122d952..ceb5546d 100644
+--- a/catalog-server/src/main/resources/nuna/ui/refs.js
++++ b/catalog-server/src/main/resources/nuna/ui/refs.js
+@@ -342,7 +342,7 @@ function keptChips(c, o) {
+  * ref's removal, and holds the same over a feed that has no such filter and lists every ref's records.
+  */
+ async function takenOutBy(c, r, objectId) {
+-  if (!r.id || !auditOpen(c)) return null;
++  if (!r.id) return null;
+   let pageToken = null;
+   try {
+     for (let i = 0; i < 4; i++) {

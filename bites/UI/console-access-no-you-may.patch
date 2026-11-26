@@ -3,14 +3,14 @@ Module: catalog-server
 Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
-index 014376e8..73915f83 100644
+index 01944cfa..d3d6b524 100644
 --- a/catalog-server/src/main/resources/nuna/ui/panels.js
 +++ b/catalog-server/src/main/resources/nuna/ui/panels.js
-@@ -497,7 +497,6 @@ async function youMay(target) {
+@@ -504,7 +504,6 @@ async function youMay(target) {
  export function accessTab(target, reload) {
    const you = h('div');
    const gov = h('div');
 -  load(you, () => youMay(target));
    load(gov, () => governanceTab(target, reload));
-   const [grants, listAgain] = grantsPart(target);
-   // Once the dialog closes after a grant, the grant's row is brought to the middle of the view, once the list has it.
+   // Which branches and tags keep a table or view, after its governance (item 279): from item 170's read alone.
+   const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;

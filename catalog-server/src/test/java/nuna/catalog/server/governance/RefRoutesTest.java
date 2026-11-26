@@ -56,6 +56,8 @@ import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
 import nuna.catalog.store.IdempotencyResult;
+import nuna.catalog.store.JournalEntry;
+import nuna.catalog.store.JournalRecord;
 import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Name;
@@ -140,6 +142,11 @@ class RefRoutesTest {
      * or a freeze set, between the route's reads and its transaction.
      */
     private final Deque<WriteResult> removals = new ArrayDeque<>();
+    /** Who dropped each object, as the audit table would tell an audit reader (AuditDropsTest has the rights). */
+    private final Map<UUID, RefRoutes.Dropper> droppers = new HashMap<>();
+    private final List<UUID> droppersAsked = new ArrayList<>();
+    /** When main's first commit made each object, from its journal. */
+    private final Map<UUID, Instant> made = new HashMap<>();
 
     private final MutableClock clock = new MutableClock(NOW);
     private final RefRoutes routes;
@@ -184,7 +191,10 @@ class RefRoutesTest {
         routes = new RefRoutes(store, management, guard, new ManagementIdempotency(store, clock), authorizer, SETTINGS,
                 names, sent, rest, (merged, events) -> {
                     throw new AssertionError("no merge here");
-                }, new AuditEvents(rest), clock);
+                }, new AuditEvents(rest), (request, at, object, named) -> {
+                    droppersAsked.add(object.id());
+                    return Optional.ofNullable(droppers.get(object.id()));
+                }, clock);
         StorageSettings storage = new StorageSettings(Map.of(), Map.of("gate", new StorageSettings.Catalog(
                 "warehouse", null, null)), Duration.ofHours(1), 100, false);
         // No governance settings: only the refs section is asked for.
@@ -433,6 +443,51 @@ class RefRoutesTest {
 
         assertThat(answer(() -> routes.renew("gate", "v1", null, http)).status()).isEqualTo(400);
         assertThat(events(RefChange.Action.RENEWED)).isEmpty();
+    }
+
+    // ---- when the cut was taken (backlog 168) ----
+
+    /**
+     * A ref's cut was taken from main when the ref at the foot of its line was made from main: a tag made from dev an
+     * hour later, and a branch made from that tag, both read main as dev did, and hold dev's changes as they were
+     * when the tag was made. Once dev ends, what it was made from is not kept: the time is left out, and the ref that
+     * ended is named.
+     */
+    @Test
+    void aRefsCutWasTakenWhenTheRefAtTheFootOfItsLineWasMadeFromMain() {
+        create("dev", "branch", null, null);
+        clock.advance(Duration.ofHours(1));
+        create("snap", "tag", "dev", null);
+        clock.advance(Duration.ofHours(1));
+        create("fix", "branch", "snap", null);
+
+        JsonNode dev = json(routes.read("gate", "dev", http));
+        assertThat(dev.get("cut-at").asString()).isEqualTo(NOW.toString());
+        assertThat(dev.has("branch-changes")).isFalse();
+        JsonNode snap = json(routes.read("gate", "snap", http));
+        assertThat(snap.get("cut-at").asString()).as("dev's making, not its own").isEqualTo(NOW.toString());
+        assertThat(snap.get("branch-changes")).singleElement().satisfies(held -> {
+            assertThat(held.get("branch").asString()).isEqualTo("dev");
+            assertThat(held.get("as-of").asString()).isEqualTo(NOW.plus(Duration.ofHours(1)).toString());
+        });
+        JsonNode fix = json(routes.read("gate", "fix", http));
+        assertThat(fix.get("cut-at").asString()).isEqualTo(NOW.toString());
+        assertThat(fix.get("branch-changes")).as("a tag changes nothing; it carries dev's as it took them")
+                .singleElement().satisfies(held -> {
+                    assertThat(held.get("branch").asString()).isEqualTo("dev");
+                    assertThat(held.get("as-of").asString()).isEqualTo(NOW.plus(Duration.ofHours(1)).toString());
+                });
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
+                .map(ref -> ref.get("cut-at").asString()).distinct().toList()).containsExactly(NOW.toString());
+
+        assertThat(routes.delete("gate", "dev", null, http).getStatusCode().value()).isEqualTo(204);
+
+        for (String name : List.of("snap", "fix")) {
+            JsonNode ended = json(routes.read("gate", name, http));
+            assertThat(ended.has("cut-at")).as(name).isFalse();
+            assertThat(ended.get("cut-from-ended").asString()).as(name).isEqualTo("dev");
+            assertThat(ended.has("branch-changes")).as(name).isFalse();
+        }
     }
 
     // ---- delete ----
@@ -790,6 +845,222 @@ class RefRoutesTest {
         assertThat(events(RefChange.Action.OBJECT_REMOVED)).hasSize(1);
         assertThat(answer(() -> remove(salaries, refsBody("dev"), "key-1")).status()).as("the key on another object")
                 .isEqualTo(400);
+    }
+
+    // ---- which refs keep a table or view (backlog 170) ----
+
+    /**
+     * The read needs describe: Vic, describing the catalog, sees hr.Staff and that dev keeps it, but may not take it
+     * out; Sue, the steward, and Hugh, tending hr, may. Whoever holds nothing on a table is answered as for a path
+     * that has none, and audited; one who holds nothing in the catalog is told it does not exist.
+     */
+    @Test
+    void whichRefsKeepATableNeedsDescribeAndOffersTheRemovalOnlyWithManageTags() {
+        create("dev", "branch", null, null);
+        caller = VIC;
+
+        JsonNode staffRead = kept("hr", "Staff").get("objects");
+        assertThat(staffRead).hasSize(1);
+        JsonNode object = staffRead.get(0);
+        assertThat(object.get("id").asString()).isEqualTo(staff.id().toString());
+        assertThat(object.get("kind").asString()).isEqualTo("table");
+        assertThat(object.get("namespace").valueStream().map(JsonNode::asString).toList()).containsExactly("hr");
+        assertThat(object.get("name").asString()).isEqualTo("Staff");
+        assertThat(object.get("state").asString()).isEqualTo("active");
+        assertThat(object.has("dropped-at")).isFalse();
+        assertThat(object.get("refs").valueStream().map(ref -> ref.get("name").asString()).toList())
+                .containsExactly("dev");
+        assertThat(object.get("may").get("remove").asBoolean()).isFalse();
+        assertThat(keptById(staff).get("objects").get(0).get("id").asString()).isEqualTo(staff.id().toString());
+
+        for (Caller steward : List.of(SUE, HUGH)) {
+            caller = steward;
+            assertThat(kept("hr", "staff").get("objects").get(0).get("may").get("remove").asBoolean())
+                    .as("%s holds manage-tags on it", steward).isTrue();
+        }
+        caller = HUGH;
+        assertThat(answer(() -> routes.keptAt("gate", "sales", "orders", http))).as("hugh holds nothing on sales")
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view sales.orders in gate"));
+        caller = HAL;
+        assertThat(answer(() -> routes.keptAt("gate", "sales", "orders", http)).status()).isEqualTo(404);
+        assertThat(answer(() -> routes.kept("gate", orders.id().toString(), http)))
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view " + orders.id() + " in gate"));
+        assertThat(kept("hr", "Staff").get("objects")).as("hal describes hr").hasSize(1);
+        caller = NED;
+        assertThat(answer(() -> routes.keptAt("gate", "hr", "Staff", http)).type())
+                .isEqualTo("NoSuchWarehouseException");
+
+        assertThat(denials()).extracting(Denial::operation).containsExactly("readObjectRefs", "readObjectRefs",
+                "readObjectRefs", "readObjectRefs");
+        assertThat(denials().getFirst().privilege()).isEqualTo("describe");
+        assertThat(denials().getFirst().securable().path()).containsExactly("sales", "orders");
+
+        caller = VIC;
+        assertThat(answer(() -> routes.keptAt("gate", "hr", "nope", http)))
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view hr.nope in gate"));
+        assertThat(answer(() -> routes.keptAt("gate", "nowhere", "Staff", http)).status()).isEqualTo(404);
+        assertThat(denials()).as("nothing there is no refusal").hasSize(4);
+        assertThat(droppersAsked).as("no one is asked who dropped a live table").isEmpty();
+    }
+
+    /**
+     * A name dropped, made again and dropped again is two objects, and a third may live there now: newest first, the
+     * live one, then each dropped one by when it was dropped, each with the refs that keep it and, where the audit
+     * says, who dropped it.
+     */
+    @Test
+    void aNameDroppedMadeAgainAndDroppedAgainIsTwoObjectsNewestFirst() {
+        made.put(staff.id(), NOW.minus(DAY.multipliedBy(10)));
+        create("v1", "tag", null, null);
+        CatalogObject first = dropped(staff, NOW.minus(DAY.multipliedBy(5)));
+        CatalogObject second = object(hr, "Staff");
+        made.put(second.id(), NOW.minus(DAY.multipliedBy(4)));
+        UUID dev = id(create("dev", "branch", null, null));
+        // A new ref names only what main holds live (RefSuite): the double copies every object, so dev is put right.
+        cuts.put(dev, cuts.get(dev).stream().filter(entry -> !entry.id().equals(first.id())).toList());
+        pointers.put(new PointerKey(second.id(), dev.toString()), own(second, dev, 1));
+        dropped(second, NOW.minus(DAY));
+        CatalogObject third = object(hr, "STAFF");
+        droppers.put(first.id(), new RefRoutes.Dropper("lee", null));
+        droppers.put(second.id(), new RefRoutes.Dropper("trino", "ana"));
+        caller = SUE;
+
+        JsonNode objects = kept("hr", "staff").get("objects");
+
+        assertThat(objects.valueStream().map(o -> o.get("id").asString()).toList())
+                .containsExactly(third.id().toString(), second.id().toString(), first.id().toString());
+        assertThat(objects.get(0).get("state").asString()).isEqualTo("active");
+        assertThat(objects.get(0).has("dropped-by")).isFalse();
+        assertThat(objects.get(0).get("refs")).isEmpty();
+        JsonNode again = objects.get(1);
+        assertThat(again.get("state").asString()).isEqualTo("dropped");
+        assertThat(again.get("made-at").asString()).isEqualTo(NOW.minus(DAY.multipliedBy(4)).toString());
+        assertThat(again.get("dropped-at").asString()).isEqualTo(NOW.minus(DAY).toString());
+        assertThat(again.get("purge-after").asString()).isEqualTo(NOW.minus(DAY).plus(DAY.multipliedBy(7)).toString());
+        assertThat(again.get("dropped-by").get("principal").asString()).isEqualTo("trino");
+        assertThat(again.get("dropped-by").get("end-user").asString()).isEqualTo("ana");
+        assertThat(again.get("refs").valueStream().map(ref -> ref.get("name").asString()).toList())
+                .containsExactly("dev");
+        assertThat(again.get("refs").get(0).get("own-version").asLong()).isEqualTo(1);
+        JsonNode once = objects.get(2);
+        assertThat(once.get("made-at").asString()).isEqualTo(NOW.minus(DAY.multipliedBy(10)).toString());
+        assertThat(once.get("dropped-at").asString()).isEqualTo(NOW.minus(DAY.multipliedBy(5)).toString());
+        assertThat(once.get("dropped-by").get("principal").asString()).isEqualTo("lee");
+        assertThat(once.get("dropped-by").has("end-user")).isFalse();
+        assertThat(once.get("refs").valueStream().map(ref -> ref.get("name").asString()).toList())
+                .containsExactly("v1");
+        assertThat(droppersAsked).containsExactly(second.id(), first.id());
+
+        assertThat(keptById(first).get("objects")).singleElement()
+                .satisfies(o -> assertThat(o.get("state").asString()).isEqualTo("dropped"));
+    }
+
+    /**
+     * Each lookup of who dropped a table is a query of the audit table that the feed's rate limit does not see, so one
+     * answer looks up the newest five drops only, and each one past them says it was left out (the Nuna Security
+     * Expert's review of backlog 170).
+     */
+    @Test
+    void whoDroppedItIsLookedUpForTheNewestFiveDropsOnlyAndTheRestSayItWasLeftOut() {
+        List<CatalogObject> drops = new ArrayList<>();
+        for (int i = 1; i <= RefRoutes.DROPPERS_READ + 2; i++) {
+            CatalogObject each = dropped(object(hr, "Staff"), NOW.minus(DAY.multipliedBy(i)));
+            droppers.put(each.id(), new RefRoutes.Dropper("lee", null));
+            drops.add(each);
+        }
+        caller = SUE;
+
+        JsonNode objects = kept("hr", "staff").get("objects");
+
+        assertThat(objects.valueStream().filter(o -> o.has("dropped-by")).map(o -> o.get("id").asString()).toList())
+                .containsExactlyElementsOf(drops.subList(0, RefRoutes.DROPPERS_READ).stream()
+                        .map(o -> o.id().toString()).toList());
+        assertThat(objects.valueStream().filter(o -> o.path("dropped-by-left-out").asBoolean())
+                .map(o -> o.get("id").asString()).toList())
+                .containsExactlyElementsOf(drops.subList(RefRoutes.DROPPERS_READ, drops.size()).stream()
+                        .map(o -> o.id().toString()).toList());
+        assertThat(droppersAsked).hasSize(RefRoutes.DROPPERS_READ);
+        assertThat(kept("hr", "staff").has("cut-short")).isFalse();
+    }
+
+    /**
+     * The store has no lookup of dropped objects by name, so the read walks the namespace's dropped ones: at most
+     * {@link RefRoutes#KEPT_WALK_LIMIT}, past which the answer says it was cut short and gives what it found.
+     */
+    @Test
+    void theWalkOfANamespacesDroppedObjectsStopsAtItsLimitAndSaysSo() {
+        CatalogObject wanted = dropped(staff, NOW.minus(DAY));
+        for (int i = 0; i < RefRoutes.KEPT_WALK_LIMIT; i++) {
+            dropped(object(hr, "other" + i), NOW.minus(DAY));
+        }
+        caller = SUE;
+
+        JsonNode answer = kept("hr", "staff");
+
+        assertThat(answer.get("cut-short").asBoolean()).isTrue();
+        assertThat(answer.get("objects").valueStream().map(o -> o.get("id").asString()).toList())
+                .containsExactly(wanted.id().toString());
+    }
+
+    /**
+     * A walk cut short that found nothing at the path proves nothing absent: a caller who may describe the namespace
+     * is told so, with no objects; a caller who holds nothing there gets the 404 of a path with nothing.
+     */
+    @Test
+    void aWalkCutShortThatFoundNothingSaysSoToWhoeverMayDescribeTheNamespace() {
+        for (int i = 0; i <= RefRoutes.KEPT_WALK_LIMIT; i++) {
+            dropped(object(sales, "other" + i), NOW.minus(DAY));
+        }
+        caller = SUE;
+
+        JsonNode answer = kept("sales", "ghost");
+
+        assertThat(answer.get("cut-short").asBoolean()).isTrue();
+        assertThat(answer.get("objects")).isEmpty();
+        caller = HAL;
+        assertThat(answer(() -> routes.keptAt("gate", "sales", "ghost", http)))
+                .as("hal holds nothing on sales")
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view sales.ghost in gate"));
+    }
+
+    /**
+     * Each ref that keeps a table says its kind and expiry; a branch past its expiry still keeps it until the worker
+     * ends it, and says so; a branch that changed it gives its own version. Who made a ref is left out. Purged and
+     * unregistered tables are no longer the catalog's to read.
+     */
+    @Test
+    void eachRefThatKeepsItSaysItsKindItsExpiryAndABranchsOwnVersion() {
+        UUID dev = id(create("dev", "branch", null, null));
+        create("qa", "branch", null, null);
+        create("v1", "tag", null, null);
+        pointers.put(new PointerKey(staff.id(), dev.toString()), own(staff, dev, 2));
+        clock.advance(DAY.multipliedBy(31));
+        caller = VIC;
+
+        JsonNode refs = keptById(staff).get("objects").get(0).get("refs");
+
+        assertThat(refs.valueStream().map(ref -> ref.get("name").asString()).toList())
+                .containsExactly("dev", "qa", "v1");
+        JsonNode branch = refs.get(0);
+        assertThat(branch.get("kind").asString()).isEqualTo("branch");
+        assertThat(branch.get("created-at").asString()).isEqualTo(NOW.toString());
+        assertThat(branch.get("expires-at").asString()).isEqualTo(NOW.plus(DAY.multipliedBy(30)).toString());
+        assertThat(branch.get("expired").asBoolean()).isTrue();
+        assertThat(branch.get("own-version").asLong()).isEqualTo(2);
+        assertThat(refs.get(1).get("expired").asBoolean()).isTrue();
+        assertThat(refs.get(1).has("own-version")).isFalse();
+        JsonNode tag = refs.get(2);
+        assertThat(tag.get("kind").asString()).isEqualTo("tag");
+        assertThat(tag.has("expires-at")).isFalse();
+        assertThat(tag.get("expired").asBoolean()).isFalse();
+        assertThat(refs.valueStream().filter(ref -> ref.has("created-by")).toList()).isEmpty();
+
+        state(orders, CatalogObject.State.PURGED);
+        state(salaries, CatalogObject.State.UNREGISTERED);
+        assertThat(answer(() -> routes.kept("gate", orders.id().toString(), http)).status()).isEqualTo(404);
+        assertThat(answer(() -> routes.kept("gate", salaries.id().toString(), http)).status()).isEqualTo(404);
+        assertThat(answer(() -> routes.keptAt("gate", "hr", "salaries", http)).status()).isEqualTo(404);
+        assertThat(answer(() -> routes.kept("gate", "Staff", http)).status()).isEqualTo(400);
     }
 
     // ---- the maintenance worker ----
@@ -1151,7 +1422,22 @@ class RefRoutesTest {
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "findCatalog" -> Optional.of(catalog).filter(c -> c.normalizedName().equals(args[0]));
                     case "readNamespace" -> Optional.ofNullable(namespaces.get((UUID) args[0]));
+                    case "findNamespace" -> namespaces.values().stream().filter(ns -> args[0].equals(catalog.id())
+                            && List.of(ns.name().normalized()).equals(args[1])).findFirst();
                     case "readObject" -> Optional.ofNullable(objects.get((UUID) args[0]));
+                    case "findObject" -> objects.values().stream().filter(o -> o.namespaceId().equals(args[0])
+                            && o.name().normalized().equals(args[1])
+                            && o.state() == CatalogObject.State.ACTIVE).findFirst();
+                    case "listObjects" -> new Page<>(objects.values().stream().filter(o ->
+                            o.namespaceId().equals(args[0]) && o.kind() == args[1] && o.state() == args[2])
+                            .sorted(Comparator.comparing((CatalogObject o) -> o.name().normalized())
+                                    .thenComparing(CatalogObject::id)).toList(), Optional.empty());
+                    case "readJournal" -> new Page<>(Optional.ofNullable(made.get(((PointerKey) args[0]).objectId()))
+                            .filter(at -> ((PointerKey) args[0]).branch().equals(PointerKey.MAIN))
+                            .map(at -> List.of(new JournalRecord(UUID.randomUUID(), (PointerKey) args[0], at,
+                                    new JournalEntry("ingest", null, null, "[]", "[]"), Optional.empty(),
+                                    "s3://made.metadata.json", 1)))
+                            .orElse(List.of()), Optional.empty());
                     case "grantsFor" -> grants.stream()
                             .filter(g -> ((Set<Securable>) args[0]).contains(g.grant().securable())
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
@@ -1202,6 +1488,23 @@ class RefRoutesTest {
 
     private ResponseEntity<String> remove(CatalogObject object, String body, String key) {
         return routes.remove("gate", object.id().toString(), key, body, http);
+    }
+
+    private JsonNode kept(String namespace, String name) {
+        return json(routes.keptAt("gate", namespace, name, http));
+    }
+
+    private JsonNode keptById(CatalogObject object) {
+        return json(routes.kept("gate", object.id().toString(), http));
+    }
+
+    /** The object as its drop at {@code at} leaves it, its undrop window seven days. */
+    private CatalogObject dropped(CatalogObject object, Instant at) {
+        CatalogObject changed = new CatalogObject(object.catalogId(), object.id(), object.namespaceId(), object.name(),
+                object.kind(), CatalogObject.State.DROPPED, Optional.of(at), Optional.of(at.plus(DAY.multipliedBy(7))),
+                object.locationRoot(), Optional.empty());
+        objects.put(object.id(), changed);
+        return changed;
     }
 
     private static String refsBody(String... names) {

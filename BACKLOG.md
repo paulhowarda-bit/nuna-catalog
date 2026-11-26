@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**36 open:** 8 S, 13 M, 9 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**33 open:** 7 S, 11 M, 9 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,9 +33,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
-| [168](backlog/168.md) | M | Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9) | a `cut-at` on the ref's answer, and the namespace listing and its totals read through a ref (each table's pointer on the ref, or at the cut, for its format, snapshots and last commit), with fast route tests and bites, then the console's columns | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
-| [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
@@ -44,7 +42,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
-| [279](backlog/279.md) | S | Console: take a table out of refs, item 156's route, from the table page (item 156's Left) | one control and its dialog over a route already built (item 156), shown only to a caller holding manage-tags on the object, with a browser test that waits for the overnight heavy build | 2026-11-25 |
 | [282](backlog/282.md) | L | The demo's and the laptop runner's fixed passwords made once per machine, people's included | about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first | 2026-11-25 |
 | [283](backlog/283.md) | S | Kafka Connect's REST API is published on 8186 with no sign-in | oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check | 2026-11-25 |
 | [285](backlog/285.md) | ? | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on | 2026-11-25 |
@@ -1524,36 +1521,6 @@ Left:
   Oracle V19). If 167 lands first, 113 renumbers above these, as whoever lands second settles: a lower number
   landing after a higher one is out of order for a database already migrated, such as the demo's.
 
-### 168. Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/NamespaceTablesRoutesTest.java catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/refs.js bites/D33/
-- Effort: M, a `cut-at` on the ref's answer, and the namespace listing and its totals read through a ref (each table's pointer on the ref, or at the cut, for its format, snapshots and last commit), with fast route tests and bites, then the console's columns
-
-Atelier's design (`docs/design/console/wireframes.html`, chapter 6, 6.10) asks for "the cut's time for a ref made from
-a ref, and a table's cut-version for unchanged tables", shown in the band and in a namespace's Contents read through
-a ref ("Last commit here", and "as at the point" with the version).
-
-What item 109 built instead:
-- The cut's time is worked out in the console (`cutOf` in `refs.js`): a ref made from main was cut when it was made;
-  one made from a branch or tag takes that ref's cut, following `from` back to main. That is right for the tables the
-  parent had not changed, but a ref made from a branch takes the branch's own changes as they were at the making, so
-  it has no single cut time; and once the parent is deleted, the chain breaks and the band says "the point @x was
-  made from".
-- `GET …/namespaces/{ns}/tables` and `…/namespaces` read main's metadata only, so a namespace's Contents read through
-  a ref leaves format, snapshots and last commit blank, with a line saying so. The "On @ref" column comes from the
-  ref's `changed` list ("changed here" with the branch's version), and every other table says "as at the point"
-  without a version.
-
-Done looks like:
-- The ref's list and read answers carry `cut-at`, the time its cut was taken from main, and for a ref made from a
-  branch, that it also holds the branch's changes as of its making.
-- The namespace listing and its totals take `?ref=`: each table as the ref has it (its own pointer on a branch, else
-  the cut's), with its version, format, snapshots and last commit; only what the caller may describe, as today.
-  Fast route tests with bites in `bites/D33/`.
-- The console fills the Contents columns through a ref, shows "as at the point, v{n}" for an unchanged table, and
-  takes the band's and the page's point from `cut-at`.
-
 ### 169. Audit: records filterable by the branch they went through (item 109's gap 10)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -1712,32 +1679,6 @@ were written and compiled, not run here. Open until the overnight run passes the
 - `ConsoleBrowserTest#theFeedsRefSearchReadsFromTheLiveRefsMakingAndTheRecordTabAsksByItsId` (heavy, compiled, not
   run) now covers the note's words, the status line, Up to keeping the start, the button and `from=any`, the Record
   tab's link and a link's other time. Bite recorded, not run: `bites/UI/console-ref-start-dropped-with-up-to`.
-
-### 170. Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/refs.js bites/D33/
-- Effort: M, a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page
-
-Atelier's design (`docs/design/console/wireframes.html`, chapter 6, 6.4) draws three edge states of a table page
-that item 109's eleven gaps do not cover, each marked "gap" in the design:
-
-- Dropped on main, read on main: the catalog's `404 NoSuchTableException`, then "{actor} dropped it on {time}. Main
-  has no such table. A ref made before then still reads it: @{ref}, …", or "No ref holds it." Needs which refs hold
-  a path, and the drop's time and actor.
-- Dropped on main, read through a ref: a "Dropped on main {d Mon}" pill and "{actor} dropped {path} on main on
-  {time}. @{ref} was made before then, so it still reads the table as it was; main answers 404 for it." Needs the
-  drop's time and actor.
-- Made after the ref's point, read through the ref: the catalog's 404, then "{path} was made on {time}, after
-  @{ref}'s point, {cut}. A ref holds only what main held then." Needs the table's making time and the cut's time
-  (item 168).
-
-Item 109 shows the catalog's 404 as it answers, verbatim, in each case, without the words after it. The merge's dry
-run already gives a dropped table's `dropped-at` (item 107), but not who dropped it.
-
-Done looks like: a route (or a field on an existing answer, the builder's choice) that names the live refs holding an
-object by id or path, and the drop's actor and time; fast tests with bites in `bites/D33/`; the three states on the
-table page with the design's words.
 
 ### 231. Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides)
 
@@ -2060,27 +2001,6 @@ Left: the overnight heavy build has to pass the two `CommitSuite` cases on all f
 have to bite. The CockroachDB select-only bite assumes `SELECT … FOR UPDATE` on a missing key locks nothing under
 READ COMMITTED; if it reports NO BITE, record that store's bite another way. Then `./backlog.sh done 278`.
 
-### 279. Console: take a table out of refs, item 156's route, from the table page (item 156's Left)
-
-- Added: 2026-11-25 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/api.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, one control and its dialog over a route already built (item 156), shown only to a caller holding manage-tags on the object, with a browser test that waits for the overnight heavy build
-
-Part of item 26 (D33), moved here from item 156's Left on 2026-11-25 so it is tracked.
-
-What is missing: item 156 built `POST /management/v1/catalogs/{catalog}/objects/{id}/refs/remove` (body
-`{"refs":[...]}` or `{"all-refs":true}`, gated by `manage-tags` on the object, audited), so a dropped table's data can
-leave the tags that keep it and cleanup can delete its files. The console has no control for it: `backlog/156.md`
-says "The console has no control for the route yet (item 109's screens are where it would go)". An operator has to
-call the API by hand.
-
-Done when the table page (main, or read through a ref) lists the refs that name the table, and a caller holding
-`manage-tags` on it can take it out of chosen refs or all of them, through a dialog that says what this does (the
-refs no longer keep its files, and a dropped table's data can then be deleted by cleanup), names what the answer
-left, and shows a refusal as the catalog answered it; callers without the right see no control; a browser test
-(heavy) and the fast console rules tests. Atelier decides the control's design and words; ask her through the
-Catalog UI Expert before building.
-
 ### 282. The demo's and the laptop runner's fixed passwords made once per machine, people's included
 
 - Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
@@ -2291,6 +2211,8 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
 | [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
 | [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
+| [168](backlog/168.md) | Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9) | done | 2026-11-25 |
+| [170](backlog/170.md) | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | done | 2026-11-25 |
 | [171](backlog/171.md) | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | done | 2026-11-25 |
 | [172](backlog/172.md) | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | done | 2026-11-25 |
 | [173](backlog/173.md) | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | done | 2026-11-23 |
@@ -2387,6 +2309,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [275](backlog/275.md) | The worker's first scan after a restart can't get a token, and readiness then says storage is missing | done | 2026-11-25 |
 | [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |
 | [277](backlog/277.md) | The console says no worker has reported when its newest scan reported no storage | done | 2026-11-25 |
+| [279](backlog/279.md) | Console: take a table out of refs, item 156's route, from the table page (item 156's Left) | done | 2026-11-25 |
 | [280](backlog/280.md) | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | done | 2026-11-25 |
 | [281](backlog/281.md) | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | done | 2026-11-25 |
 | [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |

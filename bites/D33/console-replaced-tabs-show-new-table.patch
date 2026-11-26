@@ -1,0 +1,20 @@
+Breaks: a table read through a ref after main made a new one by its name shows the new table's governance, health and trail on its Access, Maintenance and Audit tabs (backlog 170).
+Module: catalog-server
+Test: ConsoleRefWordsTest#aTableDroppedOnMainButKeptByTheRefSaysItStaysReadableUntilTakenOut
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index 9c376ec0..6594b480 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -90,12 +90,6 @@ async function throughRef(target, loaded, what, draw) {
+   }
+   // Main's path naming a newer table than the one the ref keeps: its data would be that table's (item 170).
+   const replaced = what && await replacedGuard(target, {health: 'maintenance', access: 'access', audit: 'audit'}[what]);
+-  if (replaced) {
+-    // On Access, item 279's panel for the table the ref keeps, beneath the line, in the slot 170 leaves.
+-    const slot = $('[data-kept-panel][data-tab="access"]', replaced);
+-    if (slot) fill(slot, await keptPanel(target));
+-    return replaced;
+-  }
+   return [what ? refNote(await readingRef(target.catalog, target.ref) || target.ref, what) : null, await draw()];
+ }
+ 
