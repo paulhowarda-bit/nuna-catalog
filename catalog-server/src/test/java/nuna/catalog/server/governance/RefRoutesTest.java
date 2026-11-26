@@ -937,6 +937,27 @@ class RefRoutesTest {
     }
 
     /**
+     * A walk cut short that found nothing at the path proves nothing absent: a caller who may describe the namespace
+     * is told so, with no objects; a caller who holds nothing there gets the 404 of a path with nothing.
+     */
+    @Test
+    void aWalkCutShortThatFoundNothingSaysSoToWhoeverMayDescribeTheNamespace() {
+        for (int i = 0; i <= RefRoutes.KEPT_WALK_LIMIT; i++) {
+            dropped(object(sales, "other" + i), NOW.minus(DAY));
+        }
+        caller = SUE;
+
+        JsonNode answer = kept("sales", "ghost");
+
+        assertThat(answer.get("cut-short").asBoolean()).isTrue();
+        assertThat(answer.get("objects")).isEmpty();
+        caller = HAL;
+        assertThat(answer(() -> routes.keptAt("gate", "sales", "ghost", http)))
+                .as("hal holds nothing on sales")
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view sales.ghost in gate"));
+    }
+
+    /**
      * Each ref that keeps a table says its kind and expiry; a branch past its expiry still keeps it until the worker
      * ends it, and says so; a branch that changed it gives its own version. Who made a ref is left out. Purged and
      * unregistered tables are no longer the catalog's to read.

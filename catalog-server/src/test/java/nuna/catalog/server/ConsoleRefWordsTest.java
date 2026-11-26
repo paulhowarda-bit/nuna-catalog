@@ -67,10 +67,25 @@ class ConsoleRefWordsTest {
                 "cref(x, {warn: !!x.expired}), x.expired ? ' (past its expiry)' : null)]);",
                 // Item 279's control goes here, one for each dropped table.
                 "'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)",
-                // The read's walk cut short (the Security Expert's review).
+                // The read's walk cut short (the Security Expert's review; Atelier's words, 2026-11-25).
                 "objects.cutShort = !!answer['cut-short'];",
-                "objects.cutShort ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog stopped looking before it had read every '",
-                "+ 'dropped table in this namespace, so an earlier table at this path may be missing here.') : null");
+                "if (!objects || !(objects.length || objects.cutShort)) return null;",
+                "objects.cutShort ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog reads only part of a namespace\\'s dropped '",
+                "+ 'tables and stopped before the end, so an earlier table at this path, and the branches and tags that keep it, may be '",
+                "+ 'missing here.') : null",
+                "if (!dropped.length && objects.cutShort) {",
+                "h('p', {'data-kept-cut': ''}, 'The catalog reads only part of a namespace\\'s dropped tables and found none at this path '",
+                "+ 'among them; one dropped earlier may still be kept by a branch or tag.'));",
+                // Drops past the newest five: one line, for audit readers only.
+                "const leftOut = auditOpen(c) && dropped.some(x => x['dropped-by-left-out']);",
+                "leftOut ? h('p', {class: 'fine', 'data-kept-left-out': ''}, 'Who dropped each table past the newest five is not looked up here: ',",
+                "h('a', {href: pageHref('audit', c) + '&' + new URLSearchParams({path})}, `search the audit feed for ${path}`), '.') : null,");
+        // The pill is drawn only once some dropped table is found.
+        assertThat(refs.indexOf("found none at this path")).isLessThan(refs.indexOf("droppedPill(title, 'Dropped on main');"));
+        // The left-out line comes after the paragraphs and before the cut-short line.
+        assertThat(refs.indexOf("data-kept-left-out")).isLessThan(refs.indexOf("and stopped before the end"));
+        // The audit feed reads its path filter from the link (backlog 187).
+        assertThat(resource("audit.js")).contains("path: q.get('path') || ''");
         assertThat(refs).doesNotContain("No ref holds it.", "still reads it: @", "A ref made before then still keeps it",
                 "pill('bad', text)", "objects.find(x => x.state !== 'active')");
     }

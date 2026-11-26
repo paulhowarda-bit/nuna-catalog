@@ -29,6 +29,7 @@ import nuna.catalog.store.IdempotencyResult;
 import nuna.catalog.store.JournalStore;
 import nuna.catalog.store.KeyState;
 import nuna.catalog.store.Name;
+import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Pointer;
@@ -1039,8 +1040,18 @@ class RefRoutes {
         List<String> levels = RestRequest.namespaceLevels(namespace);
         CatalogError missing = CatalogError.of(404, "NoSuchObjectException", "No table or view "
                 + String.join(".", levels) + "." + name + " in " + catalog.name());
-        AtPath found = store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList())
-                .map(at -> atPath(at.id(), Names.normalize(name))).orElse(new AtPath(List.of(), false));
+        Optional<NamespaceRecord> at = store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList());
+        AtPath found = at.map(ns -> atPath(ns.id(), Names.normalize(name))).orElse(new AtPath(List.of(), false));
+        // A walk cut short that found nothing proves nothing absent: a caller who may describe the namespace is told
+        // so, not 404 (Atelier, 2026-11-25); anyone else gets the 404 a path with nothing answers.
+        if (found.found().isEmpty() && found.cutShort() && authorizer.decide(request.caller(),
+                new Authorizer.Target.Namespace(catalog.id(), at.orElseThrow().id()),
+                new Authorizer.Operation(KEPT_OP, Privilege.DESCRIBE, false)).allowed()) {
+            ObjectNode body = Management.JSON.createObjectNode();
+            body.putArray("objects");
+            body.put("cut-short", true);
+            return GovernanceRoutes.json(200, body);
+        }
         return keptAnswer(request, catalog, found.found(), found.cutShort(), missing);
     }
 
