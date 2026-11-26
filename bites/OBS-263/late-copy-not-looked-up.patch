@@ -1,0 +1,16 @@
+Breaks: A copy older than the dedup window is not looked up in the table, so a late copy is written again.
+Module: catalog-audit-tables
+Test: LogWriterTest#aCopyArrivingAnHourAfterTheFirstIsLeftOutAndALateFirstCopyIsWritten+aLateCopyArrivingAfterARestartIsLeftOut
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+index c68ecf27..476ac243 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+@@ -246,7 +246,7 @@ final class LogWriter {
+                 }
+             }
+         }
+-        if (late.isEmpty()) {
++        if (late.isEmpty() || !late.isEmpty()) {
+             return;
+         }
+         Set<String> written = table.eventIdsAmong(late);

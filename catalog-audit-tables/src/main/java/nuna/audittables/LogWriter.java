@@ -41,7 +41,8 @@ import org.slf4j.LoggerFactory;
  * <p>Records are taken into memory and the exporter is answered at once; they are committed every
  * {@code commitInterval}, or sooner once {@code maxRows} wait. A commit that fails keeps them for the next; past twice
  * {@code maxRows} waiting, {@link #offer} refuses and the exporter retries. What waits is lost if the writer dies
- * before its commit; it is still in the catalog's log on stdout. A shutdown commits what waits first.
+ * before its commit; it is still in the catalog's log on stdout. A shutdown commits what waits first. Answering after
+ * the commit would need a commit every few seconds, more snapshots than the table carries (backlog 263; audit-log.md).
  *
  * <p>When the catalog answers that the table does not exist (it was dropped, or the catalog's database is new), the
  * writer makes it again through its opener and writes what waits; the rows written before stay in the dropped table
