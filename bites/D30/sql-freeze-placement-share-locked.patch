@@ -1,0 +1,19 @@
+Breaks: a DR freeze put on PostgreSQL and CockroachDB share-locks its target, so a purge claim or a removal from refs that share-locks the same level reads freezes while the freeze is open (backlog 171).
+Module: catalog-store-sql
+Test: SqlLockOrderTest#aHoldOrAFreezeLocksItsTargetForUpdateAndAnyOtherAttributeForShare
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java
+index e6689d93..ba93340e 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java
+@@ -87,9 +87,7 @@ final class SqlGovernance {
+ 
+     WriteResult putAttribute(GovernanceAttribute attribute, Change change) {
+         return transactions.change(change, "attribute put", connection -> {
+-            Optional<WriteResult> missing = attribute.kind() == GovernanceAttribute.Kind.DR_FREEZE
+-                    ? Guards.missingForUpdate(connection, attribute.target())
+-                    : Guards.missing(connection, attribute.target(), Optional.empty());
++            Optional<WriteResult> missing = Guards.missing(connection, attribute.target(), Optional.empty());
+             if (missing.isPresent()) {
+                 return missing.get();
+             }
