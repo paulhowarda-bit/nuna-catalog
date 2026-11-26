@@ -52,8 +52,16 @@ The engine matrix (`catalog-tests-engines`, `EngineMatrixTest#refs`, overnight) 
 
 A ref keeps names as well as contents: a table dropped or renamed on main after the point still reads through the
 ref under the name it had, and a table created on main after the point is not there (404). Grants are main's: a
-table's grants hold on every ref, and reading through a ref needs what reading main needs (grants that name a ref
-are item 113, later).
+table's grants hold on every ref, and reading through a ref needs what reading main needs.
+
+**A grant of write or modify may name one branch** (backlog 113). It holds on that branch alone: the group may commit
+there and nowhere else, and a commit on the branch is allowed by such a grant or by one on every ref. Only write and
+modify may name a branch, since a commit is all a branch grant is for; reads and every other change ask through main.
+A grant cannot name a tag (400). The grants routes take `"branch": "<name>"` on grant, revoke, preview and check, and
+list a branch grant with its branch's name; the audit record names the branch by name and id (`grant`, version 2). A
+branch-only writer's vended credentials read the whole table but write only beneath `<table>/branches/<ref id>/`, and
+the load response points `write.data.path` and `write.metadata.path` there, so its files never land among main's. A
+branch grant ends with its branch: deleting or merging the branch deletes it.
 
 **A tag is read-only, three times over.** The catalog refuses a write on a tag with 400 "updateTable is refused on tag
 eod of catalog trading: a tag is read-only", naming the operation. Stock clients never get that far.

@@ -287,9 +287,9 @@ export async function grantGroups(catalog) {
   return out;
 }
 
-export const revoke = (catalog, securableSpec, group, privilege) =>
+export const revoke = (catalog, securableSpec, group, privilege, branch) =>
   send(`/management/v1/catalogs/${enc(catalog)}/grants/revoke`,
-    {method: 'POST', body: {securable: securableSpec, group, privilege}});
+    {method: 'POST', body: {securable: securableSpec, group, privilege, ...(branch ? {branch} : {})}});
 
 // ---- row filters and column masks (D20, backlog 115; the console's, backlog 243) ----
 
