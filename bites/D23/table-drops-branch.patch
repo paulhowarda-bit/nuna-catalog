@@ -1,0 +1,16 @@
+Breaks: the table's branch column is never written, so no record is found through a ref (backlog 169).
+Module: catalog-audit-tables
+Test: EventsReaderTest#filtersByTheRefARecordWentThroughOrIsAbout+aTableMadeBeforeTheRefColumnsIsGivenThemAndItsEarlierRowsMatchNoRefOrSubject
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+index 33b483d4..d86651c5 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+@@ -270,7 +270,6 @@ final class EventsTable {
+         record.setField("topic_offset", row.topicOffset());
+         record.setField("log_run", row.logRun());
+         record.setField("log_seq", row.logSequence());
+-        record.setField("branch", row.branch());
+         record.setField("subject_ids", row.subjectIds());
+         return record;
+     }

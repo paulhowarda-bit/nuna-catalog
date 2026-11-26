@@ -10,7 +10,8 @@ import java.util.UUID;
  * One audit record as a row of the queryable audit table {@code events} (D23, amended 2026-11-20): the envelope's
  * attributes, who made the request, what it was about, the type's operation, privilege and reason where it has them,
  * the whole payload as JSON, the record's place in the audit topic, and, for a record from the log, the server run that
- * logged it and its number there, which place the row in the run's archive chain (backlog 272). Plain Java values: the Iceberg side lives in {@code catalog-audit-tables}, not here (D2).
+ * logged it and its number there, which place the row in the run's archive chain (backlog 272), and the catalog ref it
+ * went through and the ids it is about besides its object, which the feed filters by (backlog 169). Plain Java values: the Iceberg side lives in {@code catalog-audit-tables}, not here (D2).
  *
  * @param eventId        the CloudEvents id
  * @param time           when it happened
@@ -34,11 +35,17 @@ import java.util.UUID;
  *                       copy, or null for a record that carries none: from a server older than the stamp, or a
  *                       topic copy from one older than item 276
  * @param logSequence    its number in that run ({@link LogStamp#sequence}), or null when {@code logRun} is
+ * @param branch         the catalog ref the record went through or is about (backlog 169): a commit's or a read's
+ *                       {@code branch}, which is {@code main} or the ref's name as given, or a ref record's ref name;
+ *                       null for every other type
+ * @param subjectIds     the ids of what the record is about besides its object (backlog 169): a ref record's ref,
+ *                       then the tables and views in its {@code tables}; null for every other type
  */
 public record AuditRow(String eventId, Instant time, String type, String source, String principal, String endUser,
                        String engine, String requestId, String catalog, String objectKind, String objectId,
                        List<String> objectPath, String operation, String privilege, String reason, String data,
-                       int topicPartition, long topicOffset, String logRun, Long logSequence) {
+                       int topicPartition, long topicOffset, String logRun, Long logSequence, String branch,
+                       List<String> subjectIds) {
 
     public AuditRow {
         Objects.requireNonNull(eventId, "eventId");
@@ -47,6 +54,7 @@ public record AuditRow(String eventId, Instant time, String type, String source,
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(data, "data");
         objectPath = objectPath == null ? null : List.copyOf(objectPath);
+        subjectIds = subjectIds == null ? null : List.copyOf(subjectIds);
         if ((logRun == null) != (logSequence == null)) {
             throw new IllegalArgumentException("a row carries both its log run and its number in it, or neither");
         }
