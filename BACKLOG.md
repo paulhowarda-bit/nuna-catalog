@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 11 S, 16 M, 9 L, 5 XL.
+**47 open:** 13 S, 17 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,6 +53,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
 | [279](backlog/279.md) | S | Console: take a table out of refs, item 156's route, from the table page (item 156's Left) | one control and its dialog over a route already built (item 156), shown only to a caller holding manage-tags on the object, with a browser test that waits for the overnight heavy build | 2026-11-25 |
+| [280](backlog/280.md) | M | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | about twenty test files, one line of main code, and a fast-build check; Oracle, Keycloak and MinIO tests are heavy, so the overnight run proves them | 2026-11-25 |
+| [281](backlog/281.md) | L | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | a chart value, a database CA and two certificates in demo.sh, PostgreSQL's TLS and pg_hba, a demo rebuild on a kept and a wiped volume, and the engine matrix's harness made to issue the same certificates | 2026-11-25 |
+| [282](backlog/282.md) | L | The demo's and the laptop runner's fixed passwords made once per machine, people's included | about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first | 2026-11-25 |
+| [283](backlog/283.md) | S | Kafka Connect's REST API is published on 8186 with no sign-in | oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check | 2026-11-25 |
+| [284](backlog/284.md) | S | The audit table writer stops for good when its table is dropped under it | one reopen path in LogWriter and TableWriter and a test that drops the table between commits | 2026-11-25 |
+| [285](backlog/285.md) | ? | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on | 2026-11-25 |
 
 ## Open items in full
 
@@ -2007,6 +2013,134 @@ refs no longer keep its files, and a dropped table's data can then be deleted by
 left, and shows a refusal as the catalog answered it; callers without the right see no control; a browser test
 (heavy) and the fast console rules tests. Atelier decides the control's design and words; ask her through the
 Catalog UI Expert before building.
+
+### 280. Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: catalog-tests-s3/src/main/java/nuna/catalog/tests/s3/PrivateCa.java catalog-store-oracle/src/test/ catalog-server/src/test/ catalog-maintenance/ catalog-audit-tables/src/test/ catalog-objectstore/src/test/ catalog-tests-load/src/test/ singlestore-change-feed/src/test/ docs/design/console/prototype.html build.gradle.kts docs/from-work/
+- Effort: M, about twenty test files, one line of main code, and a fast-build check; Oracle, Keycloak and MinIO tests are heavy, so the overnight run proves them
+
+Fidelity's GitHub refuses any push holding what its secret scanning reads as a credential, test values included
+(`docs/from-work/005-github-secret-scanning.md`, the work agent's note, which lists the scanner's findings by name).
+Work changed its copy and pushed a snapshot; ours still holds every literal, so the next drop is refused again.
+
+The note named PrivateCa, OracleFree, UnavailableFailuresTest (Oracle), OracleBackendTest, DatabaseSettingsTest,
+TokenSourceTest, AuditTablesSettingsTest and the JWT-shaped sample token in `prototype.html`. catalog-security's sweep
+(2026-11-25) found the same shapes the note missed: StorageProfileTest:184 (`https://admin:secret@`),
+StorageReportTest:51-52 and CatalogPropertiesTest:52-53 (AKIA-shaped key ids beside secrets), DeletePolicyMinioTest:53-56,
+catalog-tests-load's Stack:50, ConsoleSignInTest:71 and TwoIssuersTest:56 (Keycloak's admin), the test realms
+`console-`, `entra-`, `ping-` and `rogue-realm.json` (people's passwords), ChangeFeedTest:58/212, and in main code
+KubernetesJobs:78 `TRUST_PASSWORD`. TestS3 and EngineMatrixTest are item 281's.
+
+Done when each value is made at run time (a random value per JVM; the realms take a placeholder filled with
+`withEnv`; the Job's trust store password is made inside its script), the changed tests pass (heavy ones in the
+overnight run), and the fast build fails on a new literal of the scanner's shapes outside an allowlist.
+
+### 281. The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: deploy/helm/nuna-catalog/ deploy/README.md docs/install-at-work.md demo/demo.sh demo/k8s/stack.yaml demo/k8s/catalog-values.yaml demo/k8s/demo-values.yaml demo/README.md catalog-tests-engines/ catalog-tests-s3/src/main/java/nuna/catalog/tests/s3/TestS3.java demo/k8s/store-silo.yaml demo/k8s/store-ceph.yaml demo/k8s/seed.yaml
+- Effort: L, a chart value, a database CA and two certificates in demo.sh, PostgreSQL's TLS and pg_hba, a demo rebuild on a kept and a wiped volume, and the engine matrix's harness made to issue the same certificates
+
+`spring.datasource.password: catalog` in `demo/k8s/catalog-values.yaml` and `deploy/local/values.yaml` was refused by
+work's push protection (`docs/from-work/005-github-secret-scanning.md`). Work went further: on its machine the catalog
+signs in to the demo's PostgreSQL with a client certificate and no PostgreSQL account has a password, verified there
+(all ten connections TLS 1.3 with `/CN=catalog` in `pg_stat_ssl`; a connection without a certificate refused). That
+is the shape production takes too, with work's PKI in place of the script.
+
+catalog-security's review (2026-11-25) keeps the design with these changes to the note's: no
+`POSTGRES_HOST_AUTH_METHOD=trust` (initdb would write `host all all all trust`, open if `hba_file` were ever lost;
+set an unused random password instead, which fails closed); `ALTER ROLE catalog PASSWORD NULL` on a kept volume (D52);
+no `fsGroup` on PostgreSQL (it reaches the data volume) but the key copied in at start with mode 0600; the client
+key in a volume of its own, not the config-tree Secret whose every file becomes a Spring property, through a chart
+value `databaseTls` (secret name, mount path, mode 0440); the URL's TLS parameters in `catalog-values.yaml`, since
+`stack.yaml` enforces them for the matrix too; both pods rolled on a new certificate; a self-check in `up` (a TCP
+connection without a certificate fails, `SHOW hba_file` is the mounted file). Only the catalog connects over TCP;
+everything else uses the socket. The engine matrix applies the same `stack.yaml` and `catalog-values.yaml`, so its
+harness issues the certificates too (PrivateCa can), and the Silo key becomes a placeholder TestS3 fills.
+
+Done when a fresh `up` and an `up` on a kept volume both leave the catalog on a certificate (`pg_stat_ssl`), a
+connection without one is refused, no PostgreSQL role has a password, the chart renders `databaseTls`, the install
+guide says how work's PKI plugs in, and the next overnight engine matrix passes.
+
+### 282. The demo's and the laptop runner's fixed passwords made once per machine, people's included
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: demo/ deploy/local/
+- Effort: L, about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first
+
+The work note (`docs/from-work/005-github-secret-scanning.md`) expects the demo's fixed passwords to be flagged next:
+Silo's `nunatest-secret-key`, Keycloak's admin and SingleStore's root `nuna-test`. catalog-security's sweep
+(2026-11-25) adds Grafana's and CloudBeaver's admins, the worker's Silo key, the CDC leg's database passwords and
+connector settings, and the people's passwords in `keycloak-realm.json`, `backoffice.sql`, `cdc/*.sql` and
+`cloudbeaver.yaml`. The people's passwords matter beyond the scanner: `presenter` may do everything, grants to their
+own groups included, so at work, with `NUNA_DEMO_HOST` set, anyone who has read the repository can sign in as them.
+
+`deploy/local` (the laptop runner) holds seven: backing.yaml:23/106-107, keycloak.yaml:35/99 (a client secret in a
+ConfigMap), values.yaml:78-79, worker-values.yaml:50-51. The note's fix reads the database password from
+`backing.yaml` with `sed`, which keeps the literal in git. It stays on a password: it is the one runner that takes
+the documented production path (`deploy/README.md`).
+
+Done when `up` makes each value once per machine under `~/.nuna-demo` (as `publish_keycloak_keys` does) and passes it
+with `--set-file` or a Secret, never on Helm's command line; people's passwords are typeable and printed by `up` to
+`~/.nuna-demo/people`, and the README names that file instead of listing them; kept volumes take the new values
+(PostgreSQL's ALTER ROLE, Grafana's reset; one `wipe` where an image cannot); every person signs in and `cdc` passes;
+`deploy/local/run.sh` makes its values in `~/.nuna-k8s`, and `up`, `smoke` and `worker` pass.
+
+### 283. Kafka Connect's REST API is published on 8186 with no sign-in
+
+- Added: 2026-11-25 by catalog-security, from its review of work note 005
+- Touches: demo/k8s/ports.yaml demo/k8s/connect.yaml demo/README.md
+- Effort: S, oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check
+
+Found while reviewing `docs/from-work/005-github-secret-scanning.md` (2026-11-25). While the CDC leg runs, the front
+door publishes Kafka Connect's REST API on 8186 with no sign-in (`ports.yaml:103`), and `EnvVarConfigProvider` is on
+(`connect.yaml:34-35`). Anyone who reaches 8186 can create a connector and copy the worker's environment into its
+settings, the catalog token `NUNA_TOKEN` included, and with the database's published superuser password Debezium's
+`database.initial.statements` would run SQL on the catalog's database (read from Debezium's documented option, not
+tried). Item 281 closes the database part; the API itself stays open.
+
+Done when an unauthenticated request to 8186 is refused (or nothing listens there) and a signed-in operator can still
+see the connectors.
+
+### 284. The audit table writer stops for good when its table is dropped under it
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: catalog-audit-tables/src/
+- Effort: S, one reopen path in LogWriter and TableWriter and a test that drops the table between commits
+
+From `docs/from-work/005-github-secret-scanning.md`, item 4: the writer makes `nuna_audit.audit.events` only as it
+starts. When the catalog's PostgreSQL is new but the writer's pod is not (a Helm upgrade that changes nothing leaves
+it running), the Audit page answers 503 "the audit table nuna_audit.audit.events does not exist yet" for good, and
+the writer logs `NoSuchTableException: Table does not exist: audit.events` every 10 seconds while holding its
+records. Work's stopgap restarts the writer from `demo.sh`; work says the better fix is the writer making its table
+again. catalog-security (2026-11-25): `LogWriter.reload()` reopens only when `table == null` (LogWriter.java:229-232),
+so once the table is gone every reload fails; TableWriter has the same shape.
+
+Done when, on `NoSuchTableException` only (never on a 403, which would hide a revoked grant), the writer drops its
+cached table and opens it again through the opener that creates it, logs a WARN that a dropped audit table should be
+undropped rather than replaced, and writes the records it held; a test drops the table between two commits and sees
+both commits' records in the new table.
+
+### 285. Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: none
+- Effort: M if history is rewritten (a rewrite, its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on
+
+Push protection checks every commit pushed, so once 280 to 282 clean the tree, the old values in earlier commits
+still block a push of the full history (`docs/from-work/005-github-secret-scanning.md`). Work pushed one
+history-less snapshot for that reason.
+
+The facts (catalog-security, 2026-11-25): every value is in history from the commit that added it, under keel and
+fidice spellings before the renames (a60daba, 3040ff8). A rewrite changes every hash from about M0 on: it orphans the
+worktrees, `refs/backlog/claims/*`, `.overnight/worktree` and `~/.nuna-demo/checkout`, and leaves the hashes cited in
+CLAUDE.md, the ledger and `status/` pointing at nothing. `git filter-repo` is not installed here; the fast-export
+route in the notes works, proven by a byte-identical tip tree, with rules anchored so they match nothing in the
+cleaned tip (`catalog` is an ordinary word). Work's repository started from its snapshot, so a later full-history
+push would be unrelated history there.
+
+The question for Paul: rewrite history so the whole of it can go to work's GitHub, or keep pushing snapshots.
 
 ## Done and dropped
 
