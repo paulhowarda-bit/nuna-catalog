@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**30 open:** 6 S, 11 M, 8 L, 5 XL.
+**29 open:** 6 S, 10 M, 8 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -22,7 +22,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
-| [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
@@ -721,95 +720,6 @@ Still open, at work: item 43's names (rename the queries where they differ), the
 each alert fired once in a test. The item stays open for those, which are its done condition.
 
 **Paul's answer, 2026-11-20 (D43, amended):** the 500 commits a second target stays a panel with no alert ("Panel only").
-
-### 89. A compaction Job against a store behind a private CA, end to end
-
-- Decided: 2026-11-20, D21
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-maintenance/src/test/ catalog-maintenance/README.md catalog-tests-s3/ bites/M6/
-- Effort: M, a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job
-
-Items 21 and 88 made a storage profile's `ca-bundle` reach every S3 client the server and the worker build, and
-compaction Jobs: the worker copies the bundle into a ConfigMap owned by each Job, and the Job's command builds a JVM
-trust store from the image's JDK CAs and the bundle and points Spark's driver at it. No test runs a compaction Job
-against a store behind a private CA. `KubernetesJobsTest` checks the Job's spec only; `KubernetesCompactionTest`
-(heavy) and the engine matrix's compaction leg (overnight) use stores with public or no TLS; the trust-store
-command was run by hand once, on a Windows JDK, not in the Spark image (item 88's done note).
-
-Paul, 2026-11-20, asked whether to add this: "Add it, here", on Docker Desktop with a TLS store, as an overnight
-test.
-
-Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS from a private CA (`PrivateCa` makes
-one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
-real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
-fail on an assertion, not on fixture start-up.
-
-Worked on 2026-11-20 (worktree-agent-a0c19fa4b1e97ee01); open until the test passes in an overnight run and its bite
-bites. **Nothing of it has run**: the test is tagged overnight, Docker Desktop's Kubernetes has no room for its Jobs
-beside the nuna-demo stack, and no container was started. The fast build compiles it and passes.
-
-- `PrivateCaCompactionTest` (catalog-maintenance, `@Tag("overnight")`): Silo serving TLS from a private CA, a catalog
-  of its own on it whose storage profile names the CA's bundle, the worker's profile naming it too, and the chart's
-  Role as the chart renders it for a profile with a `ca-bundle` (create on ConfigMaps). First a control: the Job
-  launched without the bundle must fail with `PKIX path building failed` in its log and leave the table's snapshot.
-  Then the worker's own scan launches the Job with the bundle, which must succeed (`COMPACTED`, no PKIX error), with
-  the bundle's ConfigMap owned by that Job, and the table must end with one data file of 60 rows in a `replace`
-  snapshot.
-- How the pods reach the store's TLS name: the catalog's twin for pods (`TestCatalog.twinForPods`) names the store
-  `https://host.docker.internal:<port>`, which Docker's DNS resolves for pods and `HostDockerInternal` resolves to
-  loopback in the test JVM. The store's certificate (`PrivateCa.issue`) holds `localhost`, `127.0.0.1`, the Docker
-  host's address and `host.docker.internal` as subject alternative names, so the pod's TLS client, the twin's own STS
-  and S3 clients and the test's all find their host in it.
-- `TestS3.siloBehindTls(ca)`: a second Silo, for this test alone, apart from the run's store and whatever `-Ps3`
-  names, with the issued certificate and key in `--certs-dir /certs` and a TLS health check. Its own S3 clients trust
-  the CA; `serverProperties` leaves `require-tls` on and names the `ca-bundle`. The run's store is unchanged.
-- `TestCatalog.onStore(s3)`: a catalog server on that store and on a new database in the shared PostgreSQL, so its
-  work list holds this test's table alone. The writer's S3 clients and the worker's `Catalogs` now trust what the
-  worker's storage trusts (`TrustedS3Clients.register`, `Storage.clientProperties`): nothing changes without a bundle.
-- `KubernetesCompactionTest`'s harness (the image build, the two namespaces, the chart's service account and Role, the
-  worker's service-account folder, kubectl and helm) moved unchanged into `CompactionCluster`, which both tests use;
-  its `avro` moved to `TestCatalog`. `KubernetesCompactionTest` checks what it did before.
-- Bite, recorded and checked with `git apply --check`, not run: `bites/M6/job-storage-ca-left-out` (`storageCa`
-  finds no bundle, so the Job gets no ConfigMap, mount or trust store). The control is unaffected, and the worker's
-  Job then fails as the control does, on the assertion of its status.
-- Unchecked until it runs: that Silo serves TLS from `--certs-dir` with this EC key in PKCS #8 (read in Silo's
-  source, `cmd/common-main.go`, not run); that the Spark image's `$JAVA_HOME/bin/keytool` and its cacerts work as item
-  88's command expects; the wording of the TLS error in the Spark log.
-
-Seen again in the overnight run of 2026-11-21: its first run failed. `PrivateCaCompactionTest#aJobTrustsItsStoresPrivateCaAndCompacts`,
-`AssertionError: [refused by the store's certificate]`: the control Job's Spark log holds no PKIX error but
-`SdkClientException: Unable to execute HTTP request: Network is unreachable` (6 attempts) and
-`CATALOG_NOT_FOUND`, so the pod did not reach the store at `host.docker.internal` at all. Log:
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-21\nightly-results\catalog-maintenance\`.
-
-Fixed on `worktree-item-89` (2026-11-21), not yet shown by running. The control Job did what it should; its log
-could not say so. Docker Desktop gives pods two addresses for `host.docker.internal`, `192.168.65.254` and
-`fdc4:f303:9324::254`, and pods route no IPv6 (`nslookup` and `ip -6 route` in a busybox pod, 2026-11-21). The S3
-client's HttpClient, 5.6.4 shaded in `iceberg-aws-bundle-1.12.0.jar` in the Spark image, handshakes TLS inside its
-loop over a name's addresses (`DefaultHttpClientConnectionOperator.connect`: `upgradeToTls` lies in the try whose
-`IOException` handler moves to the next address, read with `javap`), so the PKIX refusal on the IPv4 address sent it
-on to the IPv6 one and it reported only `Network is unreachable`. The catalog, over HTTP, was reached on IPv4 at once.
-The control now asserts that the S3 request failed on every attempt (`Unable to execute HTTP request`) and compacted
-nothing; the worker's Job, the same but for the bundle, must then succeed against the same address. The README says
-how a missing bundle shows on such a network. The test could not run here: the cluster has 6 GiB of 7.5 GiB
-requested with the nuna-demo stack up, and the Job asks for 2 GiB. Close this item when the overnight run of
-2026-11-22 passes the test and its bite bites.
-
-Seen in the overnight run of 2026-11-22 (testing b1f073d, which holds the fix): `PrivateCaCompactionTest` passed, 1
-test, 0 failures, 122 s (`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\nightly-results\catalog-maintenance\`).
-Its bite, `bites/M6/job-storage-ca-left-out`, did not run: the bites run only after a passing heavy build, and that
-build failed (items 28, 100, 102, 103, 121). Close this item when an overnight run's bites show the bite bites.
-
-Run in two nightlies by hand on 2026-11-22 (`status/2026-11-22-nightly-2026-11-22.md`): `PrivateCaCompactionTest`
-passed in the second (257 s). In the first, its body passed and its cleanup failed: `kubectl delete namespace ...
---wait=true` lost the API server (`http2: client connection lost`) while Windows was paging the Docker VM out (item
-135). The bite has still not run; the item still closes when an overnight run's bites show it biting.
-
-Overnight run of 2026-11-23 (testing 02b22ad): the nightly passed, `catalog-maintenance` 3 tests, 0 failures:
-its three overnight tests, `PrivateCaCompactionTest` among them (inferred from the count; the run keeps no nightly
-results that night); the bites again did not run, the heavy build having failed (nine tests, traced
-in `status/2026-11-23-agent-a9284fd56a1d18c39.md`). The item still closes when an overnight run's bites show
-`bites/M6/job-storage-ca-left-out` biting.
 
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
@@ -2080,6 +1990,7 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [86](backlog/86.md) | The DR reconcile's archive proof reads each audit-archive chain whole into memory | done | 2026-11-20 |
 | [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
+| [89](backlog/89.md) | A compaction Job against a store behind a private CA, end to end | done | 2026-11-26 |
 | [90](backlog/90.md) | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | done | 2026-11-20 |
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
 | [92](backlog/92.md) | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | done | 2026-11-22 |
