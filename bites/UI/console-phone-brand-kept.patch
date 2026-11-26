@@ -1,0 +1,16 @@
+Breaks: On a phone of 520 px or less, the brand still shows beside the catalog and ref names.
+Module: catalog-server
+Test: ConsoleBrowserTest#onAPhoneABranchCarriedOntoAPageThatShowsMainOnlyKeepsTheHeaderInTheWindow
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index 5fe1dbac..9861d82d 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1339,7 +1339,6 @@ details.tech[open] > summary { margin-bottom: 4px; }
+   .reading-slot .main-only { position: absolute; top: calc(100% + 1px); left: 0; right: 0; height: 28px; display: flex; align-items: center; margin: 0; padding: 0 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+   .nc-app:has(.reading-slot .main-only) .slot > .nc-main { padding-top: 44px; }
+ }
+-@container frame (max-width: 520px) { .nc-brand { display: none; } }
+ 
+ /* Row filters and column masks (backlog 243): five figures on the Governance page, and the rule dialog's fields. */
+ .kpis.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
