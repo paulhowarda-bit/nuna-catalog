@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**43 open:** 13 S, 16 M, 9 L, 5 XL.
+**41 open:** 11 S, 16 M, 9 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -46,9 +46,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
-| [258](backlog/258.md) | S | Grants: refuse write on a view, which gives only select there yet counts as a data duty | one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
-| [260](backlog/260.md) | S | Console: the Grants page lists the catalog's groups with their duties when no group is named | one panel on the Grants page drawn from a route that exists (item 247), with a browser test | 2026-11-24 |
 | [261](backlog/261.md) | M | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's) | 2026-11-24 |
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
@@ -1746,31 +1744,6 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
-### 258. Grants: refuse write on a view, which gives only select there yet counts as a data duty
-
-- Added: 2026-11-24 by catalog-security review of backlog 246
-- Touches: catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java, catalog-server/src/test/, bites/
-- Effort: S, one more case in the check that backlog 246 added for create on a table or view, with its tests and a bite
-
-## What is wrong
-
-`write` on a view means nothing there: no route needs it on a view (loading needs `select`; replace, drop and
-rename need `modify`), so it gives only `select`, through the ladder. Yet separation of duties counts it as a data
-duty (`Separation.Duty.of`), so a group granted it is kept from `manage-tags` anywhere in the catalog, and the
-certification export lists it as a right to write data. The grant route and its preview accept it.
-
-Backlog 246 refuses `create` on a table or view the same way (400 at the grant route, `refused` with
-`privilege-not-on-object` at the preview, revoke still removing one granted before: `GrantRoutes.refusal`). Its
-done-when named only `create`, so `write` on a view was left for this item (catalog-security's review of 246,
-2026-11-24). Every other privilege means something on every kind of securable: `manage-tags` on a view sets its
-labels and holds, and anything on a namespace or catalog reaches what is below.
-
-## Done when
-
-- The grant route answers 400 to `write` on a view and the preview `refused` with `privilege-not-on-object`; a
-  revoke still removes one.
-- `GrantPreviewTest` covers it at both, and a bite shows the refusal is checked.
-
 ### 259. Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete?
 
 - Added: 2026-11-24 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
@@ -1796,27 +1769,6 @@ overnight run has no AWS leg.
   limited to the generated prefixes) and the test with it; if it is let in outside the prefix, the delete policy is
   wrong and that is a new item.
 - The run is recorded in `status/`.
-
-### 260. Console: the Grants page lists the catalog's groups with their duties when no group is named
-
-- Added: 2026-11-24 by local_9b8172ac-1f35-4ea0-90fc-0f76b2383ffd
-- Touches: catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, one panel on the Grants page drawn from a route that exists (item 247), with a browser test
-
-## What is wrong
-
-Atelier, walking backlog 248's Grant access dialog on 2026-11-24, found the Grants page's first view empty for the
-people who use it most. With nothing typed in "List the grants of", the page lists the caller's own groups' grants. A
-grant admin's group holds no grant by configuration (D18), so `gary` sees only "Your groups hold no grant in trading",
-and must already know a group's name to see anything.
-
-## What done looks like
-
-With no group named, a grant admin (whoever may list the catalog's groups: manage-grants on the catalog, asked with
-the unaudited `/grants/check` first, as the dialog does) sees the catalog's groups from `GET .../grants/groups`, each
-with its duties as the dialog shows them, and each opening its grants (`g=<group>`, as the field does now). Someone
-who may not list them keeps today's view of their own groups' grants. A browser test signed in as `gary` opens the
-page, sees `stewards` with "Tags", and opens its grants from it.
 
 ### 261. Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone
 
@@ -2279,6 +2231,8 @@ Catalog UI Expert before building.
 | [255](backlog/255.md) | Demo: the catalog's profile names its maintenance principal, and demo.sh applies the worker policy the catalog generates | done | 2026-11-24 |
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
+| [258](backlog/258.md) | Grants: refuse write on a view, which gives only select there yet counts as a data duty | done | 2026-11-25 |
+| [260](backlog/260.md) | Console: the Grants page lists the catalog's groups with their duties when no group is named | done | 2026-11-25 |
 | [262](backlog/262.md) | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | done | 2026-11-25 |
 | [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
 | [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |

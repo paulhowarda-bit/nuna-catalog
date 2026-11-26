@@ -150,7 +150,9 @@ function onWords(securable) {
 
 /**
  * The rail's Grants, for those who manage the catalog's grants; it was Governance's tab until backlog 245. Grants are
- * made in the Grant access dialog (backlog 248); the page lists a group's grants, or the caller's own groups'.
+ * made in the Grant access dialog (backlog 248); the page lists a group's grants. With no group named, it lists the
+ * catalog's groups, each with its duties and a link to its grants, to whoever may list them (manage-grants on the
+ * catalog, backlog 260), and anyone else their own groups' grants.
  */
 export function grantsPage(catalog, group) {
   const main = h('div', {class: 'nc-main', id: 'governance-grants'});
@@ -162,15 +164,24 @@ export function grantsPage(catalog, group) {
   const groups = h('datalist', {id: 'grant-groups'});
   const filter = h('form', {class: 'grants-filter', role: 'search'},
     h('label', null, h('span', null, 'List the grants of'), h('span', {class: 'field mono'}, groupIn)), groups);
-  // The catalog's groups fill the field's suggestions when the caller may list them; asking first writes no denial.
-  api.mayOnCatalog(catalog, 'manage-grants').then(yes => yes ? api.grantGroups(catalog) : null).then(known => {
+  // The catalog's groups, when the caller may list them (asking first writes no denial): the field's suggestions, and
+  // the list shown while no group is named. Null for someone who may not.
+  const knownRead = api.mayOnCatalog(catalog, 'manage-grants').then(yes => yes ? api.grantGroups(catalog) : null)
+    .catch(() => null);
+  knownRead.then(known => {
     if (known) for (const g of known.groups) groups.append(h('option', {value: g.group}));
-  }, () => {});
+  });
 
   /** The grants of the group in the field, or the caller's own groups' when it is empty; `made` is a grant to mark. */
   const showList = made => {
     const g = groupIn.value.trim();
     load(list, async () => {
+      const known = g ? null : await knownRead;
+      if (known) {
+        fill(dutiesH, 'Duties');
+        fill(duties, DUTIES.map(([k, w, ps]) => h('div', {class: 'duty', 'data-duty': k}, h('h4', null, w), h('p', null, ps))));
+        return groupsList(catalog, known);
+      }
       const grants = await api.grantsOfGroups(catalog, g ? [g] : []);
       const held = new Set(grants.map(x => DUTY[x.privilege]));
       fill(dutiesH, g ? `Duties of ${g} in ${catalog}` : `Duties of your groups in ${catalog}`);
@@ -219,6 +230,27 @@ export function grantsPage(catalog, group) {
         + 'granted nothing else. Data and tags exclude each other; reading goes with either. So no group can both change data and decide '
         + 'how it is labelled or who may see it.')))));
   return main;
+}
+
+/** Each duty's word on the page, by the name the groups route gives it. */
+const DUTY_WORD = Object.fromEntries(DUTIES.map(([k, w]) => [k, w]));
+
+/**
+ * The catalog's groups, each with its duties and the privileges it holds, its name a link to its grants; then the
+ * groups the deployment's configuration sets, which hold no grant (backlog 260).
+ */
+function groupsList(catalog, known) {
+  const configured = [...known.grantAdmins.map(g => [g, 'manages grants on every catalog']),
+    ...known.operators.map(g => [g, 'operates the platform'])];
+  return [h('h2', null, 'Groups ', h('span', {class: 'meta'}, `in ${catalog}`)),
+    known.groups.length ? tbl('stack-line grants-groups', ['Group', 'Duties', 'Privileges'], known.groups.map(g =>
+      h('tr', {'data-group': g.group},
+        h('td', {class: 'name'}, h('a', {href: pageHref('grants', catalog, null, g.group)}, g.group)),
+        h('td', null, (g.duties || []).map(d => pill('', DUTY_WORD[d] || d))),
+        h('td', {class: 'mono'}, (g.privileges || []).join(', ')))))
+      : h('p', {class: 'muted'}, `No group holds a grant in ${catalog} yet.`),
+    configured.length ? h('p', {class: 'fine muted grants-configured'}, 'Set by the deployment, holding no grant: ',
+      configured.map(([g, words], i) => [i ? '; ' : '', code(g), ` ${words}`])) : null];
 }
 
 /** Every grant in the catalog, for an access review: as JSON or CSV. Needs manage-grants on the catalog. */
