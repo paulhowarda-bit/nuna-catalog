@@ -1779,6 +1779,78 @@ only checks by the branch's own pointer, or by its absence when the branch has n
 store suite case (heavy) where a first commit to the held table lands between the read and the COMMIT, and the
 transaction answers 409 `CommitFailedException`; a bite recorded (`git apply --check`, not run).
 
+## Built 2026-11-25 (branch worktree-agent-a200bccb56369329a)
+
+What changed:
+- `PointerHold` takes `Optional<Pointer> expected` (`catalog-store-api/.../PointerHold.java:16`); empty holds the
+  key's absence. A second constructor keeps `new PointerHold(key, pointer)` for a pointer that exists, so the
+  existing callers (Merge, the suites) are unchanged.
+- Each store takes the absent key as a create takes it, in `lockAndCompare`'s key order (after the ref, as every
+  pointer lock), then deletes the placeholder at once in the same transaction:
+  - PostgreSQL and CockroachDB, `catalog-store-sql/.../sql/Pointers.java:129` and `absent` at `:174`:
+    `INSERT … ON CONFLICT (object_id, branch) DO NOTHING`, then `DELETE`; nothing inserted is a `Conflict`.
+  - Oracle, `catalog-store-oracle/.../oracle/Pointers.java:127` and `absent` at `:157`: `INSERT`, ORA-00001 on
+    `POINTER_PK` is a `Conflict`, then `DELETE`.
+  - MongoDB, `catalog-store-mongo/.../mongo/Pointers.java:132` and `holdAbsent` at `:189`: an upsert with
+    `$setOnInsert`, then `deleteOne`; matching a document is a `Conflict`.
+- `CommitEngine.transaction` holds every table it only checks by `base.expected()`, the branch's own pointer or its
+  absence (`catalog-core/.../CommitEngine.java:986`); on main `expected` is always the pointer read, so main is
+  unchanged.
+- `docs/storage-design.md` section 3 (`PointerHold`) and section 4 step 2 say how a hold of no pointer is taken.
+- The fake stores of `BranchCommitTest`, `MergeTest` and `RefMergeRoutesTest` compare `hold.expected()` as given.
+
+Why the placeholder cannot miss a racing create, by store:
+- PostgreSQL (READ COMMITTED): a missing row cannot be locked `FOR UPDATE`, and `SELECT … FOR UPDATE` skips an
+  uncommitted insert. The placeholder goes through the unique index, as a first commit's insert does: an open insert
+  of the key makes it wait on that transaction, and a committed one makes it insert nothing (the dirty-snapshot check
+  of `ON CONFLICT` sees both, whatever the statement snapshot). The deleted placeholder keeps the key's index entry,
+  with this transaction as its inserter, until COMMIT, so a later create's `ON CONFLICT` check waits on this
+  transaction and only then finds the row dead and inserts.
+- CockroachDB (READ COMMITTED): the insert and the delete both leave write intents on the key. A create meeting the
+  intent waits for this transaction and then reads the tombstone; this insert meeting a create's intent waits, then
+  sees the row and inserts nothing. A write committed after the statement's read timestamp is caught by the
+  statement's own write-too-old retry, which reads again.
+- Oracle (READ COMMITTED): an insert under `POINTER_PK` waits for any uncommitted change to that key by another
+  transaction (insert or delete), then fails with ORA-00001 if the row is there; the delete leaves the key's index
+  entry locked by this transaction until COMMIT, so a later create waits for it.
+- MongoDB (snapshot transactions): reads take no lock, so the hold writes the key. An upsert meets an open insert of
+  the key, or one committed after this snapshot, with `WriteConflict` (storage-design, M1 MongoDB deviation 1 and M2c
+  deviation 8), and the transaction runs again from a new snapshot, where it matches the pointer. A create after the
+  hold meets the hold's write to the same unique-index key the same way and runs again after it. On a branch the
+  ref's mark already makes two commits on one branch conflict, but the hold does not lean on it.
+- It is the means two racing first commits to one key already serialize by on every store
+  (`BranchCommitTest#twoFirstCommitsRace`, and the M1 placeholder insert of findCommit).
+
+Tests:
+- Fast, run and passing: `BranchCommitTest#aTransactionHoldsWhatItOnlyChecks` (the batch holds the checked table's
+  own pointer and the absence of the one with none, and creates no pointer) and
+  `BranchCommitTest#aFirstCommitToAHeldTableLandsMeanwhile` (Bob's first commit to `fills` on the branch adds a
+  column between the transaction's read and its swap; the transaction asserts schema 0 on `fills`: the hold fails the
+  batch, the retry reads the branch's own pointer and answers 409 `CommitFailedException`, and nothing of it lands).
+  `MergeTest`, `TransactionTest` and `catalog-store-api`'s tests pass too.
+- Heavy, written and compiled, not run (the overnight heavy build runs them on all four stores):
+  `CommitSuite#heldAbsenceIsComparedNotWritten` (a hold of no pointer commits and leaves none and no journal row; a
+  create afterwards gets version 1; the same hold once a pointer is there is `Conflict` with it and writes nothing)
+  and `CommitSuite#heldAbsenceAndACreateTakeTurns` (a create held open before COMMIT keeps the hold waiting, which
+  then answers `Conflict` with the created pointer; a hold held open keeps the create waiting, which then lands).
+
+Bites recorded (`bites/D33/`, `git apply --check` only, not run): `engine-holds-no-absent-pointer` (catalog-core),
+`hold-absent-sql-select-only-postgres`, `hold-absent-sql-select-only-cockroach`, `hold-absent-sql-placeholder-left`,
+`hold-absent-sql-pointer-there-passes`, `hold-absent-oracle-select-only`, `hold-absent-mongo-find-only`.
+
+Choices made (Paul may overrule):
+- A placeholder insert and delete, not the ref locked for update when a batch holds an absent key. The ref lock would
+  serialize every commit on the branch with the transaction, and would leave a hold of no pointer on main, or on keys
+  no ref guards, unprotected; the placeholder guards exactly one key in any batch, by the means creates already use.
+- The placeholder is deleted at once, not at the end of the batch: the key stays the transaction's either way, and no
+  later statement of the batch can meet it.
+- On MongoDB the hold marks nothing for the outbox clock (9 b): it leaves no document, and the transaction's events
+  are about the tables it swaps, not the held one.
+
+Left: the overnight heavy build has to pass the two `CommitSuite` cases on all four stores, and the six store bites
+have to bite. The CockroachDB select-only bite assumes `SELECT … FOR UPDATE` on a missing key locks nothing under
+READ COMMITTED; if it reports NO BITE, record that store's bite another way. Then `./backlog.sh done 278`.
+
 ### 279. Console: take a table out of refs, item 156's route, from the table page (item 156's Left)
 
 - Added: 2026-11-25 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
