@@ -190,8 +190,8 @@ final class SqlRefs {
     }
 
     /**
-     * Deletes a ref locked for update: its own pointers and their pieces, its cut and its record. Its journal rows
-     * stay. A deletion and a merge both end a ref this way.
+     * Deletes a ref locked for update: its own pointers and their pieces, its cut, the grants that name it (backlog
+     * 113) and its record. Its journal rows stay. A deletion and a merge both end a ref this way.
      */
     static void end(Connection connection, UUID refId) throws SQLException {
         String branch = refId.toString();
@@ -199,6 +199,7 @@ final class SqlRefs {
         update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
                 branch, refId);
         update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+        update(connection, "DELETE FROM ref_grant WHERE ref_id = ?", refId);
         update(connection, "DELETE FROM ref WHERE id = ?", refId);
     }
 

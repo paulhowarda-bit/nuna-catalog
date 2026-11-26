@@ -3,15 +3,15 @@ Module: catalog-objectstore
 Test: VendingTest#siblingWithACommonStem
 
 diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
-index d10f9ec..ff54e4d 100644
+index c6c3a625..f4d0d23b 100644
 --- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
 +++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
-@@ -40,7 +40,7 @@ public final class SessionPolicy {
-         String prefix = table.key() + "/";
-         String policy = "{\"Version\":\"2012-10-17\",\"Statement\":["
-                 + "{\"Effect\":\"Allow\",\"Action\":[" + unconditioned(access, kmsKey) + "],"
--                + "\"Resource\":\"" + bucketArn + "/" + prefix + "*\"},"
-+                + "\"Resource\":\"" + bucketArn + "/" + table.key() + "*\"},"
-                 + kmsKey.map(key -> withKey(access, bucketArn + "/" + prefix + "*", key)).orElse("")
-                 + "{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"" + bucketArn + "\","
-                 + "\"Condition\":{\"StringLike\":{\"s3:prefix\":\"" + prefix + "*\"}}}]}";
+@@ -64,7 +64,7 @@ public final class SessionPolicy {
+         String statements;
+         if (writeUnder.isEmpty()) {
+             statements = "{\"Effect\":\"Allow\",\"Action\":[" + unconditioned(access, kmsKey) + "],"
+-                    + "\"Resource\":\"" + objects + "\"},"
++                    + "\"Resource\":\"" + bucketArn + "/" + table.key() + "*\"},"
+                     + kmsKey.map(key -> withKey(access, objects, key)).orElse("");
+         } else {
+             String written = bucketArn + "/" + prefix + writeUnder.get() + "/*";

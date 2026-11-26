@@ -3,13 +3,13 @@ Module: catalog-server
 Test: GrantPreviewTest#aGrantToAGroupTheCallerBelongsToIsRefused
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index 7d9e0545..55848eae 100644
+index 37e4466f..5c4db6c6 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -313,7 +313,7 @@ class GrantRoutes {
-         out.put("securable", asked.securables().render(asked.on().stored()));
+@@ -378,7 +378,7 @@ class GrantRoutes {
          out.put("group", asked.group());
          out.put("privilege", asked.privilege().wireName());
+         asked.branch().ifPresent(ref -> out.put("branch", ref.name().display()));
 -        Optional<Refusal> refusal = refusal(request.caller(), asked);
 +        Optional<Refusal> refusal = Optional.empty();
          Optional<GrantRecord> held = Optional.empty();

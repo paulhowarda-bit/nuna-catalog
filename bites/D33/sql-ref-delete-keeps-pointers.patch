@@ -3,10 +3,10 @@ Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$Refs#aDeletionLeavesNothing
 
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
-index 4fe54a3..35a4ff4 100644
+index 4de3b821..3d598f2d 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
-@@ -175,9 +175,6 @@ final class SqlRefs {
+@@ -194,9 +194,6 @@ final class SqlRefs {
       */
      static void end(Connection connection, UUID refId) throws SQLException {
          String branch = refId.toString();
@@ -14,5 +14,5 @@ index 4fe54a3..35a4ff4 100644
 -        update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
 -                branch, refId);
          update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+         update(connection, "DELETE FROM ref_grant WHERE ref_id = ?", refId);
          update(connection, "DELETE FROM ref WHERE id = ?", refId);
-     }

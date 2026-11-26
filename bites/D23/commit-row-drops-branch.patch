@@ -3,14 +3,14 @@ Module: catalog-audit
 Test: AuditRowsTest#commitsReadsAndRefRecordsNameTheRefAndARefRecordListsItsRefAndTables
 
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java b/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
-index 0ffc3942..422c926a 100644
+index b9cd0499..5b4d9c2a 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/AuditRows.java
-@@ -80,7 +80,6 @@ public final class AuditRows {
-         Securable object = parts.object();
-         // The ref a record went through or is about, and what a ref record is about besides its catalog (backlog 169).
+@@ -81,7 +81,6 @@ public final class AuditRows {
+         // The ref a record went through or is about, and what a ref record is about besides its catalog (backlog 169);
+         // a grant's branch, when it names one (backlog 113).
          String branch = switch (event.data()) {
 -            case Commit e -> e.branch();
              case ObjectRead e -> e.branch();
              case RefChange e -> e.name();
-             default -> null;
+             case GrantChange e -> e.branch();

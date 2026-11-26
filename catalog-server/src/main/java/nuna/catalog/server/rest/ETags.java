@@ -33,12 +33,22 @@ final class ETags {
      */
     static String of(String metadataLocation, boolean refsOnly, String referencedBy, String credentialEpoch,
                      Map<String, String> labels, Optional<UUID> ref) {
+        return of(metadataLocation, refsOnly, referencedBy, credentialEpoch, labels, ref, Map.of());
+    }
+
+    /**
+     * {@link #of} for a load that sets table properties of its own in the metadata it answers: a writer on one branch
+     * only is told to write beneath the branch's place (backlog 113). With none it hashes what it always did.
+     */
+    static String of(String metadataLocation, boolean refsOnly, String referencedBy, String credentialEpoch,
+                     Map<String, String> labels, Optional<UUID> ref, Map<String, String> places) {
         StringBuilder labelled = new StringBuilder();
         new TreeMap<>(labels).forEach((label, value) -> labelled.append(label.length()).append(':').append(label)
                 .append(value.length()).append(':').append(value));
         String canonical = String.join("\n", metadataLocation, refsOnly ? "refs" : "all",
                 referencedBy == null ? "" : referencedBy, credentialEpoch, labelled)
-                + ref.map(id -> "\nref:" + id).orElse("");
+                + ref.map(id -> "\nref:" + id).orElse("")
+                + (places.isEmpty() ? "" : "\nplaces:" + new TreeMap<>(places));
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
             return "\"" + HexFormat.of().formatHex(digest, 0, 16) + "\"";

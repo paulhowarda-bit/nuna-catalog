@@ -14,6 +14,7 @@ import static nuna.catalog.store.mongo.Docs.uuids;
 import static nuna.catalog.store.mongo.MongoCatalogStore.ATTRIBUTE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.CATALOG;
 import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
+import static nuna.catalog.store.mongo.MongoCatalogStore.REF_GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.RULE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static nuna.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
@@ -362,6 +363,7 @@ final class MongoObjects {
                     new BsonDocument("state", new BsonString(CatalogObject.State.PURGED.name()))
                             .append("purgeClaimant", BsonNull.VALUE).append("clock", tx.clock())));
             tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(objectId)));
+            tx.collection(REF_GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(objectId)));
             tx.collection(RULE).deleteMany(tx.session, new BsonDocument("tableId", uuid(objectId)));
             tx.collection(PENDING_DELETION).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId)));
             tx.collection(TABLE_HEALTH).deleteOne(tx.session, byId(uuid(objectId)));

@@ -1,0 +1,18 @@
+Breaks: A version 1 grant record may carry the fields version 2 added.
+Module: catalog-audit
+Test: EventCodecTest#eachVersionCarriesItsOwnFieldsOnly
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+index 1cd70c5d..ccadd8fa 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+@@ -185,9 +185,6 @@ public final class EventCodec {
+     private static EventData readPayload(EventType type, ObjectNode data, int version) {
+         if (version < type.version()) {
+             for (String field : type.added()) {
+-                if (data.has(field)) {
+-                    throw new IllegalArgumentException(type.dataSchema(version) + " has no " + field);
+-                }
+                 data.putNull(field);
+             }
+         } else if (!type.added().isEmpty()

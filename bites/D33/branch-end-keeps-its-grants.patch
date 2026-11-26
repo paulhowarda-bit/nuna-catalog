@@ -1,0 +1,16 @@
+Breaks: Deleting or merging a branch leaves the grants that name it.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Grants#aGrantMayNameABranch
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index b971b10e..245b4fcb 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -198,7 +198,6 @@ final class SqlRefs {
+         update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
+                 branch, refId);
+         update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+-        update(connection, "DELETE FROM ref_grant WHERE ref_id = ?", refId);
+         update(connection, "DELETE FROM ref WHERE id = ?", refId);
+     }
+ 

@@ -7,7 +7,7 @@ import * as api from './api.js';
 import {at, code, fill, fmt, frozenPill, h, heldPill, icon, load, muted, openDialog, pageHead, panel,
   pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre, opensRow} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
-import {drFreeze, governanceTab, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
+import {drFreeze, governanceTab, placeHold, privilegeCell, releaseHold, revokeDialog, targetOfOn} from './panels.js';
 import {may, operates} from './access.js';
 import {DUTY, grantAccess} from './grant.js';
 
@@ -187,12 +187,12 @@ export function grantsPage(catalog, group) {
       fill(dutiesH, g ? `Duties of ${g} in ${catalog}` : `Duties of your groups in ${catalog}`);
       fill(duties, DUTIES.map(([k, w, ps]) => h('div', {class: 'duty' + (held.has(k) ? ' held' : ''), 'data-duty': k},
         h('h4', null, w + (held.has(k) ? ' · granted' : '')), h('p', null, ps))));
-      const isMade = x => made && x.group === made.group && x.privilege === made.privilege && x.securable.type === made.target.kind
+      const isMade = x => made && !x.branch && x.group === made.group && x.privilege === made.privilege && x.securable.type === made.target.kind
         && pathOf(x.securable) === pathOf(api.securable(made.target));
       return [h('h2', null, g ? `Grants to ${g} ` : 'Your groups\' grants ', h('span', {class: 'meta'}, `in ${catalog}`)),
         grants.length ? tbl('stack-line', ['Group', 'Privilege', 'On', 'Granted', ''], grants.map(x => h('tr', {'data-group': x.group,
-          'data-privilege': x.privilege, 'data-path': pathOf(x.securable), class: isMade(x) ? 'is-new' : null},
-        h('td', {class: 'name'}, x.group), h('td', {class: 'name'}, x.privilege), h('td', null, onWords(x.securable)),
+          'data-privilege': x.privilege, 'data-path': pathOf(x.securable), 'data-branch': x.branch || null, class: isMade(x) ? 'is-new' : null},
+        h('td', {class: 'name'}, x.group), privilegeCell(x), h('td', null, onWords(x.securable)),
         h('td', null, h('span', {class: 'tnum'}, at(x['granted-at'])), ' ', muted(x['granted-by'])),
         h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(catalog, x, () => showList())}, 'Revoke')))))
           : h('p', {class: 'muted'}, g ? `${g} holds no grant in ${catalog}.` : `Your groups hold no grant in ${catalog}.`)];
@@ -261,8 +261,9 @@ function exportGrants(catalog) {
     const x = await api.exportGrants(catalog);
     const json = api.toJson(x, 2);
     const cell = v => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-    const csv = ['group,privilege,type,namespace,name,granted-by,granted-at', ...(x.grants || []).map(g => [g.group, g.privilege,
-      g.securable.type, (g.securable.namespace || []).join('.'), g.securable.name || '', g['granted-by'] || '', g['granted-at'] || '']
+    const csv = ['group,privilege,type,namespace,name,branch,granted-by,granted-at', ...(x.grants || []).map(g => [g.group, g.privilege,
+      g.securable.type, (g.securable.namespace || []).join('.'), g.securable.name || '', g.branch || '', g['granted-by'] || '',
+      g['granted-at'] || '']
       .map(v => cell(String(v))).join(','))].join('\n');
     const urls = [URL.createObjectURL(new Blob([json], {type: 'application/json'})), URL.createObjectURL(new Blob([csv], {type: 'text/csv'}))];
     dlg.addEventListener('close', () => urls.forEach(u => URL.revokeObjectURL(u)));

@@ -1,6 +1,8 @@
 package nuna.catalog.objectstore;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -18,6 +20,8 @@ public final class SessionPolicy {
     public static final int MAX_CHARS = 2048;
 
     private static final String PUT = "s3:PutObject";
+    /** A place beneath a table's prefix that a session may be confined to write in: plain segments only. */
+    private static final Pattern UNDER = Pattern.compile("[a-z0-9-]+(/[a-z0-9-]+)*");
 
     private SessionPolicy() {
     }
@@ -33,15 +37,46 @@ public final class SessionPolicy {
      * @throws IllegalArgumentException when it would not fit in {@link #MAX_CHARS}, or the location is a whole bucket
      */
     public static String forTable(ObjectLocation table, Access access, String region, Optional<String> kmsKey) {
+        return forTable(table, access, region, kmsKey, Optional.empty());
+    }
+
+    /**
+     * {@link #forTable(ObjectLocation, Access, String, Optional)}, writing only beneath {@code writeUnder}: a
+     * read-write session confined so reads the whole table but writes, and with a key encrypts, only beneath
+     * {@code <key>/<writeUnder>/}, as a writer on one branch only does (backlog 113). Without it the session writes
+     * the whole prefix, as before.
+     *
+     * @param writeUnder plain segments beneath the table's prefix, such as {@code branches/<ref id>}; only for
+     *                   {@link Access#READ_WRITE}
+     */
+    public static String forTable(ObjectLocation table, Access access, String region, Optional<String> kmsKey,
+                                  Optional<String> writeUnder) {
         if (table.segments().isEmpty()) {
             throw new IllegalArgumentException("credentials are vended for a table's prefix, not a whole bucket: " + table);
         }
+        if (writeUnder.isPresent() && (access != Access.READ_WRITE || !UNDER.matcher(writeUnder.get()).matches())) {
+            throw new IllegalArgumentException("a session confined to write beneath " + writeUnder.get()
+                    + " must be read-write, beneath plain segments");
+        }
         String bucketArn = "arn:" + partition(region) + ":s3:::" + table.bucket();
         String prefix = table.key() + "/";
-        String policy = "{\"Version\":\"2012-10-17\",\"Statement\":["
-                + "{\"Effect\":\"Allow\",\"Action\":[" + unconditioned(access, kmsKey) + "],"
-                + "\"Resource\":\"" + bucketArn + "/" + prefix + "*\"},"
-                + kmsKey.map(key -> withKey(access, bucketArn + "/" + prefix + "*", key)).orElse("")
+        String objects = bucketArn + "/" + prefix + "*";
+        String statements;
+        if (writeUnder.isEmpty()) {
+            statements = "{\"Effect\":\"Allow\",\"Action\":[" + unconditioned(access, kmsKey) + "],"
+                    + "\"Resource\":\"" + objects + "\"},"
+                    + kmsKey.map(key -> withKey(access, objects, key)).orElse("");
+        } else {
+            String written = bucketArn + "/" + prefix + writeUnder.get() + "/*";
+            List<String> writes = access.objectActions().stream()
+                    .filter(action -> !Access.READ.objectActions().contains(action))
+                    .filter(action -> kmsKey.isEmpty() || !action.equals(PUT)).toList();
+            statements = "{\"Effect\":\"Allow\",\"Action\":[" + unconditioned(Access.READ, kmsKey) + "],"
+                    + "\"Resource\":\"" + objects + "\"},"
+                    + "{\"Effect\":\"Allow\",\"Action\":[" + quoted(writes) + "],\"Resource\":\"" + written + "\"},"
+                    + kmsKey.map(key -> withKey(access, written, key)).orElse("");
+        }
+        String policy = "{\"Version\":\"2012-10-17\",\"Statement\":[" + statements
                 + "{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"" + bucketArn + "\","
                 + "\"Condition\":{\"StringLike\":{\"s3:prefix\":\"" + prefix + "*\"}}}]}";
         if (policy.length() > MAX_CHARS) {
@@ -64,9 +99,11 @@ public final class SessionPolicy {
 
     /** The object actions allowed with no condition: with a KMS key, PutObject has a statement of its own. */
     private static String unconditioned(Access access, Optional<String> kmsKey) {
-        return access.objectActions().stream()
-                .filter(action -> kmsKey.isEmpty() || !action.equals(PUT))
-                .map(action -> "\"" + action + "\"").collect(Collectors.joining(","));
+        return quoted(access.objectActions().stream().filter(action -> kmsKey.isEmpty() || !action.equals(PUT)).toList());
+    }
+
+    private static String quoted(List<String> actions) {
+        return actions.stream().map(action -> "\"" + action + "\"").collect(Collectors.joining(","));
     }
 
     /** A writer's PutObject, only with exactly the key, then the key's use: each statement ends with a comma. */

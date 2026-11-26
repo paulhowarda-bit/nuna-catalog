@@ -108,6 +108,46 @@ class EffectiveGrantsTest {
         assertThat(effective(Target.of(fills))).isEmpty();
     }
 
+    /**
+     * Backlog 113: a grant that names a branch counts only for requests through that branch, on the table and,
+     * inherited, below a namespace; one on every ref counts through main, every branch and every tag. The effective
+     * grants show both, each with its branch.
+     */
+    @Test
+    void aGrantThatNamesABranchHoldsThroughThatBranchOnly() {
+        NamespaceRecord trading = namespace(catalogId, "trading");
+        CatalogObject fills = object(trading, "fills", CatalogObject.Kind.TABLE);
+        UUID dev = UUID.randomUUID();
+        UUID test = UUID.randomUUID();
+        store.putGrant(new Grant(catalogId, fills.securable(), "dev-writers", "write", Optional.of(dev)), "setup", null);
+        store.putGrant(new Grant(catalogId, securable(trading), "dev-owners", "modify", Optional.of(dev)), "setup",
+                null);
+        grant(fills.securable(), "loaders", Privilege.WRITE);
+        Caller devWriter = new Caller(new Principal("w", Set.of("dev-writers")), "tests", false, Optional.empty());
+        Caller devOwner = new Caller(new Principal("o", Set.of("dev-owners")), "tests", false, Optional.empty());
+        Caller loader = new Caller(new Principal("l", Set.of("loaders")), "tests", false, Optional.empty());
+        Operation append = new Operation("updateTable", Privilege.WRITE, true);
+        Operation alter = new Operation("updateTable", Privilege.MODIFY, true);
+
+        assertThat(authorizer.decide(devWriter, Target.of(fills), append, Optional.of(dev)).allowed()).isTrue();
+        assertThat(authorizer.decide(devWriter, Target.of(fills), append).allowed()).as("main").isFalse();
+        assertThat(authorizer.decide(devWriter, Target.of(fills), append, Optional.of(test)).allowed())
+                .as("another branch").isFalse();
+        assertThat(authorizer.decide(devOwner, Target.of(fills), alter, Optional.of(dev)).allowed())
+                .as("inherited from the namespace, through dev").isTrue();
+        assertThat(authorizer.decide(devOwner, Target.of(fills), alter).allowed()).as("main").isFalse();
+        for (Optional<UUID> ref : List.of(Optional.<UUID>empty(), Optional.of(dev), Optional.of(test))) {
+            assertThat(authorizer.decide(loader, Target.of(fills), append, ref).allowed()).as("every ref: " + ref)
+                    .isTrue();
+        }
+        assertThat(authorizer.privileges(Set.of("dev-writers"), Target.of(fills))).isEmpty();
+        assertThat(authorizer.privileges(Set.of("dev-writers"), Target.of(fills), Optional.of(dev)))
+                .containsExactly(Privilege.WRITE);
+        assertThat(authorizer.effectiveGrants(Target.of(fills))).extracting(g -> g.grant().group() + " "
+                + g.grant().branch().map(id -> id.equals(dev) ? "dev" : "?").orElse("every ref"))
+                .containsExactlyInAnyOrder("dev-owners dev", "dev-writers dev", "loaders every ref");
+    }
+
     @Test
     void eachGrantKeepsWhoGrantedItAndWhen() {
         NamespaceRecord trading = namespace(catalogId, "trading");

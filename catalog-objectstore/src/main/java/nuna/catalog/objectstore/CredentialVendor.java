@@ -48,9 +48,10 @@ public final class CredentialVendor implements AutoCloseable {
         if (roleArn.isEmpty() && profile.kind() != StoreKind.MINIO) {
             throw new IllegalArgumentException(profile.kind() + " needs an STS role to vend credentials");
         }
-        // Every table lives at <table root>/<uuid>, so this is the longest policy the profile ever sends.
+        // Every table lives at <table root>/<uuid>, and a writer on one branch only writes beneath its
+        // branches/<uuid> (backlog 113), so this is the longest policy the profile ever sends.
         SessionPolicy.forTable(profile.tableRoot().child(new UUID(0, 0).toString()), Access.READ_WRITE,
-                profile.region(), profile.kmsKey());
+                profile.region(), profile.kmsKey(), Optional.of("branches/" + new UUID(0, 0)));
         StsClientBuilder builder = StsClient.builder()
                 .region(Region.of(profile.region()))
                 .credentialsProvider(credentials);
@@ -74,8 +75,17 @@ public final class CredentialVendor implements AutoCloseable {
      * @throws ObjectStoreException      when STS refuses or cannot be reached
      */
     public VendedCredentials vend(String location, Access access, SessionIdentity identity) {
+        return vend(location, access, identity, Optional.empty());
+    }
+
+    /**
+     * {@link #vend(String, Access, SessionIdentity)}, writing only beneath {@code writeUnder} of the table's prefix
+     * ({@link SessionPolicy#forTable(ObjectLocation, Access, String, Optional, Optional)}, backlog 113).
+     */
+    public VendedCredentials vend(String location, Access access, SessionIdentity identity,
+                                  Optional<String> writeUnder) {
         ObjectLocation table = profile.approve(location);
-        String policy = SessionPolicy.forTable(table, access, profile.region(), profile.kmsKey());
+        String policy = SessionPolicy.forTable(table, access, profile.region(), profile.kmsKey(), writeUnder);
         String sessionName = identity.sessionName();
         AssumeRoleResponse response;
         try {
@@ -93,7 +103,8 @@ public final class CredentialVendor implements AutoCloseable {
         }
         Credentials credentials = response.credentials();
         return new VendedCredentials(credentials.accessKeyId(), credentials.secretAccessKey(),
-                credentials.sessionToken(), credentials.expiration(), table.toString(), access, sessionName);
+                credentials.sessionToken(), credentials.expiration(), table.toString(), access, sessionName,
+                writeUnder);
     }
 
     @Override

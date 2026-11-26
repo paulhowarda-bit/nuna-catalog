@@ -28,7 +28,7 @@ them when the writer opens it, a schema change that rewrites no file; its earlie
 | `data` | string | the whole payload as the topic carries it, JSON, so a new payload version needs no new column |
 | `topic_partition`, `topic_offset` | int, long | the record's place in the topic; for a row from the log, `-1` and the writer's number for it ("From the log", below) |
 | `log_run`, `log_seq` | string, long | the server run that logged the record and its number there (its `nunarun` and `nunaseq`), which place it in the run's archive chain, for a row from the log or the topic alike, since the topic's copy is the log's line (backlog 276); null for a record from a server older than the stamp, or a topic copy from one older than backlog 276 (backlog 272) |
-| `branch` | string | the catalog ref a commit or a read went through, `main` or the ref's name as given, and a ref record's ref name; null for every other type (backlog 169) |
+| `branch` | string | the catalog ref a commit or a read went through, `main` or the ref's name as given, a ref record's ref name, and the branch a grant names (backlog 113); null for every other type (backlog 169) |
 | `subject_ids` | list of string | a ref record's ref id, then the ids of the tables and views in its `tables`: those a merge moved onto main, or the one taken out of the ref (backlog 156); null for every other type (backlog 169) |
 
 The mapping from each event type lives in `catalog-audit` (`AuditRows`), without Iceberg. The relay is at least once
@@ -228,8 +228,8 @@ only"). That rules out grant admins, platform operators and holders of `select` 
   - `principal`;
   - `path`: namespace levels, and a table or view name, joined by 0x1F; it matches the object and everything in a
     namespace, compared as the catalog compares names;
-  - `branch`: a branch's or tag's name without its `@`, or `main`: the commits and reads through it and the ref records
-    of refs of that name, compared as the catalog compares names (backlog 169). A name is not an id: records of a
+  - `branch`: a branch's or tag's name without its `@`, or `main`: the commits and reads through it, the ref records
+    of refs of that name and the grants that name it (backlog 113), compared as the catalog compares names (backlog 169). A name is not an id: records of a
     deleted ref whose name a later ref took match too, so ask with `from` at the live ref's `created-at` for that
     ref's alone;
   - `subject`: an id, as a UUID: the records about that table, view, namespace or catalog (`object.id`), and the
