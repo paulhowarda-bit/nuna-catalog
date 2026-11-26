@@ -1,0 +1,17 @@
+Breaks: A branch writer's session policy writes anywhere beneath the table, not only beneath its branch's place.
+Module: catalog-objectstore
+Test: SessionPolicyTest#aBranchWriterWritesOnlyBeneathItsPlace
+
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
+index c6c3a625..369722d6 100644
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
+@@ -67,7 +67,7 @@ public final class SessionPolicy {
+                     + "\"Resource\":\"" + objects + "\"},"
+                     + kmsKey.map(key -> withKey(access, objects, key)).orElse("");
+         } else {
+-            String written = bucketArn + "/" + prefix + writeUnder.get() + "/*";
++            String written = objects;
+             List<String> writes = access.objectActions().stream()
+                     .filter(action -> !Access.READ.objectActions().contains(action))
+                     .filter(action -> kmsKey.isEmpty() || !action.equals(PUT)).toList();
