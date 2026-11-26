@@ -28,15 +28,17 @@
 #   demo/demo.sh brokerage logs  follow the brokerage world's generator
 #   demo/demo.sh cdc      start the CDC leg: PostgreSQL, Oracle and CockroachDB, through Debezium and Kafka
 #                         Connect, into Iceberg history tables (starts Kafka; stops Trino, the audit table writer
-#                         and the generator while it runs)
-#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay), start Trino and the writer again, and the
-#                         generator if gen is on; Kafka stops unless gen is on
+#                         and the generator while it runs); a leg run before carries on from its kept databases
+#   demo/demo.sh cdc stop pause the CDC leg (its databases, offsets, topics and history tables stay), start Trino and
+#                         the writer again, and the generator if gen is on; Kafka stops unless gen is on
+#   demo/demo.sh cdc reset  delete the CDC leg, its databases' volumes too, so the next cdc starts it anew
 #   demo/demo.sh psql [user]     a psql prompt on the CDC leg's PostgreSQL, database backoffice (default backoffice)
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
 #   demo/demo.sh status   show the deployments, pods and services, and Kafka Connect's connectors
-#   demo/demo.sh down     stop and delete everything but the data: PostgreSQL's, Silo's, Kafka's, SingleStore's
-#                         and the metrics stack's volumes stay, and the next up carries on from them (the CDC leg is deleted, as cdc stop does)
+#   demo/demo.sh down     stop and delete everything but the data: PostgreSQL's, Silo's, Kafka's, SingleStore's,
+#                         CloudBeaver's, the CDC leg's and the metrics stack's volumes stay, and the next up carries
+#                         on from them (the CDC leg pauses, as cdc stop does; the next cdc carries on)
 #   demo/demo.sh wipe     down, and delete the volumes too: the next up writes fresh sample data (keeps the signing
 #                         key, tokens, Keycloak keys, the passwords and the certificates, as down does)
 #
@@ -1692,28 +1694,42 @@ cdc_apply() {
   for sql in backoffice oracle cockroach; do sed "${subst[@]}" "$REPO/demo/cdc/$sql.sql" > "$dir/$sql.sql"; done
   k create secret generic backoffice-initdb --from-file=backoffice.sql="$dir/backoffice.sql" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
-  k create secret generic oracle-startdb --from-file=cdc.sql="$dir/oracle.sql" --dry-run=client -o yaml \
+  k create secret generic oracle-initdb --from-file=cdc.sql="$dir/oracle.sql" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
   k create secret generic cockroach-initdb --from-file=cockroach.sql="$dir/cockroach.sql" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
-  # ConfigMaps of the same names from before backlog 282.
+  # ConfigMaps of the same names from before backlog 282, and Oracle's startup script from before backlog 293.
   k delete configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
+  k delete secret oracle-startdb --ignore-not-found >/dev/null
   apply cdc.yaml
   apply ports.yaml
   k rollout status deployment/backoffice --timeout=3m >/dev/null
   k rollout status deployment/cockroach --timeout=3m >/dev/null
-  # Oracle restarts once into archive log mode (demo/cdc/oracle.sql): about two minutes.
-  k rollout status deployment/oracle --timeout=10m >/dev/null
+  # The first time, Oracle's database is copied onto its volume and restarts once into archive log mode
+  # (demo/cdc/oracle.sql): a few minutes.
+  k rollout status deployment/oracle --timeout=15m >/dev/null
   wait_for_connect
+  # A connector cdc stop stopped keeps its offsets, and resume starts it from them; on a new one resume does nothing.
   local connector
   for connector in "${CDC_CONNECTORS[@]}"; do
     connect_api PUT "/connectors/$connector/config" < "$REPO/demo/cdc/connectors/$connector.json" >/dev/null
+    connect_api PUT "/connectors/$connector/resume" </dev/null >/dev/null
+  done
+}
+
+# Stops the leg's connectors on the worker, each keeping its offsets, so the next cdc's connectors carry on from
+# where they stopped (KIP-875). A stopped connector stays stopped when Kafka Connect restarts.
+cdc_connectors_stop() {
+  local connector
+  for connector in "${CDC_CONNECTORS[@]}"; do
+    connect_api GET "/connectors/$connector" >/dev/null 2>&1 || continue
+    connect_api PUT "/connectors/$connector/stop" </dev/null >/dev/null
   done
 }
 
 # Deletes the leg's connectors from the worker, each with its offsets, so the next cdc's Debezium snapshots its new
-# databases rather than resuming from the last run's positions: a connector's offsets outlive the connector. Kafka
-# Connect resets them only for a stopped connector (KIP-875), and stopping one takes a moment.
+# databases rather than resuming from the last run's positions (cdc reset): a connector's offsets outlive the
+# connector. Kafka Connect resets them only for a stopped connector (KIP-875), and stopping one takes a moment.
 cdc_connectors_delete() {
   local connector reset
   for connector in "${CDC_CONNECTORS[@]}"; do
@@ -1772,7 +1788,22 @@ cdc_start() {
       world_feeds_stop
     fi
   fi
-  # History tables left by an earlier run recorded databases that are gone; each run starts its own.
+  start_kafka
+  running connect || start_connect
+  # A leg that ran before (configmap cdc-begun, which its first run writes once its changes reached Iceberg) carries
+  # on: its databases start from their volumes and its connectors from their offsets, into the history tables it
+  # wrote (D52, amended 2026-11-26, backlog 293).
+  if k get configmap cdc-begun >/dev/null 2>&1; then
+    say "starting the CDC leg from its kept databases; the connectors carry on from where they stopped"
+    cdc_apply
+    cdc_access
+    return
+  fi
+  # A first run that did not finish leaves volumes, connectors or topics: they go, and the leg starts anew.
+  if [[ -n "$(k get pvc -l nuna-demo/cdc-data=true -o name)" ]]; then
+    cdc_delete
+  fi
+  # History tables left by an earlier run recorded databases that are gone; each new leg starts its own.
   local entry ns table
   for entry in "${HISTORY_TABLES[@]}"; do
     read -r ns table <<<"$entry"
@@ -1782,8 +1813,6 @@ cdc_start() {
   done
   cockroach_history_table
 
-  start_kafka
-  running connect || start_connect
   say "starting the CDC leg: PostgreSQL backoffice, Oracle Free, CockroachDB and their connectors (a few minutes)"
   cdc_apply
   say "waiting for Debezium's snapshots of the three tables to reach Iceberg"
@@ -1815,6 +1844,7 @@ SQL
   wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 8
   wait_for_rows "history%1Foracle%1Ftreasury" payments 7
   wait_for_rows "history%1Fcockroach%1Fpositions" holdings 7
+  k create configmap cdc-begun --from-literal=began="$(date -u +%FT%TZ)" >/dev/null
   cdc_access
 }
 
@@ -1831,24 +1861,38 @@ kafbat (https://$DEMO_HOST:8182) shows Debezium's change events as they arrive, 
 commit as a snapshot of its history table.
 Query the source databases in CloudBeaver (https://$DEMO_HOST:8185): each person's backoffice, treasury and
 custody connections sign in as them. Trino and the brokerage world are stopped meanwhile: demo/demo.sh cdc stop
-deletes the leg and starts them again. Then read the history in CloudBeaver's Trino connection, oldest change first:
+pauses the leg, keeping its databases, and starts them again; demo/demo.sh cdc reset deletes it. Then read the history in CloudBeaver's Trino connection, oldest change first:
   SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
   ORDER BY "_cdc"."offset";
 EOF
 }
 
-# Deletes the leg's connectors (with their offsets) and pods, then its Kafka topics and consumer groups, so the
-# next cdc starts from nothing; the history tables stay, for Trino to read, and Kafka and Kafka Connect stay only
-# while gen is on. The topics go after the connectors, which would otherwise write them again, and from a pod
-# of their own: a Kafka tool in the broker's pod could push it past its memory limit.
-# The CDC leg's connectors (and their offsets), databases and Kafka topics; Kafka Connect and the history tables stay.
-# Its databases keep no volume, so their topics and offsets go with them: a later cdc starts the leg anew.
-cdc_delete() {
-  say "deleting the CDC leg: its connectors, databases and Kafka topics (Kafka Connect and the history tables stay)"
-  cdc_connectors_delete
+# Pauses the leg (cdc stop, down): stops its connectors, keeping their offsets, and deletes its pods; its databases'
+# volumes, its Kafka topics and consumer groups and the history tables stay, and the next cdc carries on from them.
+cdc_pause() {
+  say "pausing the CDC leg: its connectors stop and its pods go; its databases, topics and history tables stay"
+  cdc_connectors_stop
+  cdc_pods_delete
+}
+
+cdc_pods_delete() {
   k delete deployment,service,configmap -l nuna-demo/cdc=true --ignore-not-found >/dev/null
-  k delete secret,configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
+  k delete secret,configmap backoffice-initdb oracle-initdb oracle-startdb cockroach-initdb --ignore-not-found \
+    >/dev/null
   k wait --for=delete pod -l 'app in (backoffice, oracle, cockroach)' --timeout=3m >/dev/null 2>&1 || true
+}
+
+# Deletes the leg (cdc reset): its connectors (with their offsets) and pods, its databases' volumes, then its Kafka
+# topics and consumer groups, so the next cdc starts from nothing; the history tables stay, for Trino to read, until
+# the next cdc deletes them. Needs Kafka and Kafka Connect running. The topics go after the connectors, which would
+# otherwise write them again, and from a pod of their own: a Kafka tool in the broker's pod could push it past its
+# memory limit.
+cdc_delete() {
+  say "deleting the CDC leg: its connectors, databases, their volumes and its Kafka topics (the history tables stay)"
+  cdc_connectors_delete
+  cdc_pods_delete
+  k delete pvc -l nuna-demo/cdc-data=true --ignore-not-found --wait=true >/dev/null
+  k delete configmap cdc-begun --ignore-not-found >/dev/null
   k delete pod cdc-cleanup --ignore-not-found >/dev/null
   MSYS_NO_PATHCONV=1 k run cdc-cleanup -i --rm --quiet --restart=Never --image="$(image_of kafka.image)" \
     --image-pull-policy=Never --env=KAFKA_HEAP_OPTS=-Xmx128m --command -- sh -c '
@@ -1860,7 +1904,25 @@ cdc_delete() {
 }
 
 cdc_stop() {
+  cdc_pause
+  cdc_others_start
+}
+
+# Deletes the leg, running or paused, so the next cdc starts it anew.
+cdc_reset() {
+  if cdc_running; then
+    cdc_delete
+    cdc_others_start
+    return
+  fi
+  start_kafka
+  running connect || start_connect
   cdc_delete
+  stop_kafka
+}
+
+# What cdc stopped to make room for the leg, started again.
+cdc_others_start() {
   say "starting Trino again"
   k scale deployment/trino --replicas=1 >/dev/null
   audit_writer
@@ -1985,13 +2047,14 @@ up() {
 
 # Everything stops and goes but the data (backlog 237): the volume claims, PostgreSQL's, Silo's, Kafka's and
 # SingleStore's, and configmap demo-seeded, which says the sample data in them is complete. The namespace stays, as
-# the claims are in it; demo.sh wipe deletes it. The CDC leg goes as cdc stop deletes it: its databases keep no
-# volume, so the offsets Kafka keeps for them must go too. The compaction Jobs' namespace holds nothing to keep.
+# the claims are in it; demo.sh wipe deletes it. The CDC leg pauses as cdc stop pauses it: its databases' and
+# CloudBeaver's claims stay too, with configmap cdc-begun, and the next cdc carries on (backlog 293). The compaction
+# Jobs' namespace holds nothing to keep.
 down() {
   local release
   kubectl --context "$CONTEXT" get namespace "$NS" >/dev/null 2>&1 || return 0
   if cdc_running; then
-    cdc_delete || say "the CDC leg was not cleanly deleted (see above): its Kafka topics or offsets may be left"
+    cdc_pause || say "the CDC leg's connectors were not all stopped (see above): the next cdc resumes them anyway"
   fi
   for release in $(helm --kube-context "$CONTEXT" -n "$NS" list -q 2>/dev/null); do
     helm --kube-context "$CONTEXT" -n "$NS" uninstall "$release" --wait >/dev/null 2>&1 || true
@@ -1999,7 +2062,8 @@ down() {
   say "deleting namespace $NS's pods and settings; its volumes stay (demo/demo.sh wipe deletes them)"
   k delete deployment,statefulset,job,service,secret,poddisruptionbudget,role,rolebinding,networkpolicy,ingress \
     --all --ignore-not-found --wait=true >/dev/null
-  k delete configmap --field-selector 'metadata.name!=demo-seeded,metadata.name!=kube-root-ca.crt' \
+  k delete configmap --field-selector \
+    'metadata.name!=demo-seeded,metadata.name!=cdc-begun,metadata.name!=kube-root-ca.crt' \
     --ignore-not-found >/dev/null
   k delete serviceaccount --field-selector metadata.name!=default --ignore-not-found >/dev/null
   k delete pod --all --ignore-not-found --wait=true >/dev/null
@@ -2061,7 +2125,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") gen_start; print_access ;;
       stop) gen_stop ;;
-      *) sed -n '2,41p' "$0"; exit 2 ;;
+      *) sed -n '2,43p' "$0"; exit 2 ;;
     esac
     ;;
   ss)
@@ -2069,7 +2133,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") ss_on; print_access ;;
       stop) ss_stop ;;
-      *) sed -n '2,41p' "$0"; exit 2 ;;
+      *) sed -n '2,43p' "$0"; exit 2 ;;
     esac
     ;;
   kafka)
@@ -2077,14 +2141,14 @@ case "${1:-}" in
     case "${2:-}" in
       "") kafka_on ;;
       stop) kafka_off ;;
-      *) sed -n '2,41p' "$0"; exit 2 ;;
+      *) sed -n '2,43p' "$0"; exit 2 ;;
     esac
     ;;
   metrics)
     case "${2:-}" in
       "") metrics_start; print_access ;;
       stop) metrics_stop ;;
-      *) sed -n '2,41p' "$0"; exit 2 ;;
+      *) sed -n '2,43p' "$0"; exit 2 ;;
     esac
     ;;
   token)
@@ -2118,7 +2182,7 @@ case "${1:-}" in
   brokerage)
     case "${2:-}" in
       logs) k logs deployment/brokerage --tail=100 -f ;;
-      *) sed -n '2,41p' "$0"; exit 2 ;;
+      *) sed -n '2,43p' "$0"; exit 2 ;;
     esac
     ;;
   cdc)
@@ -2126,7 +2190,8 @@ case "${1:-}" in
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,41p' "$0"; exit 2 ;;
+      reset) cdc_reset ;;
+      *) sed -n '2,43p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -2178,11 +2243,11 @@ case "${1:-}" in
     ;;
   wipe)
     down
-    say "deleting namespace $NS with its volumes: PostgreSQL's, Silo's, Kafka's and SingleStore's data"
+    say "deleting namespace $NS with its volumes: all the demo's data"
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,41p' "$0"
+    sed -n '2,43p' "$0"
     exit 2
     ;;
 esac

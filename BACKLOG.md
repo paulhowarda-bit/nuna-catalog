@@ -2260,3 +2260,4 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [290](backlog/290.md) | Failover and fault tests fail on Podman: a POST on a pooled pipe connection Podman closed | done | 2026-11-26 |
 | [291](backlog/291.md) | Heavy tests on Podman: a Docker call made after 10 s without one fails, since Podman's API closes idle connections and Testcontainers reuses them (TwoIssuersTest) | done | 2026-11-26 |
 | [292](backlog/292.md) | GitHub's push protection refuses the openssl pkcs8 command's argument order | done | 2026-11-26 |
+| [293](backlog/293.md) | The CDC leg and CloudBeaver keep their data on volumes: cdc stop and down pause the leg, the next cdc carries on, cdc reset starts it anew | done | 2026-11-26 |

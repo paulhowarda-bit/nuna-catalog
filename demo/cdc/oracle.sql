@@ -1,14 +1,14 @@
 -- The CDC leg's Oracle source (demo/k8s/cdc.yaml): Oracle Database Free, PDB FREEPDB1, table TREASURY.PAYMENTS,
 -- which Debezium captures through LogMiner into the Iceberg history table history.oracle.treasury.payments.
 --
--- A startup script (/container-entrypoint-startdb.d): the image's database is made at build time (faststart),
--- so initialization scripts never run. It runs as SYS in the root container on every start of a container, and
--- every container starts from the image's database. It stops the container if a statement fails.
+-- An initialization script (/container-entrypoint-initdb.d): it runs as SYS in the root container once, at the
+-- first start on an empty volume, onto which the pod copies the image's ready-made database (faststart); later starts
+-- open the kept database without it (backlog 293). It stops the container if a statement fails.
 --
 -- What Debezium needs (its Oracle connector guide): archive log mode, minimal supplemental logging for the
 -- database and all-column logging for the captured table, and the LogMiner user c##dbzuser with the guide's
--- grants. The pod has already cut the memory targets before the database first opened (cdc.yaml). The last
--- statement writes /tmp/cdc-ready, which the pod's readiness probe waits for.
+-- grants. The pod has already cut the memory targets before the database first opened (cdc.yaml). The pod's
+-- startup script, which the image runs after this, writes /tmp/cdc-ready, which its readiness probe waits for.
 WHENEVER SQLERROR EXIT SQL.SQLCODE
 
 HOST mkdir -p /opt/oracle/oradata/recovery_area
@@ -98,5 +98,3 @@ CREATE USER oscar IDENTIFIED BY "${PASSWORD_OSCAR}";
 GRANT CREATE SESSION, SELECT ANY TABLE TO oscar;
 -- Everyone also reads the data dictionary and the V$ views (SELECT_CATALOG_ROLE); gary and presenter have them through DBA.
 GRANT SELECT_CATALOG_ROLE TO ana, stella, oscar;
-
-HOST touch /tmp/cdc-ready

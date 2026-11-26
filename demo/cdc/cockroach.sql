@@ -1,7 +1,7 @@
 -- The CDC leg's CockroachDB source (demo/k8s/cdc.yaml, Service cockroach): custody holdings, which Debezium
 -- captures through a CockroachDB changefeed into the Iceberg history table history.cockroach.positions.holdings.
--- Run once as root, by the image's entrypoint, as the single node is first started; the entrypoint then writes
--- /cockroach/init_success, which the pod's readiness probe waits for.
+-- Run once as root, by the image's entrypoint, as the single node is first started on an empty volume; the
+-- entrypoint then writes /cockroach/init_success, which the pod's readiness probe waits for.
 --
 -- What Debezium needs (its CockroachDB connector guide): rangefeeds on, and a login with SELECT and CHANGEFEED on
 -- the captured table. updated_at is timestamp(3), as in backoffice.sql.
