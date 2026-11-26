@@ -2,6 +2,9 @@ package nuna.catalog.store.suite;
 
 import static nuna.catalog.store.suite.Changes.change;
 import static nuna.catalog.store.suite.Changes.fullChange;
+import static nuna.catalog.store.suite.Changes.now;
+import static nuna.catalog.store.suite.Refs.branch;
+import static nuna.catalog.store.suite.Refs.tag;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.store.CatalogObject;
@@ -11,10 +14,13 @@ import nuna.catalog.store.GrantGroup;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.PageRequest;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -26,9 +32,81 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Grants to groups: put and revoke with their outbox rows, conditional puts (the separation-of-duties check inside
- * the write, backlog 13), the batch check, both grant listings, and the listing of groups (backlog 247).
+ * the write, backlog 13), the batch check, both grant listings, the listing of groups (backlog 247), and grants
+ * that name a branch (backlog 113).
  */
 public abstract class GrantSuite extends GroupSuite {
+
+    @Test
+    @DisplayName("Branch grants: a grant may name a branch beside the same grant on every ref; each is read, listed,"
+            + " paged and revoked apart, and only a branch of the grant's catalog may be named")
+    void aGrantMayNameABranch() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Ref dev = branch(catalog, "dev", now());
+        Ref test = branch(catalog, "test", now());
+        Ref release = tag(catalog, "release", now());
+        UUID otherCatalog = newCatalog();
+        Ref elsewhere = branch(otherCatalog, "dev", now());
+        for (Ref ref : List.of(dev, test, release, elsewhere)) {
+            assertThat(store.createRef(ref, RefLimits.P11, change())).isEqualTo(WriteResult.APPLIED);
+        }
+        Grant everywhere = new Grant(catalog, table.securable(), "writers", "write");
+        Grant onDev = new Grant(catalog, table.securable(), "writers", "write", Optional.of(dev.id()));
+        Grant onTest = new Grant(catalog, table.securable(), "writers", "write", Optional.of(test.id()));
+        Change put = fullChange();
+
+        assertThat(store.putGrant(onDev, "grant-admin", put)).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.putGrant(onDev, "grant-admin", change())).isEqualTo(WriteResult.UNCHANGED);
+        assertThat(store.putGrant(everywhere, "grant-admin", change())).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.putGrant(onTest, "grant-admin", change())).isEqualTo(WriteResult.APPLIED);
+        assertThat(underTest().changeRows(put)).isEqualTo(WrittenRows.allOf(put));
+        Change refused = fullChange();
+        assertThat(store.putGrant(new Grant(catalog, table.securable(), "writers", "write", Optional.of(release.id())),
+                "grant-admin", refused)).as("a tag").isEqualTo(new WriteResult.Missing(WriteResult.Subject.REF));
+        assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.putGrant(new Grant(catalog, table.securable(), "writers", "write",
+                Optional.of(elsewhere.id())), "grant-admin", change())).as("another catalog's branch")
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.REF));
+        assertThat(store.putGrant(new Grant(catalog, table.securable(), "writers", "write",
+                Optional.of(UUID.randomUUID())), "grant-admin", change())).as("no ref")
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.REF));
+
+        assertThat(store.grantsFor(Set.of(table.securable()), Set.of("writers")))
+                .containsExactlyInAnyOrder(new GrantRecord(onDev, "grant-admin", put.at()),
+                        recordOf(everywhere), recordOf(onTest));
+        assertThat(allPages(1, page -> store.listGrantsOn(table.securable(), page)))
+                .extracting(GrantRecord::grant).containsExactly(everywhere, sorted(onDev, onTest).get(0),
+                        sorted(onDev, onTest).get(1));
+        assertThat(allPages(1, page -> store.listGrantsOfGroups(catalog, Set.of("writers"), page)))
+                .extracting(GrantRecord::grant).containsExactly(everywhere, sorted(onDev, onTest).get(0),
+                        sorted(onDev, onTest).get(1));
+        assertThat(allPages(1, page -> store.listGrantGroups(catalog, page)))
+                .containsExactly(new GrantGroup("writers", List.of("write")));
+
+        Change revoke = fullChange();
+        assertThat(store.revokeGrant(onTest, revoke)).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.revokeGrant(onTest, change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.GRANT));
+        assertThat(underTest().changeRows(revoke)).isEqualTo(WrittenRows.allOf(revoke));
+        assertThat(store.grantsFor(Set.of(table.securable()), Set.of("writers"))).extracting(GrantRecord::grant)
+                .containsExactlyInAnyOrder(everywhere, onDev);
+
+        assertThat(store.deleteRef(dev.id(), change())).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.grantsFor(Set.of(table.securable()), Set.of("writers"))).as("deleting dev deletes its grants")
+                .extracting(GrantRecord::grant).containsExactly(everywhere);
+    }
+
+    private GrantRecord recordOf(Grant grant) {
+        return store.grantsFor(Set.of(grant.securable()), Set.of(grant.group())).stream()
+                .filter(found -> found.grant().equals(grant)).findFirst().orElseThrow();
+    }
+
+    /** Grants on one securable to one group and privilege, in the order the listings give their branches. */
+    private static List<Grant> sorted(Grant first, Grant second) {
+        return first.branch().orElseThrow().toString().compareTo(second.branch().orElseThrow().toString()) < 0
+                ? List.of(first, second) : List.of(second, first);
+    }
 
     @Test
     @DisplayName("Grants: a put writes the grant and its outbox row; a second put is Unchanged and writes nothing")

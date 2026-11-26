@@ -57,13 +57,13 @@ class EventCodecTest {
             Map.entry(EventType.RUN_END, List.of("host")));
     private static final Map<EventType, List<String>> NULLABLE = Map.ofEntries(
             Map.entry(EventType.COMMIT, List.of("before")),
-            Map.entry(EventType.GRANT_CHANGE, List.of()),
+            Map.entry(EventType.GRANT_CHANGE, List.of("branch", "branchId")),
             Map.entry(EventType.DROP, List.of()),
             Map.entry(EventType.BREAK_GLASS, List.of()),
             Map.entry(EventType.OBJECT_READ, List.of()),
             Map.entry(EventType.DENIAL, List.of("securable", "privilege")),
             Map.entry(EventType.AUTH_FAILURE, List.of("issuer", "claimedSubject", "clientId", "remoteAddress")),
-            Map.entry(EventType.CREDENTIAL_ISSUE, List.of()),
+            Map.entry(EventType.CREDENTIAL_ISSUE, List.of("writePrefix")),
             Map.entry(EventType.NAMESPACE_CHANGE, List.of()),
             Map.entry(EventType.RENAME, List.of()),
             Map.entry(EventType.ENGINE_CHANGE, List.of()),

@@ -74,8 +74,17 @@ public final class CredentialVendor implements AutoCloseable {
      * @throws ObjectStoreException      when STS refuses or cannot be reached
      */
     public VendedCredentials vend(String location, Access access, SessionIdentity identity) {
+        return vend(location, access, identity, Optional.empty());
+    }
+
+    /**
+     * {@link #vend(String, Access, SessionIdentity)}, writing only beneath {@code writeUnder} of the table's prefix
+     * ({@link SessionPolicy#forTable(ObjectLocation, Access, String, Optional, Optional)}, backlog 113).
+     */
+    public VendedCredentials vend(String location, Access access, SessionIdentity identity,
+                                  Optional<String> writeUnder) {
         ObjectLocation table = profile.approve(location);
-        String policy = SessionPolicy.forTable(table, access, profile.region(), profile.kmsKey());
+        String policy = SessionPolicy.forTable(table, access, profile.region(), profile.kmsKey(), writeUnder);
         String sessionName = identity.sessionName();
         AssumeRoleResponse response;
         try {
@@ -93,7 +102,8 @@ public final class CredentialVendor implements AutoCloseable {
         }
         Credentials credentials = response.credentials();
         return new VendedCredentials(credentials.accessKeyId(), credentials.secretAccessKey(),
-                credentials.sessionToken(), credentials.expiration(), table.toString(), access, sessionName);
+                credentials.sessionToken(), credentials.expiration(), table.toString(), access, sessionName,
+                writeUnder);
     }
 
     @Override

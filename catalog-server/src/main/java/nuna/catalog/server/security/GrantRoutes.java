@@ -4,6 +4,7 @@ import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
 import nuna.catalog.audit.GrantChange;
 import nuna.catalog.core.CatalogError;
+import nuna.catalog.core.Names;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Authorizer.Decision;
@@ -26,6 +27,7 @@ import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.OutboxEvent;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
+import nuna.catalog.store.Ref;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,6 +36,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,18 +83,24 @@ class GrantRoutes {
             + " deployment's grant-admin and platform-operator groups: the catalog knows groups from its grants and"
             + " does not read the directory, so a group that holds nothing here is not listed.";
 
-    record GrantSpec(Securables.Spec securable, String group, String privilege) {
+    /** @param branch the branch the grant holds through, by name; null for a grant on every ref (backlog 113) */
+    record GrantSpec(Securables.Spec securable, String group, String privilege, String branch) {
     }
 
-    /** A grant's body, read and resolved, on a securable the caller may manage grants on. */
-    private record Asked(Securables securables, Securables.Resolved on, String group, Privilege privilege) {
+    /**
+     * A grant's body, read and resolved, on a securable the caller may manage grants on.
+     *
+     * @param branch the branch the grant names; empty for a grant on every ref
+     */
+    private record Asked(Securables securables, Securables.Resolved on, String group, Privilege privilege,
+                         Optional<Ref> branch) {
     }
 
     /** Why a grant is refused: the grant route's answer and the preview's {@code refusal} and {@code reason}. */
     private record Refusal(Kind kind, String reason) {
 
         enum Kind {
-            PRIVILEGE_NOT_ON_OBJECT, SELF_GRANT, SEPARATION_OF_DUTIES;
+            PRIVILEGE_NOT_ON_OBJECT, PRIVILEGE_NOT_ON_A_BRANCH, SELF_GRANT, SEPARATION_OF_DUTIES;
 
             String wireName() {
                 return name().toLowerCase(java.util.Locale.ROOT).replace('_', '-');
@@ -99,7 +108,8 @@ class GrantRoutes {
         }
     }
 
-    record CheckSpec(Securables.Spec securable, String privilege) {
+    /** @param branch the branch to ask through, by name; null for main (backlog 113) */
+    record CheckSpec(Securables.Spec securable, String privilege, String branch) {
     }
 
     record Checks(List<CheckSpec> checks) {
@@ -133,6 +143,11 @@ class GrantRoutes {
      * caller is in the group (no self-grant) or the group would hold two separated duties in the catalog, and
      * answered 400 for a privilege that means nothing on the securable ({@code create} on a table or view, backlog
      * 246). {@link #preview} answers what this would do, through the same checks.
+     *
+     * <p>{@code branch} names a branch the grant holds through, and through no other ref (backlog 113): only
+     * {@code write} and {@code modify}, what a commit on the branch needs, since reads, listings and every change
+     * outside commits ask through main. A tag, which takes no write, or a branch that does not exist or has expired
+     * is answered 400 or 404. Without it the grant holds through every ref, main included.
      */
     @PostMapping(GRANTS)
     ResponseEntity<String> grant(@PathVariable String catalog, @RequestBody(required = false) String body,
@@ -215,7 +230,9 @@ class GrantRoutes {
         require(request, on, EFFECTIVE);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("securable", securables.render(on.stored()));
-        out.put("grants", authorizer.effectiveGrants(on.target()).stream().map(g -> render(g, securables)).toList());
+        Branches branches = new Branches();
+        out.put("grants", authorizer.effectiveGrants(on.target()).stream().map(g -> render(g, securables, branches))
+                .toList());
         out.put("grant-admin-groups", separation.grantAdminGroups().stream().sorted().toList());
         return json(out);
     }
@@ -267,6 +284,7 @@ class GrantRoutes {
             throw CatalogError.badRequest("Nothing to check: send {\"checks\":[{\"securable\":...,\"privilege\":...}]}");
         }
         Securables securables = new Securables(store, record);
+        Instant now = clock.instant();
         List<Authorizer.Request> requests = new ArrayList<>();
         List<Securables.Resolved> resolvedAsked = new ArrayList<>();
         List<Integer> asked = new ArrayList<>();
@@ -275,10 +293,14 @@ class GrantRoutes {
             Privilege privilege = privilege(spec.privilege());
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("privilege", privilege.wireName());
+            Optional<Ref> through = spec.branch() == null ? Optional.empty()
+                    : Optional.of(liveRef(record, spec.branch(), now));
+            through.ifPresent(ref -> result.put("branch", ref.name().display()));
             try {
                 Securables.Resolved resolved = securables.resolve(spec.securable());
                 result.put("securable", securables.render(resolved.stored()));
-                requests.add(new Authorizer.Request(resolved.target(), new Operation("check", privilege, false)));
+                requests.add(new Authorizer.Request(resolved.target(), new Operation("check", privilege, false),
+                        through.map(Ref::id)));
                 resolvedAsked.add(resolved);
                 asked.add(results.size());
             } catch (CatalogError e) {
@@ -319,8 +341,9 @@ class GrantRoutes {
         Securables securables = new Securables(store, record);
         require(request, securables.catalogItself(), EXPORT);
         List<Map<String, Object>> grants = new ArrayList<>();
-        exportOn(new Securable(Securable.Kind.CATALOG, record.id()), securables, grants);
-        exportBelow(record.id(), securables, grants);
+        Branches branches = new Branches();
+        exportOn(new Securable(Securable.Kind.CATALOG, record.id()), securables, branches, grants);
+        exportBelow(record.id(), securables, branches, grants);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("catalog", record.name());
         out.put("exported-at", clock.instant().toString());
@@ -354,6 +377,7 @@ class GrantRoutes {
         out.put("securable", asked.securables().render(asked.on().stored()));
         out.put("group", asked.group());
         out.put("privilege", asked.privilege().wireName());
+        asked.branch().ifPresent(ref -> out.put("branch", ref.name().display()));
         Optional<Refusal> refusal = refusal(request.caller(), asked);
         Optional<GrantRecord> held = Optional.empty();
         if (refusal.isEmpty()) {
@@ -364,7 +388,8 @@ class GrantRoutes {
                 refusal = Optional.of(new Refusal(Refusal.Kind.SEPARATION_OF_DUTIES, separated.get()));
             } else {
                 held = grants.stream().filter(g -> g.grant().securable().equals(asked.on().stored())
-                        && g.grant().privilege().equals(asked.privilege().wireName())).findFirst();
+                        && g.grant().privilege().equals(asked.privilege().wireName())
+                        && g.grant().branch().equals(asked.branch().map(Ref::id))).findFirst();
             }
         }
         if (refusal.isPresent()) {
@@ -395,11 +420,13 @@ class GrantRoutes {
                 throw refused(request, operation, asked, refusal.get());
             }
         }
-        Grant stored = new Grant(record.id(), on.stored(), asked.group(), privilege.wireName());
+        Grant stored = new Grant(record.id(), on.stored(), asked.group(), privilege.wireName(),
+                asked.branch().map(Ref::id));
         Instant now = clock.instant();
         CatalogEvent event = CatalogEvent.create(settings.auditSource(), now, new GrantChange(
                 grant ? GrantChange.Action.GRANTED : GrantChange.Action.REVOKED, on.named(), asked.group(),
-                privilege.wireName(), request.actor()));
+                privilege.wireName(), request.actor(), asked.branch().map(ref -> ref.name().display()).orElse(null),
+                asked.branch().map(Ref::id).orElse(null)));
         Change change = new Change(UUID.randomUUID(), now, List.of(new OutboxEvent(event.type().typeName(),
                 new String(EventCodec.encode(event), StandardCharsets.UTF_8))), Optional.empty());
         AtomicReference<String> separated = new AtomicReference<>();
@@ -421,7 +448,11 @@ class GrantRoutes {
                             new Refusal(Refusal.Kind.SEPARATION_OF_DUTIES, separated.get()));
             case WriteResult.Missing missing when missing.subject() == WriteResult.Subject.GRANT ->
                     throw CatalogError.of(404, "NotFoundException", "No such grant: " + privilege.wireName()
-                            + " to " + asked.group());
+                            + " to " + asked.group() + asked.branch().map(ref -> " on branch "
+                            + ref.name().display()).orElse(""));
+            case WriteResult.Missing missing when missing.subject() == WriteResult.Subject.REF ->
+                    throw CatalogError.of(404, "NoSuchBranchException", "The branch no longer exists: "
+                            + asked.branch().map(ref -> ref.name().display()).orElse(""));
             case WriteResult.Missing missing -> throw CatalogError.of(404, "NotFoundException",
                     "The securable no longer exists: " + missing.subject());
             default -> throw new IllegalStateException((grant ? "putGrant" : "revokeGrant") + " answered " + result);
@@ -441,7 +472,32 @@ class GrantRoutes {
         Securables securables = new Securables(store, record);
         Securables.Resolved on = securables.resolve(spec.securable());
         require(request, on, operation);
-        return new Asked(securables, on, spec.group(), privilege);
+        Optional<Ref> branch = Optional.empty();
+        if (spec.branch() != null) {
+            // A grant goes only to a live branch; a revoke may name one that has expired, whose grants are still kept.
+            Ref ref = operation == REVOKE ? anyRef(record, spec.branch()) : liveRef(record, spec.branch(), clock.instant());
+            if (ref.kind() != Ref.Kind.BRANCH) {
+                throw CatalogError.badRequest("A grant names a branch, and " + ref.name().display()
+                        + " is a tag, which takes no write");
+            }
+            branch = Optional.of(ref);
+        }
+        return new Asked(securables, on, spec.group(), privilege, branch);
+    }
+
+    /** The ref of the catalog with this name, whatever its expiry: 404 when there is none. */
+    private Ref anyRef(CatalogRecord catalog, String name) {
+        return store.findRef(catalog.id(), Names.normalize(name))
+                .orElseThrow(() -> CatalogError.of(404, "NoSuchBranchException", "Branch does not exist: " + name));
+    }
+
+    /** The ref of the catalog with this name, live at {@code now}: 404 when there is none or it has expired. */
+    private Ref liveRef(CatalogRecord catalog, String name, Instant now) {
+        Ref ref = anyRef(catalog, name);
+        if (ref.expiredAt(now)) {
+            throw CatalogError.of(404, "NoSuchBranchException", "Branch does not exist: " + name);
+        }
+        return ref;
     }
 
     /**
@@ -462,6 +518,12 @@ class GrantRoutes {
             return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT, "write means nothing on a view: it"
                     + " has no rows; select reads it, and modify changes its definition"));
         }
+        if (asked.branch().isPresent() && asked.privilege() != Privilege.WRITE
+                && asked.privilege() != Privilege.MODIFY) {
+            return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_A_BRANCH, asked.privilege().wireName()
+                    + " is not granted on one branch: a grant that names a branch gives write or modify, what a"
+                    + " commit on it needs; reads and every other change ask through main"));
+        }
         if (!ownGroups.mayActOn(caller, asked.group())) {
             return Optional.of(new Refusal(Refusal.Kind.SELF_GRANT,
                     "no one grants to a group they belong to: " + asked.group()));
@@ -474,7 +536,8 @@ class GrantRoutes {
      * request, 400; a self-grant and a separation conflict are refused requests, 403 and audited.
      */
     private RuntimeException refused(RequestContext request, Operation operation, Asked asked, Refusal refusal) {
-        if (refusal.kind() == Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT) {
+        if (refusal.kind() == Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT
+                || refusal.kind() == Refusal.Kind.PRIVILEGE_NOT_ON_A_BRANCH) {
             return CatalogError.badRequest(refusal.reason());
         }
         return denials.refuse(request.actor(), operation.name(), asked.on().named(), asked.privilege().wireName(),
@@ -513,22 +576,24 @@ class GrantRoutes {
         }
     }
 
-    private void exportBelow(UUID parentId, Securables securables, List<Map<String, Object>> grants) {
+    private void exportBelow(UUID parentId, Securables securables, Branches branches,
+                             List<Map<String, Object>> grants) {
         for (NamespaceRecord namespace : all(page -> store.listNamespaces(parentId, page))) {
-            exportOn(new Securable(Securable.Kind.NAMESPACE, namespace.id()), securables, grants);
+            exportOn(new Securable(Securable.Kind.NAMESPACE, namespace.id()), securables, branches, grants);
             for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {
                 for (CatalogObject object : all(page -> store.listObjects(namespace.id(), kind,
                         CatalogObject.State.ACTIVE, page))) {
-                    exportOn(object.securable(), securables, grants);
+                    exportOn(object.securable(), securables, branches, grants);
                 }
             }
-            exportBelow(namespace.id(), securables, grants);
+            exportBelow(namespace.id(), securables, branches, grants);
         }
     }
 
-    private void exportOn(Securable securable, Securables securables, List<Map<String, Object>> grants) {
+    private void exportOn(Securable securable, Securables securables, Branches branches,
+                          List<Map<String, Object>> grants) {
         for (GrantRecord grant : all(page -> store.listGrantsOn(securable, page))) {
-            grants.add(render(grant, securables));
+            grants.add(render(grant, securables, branches));
         }
     }
 
@@ -545,21 +610,41 @@ class GrantRoutes {
         }
     }
 
-    private static Map<String, Object> listing(Page<GrantRecord> page, Securables securables) {
+    private Map<String, Object> listing(Page<GrantRecord> page, Securables securables) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("grants", page.items().stream().map(g -> render(g, securables)).toList());
+        Branches branches = new Branches();
+        out.put("grants", page.items().stream().map(g -> render(g, securables, branches)).toList());
         page.nextToken().ifPresent(token -> out.put("next-page-token", token));
         return out;
     }
 
-    private static Map<String, Object> render(GrantRecord grant, Securables securables) {
+    /**
+     * A grant as the routes answer it; {@code branch}, the name of the branch a grant holds through when it names one
+     * (backlog 113), is left out for a grant on every ref.
+     */
+    private static Map<String, Object> render(GrantRecord grant, Securables securables, Branches branches) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("securable", securables.render(grant.grant().securable()));
         out.put("group", grant.grant().group());
         out.put("privilege", grant.grant().privilege());
+        grant.grant().branch().ifPresent(id -> out.put("branch", branches.name(id)));
         out.put("granted-by", grant.grantedBy());
         out.put("granted-at", grant.grantedAt().toString());
         return out;
+    }
+
+    /**
+     * The names of the branches one answer's grants name, each read once. A grant's branch is deleted with it, so a
+     * name is missing only in a race with the deletion; its id stands in.
+     */
+    private final class Branches {
+
+        private final Map<UUID, String> names = new HashMap<>();
+
+        String name(UUID id) {
+            return names.computeIfAbsent(id, ref -> store.readRef(ref).map(found -> found.name().display())
+                    .orElse(ref.toString()));
+        }
     }
 
     private static Map<String, Object> render(GrantGroup group) {

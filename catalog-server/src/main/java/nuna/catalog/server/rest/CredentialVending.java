@@ -31,8 +31,19 @@ public interface CredentialVending {
      * @param write       whether the caller may write the table's data: a commit of data would be allowed, or a
      *                    staged create's caller may create the table. Otherwise the credentials only read (D21).
      */
+    /**
+     * @param write      whether they may write
+     * @param writeUnder where beneath {@code location} a writer may write, when not all of it: a writer on one branch
+     *                   only writes beneath that branch's place (backlog 113)
+     */
     record Request(CatalogRecord catalog, UUID tableId, List<String> path, String location, Caller caller,
-                   String requestId, Optional<String> delegation, String refreshPath, boolean write) {
+                   String requestId, Optional<String> delegation, String refreshPath, boolean write,
+                   Optional<String> writeUnder) {
+
+        Request(CatalogRecord catalog, UUID tableId, List<String> path, String location, Caller caller,
+                String requestId, Optional<String> delegation, String refreshPath, boolean write) {
+            this(catalog, tableId, path, location, caller, requestId, delegation, refreshPath, write, Optional.empty());
+        }
 
         public Request {
             Objects.requireNonNull(catalog, "catalog");
@@ -43,6 +54,10 @@ public interface CredentialVending {
             Objects.requireNonNull(requestId, "requestId");
             Objects.requireNonNull(delegation, "delegation");
             Objects.requireNonNull(refreshPath, "refreshPath");
+            Objects.requireNonNull(writeUnder, "writeUnder");
+            if (writeUnder.isPresent() && !write) {
+                throw new IllegalArgumentException("only a writer's credentials are confined to write beneath a place");
+            }
         }
     }
 

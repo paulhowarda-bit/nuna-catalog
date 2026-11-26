@@ -136,6 +136,7 @@ final class OracleNamespaces {
             }
             update(connection, "DELETE FROM namespace_property WHERE namespace_id = ?", namespaceId);
             update(connection, "DELETE FROM grant_record WHERE securable_id = ?", namespaceId);
+            update(connection, "DELETE FROM ref_grant WHERE securable_id = ?", namespaceId);
             update(connection, "DELETE FROM governance_attribute WHERE target_id = ?", namespaceId);
             update(connection, "DELETE FROM namespace WHERE id = ?", namespaceId);
             return WriteResult.APPLIED;

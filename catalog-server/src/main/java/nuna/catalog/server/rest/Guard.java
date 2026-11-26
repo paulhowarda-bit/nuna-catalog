@@ -24,6 +24,7 @@ import nuna.catalog.store.NamespaceRecord;
 import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
@@ -84,6 +85,18 @@ class Guard {
     static final Operation WRITE_DATA = new Operation("updateTable", WRITE, true);
     /** A transaction, as a refusal on its catalog names it; each table in it is asked as a commit to it would be. */
     static final Operation COMMIT_TRANSACTION = new Operation("commitTransaction", WRITE, true);
+
+    /**
+     * What a caller may write to a table through a ref: nothing; the whole table, as a grant on every ref allows; or
+     * only the ref's own place, as a grant that names the branch allows and none on every ref does (backlog 113).
+     */
+    enum Writes {
+        NONE, ALL, BRANCH;
+
+        boolean any() {
+            return this != NONE;
+        }
+    }
 
     /** Updates that change only data and its bookkeeping: {@code write}. Anything else changes the definition. */
     private static final Set<String> DATA_UPDATES = Set.of("add-snapshot", "remove-snapshots", "set-snapshot-ref",
@@ -238,7 +251,7 @@ class Guard {
     void onCommit(RequestContext request, OnRef on, CatalogObject object, List<String> path, Operation operation,
                   CatalogError missing) {
         Target target = new Target.TableOrView(object);
-        Decision decision = authorizer.decide(request.caller(), target, operation);
+        Decision decision = authorizer.decide(request.caller(), target, operation, on.refId());
         if (!on.onMain() && decision instanceof Decision.Exempted) {
             decision = new Decision.Denied(Authorizer.Reason.FLAGGED_TABLE, null, "table "
                     + object.name().display() + " has a row/column policy; the maintenance exemption holds on main"
@@ -251,19 +264,22 @@ class Guard {
     }
 
     /**
-     * {@link #onObject} for a route that vends storage access. Answers whether the caller may also commit data to
-     * the table, decided as a commit would be, in the same batch; a no is not a refusal and is not audited.
+     * {@link #onObject} through {@code on} for a route that vends storage access. Answers what the caller may also
+     * commit data to through {@code on}, decided as a commit would be, in the same batch; {@link Writes#NONE} is not a
+     * refusal and is not audited.
      */
-    boolean onObjectMayWrite(RequestContext request, CatalogRecord catalog, CatalogObject object, List<String> path,
-                             Operation operation, CatalogError missing) {
+    Writes onObjectWrites(RequestContext request, OnRef on, CatalogObject object, List<String> path,
+                          Operation operation, CatalogError missing) {
         Target target = new Target.TableOrView(object);
-        List<Decision> decisions = authorizer.decide(request.caller(),
-                List.of(new Authorizer.Request(target, operation), new Authorizer.Request(target, WRITE_DATA)));
-        if (!decided(request, AuditEvents.securable(object, catalog.name(), path), operation, decisions.getFirst(),
+        List<Decision> decisions = authorizer.decide(request.caller(), List.of(
+                new Authorizer.Request(target, operation, on.refId()),
+                new Authorizer.Request(target, WRITE_DATA, on.refId()),
+                new Authorizer.Request(target, WRITE_DATA)));
+        if (!decided(request, AuditEvents.securable(object, on.catalog().name(), path), operation, decisions.getFirst(),
                 () -> holdings.onOrAbove(request.caller(), target))) {
             throw missing;
         }
-        return decisions.get(1).allowed();
+        return writes(decisions.get(1), decisions.get(2));
     }
 
     /**
@@ -299,9 +315,23 @@ class Guard {
         }
     }
 
-    /** Whether the caller may commit data to the table, decided as a commit would be; not audited. */
-    boolean mayWrite(RequestContext request, CatalogObject object) {
-        return authorizer.decide(request.caller(), new Target.TableOrView(object), WRITE_DATA).allowed();
+    /** What the caller may commit data to through {@code on}, decided as a commit would be; not audited. */
+    Writes writes(RequestContext request, OnRef on, CatalogObject object) {
+        Target target = new Target.TableOrView(object);
+        List<Decision> decisions = authorizer.decide(request.caller(), List.of(
+                new Authorizer.Request(target, WRITE_DATA, on.refId()), new Authorizer.Request(target, WRITE_DATA)));
+        return writes(decisions.get(0), decisions.get(1));
+    }
+
+    /**
+     * Allowed through the ref and through main: the whole table. Through the ref only: the ref's own place, since
+     * governance is the same on every ref, so only a grant naming the branch tells them apart.
+     */
+    private static Writes writes(Decision throughRef, Decision throughMain) {
+        if (!throughRef.allowed()) {
+            return Writes.NONE;
+        }
+        return throughMain.allowed() ? Writes.ALL : Writes.BRANCH;
     }
 
     private boolean allows(RequestContext request, Target target, Securable named, Operation operation,

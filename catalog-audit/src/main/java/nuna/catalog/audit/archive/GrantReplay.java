@@ -26,18 +26,19 @@ public final class GrantReplay {
     public record Report(int granted, int revoked, int unchanged, List<GrantChange> unresolved) {
     }
 
-    private record Key(UUID securable, String group, String privilege) {
+    /** A grant on every ref has no branch; one that names a branch, its id (backlog 113). */
+    private record Key(UUID securable, String group, String privilege, UUID branch) {
     }
 
     private GrantReplay() {
     }
 
-    /** The last change of each (securable, group, privilege), in the order those last changes were made. */
+    /** The last change of each (securable, group, privilege, branch), in the order those last changes were made. */
     public static List<GrantChange> net(List<CatalogEvent> events) {
         Map<Key, GrantChange> last = new LinkedHashMap<>();
         for (CatalogEvent event : events) {
             if (event.data() instanceof GrantChange change) {
-                Key key = new Key(change.securable().id(), change.group(), change.privilege());
+                Key key = new Key(change.securable().id(), change.group(), change.privilege(), change.branchId());
                 last.remove(key);
                 last.put(key, change);
             }
@@ -68,7 +69,7 @@ public final class GrantReplay {
             }
             Grant grant = new Grant(catalog.get(), new Securable(
                     Securable.Kind.valueOf(grantChange.securable().kind().name()), grantChange.securable().id()),
-                    grantChange.group(), grantChange.privilege());
+                    grantChange.group(), grantChange.privilege(), Optional.ofNullable(grantChange.branchId()));
             WriteResult result = grantChange.action() == GrantChange.Action.GRANTED
                     ? store.putGrant(grant, grantChange.actor().principal(), change.apply(grantChange))
                     : store.revokeGrant(grant, change.apply(grantChange));

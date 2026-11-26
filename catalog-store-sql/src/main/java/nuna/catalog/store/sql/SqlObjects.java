@@ -266,6 +266,7 @@ final class SqlObjects {
             }
             update(connection, "UPDATE catalog_object SET state = 'PURGED', purge_claimant = NULL WHERE id = ?", objectId);
             update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
+            update(connection, "DELETE FROM ref_grant WHERE securable_id = ?", objectId);
             update(connection, "DELETE FROM row_column_rule WHERE table_id = ?", objectId);
             update(connection, "DELETE FROM pending_deletion WHERE object_id = ?", objectId);
             update(connection, "DELETE FROM table_health WHERE object_id = ?", objectId);
