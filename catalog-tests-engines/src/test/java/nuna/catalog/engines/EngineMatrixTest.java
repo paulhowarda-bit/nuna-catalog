@@ -8,6 +8,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import nuna.catalog.security.TestIdp;
+import nuna.catalog.tests.s3.PrivateCa;
 import nuna.catalog.tests.s3.TestS3;
 import nuna.maintenance.MatrixCompaction;
 import java.io.IOException;
@@ -180,7 +181,10 @@ class EngineMatrixTest {
                 "SILO_IMAGE", System.getProperty("silo.image"),
                 "CEPH_IMAGE", System.getProperty("ceph.image"),
                 "SINGLESTORE_IMAGE", SINGLESTORE_IMAGE,
-                "KAFKA_UI_IMAGE", KAFKA_UI_IMAGE));
+                "KAFKA_UI_IMAGE", KAFKA_UI_IMAGE,
+                // The store's secret key and RGW's session-token key, made for this JVM (TestS3), never written down.
+                "S3_SECRET_KEY", TestS3.SECRET_KEY,
+                "CEPH_STS_KEY", TestS3.CEPH_STS_KEY));
         Map<String, String> storage = new LinkedHashMap<>();
         Map<String, String> secrets = new LinkedHashMap<>();
         Map<String, String> awsCredentials = new LinkedHashMap<>();
@@ -238,6 +242,7 @@ class EngineMatrixTest {
         started = System.nanoTime();
         kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "engine-token", "--from-literal=token=" + token);
         kubectl(Duration.ofMinutes(1), "create", "configmap", "idp-keys", "--from-file=keys.json=" + keys);
+        databaseTls();
         apply(stack, "stack.yaml");
         apply(stack, "kafka.yaml");
         List<String> deployments = new ArrayList<>(List.of("postgres", "kafka", "idp", "kafka-ui"));
@@ -731,6 +736,39 @@ class EngineMatrixTest {
                 "singlestore cross.maint", "4 17",
                 "singlestore cross.upgrade", "2 5",
                 "singlestore cross.pyiceberg-writes", "4 13 a,c2,d2,e"));
+    }
+
+    /**
+     * The database's TLS, as {@code demo.sh}'s {@code db_tls} makes the demo's (backlog 281): the stack's PostgreSQL
+     * lets the catalog in from the network only by a client certificate ({@code stack.yaml}), and the shared chart
+     * values name the files ({@code catalog-values.yaml}). The run's private CA ({@link PrivateCa}) issues PostgreSQL's
+     * certificate, for Service {@code postgres} by each of its names, and the catalog's, common name {@code catalog},
+     * the user PostgreSQL signs it in as. Secret {@code postgres-tls} holds PostgreSQL's with the CA's and the password
+     * its image asks for, random and never used; Secret {@code catalog-db-tls} the catalog's, its key as PKCS #8 DER,
+     * the form the JDBC driver reads, with the CA's. The key files stay in the CA's temporary folder.
+     */
+    private static void databaseTls() throws IOException {
+        PrivateCa ca = PrivateCa.shared();
+        PrivateCa.Issued server = ca.issue(List.of("postgres", "postgres." + namespace + ".svc",
+                "postgres." + namespace + ".svc.cluster.local"));
+        PrivateCa.Issued client = ca.issue(List.of("catalog"));
+        Path dir = client.key().getParent();
+        Path clientKey = dir.resolve("catalog-db.pk8");
+        Files.write(clientKey, Base64.getMimeDecoder().decode(Files.readString(client.key(), StandardCharsets.US_ASCII)
+                .replaceAll("-----[A-Z ]+-----", "")));
+        Path password = dir.resolve("postgres-initdb-password");
+        Files.writeString(password, UUID.randomUUID().toString(), StandardCharsets.US_ASCII);
+        for (Path made : List.of(clientKey, password)) {
+            made.toFile().deleteOnExit();
+        }
+        kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "postgres-tls",
+                "--from-file=server.crt=" + server.certificate(), "--from-file=server.key=" + server.key(),
+                "--from-file=ca.crt=" + ca.bundle, "--from-file=initdb-password=" + password);
+        kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "catalog-db-tls",
+                "--from-file=ca.crt=" + ca.bundle, "--from-file=client.crt=" + client.certificate(),
+                "--from-file=client.pk8=" + clientKey);
+        // The demo's pods carry a hash of its certificates; a stack of the run's own starts with them.
+        placeholders.put("DB_TLS_HASH", "engine-matrix");
     }
 
     /**

@@ -19,11 +19,11 @@ spec:
           imagePullPolicy: Never
           env:
             - {name: CEPH_DEMO_ACCESS_KEY, value: nunatest}
-            - {name: CEPH_DEMO_SECRET_KEY, value: nunatest-secret-key}
+            - {name: CEPH_DEMO_SECRET_KEY, value: "${S3_SECRET_KEY}"}
             - name: CEPH_EXTRA_CONF
               value: |-
                 rgw dns name = s3
-                rgw sts key = nunastskey012345
+                rgw sts key = ${CEPH_STS_KEY}
                 rgw s3 auth use sts = true
           ports:
             - containerPort: 8080

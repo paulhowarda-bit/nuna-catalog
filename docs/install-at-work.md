@@ -159,7 +159,8 @@ The charts run the catalog servers and the worker only. Everything else runs els
 
 - **Database.** PostgreSQL, CockroachDB, Oracle or MongoDB (see above): a database and a user that may create
   tables, with the extra rights deploy/README.md lists for Oracle and MongoDB. The first server of a release
-  migrates the schema while older servers keep serving.
+  migrates the schema while older servers keep serving. On PostgreSQL, the catalog's client certificate from work's
+  PKI, so the user needs no password (section 5).
 - **Kafka** for audit and change events (`nuna.audit.kafka-bootstrap-servers`). A load that vends credentials
   waits for Kafka's acknowledgement.
 - **Object stores** (AWS S3, Ceph or MinIO; PLT-3, PLT-5), with their buckets, named per region (PLT-4), and:
@@ -289,6 +290,41 @@ kubectl -n <namespace> create secret generic nuna-catalog-secrets \
 helm install nuna-catalog deploy/helm/nuna-catalog -n <namespace> -f <values.yaml> \
   --set secrets.existingSecret=nuna-catalog-secrets
 ```
+
+- On PostgreSQL, sign the catalog in by a client certificate from work's PKI instead, and give its user no password
+  (backlog 281; deploy/README.md, "The database", has the chart's side). The demo does the same with a CA of its own;
+  production plugs in work's:
+  1. Ask the DBAs which CA their PostgreSQL trusts for client certificates (its `ssl_ca_file`), and have them let the
+     catalog's user in from the cluster by certificate alone (`hostssl <database> <user> <the cluster's addresses>
+     cert` in `pg_hba.conf`, ahead of any password rule for that user), then take its password away
+     (`ALTER ROLE <user> PASSWORD NULL`).
+  2. Have work's PKI issue the catalog a certificate from that CA: common name the catalog's database user, extended
+     key usage clientAuth. Its key stays in the vault, and reaches the cluster only as the Secret below.
+  3. Make the Secret's three files: `ca.crt`, the chain of the CA that issued the database's own certificate (for
+     `sslmode=verify-full`); `client.crt`, the catalog's certificate and its intermediates; `client.pk8`, the key as
+     unencrypted PKCS #8 DER. From a `.pfx`, in Git Bash (each asks for the file's password; add `-legacy` to each
+     for an old one):
+
+     ```bash
+     openssl pkcs12 -in catalog.pfx -nokeys -out client.crt
+     openssl pkcs12 -in catalog.pfx -nocerts -nodes -out client.key
+     openssl pkcs8 -topk8 -nocrypt -in client.key -outform DER -out client.pk8
+     kubectl -n <namespace> create secret generic nuna-catalog-db-tls \
+       --from-file=ca.crt=<the database's CA chain, PEM> --from-file=client.crt=client.crt \
+       --from-file=client.pk8=client.pk8
+     ```
+
+     Then delete `client.key` and the `.pfx`'s copies; the Secret holds the key from here. If work's vault syncs
+     secrets into Kubernetes, have it make this Secret instead.
+  4. In the values: `databaseTls.secretName: nuna-catalog-db-tls`, and the URL with the files the chart mounts at
+     `/etc/nuna/db-tls`:
+     `jdbc:postgresql://<host>:5432/<database>?sslmode=verify-full&sslrootcert=/etc/nuna/db-tls/ca.crt&sslcert=/etc/nuna/db-tls/client.crt&sslkey=/etc/nuna/db-tls/client.pk8`.
+     Leave `spring.datasource.password` out of the Secret.
+  5. Check, as the DBAs: `SELECT ssl, version, client_dn FROM pg_stat_ssl JOIN pg_stat_activity USING (pid) WHERE
+     usename = '<user>'` shows every connection with TLS and the catalog's common name, and a connection as the user
+     without the certificate is refused ("connection requires a valid client certificate").
+
+  Renew the certificate before it ends: replace the Secret, then `kubectl rollout restart deployment/nuna-catalog`.
 
 - The chart's defaults: three replicas spread over zones, a disruption budget of one, probes on
   `/ui/config.json`, a 5 s preStop pause, non-root with a read-only root filesystem. `deploy/README.md` says
@@ -466,7 +502,10 @@ addresses of the console, kafbat, CloudBeaver and Studio, and Silo's console. Op
 fails: Keycloak's issuer and the redirect addresses name only that host.
 
 Inside the cluster the demo stays plain HTTP: it holds only test data. TLS on every hop (D26) is for nuna's
-own deployment at work. Hooking the demo up to work's identity provider and AWS roles can only be done on
+own deployment at work. The one exception is the catalog's connection to its PostgreSQL, which is TLS with the
+catalog's client certificate, as production's would be (backlog 281): `up` makes a database CA of the demo's own for
+it, in `~/.nuna-demo/db-tls`, at work too. Work's web certificate cannot do this job: it proves the host's name,
+and the catalog's certificate has to come from a CA the demo's database trusts. Hooking the demo up to work's identity provider and AWS roles can only be done on
 site: for sign-in, that means pointing the console, kafbat, CloudBeaver's sign-in proxy and Studio's SAML
 setting at work's identity provider instead of the demo's Keycloak, and giving SingleStore that provider's
 signing certificate (`demo/README.md`, "How CloudBeaver and Studio sign in through Keycloak").

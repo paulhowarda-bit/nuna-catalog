@@ -38,14 +38,14 @@
 #   demo/demo.sh down     stop and delete everything but the data: PostgreSQL's, Silo's, Kafka's, SingleStore's
 #                         and the metrics stack's volumes stay, and the next up carries on from them (the CDC leg is deleted, as cdc stop does)
 #   demo/demo.sh wipe     down, and delete the volumes too: the next up writes fresh sample data (keeps the signing
-#                         key, tokens, Keycloak keys and the certificate, as down does)
+#                         key, tokens, Keycloak keys and the certificates, as down does)
 #
 # Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
 # Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use NUNA_DEMO_CONTEXT (default
 # docker-desktop), never the current context, and the stack is namespace NUNA_DEMO_NAMESPACE (default
 # nuna-demo). Docker Desktop's cluster runs images from the local Docker engine and serves LoadBalancer
-# Services on localhost. The signing key, tokens, Keycloak's keys and the certificate are kept in
-# NUNA_DEMO_HOME (default ~/.nuna-demo).
+# Services on localhost. The signing key, tokens, Keycloak's keys, the certificate and the catalog's database's CA
+# and certificates (db_tls) are kept in NUNA_DEMO_HOME (default ~/.nuna-demo).
 #
 # Every page is HTTPS, at https://<NUNA_DEMO_HOST>:<port> (default localhost), with the certificate in
 # $NUNA_DEMO_HOME/tls (publish_tls). At work, put work's certificate there and set NUNA_DEMO_HOST to its name
@@ -110,6 +110,10 @@ CATALOG=lakehouse
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # SingleStore's root password, as demo/k8s/singlestore.yaml sets it. Local only.
 S2_ROOT_PASSWORD=nuna-test
+# Silo's root key, which store-silo.yaml, seed.yaml and demo-values.yaml take as ${S3_SECRET_KEY}. Local only.
+SILO_ROOT_KEY=nunatest-secret-key
+# The catalog's database's CA and certificates (db_tls), kept by down and wipe.
+DB_TLS="$RUN/db-tls"
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
 SINGLESTORE_IMAGE=
 TRINO_IMAGE=trinodb/trino:484
@@ -190,6 +194,7 @@ fill() {
     -e "s|\${TEMPO_IMAGE}|$TEMPO_IMAGE|g" -e "s|\${GRAFANA_IMAGE}|$GRAFANA_IMAGE|g" \
     -e "s|\${GRAFANA_FILES_HASH}|$(cat "$REPO"/deploy/grafana/dashboards/*.json "$REPO"/deploy/grafana/rules/*.yaml | sha256sum | cut -c1-12)|g" \
     -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" -e "s|\${TOKENS_HASH}|$(tokens_hash)|g" \
+    -e "s|\${S3_SECRET_KEY}|$SILO_ROOT_KEY|g" -e "s|\${DB_TLS_HASH}|$(db_tls_hash)|g" \
     "$STACK/$1"
 }
 
@@ -473,6 +478,105 @@ publish_tls() {
     | k apply -f - >/dev/null
 }
 
+# The catalog signs in to its PostgreSQL by a client certificate, over TLS, and no PostgreSQL role has a password
+# (backlog 281; stack.yaml). The files, in $DB_TLS, kept by down and wipe:
+#   ca.crt, ca.key          a database CA of the demo's own, made once per machine: only PostgreSQL and the catalog
+#                           trust it, and only for this connection
+#   server.crt, server.key  PostgreSQL's certificate, for Service postgres by each name it has in namespace $NS
+#   client.crt, client.key  the catalog's, common name catalog, the user PostgreSQL signs it in as (clientAuth)
+#   client.pk8              the client key again, as PKCS #8 DER, the form the JDBC driver reads
+#   initdb-password         the password PostgreSQL's image asks for: random, and never used (db_no_passwords)
+# Each certificate is made again a month before its end, as publish_tls makes the front door's, and a new one replaces
+# PostgreSQL's pod and the catalog's (db_tls_hash). Published as Secret postgres-tls, for PostgreSQL, and Secret
+# catalog-db-tls, for the catalog (the chart's databaseTls). The web pages' certificate cannot do this job: it proves
+# the host's name, and a client certificate has to come from a CA the database trusts. The demo keeps its own at work
+# too; nuna's own deployment takes work's PKI instead (docs/install-at-work.md).
+db_tls() {
+  local dir=$DB_TLS
+  mkdir -p "$dir"
+  # In the folder, with bare file names, as in publish_keycloak_keys.
+  if [[ ! -f "$dir/ca.key" || ! -f "$dir/ca.crt" ]]; then
+    say "making the database's CA, in $dir"
+    (cd "$dir" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+      -nodes -days 3650 -subj "/CN=nuna demo database CA" -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+      -addext "keyUsage=critical,keyCertSign,cRLSign" -keyout ca.key -out ca.crt 2>/dev/null)
+    rm -f "$dir/server.crt" "$dir/client.crt"
+  fi
+  if ! (cd "$dir" && openssl x509 -checkend 2592000 -noout -in server.crt >/dev/null 2>&1 \
+      && openssl x509 -checkhost "postgres.$NS.svc" -noout -in server.crt 2>/dev/null | grep -q 'does match'); then
+    say "making PostgreSQL's certificate, for Service postgres in namespace $NS"
+    (cd "$dir" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -CA ca.crt -CAkey ca.key -newkey ec \
+      -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 397 -subj "/CN=postgres" \
+      -addext "subjectAltName=DNS:postgres,DNS:postgres.$NS.svc,DNS:postgres.$NS.svc.cluster.local" \
+      -addext "extendedKeyUsage=serverAuth" -addext "basicConstraints=critical,CA:FALSE" \
+      -keyout server.key -out server.crt 2>/dev/null)
+  fi
+  if ! (cd "$dir" && openssl x509 -checkend 2592000 -noout -in client.crt >/dev/null 2>&1 && [[ -f client.pk8 ]]); then
+    say "making the catalog's client certificate for its database, common name catalog"
+    (cd "$dir" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -CA ca.crt -CAkey ca.key -newkey ec \
+      -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 397 -subj "/CN=catalog" \
+      -addext "extendedKeyUsage=clientAuth" -addext "basicConstraints=critical,CA:FALSE" \
+      -keyout client.key -out client.crt 2>/dev/null)
+    (cd "$dir" && openssl pkcs8 -topk8 -nocrypt -in client.key -outform DER -out client.pk8)
+  fi
+  [[ -f "$dir/initdb-password" ]] || openssl rand -hex 24 | tr -d '\r\n' > "$dir/initdb-password"
+  k create secret generic postgres-tls --from-file=server.crt="$dir/server.crt" \
+    --from-file=server.key="$dir/server.key" --from-file=ca.crt="$dir/ca.crt" \
+    --from-file=initdb-password="$dir/initdb-password" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic catalog-db-tls --from-file=ca.crt="$dir/ca.crt" --from-file=client.crt="$dir/client.crt" \
+    --from-file=client.pk8="$dir/client.pk8" --dry-run=client -o yaml | k apply -f - >/dev/null
+}
+
+# Changes whenever db_tls makes a certificate: PostgreSQL (stack.yaml) and the catalog (catalog_release) carry it as a
+# pod annotation, so a new certificate replaces both pods. They read their files only as they start.
+db_tls_hash() { cat "$DB_TLS/ca.crt" "$DB_TLS/server.crt" "$DB_TLS/client.crt" 2>/dev/null | sha256sum | cut -c1-12; }
+
+# No PostgreSQL role has a password (backlog 281): PostgreSQL's image made role catalog with initdb-password, and a
+# volume from before 281 keeps the one the catalog signed in with then. Taking it away again changes nothing.
+db_no_passwords() {
+  k exec deployment/postgres -- psql -q -X -v ON_ERROR_STOP=1 -U catalog -d catalog -c 'ALTER ROLE catalog PASSWORD NULL'
+}
+
+# The database's sign-in as backlog 281 sets it, checked on every up once the catalog is serving: PostgreSQL reads the
+# stack's pg_hba.conf; a network connection without a client certificate is refused, over TLS and without it; no role
+# has a password; and every network connection, which only the catalog makes, is TLS, signed in as CN=catalog. Says
+# what it found; returns 1 at its first finding.
+db_check() {
+  local out mode want total signed versions
+  db_sql() { k exec deployment/postgres -- psql -X -w -U catalog -d catalog -tAc "$1" | tr -d '\r'; }
+  out=$(db_sql 'SHOW hba_file') || return 1
+  if [[ "$out" != /etc/postgres-hba/pg_hba.conf ]]; then
+    echo "PostgreSQL reads its connection rules from $out, not from ConfigMap postgres-hba" >&2
+    return 1
+  fi
+  for mode in require disable; do
+    if [[ $mode == require ]]; then want='requires a valid client certificate'; else want='no pg_hba.conf entry'; fi
+    if out=$(k exec deployment/postgres -- psql -X -w "host=127.0.0.1 dbname=catalog user=catalog sslmode=$mode" \
+        -tAc 'SELECT 1' 2>&1); then
+      echo "PostgreSQL let in a network connection without a client certificate (sslmode=$mode)" >&2
+      return 1
+    fi
+    if [[ "$out" != *"$want"* ]]; then
+      echo "a network connection without a client certificate (sslmode=$mode) failed, but not as expected: $out" >&2
+      return 1
+    fi
+  done
+  out=$(db_sql "SELECT string_agg(rolname, ', ') FROM pg_authid WHERE rolpassword IS NOT NULL") || return 1
+  if [[ -n "$out" ]]; then
+    echo "PostgreSQL roles with a password: $out" >&2
+    return 1
+  fi
+  out=$(db_sql "SELECT count(*), count(*) FILTER (WHERE s.ssl AND s.client_dn = '/CN=catalog'),
+      coalesce(string_agg(DISTINCT s.version, ','), '-')
+    FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.client_addr IS NOT NULL") || return 1
+  IFS='|' read -r total signed versions <<<"$out"
+  if [[ "$total" == 0 || "$total" != "$signed" ]]; then
+    echo "of PostgreSQL's $total network connections, $signed are TLS signed in as CN=catalog" >&2
+    return 1
+  fi
+  say "the catalog's database: its $total network connections are $versions signed in as CN=catalog; one without a client certificate is refused; no role has a password"
+}
+
 # Expired, about to expire, or minted before Mint.java last changed (a user or group added).
 tokens_expired() {
   [[ ! -f "$RUN/tokens/expires.txt" || ! -f "$RUN/tokens/trino.jwt" \
@@ -556,13 +660,15 @@ keycloak_realm() {
 }
 
 # The catalog (chart deploy/helm/nuna-catalog), installed or brought up to date. The image's id as a pod annotation:
-# a rebuilt image under the same tag rolls the server, an unchanged one does not.
+# a rebuilt image under the same tag rolls the server, an unchanged one does not; the database certificates' hash
+# likewise (db_tls).
 catalog_release() {
   fill demo-values.yaml > "$RUN/demo-values.yaml"
   # shellcheck disable=SC2046 # telemetry_values prints flags, one a line, none with spaces
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/nuna-catalog" \
     -f "$STACK/catalog-values.yaml" -f "$RUN/demo-values.yaml" $(telemetry_values) \
-    --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-catalog:demo)" --wait --timeout 10m >/dev/null
+    --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-catalog:demo)" \
+    --set-string "podAnnotations.nuna-demo/db-tls=$(db_tls_hash)" --wait --timeout 10m >/dev/null
 }
 
 # The catalog's and the worker's telemetry while the metrics stack runs (backlog 233): metrics and traces to the
@@ -1661,6 +1767,7 @@ up() {
   publish_tokens
   publish_keycloak_keys
   publish_tls
+  db_tls
   # Kafka Connect and the generator stop for up's memory; gen starts them again last.
   pause_world
 
@@ -1696,8 +1803,11 @@ up() {
     k rollout restart "deployment/$RELEASE" >/dev/null
     k rollout status "deployment/$RELEASE" --timeout=10m >/dev/null
   fi
+  # Once the catalog has its tables, so PostgreSQL is past its image's first setup on a new volume.
+  db_no_passwords || say "the catalog's PostgreSQL role was not left without a password (see above); the next up tries again (backlog 281)"
   apply ports.yaml
   wait_for_console
+  db_check || say "WARNING: the catalog's database does not sign in as backlog 281 sets it (see above); the demo carries on"
   grants
   trusted_engines
   if cdc_running && is_on ss; then

@@ -4,6 +4,12 @@
 # EngineMatrixTest both apply them. Images are never pulled by the cluster: Docker Desktop's runs them from the
 # local Docker engine, and the harness loads them into kind. PostgreSQL keeps its data on a volume of its own
 # (claim postgres-data, below; backlog 237), which demo.sh down keeps and demo.sh wipe deletes.
+#
+# The catalog signs in to PostgreSQL by its client certificate, over TLS, and no role has a password (backlog 281):
+# pg_hba.conf (ConfigMap postgres-hba, below) lets user catalog in from the network by certificate alone, and
+# everything else only over the pod's own socket. Secret postgres-tls holds the server's certificate and key and the
+# CA that issued both them and the catalog's client certificate (Secret catalog-db-tls, the chart's databaseTls),
+# with the password the image asks for; demo.sh's db_tls makes them, and the engine matrix makes its own.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,17 +23,36 @@ spec:
   template:
     metadata:
       labels: {app: postgres}
+      annotations:
+        # PostgreSQL reads its certificate as it starts, so a new one replaces the pod.
+        nuna-demo/db-tls: "${DB_TLS_HASH}"
     spec:
       enableServiceLinks: false
       containers:
         - name: postgres
           image: postgres:18.7
           imagePullPolicy: Never
-          args: ["-c", "shared_buffers=64MB", "-c", "max_connections=50"]
+          # PostgreSQL reads its key only from a file its own user owns with mode 0600, or root with 0640 at most, and
+          # the Secret's files are root's and root's group's. Rather than fsGroup, which would take over the data
+          # volume too, the files are copied, as root, to the server's user, before the image's entrypoint starts it.
+          command: ["sh", "-ec"]
+          args:
+            - |
+              install -o postgres -g postgres -m 0600 /tls/server.key /run/postgres-tls/server.key
+              install -o postgres -g postgres -m 0644 /tls/server.crt /tls/ca.crt /run/postgres-tls/
+              exec docker-entrypoint.sh postgres -c shared_buffers=64MB -c max_connections=50 \
+                -c ssl=on -c ssl_cert_file=/run/postgres-tls/server.crt -c ssl_key_file=/run/postgres-tls/server.key \
+                -c ssl_ca_file=/run/postgres-tls/ca.crt -c hba_file=/etc/postgres-hba/pg_hba.conf
           env:
             - {name: POSTGRES_DB, value: catalog}
             - {name: POSTGRES_USER, value: catalog}
-            - {name: POSTGRES_PASSWORD, value: catalog}
+            # The image makes its superuser, catalog, with this password, and writes host rules from it into the data
+            # directory, which hba_file replaces. Random and never used: demo.sh takes it away again (ALTER ROLE
+            # ... PASSWORD NULL). Without one the image wants POSTGRES_HOST_AUTH_METHOD=trust, which would write a
+            # rule trusting every host, open if hba_file were ever lost.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: postgres-tls, key: initdb-password}
           ports:
             - containerPort: 5432
           readinessProbe:
@@ -37,11 +62,40 @@ spec:
           # PostgreSQL 18's image keeps its data in /var/lib/postgresql/18/docker, beneath this mount.
           volumeMounts:
             - {name: data, mountPath: /var/lib/postgresql}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: tls-copy, mountPath: /run/postgres-tls}
+            - {name: hba, mountPath: /etc/postgres-hba, readOnly: true}
           resources:
             limits: {memory: 384Mi}
       volumes:
         - name: data
           persistentVolumeClaim: {claimName: postgres-data}
+        - name: tls
+          secret:
+            secretName: postgres-tls
+            defaultMode: 0400
+            items:
+              - {key: server.crt, path: server.crt}
+              - {key: server.key, path: server.key}
+              - {key: ca.crt, path: ca.crt}
+        - name: tls-copy
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        - name: hba
+          configMap:
+            name: postgres-hba
+---
+# Who may connect, replacing the rules initdb wrote (hba_file). The first rule that matches a connection decides it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-hba
+data:
+  pg_hba.conf: |
+    # Over the pod's own socket: the image's setup, the readiness probe, and demo.sh's and the harness's psql.
+    local all all trust
+    # Over the network: user catalog to database catalog, over TLS, by a client certificate the CA (ssl_ca_file)
+    # issued whose common name is catalog. Any other connection matches no rule and is refused.
+    hostssl catalog catalog all cert
 ---
 # PostgreSQL's data: the catalog's, the audit tables' catalog's and Keycloak's database. demo.sh down and the
 # switches keep it; demo.sh wipe deletes it.
