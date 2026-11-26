@@ -1440,6 +1440,7 @@ class ConsoleBrowserTest {
         String branch = "dev_" + Api.suffix();
         expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
         expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("fills")), 200);
 
         signIn(tester());
         browser.open("/ui/#c=trading");
@@ -1470,6 +1471,23 @@ class ConsoleBrowserTest {
         browser.awaitText(By.cssSelector("#table-page h1"), "orders");
         assertThat(browser.awaitText(By.cssSelector("[data-ref-band='" + branch + "']"), "Reading the branch").getText())
                 .contains("1 table changed on it");
+        assertThat(JsonPath.<String>read(expect(api.manage("GET", "/refs/" + branch, null), 200).body(), "$.cut-at"))
+                .isEqualTo(JsonPath.<String>read(made.body(), "$.created-at"));
+
+        // The namespace's Contents through the branch fills its columns as the branch has each table (backlog 168):
+        // orders changed here at the branch's own version 1, fills as at the point at main's version 1, both with
+        // their format and snapshots.
+        browser.open("/ui/#" + at("namespace", List.of(ns), null, null) + "&r=" + branch);
+        WebElement ordersHere = contentsRow("orders");
+        assertThat(contentsCell(ordersHere, "fmt")).startsWith("v");
+        assertThat(contentsCell(ordersHere, "snaps")).isEqualTo("0");
+        assertThat(textContent(ordersHere.findElement(By.cssSelector(".on-ref")))).contains("changed here");
+        WebElement fillsHere = contentsRow("fills");
+        assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
+        assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point, v1");
+        assertThat(textContent(fillsHere.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
+        assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
+                .contains("Each table as @" + branch + " has it");
         assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
         assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
                 .isEqualTo("trading@" + branch);

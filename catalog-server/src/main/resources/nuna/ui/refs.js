@@ -61,19 +61,13 @@ const FRESH = new Set();
 const resultKey = (c, name) => c + '|' + String(name).toLowerCase();
 
 /**
- * The time a ref's cut was taken: its own making, or that of the branch or tag it was made from, back to main. The
- * list names a ref's source by name only, so a ref found by that name but made after this one is a later ref that
- * took the name again: the walk stops there.
+ * The time a ref's cut was taken from main, as the catalog answers it (backlog 168): its own making, or that of the
+ * ref at the foot of the line it was made from. Null where a ref in that line has ended (`cut-from-ended`).
  */
-function cutOf(r, list) {
-  let at = r;
-  for (let i = 0; i < 20 && !isMain(at.from); i++) {
-    const from = list.refs.find(x => x.name.toLowerCase() === at.from.toLowerCase());
-    if (!from || ms(from['created-at']) > ms(at['created-at'])) return null;
-    at = from;
-  }
-  return at['created-at'];
-}
+const cutOf = r => r['cut-at'] || null;
+
+/** The branches' changes a ref holds besides main at its point, as each was taken: ", with @dev's changes as at …". */
+const heldWords = r => (r['branch-changes'] || []).map(b => `, with @${b.branch}'s changes as at ${refAt(b['as-of'])}`).join('');
 
 // ---- the chip, the selector, the band and the notes ----
 
@@ -186,8 +180,8 @@ export function readingControl(where, mainOnly = false) {
 function refBand(r, where, list) {
   const back = h('a', {class: 'btn sm', href: href(Object.assign({}, where, {r: null}))}, 'Read main instead');
   const more = h('a', {class: 'btn sm ghost', href: refHref(where.c, r.name)}, `About @${r.name}`);
-  const cut = cutOf(r, list);
-  const cutWords = cut ? refAt(cut) : `the point @${r.from} was made from`;
+  const cut = cutOf(r);
+  const cutWords = (cut ? refAt(cut) : `the point @${r['cut-from-ended'] || r.from} was made from`) + heldWords(r);
   if (r.kind === 'tag') {
     return h('div', {class: 'ref-band t', role: 'note', 'data-ref-band': r.name}, h('span', {class: 'rb-ic'}, icon('lock')),
       h('div', {class: 'rb-txt'}, h('p', null, h('b', null, 'Reading the tag ', cref(r), `: ${where.c} as it was at ${cutWords}.`),
@@ -519,7 +513,7 @@ function refLine(c, refs, list) {
   const now = Date.now();
   const brs = refs.filter(r => r.kind === 'branch').sort((a, b) => ms(a['created-at']) - ms(b['created-at']));
   const tags = refs.filter(r => r.kind === 'tag');
-  const cut = r => ms(cutOf(r, list) || r['created-at']);
+  const cut = r => ms(cutOf(r) || r['created-at']);
   const lo = Math.min(...refs.map(cut), now - 30 * DAY) - 2 * DAY;
   const hi = Math.max(...brs.map(r => ms(r['expires-at'])), now + 30 * DAY) + 3 * DAY;
   const W = 1100;
@@ -609,7 +603,7 @@ export function refPage(c, name, tab) {
     const total = Math.max(changed.length, (findRef(list, r.name) || {})['changed-count'] || 0);
     // A branch's own versions number from 1 (item 105), so its version is its count of commits.
     const commits = changed.reduce((a, t) => a + (t.version || 0), 0);
-    const cut = cutOf(r, list);
+    const cut = cutOf(r);
     const title = h('div', {class: 'title-row'}, h('h1', {tabindex: '-1', 'aria-label': `${kindWord(r)} @${r.name}`}, cref(r, {big: true})),
       badge(kindWord(r), 'strong'), expiring(r) ? pill('warn', icon('clock'), `Expires ${untilWords(r['expires-at'])}`) : null);
     const sub = h('p', {class: 'sub'}, madeFrom(r, list), '.');

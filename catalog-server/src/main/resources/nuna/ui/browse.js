@@ -2,8 +2,9 @@
 // The catalog has Contents and Properties (item 131); its Governance, Grants and Audit are the rail's pages of those
 // names. A namespace has Contents, Properties (Iceberg REST), Governance, Grants and Audit. Contents marks what is
 // held, frozen, regulated or closed until classified (item 128), and gives each table its format, snapshot count and
-// last commit from the catalog's own listing of them (backlog 137), which reads no metadata file; each child namespace
-// gets its totals over the tables beneath it: how many, their snapshots, and the newest commit (backlog 147).
+// last commit from the catalog's own listing of them (backlog 137), which reads no metadata file on main; each child
+// namespace gets its totals over the tables beneath it: how many, their snapshots, and the newest commit (backlog
+// 147). Through a ref both read as the ref has each table (backlog 168).
 // Read through a catalog branch or tag (r=, item 109) the catalog, a namespace, a table and a view say so four
 // ways: the top chip, the first crumb catalog@ref, the "Reading @ref" selector and a band; the catalog has a
 // Branches and tags tab (refs.js).
@@ -91,34 +92,42 @@ function queuePill(rows) {
   return pill(eq ? 'bad' : 'warn', `${rows.length} queued`);
 }
 
-/** A namespace's tables as the catalog keeps them: [{name, format-version, snapshots, last-commit}]. */
-const tableFacts = (catalog, levels) =>
-  api.all(api.managed({catalog, namespace: levels}) + '/tables?pageSize=200', 'tables');
+/** The ref= of a listing read through a ref (backlog 168), or nothing on main. */
+const onRef = ref => ref ? '&ref=' + encodeURIComponent(ref) : '';
+
+/**
+ * A namespace's tables as the catalog keeps them, on main or as a ref reads them:
+ * [{name, format-version, snapshots, last-commit, ref: {pointer, version, line}}].
+ */
+const tableFacts = (catalog, levels, ref) =>
+  api.all(api.managed({catalog, namespace: levels}) + '/tables?pageSize=200' + onRef(ref), 'tables');
 
 /**
  * The child namespaces of a level with their totals over the tables beneath them:
  * [{name, tables, snapshots, complete, newest-commit}].
  */
-const namespaceTotals = (catalog, levels) =>
-  api.all(api.managed({catalog, namespace: levels}) + '/namespaces?pageSize=200', 'namespaces');
+const namespaceTotals = (catalog, levels, ref) =>
+  api.all(api.managed({catalog, namespace: levels}) + '/namespaces?pageSize=200' + onRef(ref), 'namespaces');
 
 /**
- * A level's contents. Through a ref the listing is the ref's (Iceberg REST through catalog@ref); the catalog's own
- * facts of each table and namespace totals are main's, so they are left out, and each row says what it is on the
- * ref from the branch's changed tables instead.
+ * A level's contents. Through a ref the listing is the ref's (Iceberg REST through catalog@ref), and so are each
+ * table's facts and each namespace's totals (backlog 168); each row also says what it is on the ref.
  */
 async function contents(catalog, levels, ref) {
   const wh = warehouseOf({catalog, ref});
   const [ns, tables, views, q, gov, kept, totals, changed] = await Promise.all([api.namespaces(wh, levels),
     levels.length ? api.tables(wh, levels) : [], levels.length ? api.views(wh, levels) : [], queue().catch(() => []),
-    governanceMarks(catalog), levels.length && !ref ? tableFacts(catalog, levels) : [], ref ? [] : namespaceTotals(catalog, levels),
+    governanceMarks(catalog), levels.length ? tableFacts(catalog, levels, ref) : [], namespaceTotals(catalog, levels, ref),
     ref ? api.ref(catalog, ref).then(x => x.changed || [], () => []) : []]);
   return {ns, tables: tables.map(t => t.name), views: views.map(v => v.name), q: queueOf(q, catalog), gov,
     kept: new Map(kept.map(t => [t.name, t])), totals: new Map(totals.map(n => [n.name, n])), ref, changed};
 }
 
-/** The On @ref cell: changed here at its version, or as at the point; a namespace counts what changed beneath it. */
-function onRefCell(x, path, isNamespace) {
+/**
+ * The On @ref cell: changed here at its version, or as at the point with the version the ref reads (backlog 168), on
+ * main's line or, when the point took a branch's version, that branch's; a namespace counts what changed beneath it.
+ */
+function onRefCell(x, path, isNamespace, kept) {
   const key = path.join('.');
   if (isNamespace) {
     const n = x.changed.filter(t => [...t.namespace, t.name].join('.').startsWith(key + '.')).length;
@@ -126,7 +135,9 @@ function onRefCell(x, path, isNamespace) {
   }
   const t = x.changed.find(c => [...c.namespace, c.name].join('.') === key);
   return t ? h('span', {class: 'on-ref'}, pill('ok', 'changed here'), ' ', badge('v' + fmt(t.version), 'strong'))
-    : h('span', {class: 'on-ref muted'}, `not changed on @${x.ref}`);
+    : kept && kept.ref ? h('span', {class: 'on-ref muted'}, `as at the point, v${fmt(kept.ref.version)}`
+      + (kept.ref.line && kept.ref.line !== 'main' ? ` of @${kept.ref.line}` : ''))
+      : h('span', {class: 'on-ref muted'}, 'as at the point');
 }
 
 /** A table's last commit: when, then by whom; an engine acting for someone names them both (12:49 by lake). */
@@ -174,7 +185,7 @@ function contentsTable(catalog, levels, x) {
           : muted('–')),
         h('td', {class: 'gov'}, markPills(x.gov.get('table:' + [...levels, name].join('.'))) || muted('–')),
         h('td', {class: 'num snaps'}, kept.snapshots === undefined ? muted('–') : fmt(kept.snapshots)),
-        h('td', {class: 'last'}, lastCommit(kept['last-commit'])), x.ref ? h('td', null, onRefCell(x, [...levels, name], false)) : null);
+        h('td', {class: 'last'}, lastCommit(kept['last-commit'])), x.ref ? h('td', null, onRefCell(x, [...levels, name], false, kept)) : null);
     }),
     ...x.views.map(name => h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'view', 'data-name': name},
       h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'view', namespace: levels, name, ref: x.ref})}, name)),
@@ -193,7 +204,7 @@ function contentsTable(catalog, levels, x) {
   for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
     h('p', {class: 'fine'}, 'Only what your groups may see is listed. ', x.ref
-      ? `Through @${x.ref}, format, snapshots and last commit are left out: open a table to see it as @${x.ref} has it.`
+      ? `Each table as @${x.ref} has it; open one to read it there.`
       : 'Open a table for its maintenance, access and history.'));
 }
 
@@ -301,7 +312,7 @@ function namespaceTab(target, key, sub, reload) {
         contents(target.catalog, levels, target.ref)]);
     } catch (error) {
       // A link naming no live ref: the band says so, as the catalog answered it.
-      if (target.ref && error.status === 404 && error.type === 'NoSuchWarehouseException') return null;
+      if (target.ref && error.status === 404 && ['NoSuchWarehouseException', 'NoSuchRefException'].includes(error.type)) return null;
       throw error;
     }
     fill(sub, `${countWords(x.tables.length, 'table')} · ${countWords(x.views.length, 'view')} · `
