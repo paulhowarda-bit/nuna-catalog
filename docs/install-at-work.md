@@ -311,7 +311,7 @@ helm install nuna-catalog deploy/helm/nuna-catalog -n <namespace> -f <values.yam
      ```bash
      openssl pkcs12 -in catalog.pfx -nokeys -out client.crt
      openssl pkcs12 -in catalog.pfx -nocerts -nodes -out client.key
-     openssl pkcs8 -topk8 -nocrypt -in client.key -outform DER -out client.pk8
+     openssl pkcs8 -topk8 -inform PEM -outform DER -nocrypt -in client.key -out client.pk8
      kubectl -n <namespace> create secret generic nuna-catalog-db-tls \
        --from-file=ca.crt=<the database's CA chain, PEM> --from-file=client.crt=client.crt \
        --from-file=client.pk8=client.pk8
