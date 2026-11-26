@@ -1,4 +1,5 @@
-# Creates the warehouse bucket in Silo or Ceph (Service s3).
+# Creates the warehouse bucket in Silo or Ceph (Service s3), as the store's root, whose secret key is in Secret
+# s3-root (store-silo.yaml).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -13,8 +14,11 @@ spec:
         - name: seed
           image: ${SILO_IMAGE}
           imagePullPolicy: Never
+          env:
+            - name: ROOT_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: s3-root, key: secret-key}}
           command: ["sh", "-ec"]
           args:
             - |
-              mc alias set s ${S3_ENDPOINT} nunatest "${S3_SECRET_KEY}" >/dev/null
+              mc alias set s ${S3_ENDPOINT} nunatest "$ROOT_SECRET_KEY" >/dev/null
               mc mb --ignore-existing s/warehouse

@@ -247,6 +247,8 @@ class EngineMatrixTest {
         apply(stack, "kafka.yaml");
         List<String> deployments = new ArrayList<>(List.of("postgres", "kafka", "idp", "kafka-ui"));
         if (store != TestS3.Kind.AWS) {
+            // Silo's root and the seed Job take the store's secret key from this Secret (store-silo.yaml, seed.yaml).
+            secret("s3-root", "secret-key", TestS3.SECRET_KEY);
             apply(stack, "store-" + store.name().toLowerCase(Locale.ROOT) + ".yaml");
             deployments.add("s3");
         }
@@ -717,6 +719,8 @@ class EngineMatrixTest {
             if (!existing) {
                 cli.ok(Duration.ofMinutes(20), "docker", "pull", "-q", SINGLESTORE_IMAGE);
                 load(List.of(SINGLESTORE_IMAGE));
+                // Root's password, which singlestore.yaml takes from this Secret, made for this run.
+                secret("singlestore-root", "password", "pw-" + UUID.randomUUID());
                 apply(stack, "singlestore.yaml");
             }
             kubectl(Duration.ofMinutes(11), "rollout", "status", "deployment/singlestore", "--timeout=10m");
@@ -736,6 +740,21 @@ class EngineMatrixTest {
                 "singlestore cross.maint", "4 17",
                 "singlestore cross.upgrade", "2 5",
                 "singlestore cross.pyiceberg-writes", "4 13 a,c2,d2,e"));
+    }
+
+    /**
+     * A Secret of one key, as the stack's manifests read the run's own values (backlog 282): Silo's root key, Secret
+     * {@code s3-root}, and SingleStore's root password, Secret {@code singlestore-root}, which demo.sh makes from the
+     * values it keeps per machine. From a file, so the value is never on kubectl's command line.
+     */
+    private static void secret(String name, String key, String value) throws IOException {
+        Path file = Files.createTempFile(runDir, name, ".value");
+        try {
+            Files.writeString(file, value, StandardCharsets.US_ASCII);
+            kubectl(Duration.ofMinutes(1), "create", "secret", "generic", name, "--from-file=" + key + "=" + file);
+        } finally {
+            Files.delete(file);
+        }
     }
 
     /**

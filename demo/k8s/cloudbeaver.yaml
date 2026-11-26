@@ -57,9 +57,13 @@ spec:
           env:
             - {name: CB_SERVER_NAME, value: nuna demo}
             - {name: CB_ADMIN_NAME, value: oscar}
-            - {name: CB_ADMIN_PASSWORD, value: oscar-demo}
-            - {name: DEMO_USERS, value: "ana:ana-demo gary:gary-demo stella:stella-demo presenter:presenter-demo"}
-            # The demo's passwords have neither capitals nor digits.
+            # The people's passwords, for their CDC connections: Secret demo-secrets, made once per machine
+            # (~/.nuna-demo/people; backlog 282).
+            - name: CB_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: person-oscar}}
+            - name: DEMO_USERS
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: cloudbeaver-users}}
+            # The people's passwords are lower-case letters and hyphens.
             - {name: CLOUDBEAVER_POLICY_REQUIRE_MIXED_CASE, value: "false"}
             - {name: CLOUDBEAVER_POLICY_MIN_NUMBER_COUNT, value: "0"}
             - {name: CLOUDBEAVER_APP_ANONYMOUS_ACCESS_ENABLED, value: "false"}

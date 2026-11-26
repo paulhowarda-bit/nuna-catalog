@@ -50,7 +50,8 @@ spec:
             - {name: CONNECT_URL, value: "http://connect:8083"}
             - {name: SINGLESTORE_URL, value: "jdbc:mariadb://singlestore:3306/brokerage"}
             - {name: SINGLESTORE_USER, value: root}
-            - {name: SINGLESTORE_PASSWORD, value: "${SINGLESTORE_ROOT_PASSWORD}"}
+            - name: SINGLESTORE_PASSWORD
+              valueFrom: {secretKeyRef: {name: singlestore-root, key: password}}
             - {name: BROKERAGE_ROUTE, value: "${BROKERAGE_ROUTE}"}
             - {name: BROKERAGE_ACCOUNTS, value: "1000"}
             - {name: BROKERAGE_CATCH_UP_DAYS, value: "3"}
