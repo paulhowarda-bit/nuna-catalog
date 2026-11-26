@@ -18,7 +18,7 @@ import {reveal, treeOf} from './tree.js';
 import {accessTab, auditTab, governanceMarks, markPills} from './panels.js';
 import {tablePage, viewPage} from './table.js';
 import {NAMESPACE_SETTINGS, settingsTab} from './settings.js';
-import {readingRef, readOnlyNote, refChrome, refNote, refPage, refsPage} from './refs.js';
+import {copyWarehouse, readingRef, readOnlyNote, refChrome, refNote, refPage, refsPage} from './refs.js';
 import {closedNote, trailOpen, trailWords} from './access.js';
 
 /** The path above a page: the catalog (catalog@ref through a ref), then each namespace; a long one folds its far end on a phone. */
@@ -234,7 +234,8 @@ function catalogPage(catalog, tab, route) {
       // A link naming no live ref: the band says so, as the catalog answered it.
       if (!ref || error.status !== 404) throw error;
     }
-    const side = h('div', {class: 'side'}, copyButton(catalog, 'Copy name'), copyLinkButton());
+    // The button names what it copies: the warehouse name, through the ref the page reads (backlog 220).
+    const side = h('div', {class: 'side'}, copyWarehouse(warehouseOf({catalog, ref})), copyLinkButton());
     const head = h('div', {class: 'ph'},
       h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('db')), h('h1', {tabindex: '-1'}, catalog), h('span', {class: 'muted'}, 'catalog')),
       x ? h('p', {class: 'sub'}, `${countWords(x.ns.length, 'namespace')} · `,

@@ -2,7 +2,7 @@
 // kind, person, path and time, each record with its request id, where it was read from and its hash chain; the
 // last day's counts by kind and the busiest objects; and the archive check. These routes are for audit readers
 // only (D23): anyone else is shown the refusal as the catalog answered it, with the catalog's own records below,
-// read from Kafka as before, for those who manage its grants.
+// for those who manage its grants, read from the audit table, or from Kafka where there is none (backlog 197).
 
 import * as api from './api.js';
 import {at, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
@@ -186,7 +186,8 @@ function objectLink(catalog, kind, path, tab) {
   if (k === 'catalog' || !levels.length) return code(catalog);
   const target = k === 'namespace' ? {catalog, kind: k, namespace: levels}
     : {catalog, kind: k, namespace: levels.slice(0, -1), name: levels[levels.length - 1]};
-  return h('a', {href: objectHref(target, tab)}, levels.join('.'));
+  // The path breaks after each dot, so a long one wraps and the number columns beside it stay in view (backlog 220).
+  return h('a', {href: objectHref(target, tab)}, levels.flatMap((x, i) => i < levels.length - 1 ? [x + '.', h('wbr')] : [x]));
 }
 
 // ---- the feed ----
@@ -200,6 +201,8 @@ function feedPanel(catalog, summary, own) {
     autocomplete: 'off', spellcheck: 'false'});
   const upTo = h('select', {name: 'to', 'aria-label': 'Up to'}, UP_TO.map(([v, l]) => h('option', {value: v}, l)));
   const reads = h('input', {type: 'checkbox', name: 'audit-reads'});
+  // How many records the headline counts that the chips leave out while the audit's reads are hidden (backlog 220).
+  const hidden = h('span', {class: 'muted', 'data-hidden': ''});
   who.value = st.who;
   path.value = st.path;
   upTo.value = st.upTo;
@@ -230,6 +233,8 @@ function feedPanel(catalog, summary, own) {
   };
   const drawChips = () => {
     drawKinds();
+    const n = counted && !st.auditReads ? total(counted) - kindTotal(counted, typesOf('all')) : 0;
+    hidden.textContent = n ? ` · ${plural(n, 'record')} hidden` : '';
     chipBox.replaceChildren(...KINDS.map(([k, label]) => chip(k, label)));
   };
   const chip = (k, label) => {
@@ -261,8 +266,10 @@ function feedPanel(catalog, summary, own) {
     feed.append(...records.map(r => feedRow(catalog, r)));
     shown += records.length;
     const committed = (answer.table || {})['committed-at'];
-    status.textContent = `${plural(shown, 'record')} shown, newest first, up to `
-      + `${committed ? at(committed) : 'the last commit'}. Records arrive here about a minute after they happen.`
+    // "As of" the last commit, not "up to" it: a writer catching up commits later than the newest record it holds.
+    status.textContent = (committed ? `${plural(shown, 'record')} shown, newest first, as of the last commit at ${at(committed)}.`
+      : `${plural(shown, 'record')} shown: nothing has been committed to the audit tables.`)
+      + ' Records arrive here about a minute after they happen.'
       + (answer['searched-to'] ? ` Searched back to ${at(answer['searched-to'])}.` : '');
     if (!shown && !answer['next-page-token']) feed.replaceChildren(h('p', {class: 'muted feed-none'}, 'No record matches. Try another kind, anyone, or an earlier time.'));
     more.replaceChildren();
@@ -323,7 +330,7 @@ function feedPanel(catalog, summary, own) {
       h('label', {class: 'ff'}, h('span', null, 'Table or namespace'), h('span', {class: 'field mono'}, icon('search'), path)),
       h('label', {class: 'ff'}, h('span', null, 'Who'), h('span', {class: 'field'}, who)),
       h('label', {class: 'ff'}, h('span', null, 'Up to'), h('span', {class: 'field select'}, upTo))),
-    chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads'), status, feed, more);
+    chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads', hidden), status, feed, more);
   function chooseKind(k) {
     st.kind = k;
     drawChips();
