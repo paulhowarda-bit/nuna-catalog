@@ -78,11 +78,13 @@ public final class AuditRows {
         };
         Actor actor = parts.actor();
         Securable object = parts.object();
-        // The ref a record went through or is about, and what a ref record is about besides its catalog (backlog 169).
+        // The ref a record went through or is about, and what a ref record is about besides its catalog (backlog 169);
+        // a grant's branch, when it names one (backlog 113).
         String branch = switch (event.data()) {
             case Commit e -> e.branch();
             case ObjectRead e -> e.branch();
             case RefChange e -> e.name();
+            case GrantChange e -> e.branch();
             default -> null;
         };
         List<String> subjectIds = event.data() instanceof RefChange e

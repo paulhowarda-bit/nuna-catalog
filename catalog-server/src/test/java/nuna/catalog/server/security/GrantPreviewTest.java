@@ -34,11 +34,13 @@ import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogObject.Kind;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
+import nuna.catalog.store.Change;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Page;
+import nuna.catalog.store.Ref;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import org.junit.jupiter.api.Test;
@@ -80,6 +82,12 @@ class GrantPreviewTest {
     private final NamespaceRecord lobby = namespace("lobby");
     private final CatalogObject orders = object(sales, "orders", Kind.TABLE);
     private final CatalogObject weekly = object(sales, "weekly", Kind.VIEW);
+    /** A live branch, a tag, and a branch that expired before the clock's now. */
+    private final Ref dev = ref("dev", Ref.Kind.BRANCH, Optional.of(Instant.parse("2026-12-24T00:00:00Z")));
+    private final Ref eod = ref("eod", Ref.Kind.TAG, Optional.empty());
+    private final Ref stale = ref("stale", Ref.Kind.BRANCH, Optional.of(Instant.parse("2026-11-23T00:00:00Z")));
+    /** The changes the store was handed, with their outbox events. */
+    private final List<Change> changes = new ArrayList<>();
 
     private final GrantRoutes routes;
     private final MockHttpServletRequest http = new MockHttpServletRequest();
@@ -317,6 +325,69 @@ class GrantPreviewTest {
         assertThat(grants).noneMatch(g -> g.grant().securable().equals(weekly.securable()));
     }
 
+    // ---- grants that name a branch (backlog 113) ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aGrantMayNameABranchAndIsListedPreviewedCheckedAndRevokedWithIt() throws Exception {
+        String body = branchBody(tableSpec("sales", "orders"), "dev-loaders", "write", "dev");
+        assertThat(preview(body)).containsEntry("answer", "admitted").containsEntry("branch", "dev");
+
+        assertThat(answer(() -> routes.grant(CATALOG, body, http)).status()).isEqualTo(204);
+        assertThat(grants).anySatisfy(g -> {
+            assertThat(g.grant().group()).isEqualTo("dev-loaders");
+            assertThat(g.grant().branch()).contains(dev.id());
+        });
+        assertThat(changes.getLast().outbox().getFirst().payloadJson()).contains("\"branch\":\"dev\"")
+                .contains("\"branchId\":\"" + dev.id() + "\"");
+        assertThat(preview(body)).containsEntry("answer", "unchanged");
+        assertThat(preview(body(tableSpec("sales", "orders"), "dev-loaders", "write")))
+                .as("the same grant on every ref is another grant").containsEntry("answer", "admitted");
+
+        Map<String, Object> listed = json(routes.listOn(CATALOG, "table", List.of("sales"), "orders", null, null,
+                http));
+        assertThat((List<Map<String, Object>>) listed.get("grants")).singleElement()
+                .satisfies(g -> assertThat(g).containsEntry("group", "dev-loaders").containsEntry("branch", "dev"));
+
+        caller = person("dl", "dev-loaders", "analysts");
+        Map<String, Object> checked = json(routes.check(CATALOG, "{\"checks\":["
+                + "{\"securable\":" + tableSpec("sales", "orders") + ",\"privilege\":\"write\",\"branch\":\"dev\"},"
+                + "{\"securable\":" + tableSpec("sales", "orders") + ",\"privilege\":\"write\"}]}", http));
+        assertThat((List<Map<String, Object>>) checked.get("results")).extracting(r -> r.get("allowed"))
+                .containsExactly(true, false);
+
+        caller = SAM;
+        assertThat(answer(() -> routes.revoke(CATALOG, body(tableSpec("sales", "orders"), "dev-loaders", "write"),
+                http)).status()).as("the grant on every ref is not held").isEqualTo(404);
+        assertThat(answer(() -> routes.revoke(CATALOG, body, http)).status()).isEqualTo(204);
+        assertThat(grants).noneMatch(g -> g.grant().group().equals("dev-loaders"));
+    }
+
+    @Test
+    void aBranchGrantIsWriteOrModifyOnALiveBranchOnly() {
+        assertThat(answer(() -> routes.grant(CATALOG, branchBody(tableSpec("sales", "orders"), "dev-loaders",
+                "select", "dev"), http))).isEqualTo(new Answer(400, "BadRequestException", "select is not granted on"
+                + " one branch: a grant that names a branch gives write or modify, what a commit on it needs; reads"
+                + " and every other change ask through main"));
+        assertThat(preview(branchBody(namespaceSpec("sales"), "dev-loaders", "describe", "dev")))
+                .containsEntry("refusal", "privilege-not-on-a-branch");
+        assertThat(answer(() -> routes.grant(CATALOG, branchBody(tableSpec("sales", "orders"), "dev-loaders",
+                "write", "eod"), http)).status()).as("a tag").isEqualTo(400);
+        assertThat(answer(() -> routes.grant(CATALOG, branchBody(tableSpec("sales", "orders"), "dev-loaders",
+                "write", "stale"), http)).status()).as("an expired branch").isEqualTo(404);
+        assertThat(answer(() -> routes.grant(CATALOG, branchBody(tableSpec("sales", "orders"), "dev-loaders",
+                "write", "nowhere"), http)).status()).isEqualTo(404);
+        assertThat(answer(() -> routes.grant(CATALOG, branchBody(namespaceSpec("sales"), "dev-owners", "modify",
+                "dev"), http)).status()).isEqualTo(204);
+        assertThat(writes).isEqualTo(1);
+        assertThat(audit).as("mistakes in the request, not refused ones").isEmpty();
+
+        grants.add(new GrantRecord(new Grant(catalog.id(), orders.securable(), "dev-loaders", "write",
+                Optional.of(stale.id())), "gary", GRANTED_AT));
+        assertThat(answer(() -> routes.revoke(CATALOG, branchBody(tableSpec("sales", "orders"), "dev-loaders",
+                "write", "stale"), http)).status()).as("a revoke on an expired branch").isEqualTo(204);
+    }
+
     // ---- helpers ----
 
     /** One body for each answer and each refusal. */
@@ -364,6 +435,21 @@ class GrantPreviewTest {
 
     private static String body(String securable, String group, String privilege) {
         return "{\"securable\":" + securable + ",\"group\":\"" + group + "\",\"privilege\":\"" + privilege + "\"}";
+    }
+
+    private static String branchBody(String securable, String group, String privilege, String branch) {
+        return "{\"securable\":" + securable + ",\"group\":\"" + group + "\",\"privilege\":\"" + privilege
+                + "\",\"branch\":\"" + branch + "\"}";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> json(ResponseEntity<String> response) throws Exception {
+        return new tools.jackson.databind.json.JsonMapper().readValue(response.getBody(), Map.class);
+    }
+
+    private Ref ref(String name, Ref.Kind kind, Optional<Instant> expiresAt) {
+        return new Ref(catalog.id(), UUID.randomUUID(), new Name(Names.normalize(name), name), kind,
+                Instant.parse("2026-11-01T00:00:00Z"), "gary", Optional.empty(), Ref.MAIN, expiresAt, Optional.empty());
     }
 
     private static String namespaceSpec(String level) {
@@ -424,12 +510,20 @@ class GrantPreviewTest {
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
                             .toList();
                     case "attributesOf" -> List.of();
+                    case "findRef" -> java.util.stream.Stream.of(dev, eod, stale)
+                            .filter(r -> r.catalogId().equals(args[0]) && r.name().normalized().equals(args[1]))
+                            .findFirst();
+                    case "readRef" -> java.util.stream.Stream.of(dev, eod, stale).filter(r -> r.id().equals(args[0]))
+                            .findFirst();
+                    case "listGrantsOn" -> new Page<>(grants.stream()
+                            .filter(g -> g.grant().securable().equals(args[0])).toList(), Optional.empty());
                     case "listGrantsOfGroups" -> new Page<>(grants.stream()
                             .filter(g -> g.grant().catalogId().equals(args[0])
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
                             .toList(), Optional.empty());
                     case "putGrantIf" -> {
                         writes++;
+                        changes.add((Change) args[2]);
                         Grant grant = (Grant) args[0];
                         List<String> held = grants.stream().filter(g -> g.grant().catalogId().equals(grant.catalogId())
                                 && g.grant().group().equals(grant.group())).map(g -> g.grant().privilege()).toList()

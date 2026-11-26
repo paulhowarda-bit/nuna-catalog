@@ -16,11 +16,20 @@ import java.util.Objects;
  * @param sessionName    the STS session name, which carries the principal and request id
  * @param expiresAt      when the credentials expire
  * @param actor          who received them
+ * @param writePrefix    the only prefix they may write beneath, inside {@code locationPrefix}, when they may write
+ *                       only some of it: a writer on one branch only (backlog 113); null when they write all of it or
+ *                       none
  */
 public record CredentialIssue(Securable object, String storageProfile, String locationPrefix, Access access,
-                              String sessionName, Instant expiresAt, Actor actor) implements EventData {
+                              String sessionName, Instant expiresAt, Actor actor, String writePrefix)
+        implements EventData {
 
     public enum Access { READ, READ_WRITE, READ_WRITE_DELETE }
+
+    public CredentialIssue(Securable object, String storageProfile, String locationPrefix, Access access,
+                           String sessionName, Instant expiresAt, Actor actor) {
+        this(object, storageProfile, locationPrefix, access, sessionName, expiresAt, actor, null);
+    }
 
     public CredentialIssue {
         Objects.requireNonNull(object, "object");

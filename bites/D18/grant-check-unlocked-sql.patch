@@ -3,10 +3,10 @@ Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$Grants#racingConditionalPutsSeeEachOther
 
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java
-index 8d8c5c9..cc32855 100644
+index 03dbe161..b417d7e7 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java
-@@ -48,7 +48,7 @@ final class SqlGrants {
+@@ -59,7 +59,7 @@ final class SqlGrants {
       */
      WriteResult putIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
          return transactions.change(change, "grant", connection -> {
@@ -14,4 +14,4 @@ index 8d8c5c9..cc32855 100644
 +            if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ?", grant.catalogId())) {
                  return new WriteResult.Missing(WriteResult.Subject.CATALOG);
              }
-             List<String> held = query(connection, "SELECT privilege FROM grant_record WHERE catalog_id = ?"
+             List<String> held = query(connection, "SELECT privilege FROM any_grant WHERE catalog_id = ?"

@@ -3,11 +3,11 @@ Module: catalog-objectstore
 Test: SessionPolicyTest#sizeLimit
 
 diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
-index d10f9ec..3dec51c 100644
+index c6c3a625..7efcbb31 100644
 --- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
 +++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
-@@ -44,7 +44,7 @@ public final class SessionPolicy {
-                 + kmsKey.map(key -> withKey(access, bucketArn + "/" + prefix + "*", key)).orElse("")
+@@ -79,7 +79,7 @@ public final class SessionPolicy {
+         String policy = "{\"Version\":\"2012-10-17\",\"Statement\":[" + statements
                  + "{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"" + bucketArn + "\","
                  + "\"Condition\":{\"StringLike\":{\"s3:prefix\":\"" + prefix + "*\"}}}]}";
 -        if (policy.length() > MAX_CHARS) {

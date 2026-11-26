@@ -11,6 +11,7 @@ import static nuna.catalog.store.mongo.Docs.uuids;
 import static nuna.catalog.store.mongo.MongoCatalogStore.ATTRIBUTE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.CATALOG;
 import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
+import static nuna.catalog.store.mongo.MongoCatalogStore.REF_GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.OBJECT;
 
@@ -180,6 +181,7 @@ final class MongoNamespaces {
             tx.collection(CATALOG).updateOne(tx.session, byId(uuid(catalogId)), new BsonDocument("$set",
                     new BsonDocument("clock", tx.clock()).append("trimmed", tx.clock())));
             tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(namespaceId)));
+            tx.collection(REF_GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(namespaceId)));
             tx.collection(ATTRIBUTE).deleteMany(tx.session, new BsonDocument("targetId", uuid(namespaceId)));
             tx.collection(NAMESPACE).deleteOne(tx.session, byId(uuid(namespaceId)));
             return WriteResult.APPLIED;

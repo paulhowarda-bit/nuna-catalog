@@ -150,16 +150,17 @@ class TableRoutes {
         List<String> levels = Lookup.levels(namespace);
         Lookup.Seen seen = objects.seen(on, levels, table, Kind.TABLE);
         CatalogObject object = seen.object();
-        boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))) && Lookup.writable(on, object);
+        Guard.Writes write = writable(on, object, guard.onObjectWrites(request, on, object,
+                AuditEvents.path(levels, table), Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))));
         Vended vended = vend(new Target(on, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
+        Map<String, String> places = BranchPlaces.of(on, object, write);
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
         Map<String, String> labels = GovernanceChain.of(store, object).labels();
         Optional<Pointer> pointer = lookup.pointer(on, seen);
         if (cacheable && pointer.isPresent()) {
             String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch(), labels,
-                    on.refId());
+                    on.refId(), places);
             if (ETags.matches(ifNoneMatch, etag)) {
                 reads.read(http, catalog, AuditEvents.path(levels, table), object, pointer.get(), on.branch());
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build();
@@ -170,10 +171,10 @@ class TableRoutes {
         reads.read(http, catalog, AuditEvents.path(levels, table), object, current.pointer(), on.branch());
         alerts.loaded(object.id(), location, views.tableStats(location, current.json()));
         String response = views.loadTable(location, current.json(), refsOnly, vended.config(), vended.credentials(),
-                labels);
+                labels, places);
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok();
         if (cacheable) {
-            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch(), labels, on.refId()));
+            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch(), labels, on.refId(), places));
         }
         return builder.contentType(MediaType.APPLICATION_JSON).body(response);
     }
@@ -359,8 +360,8 @@ class TableRoutes {
         CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.seen(on, levels, table, Kind.TABLE).object();
-        boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table))) && Lookup.writable(on, object);
+        Guard.Writes write = writable(on, object, guard.onObjectWrites(request, on, object,
+                AuditEvents.path(levels, table), Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table))));
         Vended vended = vend(new Target(on, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         return Http.json(200, RestResponse.credentials(vended.credentials()));
@@ -382,7 +383,7 @@ class TableRoutes {
         return switch (Metadata.createTable(json, id.toString(), location)) {
             case Outcome.NewMetadata created -> {
                 // Its caller may create the table, and its create commit may carry data files written first.
-                Vended vended = vend(target, id, location, true);
+                Vended vended = vend(target, id, location, Guard.Writes.ALL);
                 yield Http.json(200, MetadataViews.stagedTable(created.json(), vended.config(), vended.credentials(),
                         GovernanceChain.of(store, namespace).labels()));
             }
@@ -402,10 +403,12 @@ class TableRoutes {
         String location = done.metadataLocation();
         Optional<CatalogObject> table = store.readObject(done.objectId());
         Map<String, String> labels = table.map(object -> GovernanceChain.of(store, object).labels()).orElse(Map.of());
+        Guard.Writes write = table.map(object -> writable(target.on(), object,
+                guard.writes(target.request(), target.on(), object))).orElse(Guard.Writes.NONE);
+        Map<String, String> places = table.map(object -> BranchPlaces.of(target.on(), object, write)).orElse(Map.of());
         Vended vended = table.map(object -> {
             try {
-                return vend(target, object.id(), object.locationRoot(),
-                        Lookup.writable(target.on(), object) && guard.mayWrite(target.request(), object));
+                return vend(target, object.id(), object.locationRoot(), write);
             } catch (CatalogError e) {
                 if (e.status() != 503) {
                     throw e;
@@ -414,9 +417,9 @@ class TableRoutes {
             }
         }).orElse(Vended.NONE);
         String response = views.loadTable(location, done.metadataJson(), false, vended.config(), vended.credentials(),
-                labels);
+                labels, places);
         return ResponseEntity.ok()
-                .eTag(ETags.of(location, false, null, vended.epoch(), labels, target.on().refId()))
+                .eTag(ETags.of(location, false, null, vended.epoch(), labels, target.on().refId(), places))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
     }
@@ -430,13 +433,21 @@ class TableRoutes {
         }
     }
 
-    private Vended vend(Target target, UUID tableId, String location, boolean write) {
+    /** What the caller may write through {@code on}: nothing where the ref takes no write (a tag). */
+    private static Guard.Writes writable(OnRef on, CatalogObject object, Guard.Writes writes) {
+        return Lookup.writable(on, object) ? writes : Guard.Writes.NONE;
+    }
+
+    /** A writer on the branch only writes beneath the branch's place (backlog 113); any other, all of the table's. */
+    private Vended vend(Target target, UUID tableId, String location, Guard.Writes write) {
         String refresh = "v1/" + segment(target.prefix()) + "/namespaces/" + segment(target.namespace()) + "/tables/"
                 + segment(target.table()) + "/credentials";
+        Optional<String> under = write == Guard.Writes.BRANCH
+                ? Optional.of(BranchPlaces.under(target.on().refId().orElseThrow())) : Optional.empty();
         return meters.vend(target.catalog().name(), () -> vending.vend(new CredentialVending.Request(
                 target.catalog(), tableId, AuditEvents.path(Lookup.levels(target.namespace()), target.table()),
                 location, target.request().caller(), target.request().requestId(), target.delegation(), refresh,
-                write)));
+                write.any(), under)));
     }
 
     /**

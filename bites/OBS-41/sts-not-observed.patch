@@ -3,17 +3,19 @@ Module: catalog-server
 Test: SpanTreeTest#aCommitsSpanTree
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-index fb8c8ae..8181cf9 100644
+index 6766651b..7b0e14e6 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-@@ -107,9 +107,7 @@ public final class StsCredentialVending implements CredentialVending {
+@@ -120,10 +120,8 @@ public final class StsCredentialVending implements CredentialVending {
          SessionIdentity identity = new SessionIdentity(caller.principal().id(),
                  caller.endUser().map(Principal::id), caller.engine(), request.requestId(), request.catalog().name(),
                  request.tableId());
 -        VendedCredentials credentials = Observed.call(observations, ASSUME_ROLE, "sts assume-role",
 -                KeyValues.of("profile", bound.name(), "access", access.name().toLowerCase(Locale.ROOT).replace('_', '-')),
--                () -> bound.vendor().vend(request.location(), access, identity), issued -> "issued");
-+        VendedCredentials credentials = bound.vendor().vend(request.location(), access, identity);
+-                () -> bound.vendor().vend(request.location(), access, identity, request.writeUnder()),
+-                issued -> "issued");
++        VendedCredentials credentials = bound.vendor().vend(request.location(), access, identity,
++                request.writeUnder());
          Actor actor = new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                  caller.engine(), request.requestId());
          try {

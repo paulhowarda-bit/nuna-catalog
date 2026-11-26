@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
@@ -21,8 +22,13 @@ public final class CredentialCache {
      * @param principal the principal the token names
      * @param subject   whom the access is for (the end user, when an engine acts for one)
      */
+    /** @param writeUnder where beneath the location the credentials may write, when not all of it (backlog 113) */
     public record Key(String profile, String location, Access access, String principal, String subject,
-                      String engine) {
+                      String engine, Optional<String> writeUnder) {
+
+        public Key(String profile, String location, Access access, String principal, String subject, String engine) {
+            this(profile, location, access, principal, subject, engine, Optional.empty());
+        }
 
         public Key {
             Objects.requireNonNull(profile, "profile");
@@ -31,6 +37,7 @@ public final class CredentialCache {
             Objects.requireNonNull(principal, "principal");
             Objects.requireNonNull(subject, "subject");
             Objects.requireNonNull(engine, "engine");
+            Objects.requireNonNull(writeUnder, "writeUnder");
         }
     }
 

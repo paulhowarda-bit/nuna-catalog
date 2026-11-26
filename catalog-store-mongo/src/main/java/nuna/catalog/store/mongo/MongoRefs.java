@@ -15,6 +15,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.POINTER;
 import static nuna.catalog.store.mongo.MongoCatalogStore.PROJECTION_PIECE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.REF;
 import static nuna.catalog.store.mongo.MongoCatalogStore.REF_ENTRY;
+import static nuna.catalog.store.mongo.MongoCatalogStore.REF_GRANT;
 
 import com.mongodb.MongoException;
 import com.mongodb.client.ClientSession;
@@ -447,6 +448,7 @@ final class MongoRefs {
             tx.collection(PROJECTION_PIECE).deleteMany(tx.session, own);
         }
         tx.collection(REF_ENTRY).deleteMany(tx.session, new BsonDocument("refId", uuid(refId)));
+        tx.collection(REF_GRANT).deleteMany(tx.session, new BsonDocument("refScope", new BsonString(refId.toString())));
         tx.collection(REF).deleteOne(tx.session, byId(uuid(refId)));
     }
 
