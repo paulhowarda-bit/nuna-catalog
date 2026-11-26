@@ -1,0 +1,17 @@
+Breaks: an export through a ref is audited as a read of main, so the audit trail does not say which ref's file was read (backlog 172).
+Module: catalog-server
+Test: MetadataLogRefTest#anExportThroughABranchIsItsHeadAndTheLogAsTheBranchReadsItOldestFirstAuditedThroughIt+anExportThroughATagOrARefMadeFromABranchIsWhatTheLogReadsThroughIt
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index c263cda6..f31f7b39 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -326,7 +326,7 @@ class LifecycleRoutes {
+             Through through = through(catalog, object, ref);
+             RefEntry.At reads = through.reads();
+             exported(body, catalog, id, reads.metadataLocation(), reads.version(), reads.sha256());
+-            trail.record(new ObjectRead(audited, through.on().name().display(),
++            trail.record(new ObjectRead(audited, PointerKey.MAIN,
+                     new PointerState(reads.metadataLocation(), reads.version(), reads.sha256()), request.actor()));
+             named(body, through);
+             List<JournalRecord> entries = new ArrayList<>();

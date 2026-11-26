@@ -23,6 +23,7 @@ import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
+import nuna.catalog.store.ObjectCreation;
 import nuna.catalog.store.OutboxEvent;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerHold;
@@ -370,6 +371,69 @@ class BranchCommitTest {
         assertThat(pointers.keySet()).containsOnly(orders.mainKey(), fills.mainKey(), quotes.mainKey());
     }
 
+    // ---- a register never puts a branch's file on main (backlog 177) ----
+
+    @Test
+    @DisplayName("a register refuses a metadata file a branch wrote with 400, on main and through a branch alike, for a"
+            + " table or view no object holds, and creates nothing")
+    void aRegisterRefusesABranchsFile() {
+        CatalogObject orders = table("orders");
+        Ref dev = branch("dev", orders);
+        UUID id = UUID.randomUUID();
+        String root = files.newLocation(id);
+        String fills = files.write(root, 2, ((Outcome.NewMetadata) Metadata.createTable(
+                Requests.createTable("fills", Map.of()), id.toString(), root)).json(), Optional.of(dev.id())).location();
+        UUID viewId = UUID.randomUUID();
+        String viewRoot = files.newLocation(viewId);
+        String daily = files.write(viewRoot, 2, ((Outcome.NewMetadata) Metadata.createView(Requests.createView("daily"),
+                viewId.toString(), viewRoot, 1)).json(), Optional.of(dev.id())).location();
+
+        for (CommitEngine engine : List.of(engine(), on(dev))) {
+            assertBranchFileRefused(engine.registerTable(registered("fills"), register("fills", fills), ALICE,
+                    Optional.empty(), CommitEngine.Undrop.NEVER), fills, "table");
+            assertBranchFileRefused(engine.registerView(registered("daily"), register("daily", daily), ALICE,
+                    Optional.empty(), CommitEngine.Undrop.NEVER), daily, "view");
+        }
+        assertThat(objects.keySet()).containsOnly(orders.id());
+        assertThat(pointers.keySet()).containsOnly(orders.mainKey());
+        assertThat(events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a register that would bring an unregistered table back by a file its branch wrote is refused with"
+            + " 400, on main and through a branch alike, and the table stays unregistered at main's file")
+    void aReviveRefusesABranchsFile() {
+        CatalogObject orders = table("orders");
+        Ref dev = branch("dev", orders);
+        String onDev = success(on(dev).commitTable(name(orders), update(Map.of("a", "1")), ALICE, Optional.empty()))
+                .metadataLocation();
+        objects.put(orders.id(), retired(orders, CatalogObject.State.UNREGISTERED));
+        Pointer main = pointers.get(orders.mainKey());
+        events.clear();
+
+        for (CommitEngine engine : List.of(engine(), on(dev))) {
+            assertBranchFileRefused(engine.registerTable(name(orders), register("orders", onDev), ALICE,
+                    Optional.empty(), CommitEngine.Undrop.NEVER), onDev, "table");
+        }
+        assertThat(objects.get(orders.id()).state()).isEqualTo(CatalogObject.State.UNREGISTERED);
+        assertThat(pointers.get(orders.mainKey())).isEqualTo(main);
+        assertThat(events).isEmpty();
+    }
+
+    private static void assertBranchFileRefused(CommitReply reply, String location, String kind) {
+        assertThat(reply).isEqualTo(new Failure(400, "BadRequestException", "Metadata file " + location
+                + " was written by a commit on a branch, and a " + kind + " is registered only from a file of main's;"
+                + " merge the branch, or register a file main's commits wrote"));
+    }
+
+    private ObjectName registered(String display) {
+        return new ObjectName(catalogId, sales.id(), name(display));
+    }
+
+    private static String register(String name, String location) {
+        return "{\"name\":\"" + name + "\",\"metadata-location\":\"" + location + "\"}";
+    }
+
     // ---- governance (security finding 4; Paul, 2026-11-22) ----
 
     @Test
@@ -575,6 +639,12 @@ class BranchCommitTest {
                     case "countOwnPointers" -> pointers.keySet().stream()
                             .filter(key -> key.branch().equals(args[0].toString())).count();
                     case "commit" -> commit((CommitBatch) args[0]);
+                    case "createObject" -> {
+                        ObjectCreation creation = (ObjectCreation) args[0];
+                        creation.firstCommit().swaps().forEach(swap -> pointers.put(swap.key(), swap.next()));
+                        objects.put(creation.object().id(), creation.object());
+                        yield WriteResult.APPLIED;
+                    }
                     case "findCommit" -> commits.contains((UUID) args[0]) ? CommitLookup.COMMITTED
                             : CommitLookup.NOT_COMMITTED;
                     case "attributesOf" -> attributes.stream()

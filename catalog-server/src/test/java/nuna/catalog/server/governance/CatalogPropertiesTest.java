@@ -49,8 +49,9 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class CatalogPropertiesTest {
 
-    private static final String ACCESS_KEY = "AKIATESTACCESSKEY0001";
-    private static final String SECRET_KEY = "test-secret-access-key-never-answered";
+    /** Keys never answered, made per run so no credential-shaped literal sits in the source. */
+    private static final String ACCESS_KEY = "ak-" + UUID.randomUUID();
+    private static final String SECRET_KEY = "sk-" + UUID.randomUUID();
     private static final String STS_ROLE = "arn:aws:iam::123456789012:role/nuna-vending";
     private static final String MAINTENANCE = "arn:aws:iam::123456789012:role/nuna-maintenance";
     private static final String KMS_KEY = "arn:aws:kms:eu-west-2:123456789012:key/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
