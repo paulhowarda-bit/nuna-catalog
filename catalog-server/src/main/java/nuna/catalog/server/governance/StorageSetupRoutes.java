@@ -62,7 +62,7 @@ class StorageSetupRoutes {
     }
 
     /**
-     * {@code {"reported-at"?, "profiles": [{"name", "catalogs", "kind", "endpoint", "prefixes",
+     * {@code {"scanned-at"?, "reported-at"?, "profiles": [{"name", "catalogs", "kind", "endpoint", "prefixes",
      * "maintenance-principal"?, "worker", "worker-settings"?, "store"}, ...]}}, by profile name. The worker's reach is
      * judged as readiness judges it ({@link ReadinessRoutes.Reported}): the listing from the newest scan when it
      * reported storage, the deletes from the newest such scan that has ended.
@@ -86,7 +86,8 @@ class StorageSetupRoutes {
         ArrayNode policies = DeletePolicyRoutes.policies(named);
 
         ObjectNode body = Management.JSON.createObjectNode();
-        last.ifPresent(scan -> body.put("reported-at", scan.endedAt().orElse(scan.startedAt()).toString()));
+        scans.stream().findFirst().ifPresent(scan -> body.put("scanned-at", ReadinessRoutes.reportedAt(scan)));
+        last.ifPresent(scan -> body.put("reported-at", ReadinessRoutes.reportedAt(scan)));
         ArrayNode profiles = body.putArray("profiles");
         for (String name : new TreeSet<>(settings.profiles().keySet())) {
             StorageSettings.Profile profile = settings.profiles().get(name);

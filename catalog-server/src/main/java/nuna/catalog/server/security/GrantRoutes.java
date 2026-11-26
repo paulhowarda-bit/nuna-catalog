@@ -446,9 +446,10 @@ class GrantRoutes {
 
     /**
      * Why a grant is refused before the store's write, in the order the grant route asks: a privilege that means
-     * nothing on the securable ({@code create} on a table or view, which has nothing inside it to create), then a
-     * grant to one of the caller's own groups, unless {@link OwnGroups} names them. Empty when only the separation of duties is left, which the store
-     * asks inside its write ({@link #admits}).
+     * nothing on the securable ({@code create} on a table or view, which has nothing inside it to create, and
+     * {@code write} on a view, which has no rows, backlog 258), then a grant to one of the caller's own groups,
+     * unless {@link OwnGroups} names them. Empty when only the separation of duties is left, which the store asks
+     * inside its write ({@link #admits}).
      */
     private Optional<Refusal> refusal(Caller caller, Asked asked) {
         Securable.Kind kind = asked.on().stored().kind();
@@ -456,6 +457,10 @@ class GrantRoutes {
             return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT, "create means nothing on a "
                     + kind.name().toLowerCase(java.util.Locale.ROOT)
                     + ": it creates namespaces, tables and views in a catalog or namespace"));
+        }
+        if (asked.privilege() == Privilege.WRITE && kind == Securable.Kind.VIEW) {
+            return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT, "write means nothing on a view: it"
+                    + " has no rows; select reads it, and modify changes its definition"));
         }
         if (!ownGroups.mayActOn(caller, asked.group())) {
             return Optional.of(new Refusal(Refusal.Kind.SELF_GRANT,
