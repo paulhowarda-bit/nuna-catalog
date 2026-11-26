@@ -13,7 +13,8 @@
 # to the node, where Podman's own name for a local build is localhost/nuna-catalog:demo). The node keeps everything
 # under /var, the volumes' data (StorageClass standard, under /var/local-path-provisioner) and the images, on a
 # Podman volume, which a restart of the node, the Podman machine or Windows keeps, and kind delete cluster deletes.
-# Pods reach this machine as host.docker.internal, which up adds to the cluster's DNS.
+# Pods reach this machine as host.docker.internal, which up adds to the cluster's DNS. Up also lifts the task limits
+# Podman and the node's systemd would put on the node and its containers.
 #
 # Needs podman, kubectl, and kind to create the cluster.
 
@@ -55,7 +56,29 @@ kind_up() {
     sleep 3
   done
   kubectl --context "$KIND_CONTEXT" wait --for=condition=Ready "node/$KIND_NODE" --timeout=3m >/dev/null
+  kind_tasks
   kind_host_alias
+}
+
+# No limit on tasks (processes and threads together) for the node or any container in it, as under Docker Desktop
+# (backlog 294). Podman starts the node with PidsLimit 2048, and systemd in the node gives each unit it starts, every
+# container's scope among them, DefaultTasksMax=15% of that: 307 tasks, fewer than SingleStore and a pipeline's
+# extractor JVM need. Podman keeps the lifted limit across restarts, and the node keeps its systemd drop-in in its
+# own file system; containers started before the drop-in, at the cluster's creation, are lifted one by one.
+kind_tasks() {
+  if (( $(podman container inspect --format '{{.HostConfig.PidsLimit}}' "$KIND_NODE") > 0 )); then
+    podman update --pids-limit -1 "$KIND_NODE" >/dev/null
+  fi
+  podman exec "$KIND_NODE" sh -ec '
+    conf=/etc/systemd/system.conf.d/nuna-tasks.conf
+    if [ ! -f $conf ]; then
+      mkdir -p /etc/systemd/system.conf.d
+      printf "[Manager]\nDefaultTasksMax=infinity\n" >$conf
+      systemctl daemon-reload
+    fi
+    for f in $(find /sys/fs/cgroup/kubelet.slice -path "*/cri-containerd-*.scope/pids.max"); do
+      [ "$(cat "$f")" = max ] || systemctl set-property --runtime "$(basename "$(dirname "$f")")" TasksMax=infinity
+    done'
 }
 
 # host.docker.internal in the cluster's DNS: this machine, as Docker Desktop's pods had it. With the Podman
