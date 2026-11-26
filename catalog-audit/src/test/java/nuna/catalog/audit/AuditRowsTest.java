@@ -214,7 +214,7 @@ class AuditRowsTest {
         UUID ref = UUID.randomUUID();
         AuditRow removed = AuditRows.of(CatalogEvent.create(SampleEvents.SOURCE, SampleEvents.TIME,
                 new RefChange(RefChange.Action.OBJECT_REMOVED, ref, "q3", RefChange.Kind.TAG, SampleEvents.CATALOG,
-                        "main", null, List.of(SampleEvents.TABLE), SampleEvents.ACTOR)), 0, 0);
+                        "main", null, null, List.of(SampleEvents.TABLE), SampleEvents.ACTOR)), 0, 0);
         assertThat(removed.objectId()).as("a ref record's object is its catalog").isEqualTo(SampleEvents.CATALOG.id()
                 .toString());
         assertThat(removed.subjectIds()).containsExactly(ref.toString(), SampleEvents.TABLE.id().toString());
