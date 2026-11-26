@@ -31,6 +31,7 @@ import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.support.ui.Select;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -138,6 +139,9 @@ class ConsoleBrowserTest {
         assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
         assertThat(textContent(driver.findElement(By.id("who")))).contains("tester", IssuerForTests.GROUP);
         browser.await(By.cssSelector("#catalog-page table.contents tr[data-kind='namespace'][data-name='" + top + "']"));
+        // The header's copy button names what it copies, the warehouse name (backlog 220).
+        assertThat(textContent(driver.findElement(By.cssSelector(
+                "#catalog-page .ph .side button[aria-label='Copy the warehouse name trading']")))).isEqualTo("Copy trading");
 
         // Opening a namespace in the tree opens its page and lists what is in it.
         browser.await(node("namespace:" + top)).click();
@@ -1065,7 +1069,9 @@ class ConsoleBrowserTest {
               const u = new URL(url, location.origin);
               if (u.pathname.endsWith('/audit/summary')) {
                 return json({'by-type': {'nuna.catalog.audit-read': 2, 'nuna.catalog.grant': 1, 'nuna.catalog.commit': 1},
-                  from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+                  from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(),
+                  busiest: [{kind: 'TABLE', path: ['equities', 'eu', 'positions_end_of_day_by_desk_and_book'], records: 1140,
+                    reads: 1024, writer: 'svc-positions-loader-eu-west'}]});
               }
               if (u.pathname.endsWith('/audit/archive')) return json({chains: [], configured: false});
               if (u.pathname.endsWith('/audit/feed')) {
@@ -1099,6 +1105,17 @@ class ConsoleBrowserTest {
         // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
         assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
                 .map(row -> cell(row, 1) + " " + cell(row, 2)).toList()).containsExactly("Grants 1", "Commits 1", "All 2");
+        // The headline counts every record; the chips leave out the hidden reads, and the checkbox says how many
+        // (Atelier's re-walk after 212 to 217, backlog 220).
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip())
+                .isEqualTo("Show audit reads · 2 records hidden");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("4");
+        // Most recorded keeps its number columns in its card at 1440 px: the long path wraps (backlog 220).
+        driver.manage().window().setSize(new Dimension(1440, 900));
+        WebElement busiest = browser.await(By.cssSelector("#audit-busiest"));
+        browser.await("Most recorded overflows its card", d -> (Boolean) driver.executeScript(
+                "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+        assertThat(textContent(busiest.findElement(By.cssSelector("thead")))).contains("Records", "Reads");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='hold']")))).isEqualTo("Governance 0");
         WebElement grantBadge = driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .badge"));
         assertThat(textContent(grantBadge)).isEqualTo("Grant");
@@ -1131,6 +1148,7 @@ class ConsoleBrowserTest {
         browser.await("the feed did not show every kind", d -> feedTypes().equals(List.of("grant", "commit")));
         driver.findElement(By.cssSelector("#audit-feed input[name='audit-reads']")).click();
         browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip()).isEqualTo("Show audit reads");
         assertThat(lastAsked()).isNull();
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
     }
@@ -1189,7 +1207,28 @@ class ConsoleBrowserTest {
             browser.await(By.cssSelector("#audit-feed .feed-row[data-type='ref']"));
             assertThat(driver.findElements(By.cssSelector("#audit-feed .chip .n"))).as("no counts beside a ref's records")
                     .isEmpty();
-            assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed [data-ref-note]")))).isEmpty();
+            assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed [data-ref-note]"))))
+                    .startsWith("From @" + tag + "'s making, ")
+                    .endsWith(": records through an earlier ref of the same name are left out. Include earlier refs named @"
+                            + tag);
+            browser.await("the status did not say where the feed starts", d -> textContent(d.findElement(
+                    By.cssSelector("#audit-feed .feed-status"))).matches(".* shown, newest first, from .+ up to .+"));
+
+            // Up to sets only the end: the tag's making still starts the feed, and the tag made since an hour ago has
+            // nothing through it before then, so the feed asks nothing.
+            int asked = feedsAsked();
+            new Select(driver.findElement(By.cssSelector("#audit-feed select[name='to']"))).selectByValue("1");
+            browser.await(By.cssSelector("#audit-feed .feed-none"));
+            assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed [data-ref-note]"))))
+                    .as("Up to keeps the start").startsWith("From @" + tag + "'s making, ");
+            assertThat(feedsAsked()).isEqualTo(asked);
+
+            // The way out drops the start, keeps the search and Up to, and is kept in the link.
+            driver.findElement(By.cssSelector("#audit-feed [data-ref-note] [data-act='any-time']")).click();
+            browser.awaitText(By.cssSelector("#audit-feed [data-ref-note]"),
+                    "Records through every ref that has had the name @" + tag + ".");
+            assertThat(lastFeedAsked()).doesNotContainKey("from").containsEntry("branch", tag).containsKey("to");
+            assertThat(driver.getCurrentUrl()).contains("from=any");
 
             WebElement path = driver.findElement(By.cssSelector("#audit-feed input[name='path']"));
             assertThat(path.getDomAttribute("placeholder")).isEqualTo("Table, namespace or @ref");
@@ -1210,9 +1249,24 @@ class ConsoleBrowserTest {
             browser.await("the feed did not open on the tag", d -> d.getCurrentUrl().contains("p=audit")
                     && tag.equals(lastFeedAsked().get("branch")));
             assertThat(lastFeedAsked()).as("the link's time, the tag's making").containsEntry("from", createdAt);
+            browser.await("the linked making was not explained", d -> textContent(d.findElement(
+                    By.cssSelector("#audit-feed [data-ref-note]"))).startsWith("From @" + tag + "'s making, "));
+
+            // A time the link set that is not the ref's making.
+            driver.executeScript("location.hash = '#p=audit&c=trading&path=%40' + arguments[0]"
+                    + " + '&from=2020-01-01T00%3A00%3A00Z';", tag);
+            browser.await("the feed did not ask from the link's time",
+                    d -> "2020-01-01T00:00:00Z".equals(lastFeedAsked().get("from")));
+            browser.await("the link's time was not explained", d -> textContent(d.findElement(
+                    By.cssSelector("#audit-feed [data-ref-note]"))).endsWith(", as the link asked. Show earlier records too"));
         } finally {
             api.manage("DELETE", "/refs/" + tag, null);
         }
+    }
+
+    /** How many times the feed was asked, from {@link #REF_RECORDS_IN_THE_PAGE}. */
+    private int feedsAsked() {
+        return ((Number) driver.executeScript("return (window.feedAsked || []).length;")).intValue();
     }
 
     /** The parameters of the feed's last request, from {@link #REF_RECORDS_IN_THE_PAGE}; empty before any. */
@@ -1417,6 +1471,46 @@ class ConsoleBrowserTest {
         browser.await("rows other than refusals are shown", d -> d.findElements(By.cssSelector("#audit .feed-row"))
                 .stream().filter(WebElement::isDisplayed)
                 .allMatch(r -> "denial".equals(r.getDomAttribute("data-type"))));
+    }
+
+    /** An object's Audit tab as a server with the audit tables answers it: from the table, not Kafka (backlog 197). */
+    private static final String AUDIT_TAB_FROM_THE_TABLE = """
+            const real = window.fetch;
+            const now = Date.now();
+            const rec = (i, type) => ({specversion: '1.0', id: 'e0000000-0000-4000-8000-00000000019' + i, source: 'nuna',
+              type: 'nuna.catalog.' + type, time: new Date(now - i * 60000).toISOString(),
+              subject: 'a0000000-0000-4000-8000-000000000197', data: {actor: {principal: 'gina', requestId: 'r' + i}}});
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/tables/trades/audit')) {
+                return json({target: {kind: 'table', name: 'trades'}, source: 'table', records: [rec(1, 'commit'), rec(2, 'read')],
+                  complete: false, table: {name: 'nuna_audit.audit.events', 'committed-at': new Date(now - 60000).toISOString()}});
+              }
+              return real(url, init);
+            };
+            location.hash = arguments[0];
+            """;
+
+    /**
+     * Where the audit tables are configured, an object's Audit tab reads its records from the audit table, which holds
+     * every record the log does, Kafka or not, and says so (backlog 197, in Atelier's words).
+     */
+    @Test
+    void anObjectsAuditTabSaysItsRecordsCameFromTheAuditTable() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(AUDIT_TAB_FROM_THE_TABLE, "#" + at("table", eu, "trades", "audit"));
+        browser.await(By.cssSelector("#audit .feed-row[data-type='read']"));
+
+        assertThat(driver.findElements(By.cssSelector("#audit .feed-row")).stream()
+                .map(row -> row.getDomAttribute("data-type")).toList()).containsExactly("commit", "read");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit p.window")))).isEqualTo(
+                "Read from nuna_audit.audit.events as of its last commit: its writer commits about once a minute.");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit .stack")))).contains(
+                "No. Only the newest part of the audit table was searched: search the SIEM for the full trail.")
+                .doesNotContain("Kafka", "partition", "offset");
     }
 
     @Test
@@ -1650,6 +1744,14 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector("#ref-changes tr[data-path='" + ns + ".orders']"));
         assertThat(textContent(driver.findElement(By.cssSelector("button[aria-label='Copy the warehouse name trading@" + branch + "']"))))
                 .isEqualTo("Copy trading@" + branch);
+        // So does the catalog's page read through the branch: it copies the warehouse name with the branch (backlog 220).
+        browser.open("/ui/#c=trading&r=" + branch);
+        assertThat(textContent(browser.await(By.cssSelector(
+                "#catalog-page .ph .side button[aria-label='Copy the warehouse name trading@" + branch + "']"))))
+                .isEqualTo("Copy trading@" + branch);
+        browser.open("/ui/#c=trading&k=ref&n=" + branch);
+        onChanges = browser.awaitText(By.cssSelector(".tab-body .merge-verdict[data-verdict='ready']"),
+                "Ready to merge: 1 table would move to main in one transaction.");
         WebElement preview = onChanges.findElement(By.linkText("Preview the merge"));
         assertThat(preview.getDomAttribute("href")).isEqualTo("#c=trading&k=ref&n=" + branch + "&tab=merge");
         preview.click();

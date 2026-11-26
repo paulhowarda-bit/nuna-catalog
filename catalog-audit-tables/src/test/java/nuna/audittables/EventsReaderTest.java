@@ -118,6 +118,25 @@ class EventsReaderTest {
     }
 
     @Test
+    void anObjectsRecordsAreThoseWithItsIdWhateverItWasCalled() {
+        // An object's Audit tab (backlog 197): by its id, so its records before a rename are its own, and another
+        // table later given its old name is not.
+        UUID orders = UUID.randomUUID();
+        AuditRow before = row(10, READ, "ana", "lake", 0, List.of("sales", "orders"), orders);
+        AuditRow after = row(12, COMMIT, "svc", "lake", 1, List.of("sales", "orders_v1"), orders);
+        AuditRow namesake = row(13, READ, "ana", "lake", 0, List.of("sales", "orders"), UUID.randomUUID());
+        AuditRow elsewhere = row(14, READ, "ana", "pond", 2, List.of("sales", "orders_v1"), orders);
+        append(before, after, namesake, elsewhere);
+        EventsReader reader = reader(EventsReader.DEFAULT_SCAN_BUDGET);
+
+        Page page = reader.page(new Query("lake", Set.of(), null, List.of(), null, null, Optional.empty(), 50,
+                orders.toString()));
+
+        assertThat(page.rows()).containsExactly(after, before);
+        assertThat(page.next()).isEmpty();
+    }
+
+    @Test
     void filtersByTypePrincipalPathAndTime() {
         AuditRow orders = row(10, READ, "ana", "lake", 0, List.of("Sales", "Orders"));
         AuditRow refunds = row(11, COMMIT, "svc", "lake", 0, List.of("sales", "eu", "refunds"));
@@ -301,6 +320,7 @@ class EventsReaderTest {
         assertThat(older.loadTable(id).schema().findField("log_seq").fieldId()).isEqualTo(21);
         assertThat(older.loadTable(id).schema().findField("branch").fieldId()).isEqualTo(22);
         assertThat(older.loadTable(id).schema().findField("subject_ids").fieldId()).isEqualTo(23);
+        assertThat(older.loadTable(id).schema().findField("subject_ids").type().asListType().elementId()).isEqualTo(24);
         assertThat(older.loadTable(id).currentSnapshot().snapshotId()).as("no file rewritten").isEqualTo(written);
         assertThat(EventsTable.open(older, NAMESPACE, LogWriter.SOURCE)).as("opened again as it is").isNotNull();
         AuditRow after = stamped(row(20, READ, "ana", "lake", -1, List.of("sales", "orders")), RUN, 3);

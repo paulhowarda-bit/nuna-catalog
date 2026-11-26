@@ -1,0 +1,17 @@
+Breaks: Up to drops the live ref's making as the feed's start, so an earlier ref of the name comes back in (Atelier, 2026-11-25; backlog 169).
+Module: catalog-server
+Test: ConsoleBrowserTest#theFeedsRefSearchReadsFromTheLiveRefsMakingAndTheRecordTabAsksByItsId
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index 73636cb6..2b079dfc 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -312,7 +312,7 @@ function feedPanel(catalog, summary, own) {
+       if (my !== gen) return;
+       // Up to sets only the end: the start still keeps an earlier ref of the name out (Atelier, 2026-11-25).
+       const linked = st.from && st.from !== 'any' ? st.from : null;
+-      since = linked || (r && !st.from ? r['created-at'] : null);
++      since = linked || (r && !st.from && !st.upTo ? r['created-at'] : null);
+       // Each way out drops the start and keeps the search, Who, Up to and the kind.
+       const anyTime = label => h('button', {class: 'btn sm ghost', type: 'button', 'data-act': 'any-time', onclick: () => {
+         st.from = 'any';

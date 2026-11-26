@@ -24,9 +24,10 @@ import org.springframework.stereotype.Component;
  * partition backwards from its end, at most {@link #SCAN_LIMIT} offsets, and keeps the records whose key is
  * the subject.
  *
- * <p>It needs Kafka: on a server without {@code nuna.audit.kafka-bootstrap-servers} it is not {@link #configured()},
- * and the route answers 503 saying so. The topic holds what Kafka took, best effort (D23, amended 2026-11-23): a
- * record made while Kafka was down is in the log {@code nuna.audit}, not here.
+ * <p>The route reads it only on a server without the audit tables (backlog 197): where they are configured it reads
+ * the audit table instead, which holds every record the log has. It needs Kafka: on a server without
+ * {@code nuna.audit.kafka-bootstrap-servers} it is not {@link #configured()}. The topic holds what Kafka took, best
+ * effort (D23, amended 2026-11-23): a record made while Kafka was down is in the log {@code nuna.audit}, not here.
  *
  * <p>It is a bounded look at recent history, not a search: the topic's retention and the window bound what
  * it can see, and the result says which offsets it covered. Searching the whole trail is the SIEM's job and,

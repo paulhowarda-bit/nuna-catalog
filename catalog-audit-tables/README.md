@@ -285,6 +285,19 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - 400 for a run that is not a UUID, a number that is not a whole number from 1, or an event id that is not a UUID;
   503 where no archive is configured or it cannot be read. It takes one of the caller's audit reads.
 
+`GET /management/v1/catalogs/{catalog}[/namespaces/{namespace}[/tables/{table} | /views/{view}]]/audit?limit=`
+
+- An object's Audit tab (backlog 197): the object's own records, newest first, up to `limit` (1 to 200, 50 by
+  default). Where `nuna.audit.tables.catalog` is set it reads them from this table, the rows whose `object_id` is the
+  object's id, so a record from before a rename is found and another object later given the name is not; otherwise
+  from the audit topic, as before. 503 where neither is configured.
+- Unlike the routes above it needs `manage-grants` on the object, not `select` on the audit catalog: who may read an
+  object's trail did not change when its source did (D19: the access review's evidence).
+- From the table: `{"target", "source": "table", "records": [...], "complete", "table"}`, each record the CloudEvent
+  as the log holds it, `complete` false when the table holds older records about it than `limit` shows. From the
+  topic: `{"target", "source": "topic", "records", "window"}`, as before. Audited as an `AuditRead` of the object; it
+  takes one of the caller's audit reads.
+
 `GET /management/v1/audit/archive`
 
 - The archive check's status: `{"configured", "bucket", "prefix", "check": {...} | null}`; only `configured` where no
@@ -342,8 +355,8 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - The feed:
   - `EventsReaderTest` pages a real table on local files: newest first, every row once whatever the page size, a
     short page with `searched-to` when the budget runs out, the filters (the ref and subject filters too, backlog
-    169), the counts, no file read outside the table's location, each row's run and number, and a table made before
-    the log columns, or before the ref columns, given them without a file rewritten.
+    169), one object's records by its id, the counts, no file read outside the table's location, each row's run and
+    number, and a table made before the log columns, or before the ref columns, given them without a file rewritten.
   - `PlacementTest` (`catalog-audit`) places records in chains the archive writer made: by number and id, across
     segments, late or far from their number, another record's id not taken, and a changed record's hash not matching.
   - `ArchiveCheckTest` (`catalog-audit`) checks an in-memory bucket the writer filled: each chain verified to the
@@ -351,5 +364,6 @@ only"). That rules out grant admins, platform operators and holders of `select` 
     grace, late arrivals, repeats, unended runs, late and broken checkpoints, stray versions, and a changed record.
   - `AuditFeedRoutesTest` (`catalog-server`) runs the routes with the real guard over a store double: a test for
     each refusal, the answers, the 400s and 503s, and the shared read limit; each row's chain status, a record's place
-    and the logged and archived gauges.
-- Bites: `bites/D23/`, `bites/OBS-262/` and `bites/OBS-272/`.
+    and the logged and archived gauges; and an object's Audit tab read from the table without Kafka, still for
+    `manage-grants` only (backlog 197).
+- Bites: `bites/D23/`, `bites/OBS-262/`, `bites/OBS-272/`, `bites/OBS-276/` and `bites/OBS-197/`.
