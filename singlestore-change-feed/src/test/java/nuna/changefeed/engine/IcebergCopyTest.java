@@ -13,15 +13,29 @@ import static nuna.changefeed.engine.Fixtures.values;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DataOperations;
+import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.RewriteFiles;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.data.GenericFileWriterFactory;
+import org.apache.iceberg.data.GenericRecord;
+import org.apache.iceberg.data.IcebergGenerics;
+import org.apache.iceberg.data.Record;
 import org.apache.iceberg.inmemory.InMemoryCatalog;
+import org.apache.iceberg.io.CloseableIterable;
+import org.apache.iceberg.io.DataWriter;
+import org.apache.iceberg.io.OutputFileFactory;
 import org.apache.iceberg.types.Types;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -108,7 +122,136 @@ class IcebergCopyTest {
         Snapshot current = catalog.loadTable(ORDERS).currentSnapshot();
         assertThat(current.summary()).containsEntry(IcebergCopy.OFFSETS, "a0,b7").containsEntry(IcebergCopy.KIND, "changes")
                 .containsKey(IcebergCopy.COMMIT_ID);
+        assertThat(catalog.loadTable(ORDERS).properties()).containsEntry(IcebergCopy.OFFSETS, "a0,b7");
         assertThat(IcebergCopy.open(catalog, config("orders", ""), source).offsets()).containsExactly("a0", "b7");
+    }
+
+    @Test
+    void theFeedResumesPastMaintenancesReplaceSnapshots() {
+        SourceTable source = orders(2);
+        IcebergCopy copy = IcebergCopy.open(catalog, config("orders", ""), source);
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"}, false);
+        transaction(batch, 1, "b7", insert(1, row(1, "SAP", 1, "1.000000", "NEW")));
+        copy.commit(batch);
+        batch.clear();
+        transaction(batch, 0, "a3", insert(0, row(2, "SIE", 2, "2.000000", "NEW")));
+        copy.commit(batch);
+        batch.clear();
+
+        Table table = catalog.loadTable(ORDERS);
+        compact(table);
+        table.rewriteManifests().clusterBy(file -> "all").commit();
+        assertThat(table.currentSnapshot().operation()).isEqualTo(DataOperations.REPLACE);
+        assertThat(table.currentSnapshot().summary()).doesNotContainKey(IcebergCopy.OFFSETS);
+
+        IcebergCopy reopened = IcebergCopy.open(catalog, config("orders", ""), source);
+        assertThat(reopened.offsets()).containsExactly("a3", "b7");
+        transaction(batch, 0, "a4", update(0, row(2, "SIE", 3, "2.000000", "FILLED")));
+        reopened.commit(batch);
+        assertThat(rows(table)).containsExactly(
+                Map.entry(1L, values("SAP", 1, "1.000000", "NEW")),
+                Map.entry(2L, values("SIE", 3, "2.000000", "FILLED")));
+        assertThat(IcebergCopy.open(catalog, config("orders", ""), source).offsets()).containsExactly("a4", "b7");
+    }
+
+    @Test
+    void theFeedResumesFromThePropertyOnceExpiryRemovesItsCommits() {
+        SourceTable source = orders(2);
+        IcebergCopy copy = IcebergCopy.open(catalog, config("orders", ""), source);
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"}, false);
+        transaction(batch, 0, "a3", insert(0, row(1, "SAP", 1, "1.000000", "NEW")));
+        transaction(batch, 1, "b7", insert(1, row(2, "SIE", 2, "2.000000", "NEW")));
+        copy.commit(batch);
+        batch.clear();
+
+        Table table = catalog.loadTable(ORDERS);
+        compact(table);
+        expireAllButCurrent(table);
+        assertThat(table.snapshots()).allSatisfy(s -> {
+            assertThat(s.operation()).isEqualTo(DataOperations.REPLACE);
+            assertThat(s.summary()).doesNotContainKey(IcebergCopy.OFFSETS);
+        });
+
+        IcebergCopy reopened = IcebergCopy.open(catalog, config("orders", ""), source);
+        assertThat(reopened.offsets()).containsExactly("a3", "b7");
+        transaction(batch, 1, "b8", delete(1, 2));
+        reopened.commit(batch);
+        assertThat(rows(table)).containsExactly(Map.entry(1L, values("SAP", 1, "1.000000", "NEW")));
+    }
+
+    @Test
+    void aForeignWriteBeneathMaintenancesSnapshotsStillStopsTheFeed() {
+        SourceTable source = orders(1);
+        IcebergCopy copy = IcebergCopy.open(catalog, config("orders", ""), source);
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0"}, false);
+        transaction(batch, 0, "a1", insert(0, row(1, "SAP", 1, "1.000000", "NEW")));
+        copy.commit(batch);
+
+        Table table = catalog.loadTable(ORDERS);
+        Record foreign = GenericRecord.create(table.schema());
+        foreign.set(0, 9L);
+        foreign.set(1, "BAS");
+        foreign.set(2, 1);
+        foreign.set(4, "NEW");
+        table.newAppend().appendFile(dataFile(table, List.of(foreign))).commit();
+        long appended = table.currentSnapshot().snapshotId();
+        compact(table);
+
+        assertThatThrownBy(() -> IcebergCopy.open(catalog, config("orders", ""), source).offsets())
+                .hasMessageContaining("snapshot " + appended + " (append) was not committed by the change feed");
+    }
+
+    @Test
+    void aCopyWrittenBeforeThePropertyWhoseCommitsExpiredStopsTheFeed() {
+        SourceTable source = orders(1);
+        IcebergCopy copy = IcebergCopy.open(catalog, config("orders", ""), source);
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0"}, false);
+        transaction(batch, 0, "a1", insert(0, row(1, "SAP", 1, "1.000000", "NEW")));
+        copy.commit(batch);
+
+        Table table = catalog.loadTable(ORDERS);
+        table.updateProperties().remove(IcebergCopy.OFFSETS).commit();
+        compact(table);
+        expireAllButCurrent(table);
+
+        assertThatThrownBy(() -> IcebergCopy.open(catalog, config("orders", ""), source).offsets())
+                .hasMessageContaining("keeps no snapshot the change feed committed")
+                .hasMessageContaining("drop the copy");
+    }
+
+    /** Compaction as maintenance does it: every data file rewritten into one, a replace snapshot. Rows only, no deletes. */
+    private static void compact(Table table) {
+        table.refresh();
+        RewriteFiles rewrite = table.newRewrite();
+        try (CloseableIterable<FileScanTask> tasks = table.newScan().planFiles();
+             CloseableIterable<Record> records = IcebergGenerics.read(table).build()) {
+            tasks.forEach(task -> {
+                assertThat(task.deletes()).isEmpty();
+                rewrite.deleteFile(task.file());
+            });
+            rewrite.addFile(dataFile(table, records));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        rewrite.commit();
+    }
+
+    private static DataFile dataFile(Table table, Iterable<Record> records) {
+        DataWriter<Record> writer = new GenericFileWriterFactory.Builder(table).dataFileFormat(FileFormat.PARQUET).build()
+                .newDataWriter(OutputFileFactory.builderFor(table, 9, 9).format(FileFormat.PARQUET).build().newOutputFile(),
+                        table.spec(), null);
+        try (writer) {
+            records.forEach(writer::write);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return writer.toDataFile();
+    }
+
+    /** Snapshot expiry keeping only the current snapshot, as the policy does once the others are old enough. */
+    private static void expireAllButCurrent(Table table) {
+        table.expireSnapshots().retainLast(1).expireOlderThan(table.currentSnapshot().timestampMillis() + 1).commit();
+        assertThat(table.snapshots()).hasSize(1);
     }
 
     @Test
@@ -143,6 +286,7 @@ class IcebergCopyTest {
         Table table = catalog.loadTable(ORDERS);
         assertThat(table.currentSnapshot().summary()).containsEntry(IcebergCopy.GAP_AFTER, "a1,b0")
                 .containsEntry(IcebergCopy.KIND, "resnapshot").containsEntry(IcebergCopy.OFFSETS, "a9,b9");
+        assertThat(table.properties()).containsEntry(IcebergCopy.OFFSETS, "a9,b9");
         assertThat(rows(table)).containsExactly(Map.entry(2L, values("SIE", 3, "2.000000", "FILLED")));
     }
 
