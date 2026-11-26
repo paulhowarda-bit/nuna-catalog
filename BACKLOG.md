@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**40 open:** 9 S, 14 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**38 open:** 8 S, 13 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,12 +33,10 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
-| [158](backlog/158.md) | M | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build | 2026-11-23 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [168](backlog/168.md) | M | Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9) | a `cut-at` on the ref's answer, and the namespace listing and its totals read through a ref (each table's pointer on the ref, or at the cut, for its format, snapshots and last commit), with fast route tests and bites, then the console's columns | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
-| [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
@@ -1428,50 +1426,6 @@ a brokerage person.
 What done looks like: for each template, a lifecycle on a cash and a margin account runs through the engine in the
 fast build with every self-check passing, and the generator produces those events.
 
-### 158. A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java docs/storage-design.md bites/D33/
-- Effort: M, a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build
-
-Found while building item 157 (security finding 7). Item 157 refuses a namespace drop while a ref's cut names a
-table or view of it, read in the drop's transaction as its emptiness check is. That read sees only refs that have
-committed, and nothing makes a namespace drop wait for a ref create in flight:
-
-- PostgreSQL and CockroachDB (`SqlRefs.create`): the create locks the catalog's row `FOR UPDATE`, reads its cut in
-  one `INSERT ... SELECT`, then commits. The namespace drop locks only the namespace. So: the cut's statement
-  snapshot sees table T active in namespace N; T's drop commits; N's drop commits, seeing no active object and no
-  committed entry naming T; the ref commits, naming T, whose namespace main no longer has. The window is the cut
-  statement and the commit, longer on a large catalog. Oracle (`OracleRefs.create`) is the same at one SCN.
-- MongoDB (`MongoRefs.create`): the cut is read in a snapshot session, its entries are written in batches outside
-  any transaction, then one transaction inserts the ref, so the window also holds every batch. The drop marks its
-  parent (the catalog, for a top-level namespace), which the ref's transaction marks too, so only drops that overlap
-  that last transaction conflict with it.
-
-The result is the state finding 7 describes (a read through the ref loses the namespace's `regulated` flag), reached
-by a race instead of in sequence. It needs a ref create from main in flight across both drops.
-
-Done looks like:
-- SQL stores: the namespace drop locks the catalog's row before the namespace, `FOR SHARE` on PostgreSQL and
-  CockroachDB, for update on Oracle (no shared lock), the order `putGrantIf` takes (catalog, then securable), so a
-  drop waits for a ref create in flight and then reads its entries, and a create waits for a drop in flight and then
-  cuts without the namespace. Check every write that locks a namespace and then the catalog first: none did when this
-  item was written.
-- MongoDB: the ref's insert transaction refuses or retries the create when a table or view of its cut no longer has
-  its namespace on main, or another way to the same end that does not read the whole cut in one transaction.
-- A `RefSuite` case on all four stores (heavy): a ref create held open before its COMMIT (the commit hook, as
-  `NamespaceSuite`'s `duringAnOpenDrop` holds a drop) while a table of the cut and then its namespace are dropped; the
-  namespace drop answers `Refused(REFERENCED)` or the ref's cut leaves the table out, never both applied. Bites in
-  `bites/D33/`.
-
-**From the security review (Nuna Security Expert session, 2026-11-23):** item 158 may follow item 157; it is no
-go-to-work condition. The race needs a ref create in flight across two drops, by a caller already holding drop rights
-on the namespace, and its harm is finding 7's low one (the namespace's `regulated` flag and the D17 switch stop
-applying to reads through that ref); it grants no new access. A second way to close it, the builder's choice:
-`GovernanceChain.of` now stops when the object's namespace is gone; refusing a ref read whose object's namespace is
-missing (fail closed, audited as a denial) closes this race and any other path to the same state, without the lock
-order change on three stores or MongoDB's check. Item 157's check stays either way, so reads do not start failing.
-
 ### 167. Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -1575,25 +1529,6 @@ run already gives a dropped table's `dropped-at` (item 107), but not who dropped
 Done looks like: a route (or a field on an existing answer, the builder's choice) that names the live refs holding an
 object by id or path, and the drop's actor and time; fast tests with bites in `bites/D33/`; the three states on the
 table page with the design's words.
-
-### 171. A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-store-api/src/test/java/nuna/catalog/store/suite/ bites/
-- Effort: S, one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build
-
-Low, from the security review of item 156 (Nuna Security Expert session, 2026-11-23). Not a go-to-work condition.
-
-What is wrong: a purge claim and a removal from refs (item 156) read the holds and freezes on the object, its
-namespaces and the catalog inside their transaction, but lock only the object's row. A legal hold placed on a
-namespace above the object, or on the catalog, while one of them runs can commit after its read. The result is the
-same as the operation finishing first and the hold arriving a moment later (placing a hold reads nothing either
-writes, and the hold then stands, so `Rules.retentionHold` keeps main's snapshots and later purge claims are
-refused), so nothing is lost; only the audit trail can show the hold's record a little earlier than the operation's.
-
-Done when the purge claim and the removal lock the held levels (or the catalog row) before reading holds, on all four
-stores; a store suite case holds a namespace hold's write open while each runs and sees them serialized; bites
-recorded.
 
 ### 231. Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides)
 
@@ -2092,6 +2027,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [156](backlog/156.md) | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | done | 2026-11-25 |
 | [157](backlog/157.md) | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | done | 2026-11-25 |
+| [158](backlog/158.md) | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | done | 2026-11-25 |
 | [159](backlog/159.md) | Demo: the seed's sample grant goes to a group the grant admin is not in | done | 2026-11-23 |
 | [160](backlog/160.md) | Heavy build: the audit gate and HealthRoutesTest miss item 114's maintenance requests | done | 2026-11-23 |
 | [161](backlog/161.md) | Console: the Metadata log tab fails on a create's, register's or revive's journal entry | done | 2026-11-23 |
@@ -2100,6 +2036,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
 | [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
 | [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
+| [171](backlog/171.md) | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | done | 2026-11-25 |
 | [172](backlog/172.md) | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | done | 2026-11-25 |
 | [173](backlog/173.md) | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | done | 2026-11-23 |
 | [174](backlog/174.md) | Demo: every UI signs in through Keycloak, Silo's console and Keycloak's admin console included | done | 2026-11-23 |
