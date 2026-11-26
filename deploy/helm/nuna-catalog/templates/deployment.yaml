@@ -105,6 +105,11 @@ spec:
               mountPath: /etc/nuna/secrets
               readOnly: true
             {{- end }}
+            {{- if .Values.databaseTls.secretName }}
+            - name: database-tls
+              mountPath: {{ .Values.databaseTls.mountPath }}
+              readOnly: true
+            {{- end }}
             - name: tmp
               mountPath: /tmp
             {{- if and (or .Values.telemetry.endpoint .Values.telemetry.logsEndpoint) .Values.telemetry.caConfigMap.name }}
@@ -125,6 +130,13 @@ spec:
         - name: secrets
           secret:
             secretName: {{ $secret }}
+        {{- end }}
+        {{- if .Values.databaseTls.secretName }}
+        # The database's client certificate, its key and its CA (databaseTls), apart from the config tree.
+        - name: database-tls
+          secret:
+            secretName: {{ .Values.databaseTls.secretName }}
+            defaultMode: {{ .Values.databaseTls.mode }}
         {{- end }}
         - name: tmp
           emptyDir: {}

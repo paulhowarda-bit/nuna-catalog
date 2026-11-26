@@ -24,7 +24,10 @@ javaToolOptions: "-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError"
 config:
   spring:
     datasource:
-      url: jdbc:postgresql://postgres:5432/catalog
+      # Over TLS, checking the server's certificate and name, and signing in by the catalog's client certificate: the
+      # stack's PostgreSQL lets user catalog in from the network by certificate alone, and no role has a password
+      # (stack.yaml; backlog 281). The files are Secret catalog-db-tls, below, which demo.sh and the engine matrix make.
+      url: jdbc:postgresql://postgres:5432/catalog?sslmode=verify-full&sslrootcert=/etc/nuna/db-tls/ca.crt&sslcert=/etc/nuna/db-tls/client.crt&sslkey=/etc/nuna/db-tls/client.pk8
       username: catalog
   nuna:
     database:
@@ -49,6 +52,7 @@ config:
     ui:
       dev-token-login: true
 
-secrets:
-  values:
-    spring.datasource.password: catalog
+# The database's CA, the catalog's client certificate and its key as PKCS #8 DER (ca.crt, client.crt, client.pk8),
+# mounted at /etc/nuna/db-tls, where the URL above names them.
+databaseTls:
+  secretName: catalog-db-tls
