@@ -1,0 +1,29 @@
+Breaks: the read of which refs keep a table walks every dropped object of the namespace, however many, and never says it was cut short (backlog 170).
+Module: catalog-server
+Test: RefRoutesTest#theWalkOfANamespacesDroppedObjectsStopsAtItsLimitAndSaysSo
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index 045c6ab9..10b55508 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1085,10 +1085,6 @@ class RefRoutes {
+         walk:
+         for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {
+             for (CatalogObject.State state : List.of(CatalogObject.State.DROPPED, CatalogObject.State.PURGING)) {
+-                if (read >= KEPT_WALK_LIMIT) {
+-                    cutShort = true;
+-                    break walk;
+-                }
+                 PageRequest page = PageRequest.first(WALK_PAGE);
+                 while (true) {
+                     Page<CatalogObject> listed = store.listObjects(namespaceId, kind, state, page);
+@@ -1098,10 +1094,6 @@ class RefRoutes {
+                     if (listed.nextToken().isEmpty()) {
+                         break;
+                     }
+-                    if (read >= KEPT_WALK_LIMIT) {
+-                        cutShort = true;
+-                        break walk;
+-                    }
+                     page = page.after(listed);
+                 }
+             }
