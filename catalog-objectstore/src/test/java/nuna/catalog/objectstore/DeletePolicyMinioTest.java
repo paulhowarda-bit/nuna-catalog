@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import nuna.catalog.tests.s3.TestS3;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -50,10 +51,11 @@ import software.amazon.awssdk.services.sts.model.Credentials;
 class DeletePolicyMinioTest {
 
     private static final String CATALOG_USER = "nuna-catalog";
-    private static final String CATALOG_SECRET = "nuna-catalog-secret-key";
-    private static final String WORKER_SECRET = "nuna-maintenance-secret-key";
+    /** The users' secret keys, made per run (MinIO takes 8 to 40 characters). */
+    private static final String CATALOG_SECRET = "sk-" + UUID.randomUUID();
+    private static final String WORKER_SECRET = "sk-" + UUID.randomUUID();
     private static final String ONLY_TO_USER = "nuna-worker-only-to";
-    private static final String ONLY_TO_SECRET = "nuna-worker-only-to-secret-key";
+    private static final String ONLY_TO_SECRET = "sk-" + UUID.randomUUID();
 
     @Test
     @DisplayName("only the worker deletes and lists beneath the prefix; the catalog's user and its sessions set no"

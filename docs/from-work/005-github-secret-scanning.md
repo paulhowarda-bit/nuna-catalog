@@ -1,6 +1,7 @@
 <!-- Transcribed 2026-11-25 from a photo of the work machine's copy (103 lines, 9,179 bytes, LF). This copy is about
 150 bytes short, most likely path spellings and backticks; every finding, file and fix is here. The text is the work
-agent's, unchanged. What we did with it: backlog 280 to 285. -->
+agent's, except that each credential-shaped value is shown as <redacted> and one example of the `-p` shape is
+described in words, so this copy does not trip the scanner it describes. What we did with it: backlog 280 to 285. -->
 
 # GitHub's secret scanning blocks the repository: test passwords in the code, and the catalog's database password
 
@@ -10,7 +11,7 @@ Added 2026-11-25.
 
 At work the code is going into GitHub (Fidelity-Green/ap183293-nuna-catalog-demo). Fidelity's GitHub refuses any push that contains something its secret scanning ("push protection") reads as a credential. Every match in your drop of 2026-11-24 is a test value or a demo setting, not a real secret, but the push is refused all the same, and the only other way through is an exemption per finding through ECS's bypass process. So we changed the code instead, on our `main` at work, and pushed. These are the changes, so the same push works from your tree.
 
-The scanner matches patterns, not meanings: a literal assigned to something called a password, a password inside a connection address, `-p <word>` on a command line, a string shaped like a signed token. Fixing a match means the source no longer holds that shape: making the value at run time is the simple way.
+The scanner matches patterns, not meanings: a literal assigned to something called a password, a password inside a connection address, `-p` followed by a word on a command line, a string shaped like a signed token. Fixing a match means the source no longer holds that shape: making the value at run time is the simple way.
 
 ## Why it matters
 
@@ -22,24 +23,24 @@ GitHub's refusals, by the scanner's own names, with where it found them in your 
 
 | Scanner finding | Where | What it is |
 |---|---|---|
-| `HIGH_CONFIDENCE_ECS_STRING_PASSWORD_VALUE` | `catalog-tests-s3/.../s3/PrivateCa.java`, `PASSWORD = "nuna-test"` | the password of the throwaway PKCS #12 key files the helper makes |
-| `HIGH_CONFIDENCE_ECS_STRING_PASSWORD_VALUE` | `catalog-server/.../server/OracleBackendTest.java`, `PASSWORD = "catalog"`; `catalog-store-oracle/.../oracle/OracleFree.java`, `PASSWORD = "catalog"` | the Oracle Free test container's accounts |
-| `HIGH_CONFIDENCE_ECS_SET_PASSWORD_VALUE` | `catalog-store-oracle/.../oracle/UnavailableFailuresTest.java`, `dataSource.setPassword("catalog")` | the same password, in `dataSource(int port)` |
-| `HIGH_CONFIDENCE_ECS_DB_CONN_PASSWORD_TYPE7_VALUE` | `catalog-server/.../server/DatabaseSettingsTest.java`, `GOOD_URI` and two more `mongodb://catalog:s3cret@...` addresses | sample MongoDB connection strings |
-| `HIGH_CONFIDENCE_ECS_CLIENT_SECRET_SSO_VALUE` | `catalog-maintenance/.../maintenance/TokenSourceTest.java`, `"client_secret=s3cret"` and the other `s3cret`s | the worker's sample client secret |
+| `HIGH_CONFIDENCE_ECS_STRING_PASSWORD_VALUE` | `catalog-tests-s3/.../s3/PrivateCa.java`, `PASSWORD = <redacted>` | the password of the throwaway PKCS #12 key files the helper makes |
+| `HIGH_CONFIDENCE_ECS_STRING_PASSWORD_VALUE` | `catalog-server/.../server/OracleBackendTest.java`, `PASSWORD = <redacted>`; `catalog-store-oracle/.../oracle/OracleFree.java`, `PASSWORD = <redacted>` | the Oracle Free test container's accounts |
+| `HIGH_CONFIDENCE_ECS_SET_PASSWORD_VALUE` | `catalog-store-oracle/.../oracle/UnavailableFailuresTest.java`, `dataSource.setPassword(<redacted>)` | the same password, in `dataSource(int port)` |
+| `HIGH_CONFIDENCE_ECS_DB_CONN_PASSWORD_TYPE7_VALUE` | `catalog-server/.../server/DatabaseSettingsTest.java`, `GOOD_URI` and two more `mongodb://catalog:<redacted>@...` addresses | sample MongoDB connection strings |
+| `HIGH_CONFIDENCE_ECS_CLIENT_SECRET_SSO_VALUE` | `catalog-maintenance/.../maintenance/TokenSourceTest.java`, `"client_secret=<redacted>"` and the other `<redacted>`s | the worker's sample client secret |
 | `HIGH_CONFIDENCE_ECS_JWT_TOKEN` | `docs/design/console/prototype.html`, the `<textarea class="tokenbox" id="token">` | an illustrative token in the mock-up |
-| `HIGH_CONFIDENCE_ECS_DATASOURCE_PASSWORD_VALUE` | `demo/k8s/catalog-values.yaml` and `deploy/local/values.yaml`, `spring.datasource.password: catalog` | the catalog's PostgreSQL password |
-| `HIGH_CONFIDENCE_ECS_PASSWORD_PARAM_TYPE1_VALUE` | our `deploy/nuna/remote.sh` (`systemctl --user show -p Result -p ExecMainStatus`) | not a password: `-p` read as one; ours, fixed |
+| `HIGH_CONFIDENCE_ECS_DATASOURCE_PASSWORD_VALUE` | `demo/k8s/catalog-values.yaml` and `deploy/local/values.yaml`, `spring.datasource.password: <redacted>` | the catalog's PostgreSQL password |
+| `HIGH_CONFIDENCE_ECS_PASSWORD_PARAM_TYPE1_VALUE` | our `deploy/nuna/remote.sh` (`systemctl --user show` with two `-p` options) | not a password: `-p` read as one; ours, fixed |
 
-Not flagged today, but the same shape, so likely to be flagged by a later rule: `catalog-audit-tables/.../audittables/AuditTablesSettingsTest.java` (`"s3cret"` as a client secret), and the demo's fixed test passwords (`nunatest-secret-key`, Keycloak's admin `nuna-test`, SingleStore's root `nuna-test`).
+Not flagged today, but the same shape, so likely to be flagged by a later rule: `catalog-audit-tables/.../audittables/AuditTablesSettingsTest.java` (`<redacted>` as a client secret), and the demo's fixed test passwords (Silo's key `<redacted>`, Keycloak's admin `<redacted>`, SingleStore's root `<redacted>`).
 
 ## Suggested change
 
 1. **Test values made at run time.** What we did, each verified at work as noted:
    - `PrivateCa`: `PASSWORD = UUID.randomUUID().toString()`. The key files live only in the CA's temporary folder and are read by the same JVM, so any value works. Compiled; its tests need Docker, not run.
-   - `OracleFree`: `PASSWORD = "pw" + UUID.randomUUID().toString().replace("-", "").substring(0, 20)` (Oracle wants a letter first), made package-visible so `UnavailableFailuresTest.dataSource` uses it instead of its own `"catalog"`; `OracleBackendTest` gets its own the same way. Compiled; these are heavy tests, not run.
+   - `OracleFree`: `PASSWORD = "pw" + UUID.randomUUID().toString().replace("-", "").substring(0, 20)` (Oracle wants a letter first), made package-visible so `UnavailableFailuresTest.dataSource` uses it instead of its own `<redacted>`; `OracleBackendTest` gets its own the same way. Compiled; these are heavy tests, not run.
    - `DatabaseSettingsTest`: `SECRET = "pw-" + UUID.randomUUID()`, and the three addresses built as `"mongodb://catalog:" + SECRET + "@h1..."`; the redaction check becomes `doesNotContain(SECRET)`. Run: 4 of 4 pass.
-   - `TokenSourceTest`: `SECRET = "cs-" + UUID.randomUUID()` in place of every `"s3cret"`, including `"client_secret=" + SECRET` and `"nuna-maintenance:" + SECRET`. Run: 3 of 3 pass.
+   - `TokenSourceTest`: `SECRET = "cs-" + UUID.randomUUID()` in place of every `<redacted>`, including `"client_secret=" + SECRET` and `"nuna-maintenance:" + SECRET`. Run: 3 of 3 pass.
    - `prototype.html`: the sample token replaced by the text "(a bearer token, pasted here)".
    - Worth doing the same in `AuditTablesSettingsTest` before the scanner learns that shape.
 

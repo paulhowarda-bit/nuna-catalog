@@ -86,6 +86,69 @@ tasks.named("check") {
     dependsOn(bitesApply)
 }
 
+// Work's GitHub refuses a push holding anything its secret scanning reads as a credential, test values included
+// (backlog 280; docs/from-work/005-github-secret-scanning.md). This fails the build on the shapes it refused and a
+// few it is likely to learn, in every tracked file: a literal given to something named password, a password in a
+// URI, a client secret in a form, a signed token, an AWS key id, a private key, and a password or secret key set in
+// a config file. Make the value at run time instead. A file still waiting on the item that cleans it is named in
+// secret-shapes-allowed.txt; BACKLOG.md is skipped because it is made from backlog/, which is checked.
+val secretShapes = tasks.register("secretShapes") {
+    description = "Fails on a credential-shaped literal in a tracked file, as work's GitHub push protection would."
+    val root = rootDir
+    doLast {
+        val pw = "passw(?:or)?d"
+        val anywhere = mapOf(
+            "a password in a URI" to """\b[a-z][a-z0-9+.-]*://[^/\s:@"'`<>]+:[^@\s"'`/$<>{}]+@""",
+            "a signed token" to """\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.""",
+            "an AWS key id" to """\b(?:AKIA|ASIA)[A-Z0-9]{16}\b""",
+            "a private key" to """-----BEGIN [A-Z ]*PRIVATE KEY-----\s*[A-Za-z0-9+/=]{40,}""",
+            "a literal password" to """(?i)\b\w*$pw\w*\s*=\s*"[^"$\n]+"\s*[;,)]""",
+            "a literal password set" to """(?i)\.set\w*$pw\w*\(\s*"[^"]*"\s*\)""",
+            "a literal password beside its name" to """(?i)"[\w.-]*$pw[\w.-]*"\s*,\s*"[^"$\n]+"(?!\s*:)""",
+            "a client secret in a form" to """client_secret=[A-Za-z0-9._~-]{4,}""",
+            "a password in JSON" to """(?i)"[\w.-]*$pw[\w.-]*"\s*:\s*"[^"$<\n][^"\n]*"""",
+            "a person's password in a realm" to """"type"\s*:\s*"password"\s*,\s*"value"\s*:\s*"[^"$\n]+"""",
+        ).mapValues { Regex(it.value) }
+        val inConfig = anywhere + mapOf(
+            "a password in a config file" to """(?im)^[ \t-]*[\w.-]*$pw[\w.-]*[ \t]*[:=][ \t]*["']?[^\s"'{$#<.][^\s"']*""",
+            "a secret key in a config file" to
+                """(?im)^[ \t-]*[\w.-]*(?:secret[-_]access[-_]key|client[-_]secret|secret[-_]key)[ \t]*[:=][ \t]*""" +
+                """["']?[^\s"'{$#<.][^\s"']*""",
+            "a password in an environment" to """(?i)name:\s*\w*(?:PASSWORD|SECRET)\w*\s*,\s*value:\s*["']?[^\s}"'$]+""",
+        ).mapValues { Regex(it.value) }
+        val config = listOf(".yaml", ".yml", ".properties", ".env", ".conf", ".ini", ".toml")
+        val allowed = root.resolve("secret-shapes-allowed.txt").readLines()
+            .map { it.substringBefore('#').trim().substringBefore(' ') }.filter { it.isNotEmpty() }.toSet()
+        val git = ProcessBuilder("git", "ls-files", "-z").directory(root).start()
+        val tracked = git.inputStream.readBytes().toString(Charsets.UTF_8).split('\u0000').filter { it.isNotEmpty() }
+        check(git.waitFor() == 0) { "git ls-files failed" }
+        val utf8 = Charsets.UTF_8.newDecoder()
+        val found = tracked.filter { it != "BACKLOG.md" && it !in allowed }.flatMap { path ->
+            val file = root.resolve(path)
+            val text = if (!file.isFile) null else try {
+                utf8.decode(java.nio.ByteBuffer.wrap(file.readBytes())).toString()
+            } catch (e: java.nio.charset.CharacterCodingException) {
+                null
+            }
+            val shapes = if (config.any { path.endsWith(it) }) inConfig else anywhere
+            if (text == null) emptyList() else shapes.flatMap { (shape, regex) ->
+                regex.findAll(text).map { "$path:${text.substring(0, it.range.first).count { c -> c == '\n' } + 1}: $shape" }
+            }
+        }
+        val stale = allowed.filter { it !in tracked }
+        if (found.isNotEmpty() || stale.isNotEmpty()) {
+            throw GradleException((if (found.isEmpty()) "" else "${found.size} credential-shaped literals, which " +
+                "work's GitHub refuses; make each value at run time (backlog 280):\n" + found.joinToString("\n")) +
+                (if (stale.isEmpty()) "" else "\nsecret-shapes-allowed.txt names files that are gone: $stale"))
+        }
+        logger.lifecycle("No credential-shaped literals in ${tracked.size} tracked files (${allowed.size} allowed " +
+            "until their items land).")
+    }
+}
+tasks.named("check") {
+    dependsOn(secretShapes)
+}
+
 subprojects {
     apply(plugin = "java-library")
     apply(plugin = "io.spring.dependency-management")
