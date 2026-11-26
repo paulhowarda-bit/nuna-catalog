@@ -400,7 +400,8 @@ class HealthRoutes {
 
     /**
      * What the worker's storage identities reach, as a scan report gives it (backlog 250); empty when it gives none, as
-     * a worker of an earlier release does. Counts it leaves out are 0.
+     * a scan that could not read its storage prefixes (item 275) and a worker of an earlier release do. Counts it
+     * leaves out are 0.
      */
     private static Optional<List<WorkerStorage>> storage(JsonNode json) {
         JsonNode value = json.get("storage");

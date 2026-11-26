@@ -160,9 +160,11 @@ final class Worker implements AutoCloseable {
     private void scan(UUID id, ScanReport report) {
         Instant now = clock.instant();
         // The prefixes first, so that the scan's start reports what the store lets the worker list beneath those the
-        // catalog gives at this scan (backlog 250).
-        boolean reaches = reach(report);
-        health.scanStarted(id, now, storage.check(), report);
+        // catalog gives at this scan (backlog 250). A scan that could not read them reports no storage at all, so the
+        // catalog does not take it for one that read them and reaches none (item 275).
+        Optional<Prefixes> reached = reach(report);
+        boolean reaches = reached.filter(prefixes -> !prefixes.isEmpty()).isPresent();
+        health.scanStarted(id, now, reached.map(read -> storage.check()), report);
         boolean ended = false;
         Optional<String> error = Optional.empty();
         try {
@@ -205,8 +207,8 @@ final class Worker implements AutoCloseable {
         } finally {
             // As WorkerMetrics judges it: a scan succeeds when it read the whole work list.
             health.scanEnded(id, now, clock.instant(),
-                    ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST), error, storage.reach(),
-                    report);
+                    ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST), error,
+                    reached.map(read -> storage.reach()), report);
         }
     }
 
@@ -242,9 +244,9 @@ final class Worker implements AutoCloseable {
      * of the scan. The prefix set is logged at the first read and whenever it changes, each new prefix at WARN: the
      * one record of where the worker deletes that the catalog cannot suppress.
      *
-     * @return whether the storage reaches any prefix this scan
+     * @return the prefixes the storage reaches this scan, none when the read failed
      */
-    private boolean reach(ScanReport report) {
+    private Optional<Prefixes> reach(ScanReport report) {
         List<Management.StorageProfile> profiles;
         try {
             profiles = management.storageProfiles();
@@ -253,7 +255,7 @@ final class Worker implements AutoCloseable {
             LOG.warn("Cannot read the storage prefixes the catalog gives the worker: it lists and deletes nothing"
                     + " this scan", e);
             report.failed(ScanReport.Failure.STORAGE_PREFIXES, "reading the storage prefixes", e);
-            return false;
+            return Optional.empty();
         }
         Prefixes reached = storage.reach(profiles);
         logChanges(reached);
@@ -261,9 +263,8 @@ final class Worker implements AutoCloseable {
         if (reached.isEmpty()) {
             LOG.warn("The catalog gives the worker no storage prefix it reaches: it lists and deletes nothing this"
                     + " scan");
-            return false;
         }
-        return true;
+        return Optional.of(reached);
     }
 
     /** Logs the prefix set at the first read, then each prefix added (WARN) or gone, and each new refusal (WARN). */

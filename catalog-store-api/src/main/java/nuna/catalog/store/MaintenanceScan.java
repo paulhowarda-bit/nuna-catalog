@@ -29,7 +29,7 @@ import java.util.UUID;
  * @param groups    the groups the worker's token carried when it reported, which its grants are held by; empty for a
  *                  scan kept before the catalog recorded them
  * @param storage   the worker's storage identities, each with its prefixes, as it reported them; empty when it
- *                  reported none, as a worker of an earlier release does
+ *                  reported none, as one that could not read its prefixes (item 275) or an earlier release does
  */
 public record MaintenanceScan(UUID id, String worker, Instant startedAt, Optional<Instant> endedAt,
                               Optional<Outcome> outcome, Map<String, Integer> failures, Optional<String> error,

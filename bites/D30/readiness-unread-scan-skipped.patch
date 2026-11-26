@@ -1,0 +1,15 @@
+Breaks: readiness and storage setup skip a newest scan that reported no storage, as when it could not read its storage prefixes, and judge by an older scan, so they show what the worker reached before its restart (item 275).
+Module: catalog-server
+Test: ReadinessUnreadPrefixesTest#aScanThatCouldNotReadItsPrefixesLeavesTheStorageAndStoreStepsUnknown
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+@@ -111,7 +111,7 @@
+ 
+         /** From the scans the store keeps, the newest first. */
+         static Reported of(List<MaintenanceScan> scans) {
+-            Optional<MaintenanceScan> last = scans.stream().findFirst().filter(scan -> scan.storage().isPresent());
++            Optional<MaintenanceScan> last = scans.stream().filter(scan -> scan.storage().isPresent()).findFirst();
+             return new Reported(last, last.flatMap(newest -> scans.stream()
+                     .filter(scan -> scan.endedAt().isPresent() && scan.storage().isPresent()).findFirst()));
+         }

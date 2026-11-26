@@ -33,8 +33,8 @@ import tools.jackson.databind.node.ObjectNode;
  * Whether the maintenance worker can maintain a catalog, step by step (backlog 251), for the console's checklist
  * (backlog 252): its groups hold {@code write} on the catalog, its own storage identity covers every allowed prefix of
  * the catalog's storage profile, the store lets it list and delete there, and the catalog's policy turns a job on. The
- * first three come from the newest scan the worker reported with what it reaches (backlog 250); before one, they are
- * unknown. Needs {@code describe} on the catalog, as its other governance reads do, except from a platform operator,
+ * first three come from the newest scan the worker reported, with what it reaches (backlog 250); before one, and
+ * while the newest reported no storage, as when it could not read its storage prefixes (item 275), they are unknown. Needs {@code describe} on the catalog, as its other governance reads do, except from a platform operator,
  * who reads it for every catalog without a grant, as the worker's scans and the delete policies (catalog-security,
  * 2026-11-24, backlog 252; D18: operators see every catalog's name, and readiness names no namespace, table or view).
  * Names (the worker's groups, the catalog's profile and prefixes, what covers them) go only to those who may
@@ -67,9 +67,8 @@ class ReadinessRoutes {
 
     /**
      * The four steps, each {@code done}, {@code missing}, {@code refused} or {@code unknown}, and when the worker last
-     * reported what it reaches (docs/observability/table-health.md, "Readiness"). The listing is judged by the newest
-     * scan that reported storage; the deletes by the newest such scan that has ended, since a scan reports its deletes
-     * only at its end.
+     * reported what it reaches (docs/observability/table-health.md, "Readiness"), judged by the scans
+     * {@link Reported} names.
      */
     @GetMapping(path = READINESS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> readiness(@PathVariable("catalog") String prefix, HttpServletRequest http) {
@@ -81,9 +80,9 @@ class ReadinessRoutes {
         }
         boolean names = operator || guard.allows(request, target, OPERATION, Privilege.MODIFY)
                 || guard.allows(request, target, OPERATION, Privilege.MANAGE_GRANTS);
-        List<MaintenanceScan> reached = store.listScans().stream().filter(scan -> scan.storage().isPresent()).toList();
-        Optional<MaintenanceScan> last = reached.stream().findFirst();
-        Optional<MaintenanceScan> ended = reached.stream().filter(scan -> scan.endedAt().isPresent()).findFirst();
+        Reported reported = Reported.of(store.listScans());
+        Optional<MaintenanceScan> last = reported.last();
+        Optional<MaintenanceScan> ended = reported.ended();
         CatalogStorage.Bound profile = storage.forCatalog(target.catalog().id());
         List<String> prefixes = profile.profile().allowedPrefixes().stream().map(ObjectLocation::toString).toList();
 
@@ -96,6 +95,26 @@ class ReadinessRoutes {
         body.set("store", storeStep(prefixes, last, ended, names));
         body.set("policy", policyStep(target));
         return GovernanceRoutes.json(200, body);
+    }
+
+    /**
+     * The scans the worker's reach is judged by: the newest, for the groups and the listing, when it reported storage;
+     * and the newest that reported storage and has ended, for the deletes, since a scan reports its deletes only at its
+     * end. A newest scan that reported no storage, because it could not read its storage prefixes (item 275) or a
+     * worker of an earlier release reported it, leaves both empty: what the worker reaches is then not known, as before
+     * any scan, rather than nothing. Shared with {@link StorageSetupRoutes}.
+     *
+     * @param last  the newest scan, when it reported storage
+     * @param ended the newest scan that reported storage and has ended; empty when {@code last} is
+     */
+    record Reported(Optional<MaintenanceScan> last, Optional<MaintenanceScan> ended) {
+
+        /** From the scans the store keeps, the newest first. */
+        static Reported of(List<MaintenanceScan> scans) {
+            Optional<MaintenanceScan> last = scans.stream().findFirst().filter(scan -> scan.storage().isPresent());
+            return new Reported(last, last.flatMap(newest -> scans.stream()
+                    .filter(scan -> scan.endedAt().isPresent() && scan.storage().isPresent()).findFirst()));
+        }
     }
 
     /**

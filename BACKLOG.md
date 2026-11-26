@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**50 open:** 13 S, 17 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**49 open:** 13 S, 17 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -61,7 +61,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
-| [275](backlog/275.md) | ? | The worker's first scan after a restart can't get a token, and readiness then says storage is missing | and two routes told apart a scan that could not read its prefixes from one that read none; each with a unit test. | 2026-11-25 |
 
 ## Open items in full
 
@@ -3153,49 +3152,6 @@ profile), which readiness says and Overview does not.
   head and KPI line say steps are left, not "has not reported", as a caller who may read readiness, and the old words
   for one who may not.
 
-### 275. The worker's first scan after a restart can't get a token, and readiness then says storage is missing
-
-- Added: 2026-11-25 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
-- Touches: catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java, catalog-maintenance/src/main/java/nuna/maintenance/Worker.java, catalog-maintenance/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java, catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java, catalog-server/src/test/
-- Effort: S: a bounded retry in one class, and two routes told apart a scan that could not read its prefixes from one that read none; each with a unit test.
-
-## What is wrong
-
-After a demo rebuild, the worker's first scan could not get a token from Keycloak, so it could not read its
-storage prefixes from the catalog (item 256). The rest of the scan ran: it expired snapshots and started a
-compaction through the Iceberg client, which got its own token. But the scan reported that the worker reached no
-store, and for the five minutes until the next scan:
-
-- item 251's readiness route said `lakehouse`'s storage step was `missing` and its store step `unknown`;
-- item 253's storage-setup route said the worker had `not-reported` an identity and gave `worker-settings`, so
-  item 254's dialog would have told an operator to add the worker's settings, which were already there.
-
-The next scan got its token and all four steps read `done`. So any restart of the worker, or of Keycloak, shows
-a wrong setup step for one scan interval.
-
-## Evidence
-
-2026-11-25, demo rebuilt from `main` at 3b9ad34e by Nuna Security Expert. The worker pod had run 106 s and
-Keycloak's pod 8 m 42 s. Worker log, 19:05:49:
-`Scan failure: reading the storage prefixes: java.io.UncheckedIOException: cannot reach the token endpoint
-http://keycloak.nuna-demo.svc:8080/realms/nuna/protocol/openid-connect/token` (thrown at `TokenSource.java`
-`request()`, caught in `Worker.java` where it calls `storage.reach(List.of())`). The readiness route then gave
-storage `missing` and store `unknown`. The scan at 19:11:25 read all four `done`, with no failure.
-
-## Done looks like
-
-- `TokenSource` retries a token request that cannot reach the endpoint, or that gets a 5xx, a few times with a
-  short backoff, bounded well inside a scan (about 30 s in all), before giving up as now. A 4xx (bad client or
-  secret) fails at once, as now.
-- A scan that could not read its storage prefixes says so in its report, and the catalog keeps it apart from a
-  scan that read them and reached none: readiness gives the storage and store steps `unknown`, not `missing`, and
-  storage-setup gives no `worker-settings` block for it. The console shows those steps as unknown, as
-  it does before the first scan.
-- Unit tests: a token endpoint that fails twice then answers gives a token; one that answers 401 fails at once;
-  readiness and storage-setup given a scan with a storage-prefixes failure answer `unknown` and leave out
-  `worker-settings`.
-- Checked live: after `demo/demo.sh up`, the first scan's readiness for `lakehouse` never says `missing`.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3421,4 +3377,5 @@ storage `missing` and store `unknown`. The scan at 19:11:25 read all four `done`
 | [272](backlog/272.md) | Audit feed: place a row in its server run's archive chain, and show a running server's tail before its run ends | done | 2026-11-25 |
 | [273](backlog/273.md) | Demo: presenter may do absolutely everything | done | 2026-11-25 |
 | [274](backlog/274.md) | demo.sh up builds from one pinned commit, so a landing during the run cannot stop it or mix commits | done | 2026-11-25 |
+| [275](backlog/275.md) | The worker's first scan after a restart can't get a token, and readiness then says storage is missing | done | 2026-11-25 |
 | [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |

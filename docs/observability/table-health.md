@@ -236,7 +236,7 @@ kept even when 50 failed scans have come since.
   for a scan kept before the catalog recorded them.
 - `storage` is what the worker's own storage identity reached in that scan (backlog 250), one entry for each of its
   stores (`nuna.maintenance.storage`), by kind (`s3`, `minio`, `ceph`) and endpoint as the worker's settings name
-  them, with the prefixes the catalog gave it there at that scan (item 256; none when the worker could not read them).
+  them, with the prefixes the catalog gave it there at that scan (item 256).
   `endpoint` is absent from a scan an earlier release reported for AWS S3's own. Each prefix has:
   - `listed`: at the scan's start the worker lists at most one key beneath the prefix, as its delete policy reads it
     (`<prefix>/`). `ok` when the store let it, `refused` when the store answered with an error, whose code is
@@ -247,7 +247,9 @@ kept even when 50 failed scans have come since.
     `delete-code` is the code of the first not deleted. The start's report carries 0s; the end's replaces it.
 
   A report names prefixes and the store's codes, never an object key, a credential or the store's message. `storage`
-  is absent for a scan reported by a worker of an earlier release, and for a scan kept before the catalog recorded it.
+  is absent for a scan that could not read the storage prefixes the catalog gives the worker (item 275; its
+  `failures` count a `storage-prefixes`), for one reported by a worker of an earlier release, and for one kept before
+  the catalog recorded it: what the worker reaches is then not known, which is not the same as `[]`, reaching nothing.
   The deletes beneath a prefix since a given time are the sum over the scans since; the first scan in the list with
   `storage` holds what the worker last reached.
 - `outcome` is `succeeded` when the scan read the whole work list, as the worker's meters judge it, even if some jobs
@@ -292,8 +294,9 @@ it maintains a catalog, whether it is done (backlog 251; the console's checklist
 }
 ```
 
-The first three steps come from the newest scan that reported `storage` ("The scans"); before any has, they are
-`unknown`.
+The first three steps come from the newest scan, when it reported `storage` ("The scans"). Before any scan, and while
+the newest reported none, as when it could not read its storage prefixes (item 275: a worker or identity provider just
+restarted), they are `unknown`, never `missing`.
 
 | Step | `done` when | Otherwise |
 |---|---|---|
@@ -303,8 +306,8 @@ The first three steps come from the newest scan that reported `storage` ("The sc
 | `policy` | The catalog's resolved maintenance policy turns at least one job on; `jobs` names them (`snapshot-expiry`, `orphan-removal`, `compaction`, `manifest-rewrite`) | `missing` |
 
 - `reported-at` is when the worker last reported what it reaches: the end of that scan, or its start while it runs.
-  Absent before any report.
-- The listing is judged by the newest scan with `storage`, the deletes by the newest such scan that has ended: a scan
+  Absent before any report, and while the newest scan reported no `storage`.
+- The listing is judged by the newest scan, the deletes by the newest scan with `storage` that has ended: a scan
   reports its deletes only at its end, so one under way does not hide the refusals of the one before.
 - A `refused` anywhere outweighs an `unknown` elsewhere. `code` is the first such code among the allowed prefixes.
 - **Who reads it.** Those who may `describe` the catalog, and platform operators, who need no grant: they read it for
@@ -385,7 +388,7 @@ does. The policy texts are shortened here.
 | `name`, `kind`, `endpoint`, `prefixes` | The profile: its kind (`s3` for AWS S3, `minio`, `ceph`), its endpoint as the catalog's settings write it, its allowed prefixes |
 | `catalogs` | The catalogs bound to the profile (`nuna.storage.catalogs`), by name; never a namespace, table or view (D18) |
 | `maintenance-principal` | The worker's identity on the store, as the profile names it; absent when it names none |
-| `worker` | `state` `reported` when the newest scan that reported storage shows an identity of the worker's of the profile's kind at its endpoint, compared as the worker compares them (scheme, host and port); then `prefixes`, what the store answered beneath each of the profile's prefixes, with the fields readiness gives beneath each (the listing from the newest scan with storage, the deletes from the newest such scan that has ended). A prefix with only `prefix` is one the worker has not reached: it takes a new profile's prefixes at its next scan, and only from a profile that names a maintenance principal. Otherwise `not-reported` |
+| `worker` | `state` `reported` when the newest scan reported storage and it shows an identity of the worker's of the profile's kind at its endpoint, compared as the worker compares them (scheme, host and port); then `prefixes`, what the store answered beneath each of the profile's prefixes, with the fields readiness gives beneath each (the listing from the newest scan, the deletes from the newest scan with storage that has ended). A prefix with only `prefix` is one the worker has not reached: it takes a new profile's prefixes at its next scan, and only from a profile that names a maintenance principal. `unknown` when the newest scan reported no storage, as when it could not read its storage prefixes (item 275): whether the worker holds an identity on the store is not known, so no `worker-settings` are given. Otherwise `not-reported` |
 | `worker-settings` | Only while `worker` is `not-reported`: `store`, the name to give the store in the worker's settings (the profile's; any the settings do not use yet will do); `yaml`, to paste under `nuna.maintenance.storage`, with the store's kind, endpoint (as the profile writes it, so the worker matches them) and region, `access-key-id` marked `<the worker's access key on this store>` and, for a profile with a CA bundle, `ca-bundle` marked too; `secret`, the name its secret key takes in the release's secrets; and on AWS S3, `note`: with a role for the worker (IRSA, Pod Identity), leave the keys out. Then upgrade the nuna-maintenance release: the worker reads its settings only when it starts |
 | `store` | `state` `generated` with `policies`, the profile's delete policies, the texts `GET /management/v1/maintenance/delete-policies` gives, each with `commands` to run as an identity that may; or, for a profile naming no maintenance principal, `state` `unprotected` with `setting`, the catalog setting to add, `nuna.storage.profiles.<name>.maintenance-principal` |
 
@@ -468,6 +471,7 @@ fields separated by tabs; `WorkerStorage.write`). MongoDB keeps them as arrays i
 | `catalog-store-api` `WorkerStorageTest` (fast) | What a storage report may hold, the text the SQL and Oracle stores keep it as, and the reported prefix that covers a location. |
 | `catalog-server` `ReadinessRoutesTest` (heavy) | Readiness: the first three steps unknown before a scan reports storage; every step done; write on a namespace or select on the catalog leaves the grant missing, a policy with every job off leaves the policy missing; a reported prefix beneath, beside or in another bucket leaves the storage missing and the store unknown; a refused listing or delete is refused with the store's code, a scan under way keeps the last ended scan's refused deletes, no answer is unknown with the client's failure, and `deletes-since` is when the counted deletes' scan started; names only to the tester (modify), the grant admin and an operator, states without names to a describer and a tag steward; an operator with no grant reads it with names, unaudited; refused to an outsider (404) and a bystander (403), the refusal audited and the read not. |
 | `catalog-server` `StorageSetupRoutesTest` (fast) | Storage setup, through the real route and guard over profiles as configured and a stand-in store of scans: refused to an analyst, a grant admin and the worker, each refusal audited, read by an operator unaudited; profiles by name with their catalogs, kind, endpoint, prefixes and principal; a new bucket on a MinIO or AWS S3 store the worker reaches (its endpoint spelled otherwise) gets no worker settings, a Ceph store behind a private CA, another AWS region and a MinIO store it does not reach get them, with the key's place marked, the secret's name and on AWS the note; before any report every store gets them, and an identity of another kind at the endpoint serves none; the listing from the newest report, the deletes from the newest ended one; MinIO's two policies named per profile with their `mc` commands, AWS S3's and Ceph's bucket policies (one shared by two profiles) with `put-bucket-policy`, `--endpoint-url` on Ceph; an unprotected profile's setting; no key, secret, role, KMS key or CA path. |
+| `catalog-server` `ReadinessUnreadPrefixesTest` (fast) | A scan that could not read its storage prefixes (item 275), through the real routes and guard over a stand-in store: readiness gives storage and store `unknown`, no `reported-at`, nothing of the scan before; a scan that read them and reached none leaves the storage `missing`; storage setup calls the worker's identity `unknown` with no worker settings after the first, `not-reported` with them after the second. |
 | `catalog-maintenance` `StorageReportTest` (fast) | Through `Storage.of` and stand-in stores: each scan reports, by kind and endpoint, a listing let, refused (AccessDenied, NoSuchBucket) or failed, and the deletes done and refused with the store's code, counted afresh each scan; no key, credential or store message in any report. |
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
 | `catalog-server` `MaintenanceEstateTest` (fast) | Every table: a row for each table the caller may select and none for another; its assessment; a hold or freeze from any level above; a closed table counted only for a caller whose grants give select; fixed last night only by a compaction that succeeded; paging, the 500-row page and the 2,000 tables a page looks at. |
@@ -518,3 +522,12 @@ Storage setup (backlog 253) has two bites, each against `StorageSetupRoutesTest`
 - `bites/D18/storage-setup-open`: anyone signed in reads it, and no refusal is audited.
 - `bites/D30/storage-setup-settings-for-a-reached-store`: every profile gets the worker's settings, a bucket on a store
   the worker already reaches among them.
+
+A scan that could not read its storage prefixes (item 275) has three bites in `bites/D30/`:
+
+- `worker-unread-prefixes-reported-as-none` (`WorkerPrefixesTest`): the worker reports such a scan as reaching no
+  store.
+- `readiness-unread-scan-skipped` (`ReadinessUnreadPrefixesTest`): readiness and storage setup skip it and judge by
+  the scan before.
+- `storage-setup-settings-after-unread-scan` (`ReadinessUnreadPrefixesTest`): storage setup gives the worker's settings
+  after it.

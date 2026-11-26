@@ -2,15 +2,14 @@ Breaks: a scan whose read of the storage prefixes fails still claims purges and 
 Module: catalog-maintenance
 Test: WorkerPrefixesTest#aFailedReadListsAndDeletesNothingThatScan
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-index d0621eef..99156157 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-@@ -250,7 +250,7 @@ final class Worker implements AutoCloseable {
-             LOG.warn("Cannot read the storage prefixes the catalog gives the worker: it lists and deletes nothing"
-                     + " this scan", e);
-             report.failed(ScanReport.Failure.STORAGE_PREFIXES, "reading the storage prefixes", e);
--            return false;
-+            return true;
-         }
-         Prefixes reached = storage.reach(profiles);
-         logChanges(reached);
+@@ -163,7 +163,7 @@
+         // catalog gives at this scan (backlog 250). A scan that could not read them reports no storage at all, so the
+         // catalog does not take it for one that read them and reaches none (item 275).
+         Optional<Prefixes> reached = reach(report);
+-        boolean reaches = reached.filter(prefixes -> !prefixes.isEmpty()).isPresent();
++        boolean reaches = reached.isEmpty() || !reached.get().isEmpty();
+         health.scanStarted(id, now, reached.map(read -> storage.check()), report);
+         boolean ended = false;
+         Optional<String> error = Optional.empty();

@@ -1,0 +1,15 @@
+Breaks: a scan that could not read its storage prefixes reports that it reaches no store, as one that read them and reached none does, so readiness says the worker's storage is missing (item 275).
+Module: catalog-maintenance
+Test: WorkerPrefixesTest#aFailedReadListsAndDeletesNothingThatScan
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Management.java b/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
+@@ -342,7 +342,7 @@
+         ObjectNode kinds = body.putObject("failures");
+         failures.forEach(kinds::put);
+         error.ifPresent(message -> body.put("error", message));
+-        storage.ifPresent(reached -> {
++        storage.or(() -> Optional.of(List.of())).ifPresent(reached -> {
+             ArrayNode stores = body.putArray("storage");
+             Map<List<Object>, ArrayNode> byIdentity = new LinkedHashMap<>();
+             reached.forEach(reach -> {

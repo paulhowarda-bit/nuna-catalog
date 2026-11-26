@@ -1,0 +1,16 @@
+Breaks: a token request the identity provider answers with a 4xx, a wrong client or secret, is sent again for 30 s like one it cannot answer (item 275).
+Module: catalog-maintenance
+Test: TokenSourceTest#a4xxFailsAtOnce
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java b/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
+@@ -173,9 +173,6 @@
+                     }
+                     failure = new IllegalStateException("the token endpoint " + settings.endpoint() + " answered "
+                             + response.statusCode());
+-                    if (response.statusCode() < 500) {
+-                        throw failure;
+-                    }
+                 } catch (IOException e) {
+                     failure = new UncheckedIOException("cannot reach the token endpoint " + settings.endpoint(), e);
+                 } catch (InterruptedException e) {

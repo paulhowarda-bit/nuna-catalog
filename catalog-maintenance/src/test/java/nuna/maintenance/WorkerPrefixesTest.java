@@ -7,6 +7,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -34,7 +35,8 @@ import org.slf4j.LoggerFactory;
 /**
  * The worker reads its storage prefixes from the catalog at each scan (item 256; D30, amended 2026-11-24). A scan whose
  * read fails, or names no prefix, lists and deletes nothing: its storage keeps no earlier answer, and the scan claims
- * no purge and deletes no due file. The prefix set is logged at the first read and whenever it changes, each new
+ * no purge and deletes no due file. One whose read fails reports no storage to the catalog, and one that reads none
+ * reports none reached (item 275). The prefix set is logged at the first read and whenever it changes, each new
  * prefix at WARN, and each profile the worker refuses once, at WARN.
  *
  * <p>Needs only Java: the catalog is a stand-in on the JDK's HTTP server, and the worker's own storage is the real
@@ -46,10 +48,13 @@ class WorkerPrefixesTest {
     private static final String TABLE = PREFIX + "/ns/t";
     private static final Map<String, WorkerSettings.Store> STORES = Map.of("lake", new WorkerSettings.Store(
             StoreKind.MINIO, URI.create("http://store.invalid:9000"), "us-east-1", "nuna-maintenance", "secret", null));
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final String ERROR = "{\"error\":{\"message\":\"down\",\"type\":\"ServiceUnavailable\","
             + "\"code\":503}}";
 
     private final List<String> calls = new CopyOnWriteArrayList<>();
+    /** The bodies of the worker's scan reports, start and end. */
+    private final List<String> scanReports = new CopyOnWriteArrayList<>();
     private final ListAppender<ILoggingEvent> log = new ListAppender<>();
     private final Logger workerLog = (Logger) LoggerFactory.getLogger(Worker.class);
     private HttpServer catalog;
@@ -88,6 +93,8 @@ class WorkerPrefixesTest {
                     .isInstanceOf(IllegalStateException.class);
         }
         assertThat(calls).as("the work list read").contains("GET /management/v1/maintenance/work?section=tables");
+        assertThat(scanReports).as("its start and end report no storage: what it reaches is not known (item 275)")
+                .hasSize(2).allSatisfy(report -> assertThat(JSON.readTree(report).has("storage")).isFalse());
     }
 
     @Test
@@ -105,6 +112,8 @@ class WorkerPrefixesTest {
                     .isInstanceOf(IllegalStateException.class);
         }
         assertThat(calls).as("the work list read").contains("GET /management/v1/maintenance/work?section=tables");
+        assertThat(scanReports).as("its start and end report that it reaches nothing").hasSize(2)
+                .allSatisfy(report -> assertThat(JSON.readTree(report).get("storage").isEmpty()).isTrue());
     }
 
     /** A purge and a due deletion beneath the prefix, which the storage reached at an earlier scan. */
@@ -224,6 +233,10 @@ class WorkerPrefixesTest {
                     default -> "{\"" + section + "\":[]}";
                 });
             } else if (exchange.getRequestMethod().equals("PUT") && path.startsWith("/management/v1/maintenance/")) {
+                String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                if (path.startsWith("/management/v1/maintenance/scans/")) {
+                    scanReports.add(body);
+                }
                 answer(exchange, 204, null);
             } else {
                 answer(exchange, 404, "{\"error\":{\"message\":\"no route " + path + "\",\"type\":\"NotFound\","

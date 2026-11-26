@@ -1,0 +1,15 @@
+Breaks: a token request the identity provider cannot answer, or answers with a 5xx, fails at once, so the worker's first scan after a restart of it or of the identity provider reads no storage prefixes (item 275).
+Module: catalog-maintenance
+Test: TokenSourceTest#anIdentityProviderThatCannotBeReachedOrAnswers5xxIsAskedAgainUntilItAnswers
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java b/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
+@@ -181,7 +181,7 @@
+                 } catch (InterruptedException e) {
+                     throw interrupted(e);
+                 }
+-                if (!clock.instant().plus(wait).isBefore(deadline)) {
++                if (true) {
+                     throw failure;
+                 }
+                 LOG.warn("Asking the token endpoint again in {}: {}", wait, failure.getMessage());

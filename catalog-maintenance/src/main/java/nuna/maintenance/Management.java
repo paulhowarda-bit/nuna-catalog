@@ -331,10 +331,10 @@ final class Management {
      * Reports a scan's start, or with {@code outcome} ({@code succeeded} or {@code failed}) its end: the failed jobs
      * by kind, and why a failed scan failed. A scan that has ended keeps its end. And what the store let the worker
      * do beneath each prefix (backlog 250), by storage identity, its kind and endpoint, the prefixes under it: never a
-     * key, an object or the store's message.
+     * key, an object or the store's message; no storage at all when the scan could not read its prefixes (item 275).
      */
     void reportScan(UUID id, Instant started, Optional<Instant> ended, Optional<String> outcome,
-                    Map<String, Integer> failures, Optional<String> error, List<Storage.Reach> storage) {
+                    Map<String, Integer> failures, Optional<String> error, Optional<List<Storage.Reach>> storage) {
         ObjectNode body = JSON.createObjectNode();
         body.put("started-at", started.toString());
         ended.ifPresent(at -> body.put("ended-at", at.toString()));
@@ -342,23 +342,25 @@ final class Management {
         ObjectNode kinds = body.putObject("failures");
         failures.forEach(kinds::put);
         error.ifPresent(message -> body.put("error", message));
-        ArrayNode stores = body.putArray("storage");
-        Map<List<Object>, ArrayNode> byIdentity = new LinkedHashMap<>();
-        storage.forEach(reach -> {
-            ArrayNode prefixes = byIdentity.computeIfAbsent(List.of(reach.kind(), reach.endpoint()), identity -> {
-                ObjectNode store = stores.addObject();
-                store.put("kind", reach.kind());
-                reach.endpoint().ifPresent(endpoint -> store.put("endpoint", endpoint.toString()));
-                return store.putArray("prefixes");
+        storage.ifPresent(reached -> {
+            ArrayNode stores = body.putArray("storage");
+            Map<List<Object>, ArrayNode> byIdentity = new LinkedHashMap<>();
+            reached.forEach(reach -> {
+                ArrayNode prefixes = byIdentity.computeIfAbsent(List.of(reach.kind(), reach.endpoint()), identity -> {
+                    ObjectNode store = stores.addObject();
+                    store.put("kind", reach.kind());
+                    reach.endpoint().ifPresent(endpoint -> store.put("endpoint", endpoint.toString()));
+                    return store.putArray("prefixes");
+                });
+                ObjectNode prefix = prefixes.addObject();
+                prefix.put("prefix", reach.prefix());
+                prefix.put("listed", reach.listed().name().toLowerCase(Locale.ROOT));
+                reach.listCode().ifPresent(code -> prefix.put("list-code", code));
+                prefix.put("deleted", reach.deleted());
+                prefix.put("delete-refused", reach.deleteRefused());
+                prefix.put("delete-failed", reach.deleteFailed());
+                reach.deleteCode().ifPresent(code -> prefix.put("delete-code", code));
             });
-            ObjectNode prefix = prefixes.addObject();
-            prefix.put("prefix", reach.prefix());
-            prefix.put("listed", reach.listed().name().toLowerCase(Locale.ROOT));
-            reach.listCode().ifPresent(code -> prefix.put("list-code", code));
-            prefix.put("deleted", reach.deleted());
-            prefix.put("delete-refused", reach.deleteRefused());
-            prefix.put("delete-failed", reach.deleteFailed());
-            reach.deleteCode().ifPresent(code -> prefix.put("delete-code", code));
         });
         expect("the report of scan " + id, send("PUT", "management/v1/maintenance/scans/" + id, body), 204);
     }
