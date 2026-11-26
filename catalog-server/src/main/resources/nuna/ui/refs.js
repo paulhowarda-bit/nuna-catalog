@@ -337,9 +337,9 @@ function keptChips(c, o) {
 /**
  * Who took an object out of a ref, and when, from the `nuna.catalog.ref` records about the object, for a caller who
  * reads the feed: null otherwise, when the feed refuses, or when no record it reaches says so. The feed's subject
- * filter (item 169) keeps the records about the object, each an `OBJECT_REMOVED` of one ref it left; a page that
- * stopped short searches on. A feed without the filter ignores it and lists every ref's records, which the match
- * below (this ref's id, the action, the object's id) sorts the same, over fewer of them.
+ * filter (backlog 169) keeps the ref records whose tables name the object, by their `subject_ids`: its removal from
+ * each ref it left, and any merge that moved it; a page that stopped short searches on. The match below picks this
+ * ref's removal, and holds the same over a feed that has no such filter and lists every ref's records.
  */
 async function takenOutBy(c, r, objectId) {
   if (!r.id || !auditOpen(c)) return null;

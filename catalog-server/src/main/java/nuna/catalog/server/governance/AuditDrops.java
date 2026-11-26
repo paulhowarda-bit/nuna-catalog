@@ -55,8 +55,11 @@ final class AuditDrops implements RefRoutes.Drops {
         }
         Optional<AuditRow> row;
         try {
+            // No branch or subject filter (backlog 169): a drop happens on main only, and the object's id is asked
+            // for directly (backlog 197).
             row = feed.page(new EventsReader.Query(catalog.name(), Set.of(EventType.DROP.typeName()), null,
-                            named.path(), at.get(), at.get().plus(WINDOW), Optional.empty(), ROWS)).page().rows()
+                            named.path(), null, null, at.get(), at.get().plus(WINDOW), Optional.empty(), ROWS,
+                            object.id().toString())).page().rows()
                     .stream().filter(each -> object.id().toString().equals(each.objectId())).findFirst();
         } catch (RuntimeException e) {
             LOG.debug("the drop of {} could not be read from the audit table: {}", object.id(), e.getMessage());
