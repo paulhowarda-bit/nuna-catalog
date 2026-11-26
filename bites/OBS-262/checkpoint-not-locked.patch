@@ -3,16 +3,16 @@ Module: catalog-audit
 Test: LockedArchiveTest#writerLocksSegmentsAndCheckpoints
 
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
-index fdccf1d2..0c126bbe 100644
+index cbed83bf..2c0a673e 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
-@@ -266,7 +266,8 @@ public final class ObjectLockArchive {
+@@ -268,7 +268,8 @@ public final class ObjectLockArchive {
+      */
      public Stored writeCheckpoint(Instant at, byte[] json) {
          String key = prefix + "/" + CHECKPOINTS + "/" + CHECKPOINT_TIME.format(at) + ".json";
-         Instant now = clock.instant();
--        return new Stored(key, locked(key, "application/json", Map.of(), json, now), now);
-+        return new Stored(key, s3.putObject(b -> b.bucket(bucket).key(key).contentType("application/json"),
-+                RequestBody.fromBytes(json)).versionId(), now);
+-        String version = locked(key, "application/json", Map.of(), json, clock.instant());
++        String version = s3.putObject(b -> b.bucket(bucket).key(key).contentType("application/json"),
++                RequestBody.fromBytes(json)).versionId();
+         return new Stored(key, version, takenAt(key, version));
      }
  
-     /** The checkpoints after the one keyed {@code afterKey}, oldest first; every checkpoint when it is null. */

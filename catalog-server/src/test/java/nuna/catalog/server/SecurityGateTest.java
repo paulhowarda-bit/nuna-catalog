@@ -4,9 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.JWTClaimsSet;
+import nuna.catalog.audit.Actor;
 import nuna.catalog.audit.AuthFailure;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Denial;
+import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.GovernanceChange;
 import nuna.catalog.audit.MaintenanceExemption;
 import nuna.catalog.core.Names;
 import nuna.catalog.store.CatalogObject;
@@ -803,9 +806,17 @@ class SecurityGateTest {
                 .orElseThrow();
     }
 
+    /**
+     * Sets an attribute straight in the store. Its outbox entry is a real catalog event: the relay stops at an entry
+     * the codec cannot read, and every audit line after it would never be written.
+     */
     private void attribute(Securable target, GovernanceAttribute.Kind kind, String value) {
-        Change change = new Change(UUID.randomUUID(), Instant.now(), List.of(new OutboxEvent("test.setup", "{}")),
-                Optional.empty());
+        CatalogEvent event = CatalogEvent.create(URI.create("urn:nuna:test:gate-setup"), Instant.now(),
+                new GovernanceChange(GovernanceChange.Action.SET, new nuna.catalog.audit.Securable(
+                        nuna.catalog.audit.Securable.Kind.valueOf(target.kind().name()), target.id(), "gate",
+                        List.of()), kind.name().toLowerCase(), value, "test", new Actor("test", null, "catalog-server", "gate-setup")));
+        Change change = new Change(UUID.randomUUID(), Instant.now(), List.of(new OutboxEvent(event.type().typeName(),
+                new String(EventCodec.encode(event), StandardCharsets.UTF_8))), Optional.empty());
         assertThat(store.putAttribute(new GovernanceAttribute(target, kind, value, "test", "gate-setup",
                 Instant.now()), change)).isEqualTo(WriteResult.APPLIED);
     }

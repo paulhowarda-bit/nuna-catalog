@@ -3,14 +3,14 @@ Module: catalog-audit-tables
 Test: EventsReaderTest#aTableMadeBeforeTheLogColumnsIsGivenThemAndItsEarlierRowsReadNullThere
 
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
-index 2193e655..9187a045 100644
+index efd82106..59265a73 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
-@@ -142,7 +142,6 @@ final class EventsTable {
+@@ -172,7 +172,6 @@ final class EventsTable {
+         List<Types.NestedField> absent = ADDED.stream().filter(c -> table.schema().findField(c.name()) == null)
                  .toList();
          if (!absent.isEmpty()) {
-             UpdateSchema update = table.updateSchema();
 -            absent.forEach(c -> update.addColumn(c.name(), c.type(), c.doc()));
              update.commit();
          }
-         for (Types.NestedField expected : SCHEMA.columns()) {
+     }
