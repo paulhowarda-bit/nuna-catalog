@@ -408,7 +408,7 @@ export async function exportDialog(target, objectId) {
   const at = target.ref ? '@' + target.ref : '';
   const dlg = openDialog(`Export ${lastWord(target)}${at}`, h('div', null,
     h('p', null, (target.ref ? `The metadata, every snapshot and snapshot ref, and the commit journal of this ${target.kind} as ${at} reads it,`
-      : 'The current metadata, every snapshot and ref, and the catalog\'s commit journal for this ' + target.kind + ',')
+      : 'The current metadata, every snapshot and snapshot ref, and the catalog\'s commit journal for this ' + target.kind + ',')
       + ' as one JSON file. The data files stay where they are; a restore registers it again from this file.'), out), {wide: true});
   await load(out, async () => {
     const x = await api.exportObject(target.catalog, await objectId(), target.ref);
