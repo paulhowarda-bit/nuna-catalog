@@ -9,6 +9,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -51,6 +52,9 @@ import org.testcontainers.utility.MountableFile;
 class ConsoleSignInTest {
 
     static final String ISSUER_ORIGIN = "http://keycloak:8080";
+    /** Keycloak's admin's and ana's passwords, made per run; the realm takes ana's as NUNA_TEST_PASSWORD. */
+    static final String ADMIN_PASSWORD = "pw-" + UUID.randomUUID();
+    static final String PASSWORD = "pw-" + UUID.randomUUID();
     static final String ISSUER = ISSUER_ORIGIN + "/realms/console";
     static final int CONSOLE_PORT = 8181;
     static final String GROUP = "console-users";
@@ -68,7 +72,8 @@ class ConsoleSignInTest {
                 .withNetwork(NETWORK)
                 .withNetworkAliases("keycloak")
                 .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
-                .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+                .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", ADMIN_PASSWORD)
+                .withEnv("NUNA_TEST_PASSWORD", PASSWORD)
                 .withEnv("JAVA_OPTS_KC_HEAP", "-Xms64m -Xmx512m")
                 .withCopyFileToContainer(MountableFile.forClasspathResource("keycloak/console-realm.json"),
                         "/opt/keycloak/data/import/console-realm.json")
@@ -127,7 +132,7 @@ class ConsoleSignInTest {
 
         // Keycloak's own page: the console never sees the password.
         driver.findElement(By.id("username")).sendKeys("ana");
-        driver.findElement(By.id("password")).sendKeys("pw-ana");
+        driver.findElement(By.id("password")).sendKeys(PASSWORD);
         driver.findElement(By.id("kc-login")).click();
 
         // Back in the console with a token the catalog accepts: the catalog's own answers fill the page.
@@ -161,7 +166,7 @@ class ConsoleSignInTest {
         browser.open("/ui/");
         toTheIdp();
         driver.findElement(By.id("username")).sendKeys("ana");
-        driver.findElement(By.id("password")).sendKeys("pw-ana");
+        driver.findElement(By.id("password")).sendKeys(PASSWORD);
         driver.findElement(By.id("kc-login")).click();
         browser.awaitText(By.id("who"), "ana");
 

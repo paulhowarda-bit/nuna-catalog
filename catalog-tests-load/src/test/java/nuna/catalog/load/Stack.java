@@ -21,6 +21,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.testcontainers.kafka.KafkaContainer;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -47,7 +48,7 @@ final class Stack implements AutoCloseable {
     private static final String AUDIENCE = "nuna-catalog";
     /** The DR store's read-only user, as whom the verifier reads it (D37: a replica's keys may only read there). */
     private static final String DR_READER = "nuna-dr-reader";
-    private static final String DR_READER_SECRET = "nuna-dr-reader-secret";
+    private static final String DR_READER_SECRET = "sk-" + UUID.randomUUID();
 
     final PostgresCluster postgres;
     private final KafkaContainer kafka;

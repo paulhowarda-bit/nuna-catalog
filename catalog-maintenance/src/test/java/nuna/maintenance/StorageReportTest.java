@@ -48,8 +48,9 @@ import org.junit.jupiter.api.Test;
 class StorageReportTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final String ACCESS_KEY = "AKIAWORKERREPORTTEST";
-    private static final String SECRET = "worker-report-secret";
+    /** The store's keys, made per run so no credential-shaped literal sits in the source. */
+    private static final String ACCESS_KEY = "ak-" + UUID.randomUUID();
+    private static final String SECRET = "sk-" + UUID.randomUUID();
     private static final String LEDGER_KEY = "tables/ns/ledger/data/00001.parquet";
     private static final Pattern KEY = Pattern.compile("<Key>([^<]*)</Key>");
 
