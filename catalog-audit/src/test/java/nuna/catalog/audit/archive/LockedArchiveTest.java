@@ -158,7 +158,8 @@ class LockedArchiveTest {
         var retention = s3.getObjectRetention(b -> b.bucket(bucket).key(checkpoint.key())
                 .versionId(checkpoint.versionId())).retention();
         assertThat(retention.mode()).isEqualTo(ObjectLockRetentionMode.fromValue(mode.toString()));
-        assertThatThrownBy(() -> archive.writeCheckpoint(checkpoint.written(), "{}".getBytes()))
+        assertThatThrownBy(() -> archive.writeCheckpoint(
+                Checkpoint.parse(archive.read(checkpoint.key(), checkpoint.versionId())).at(), "{}".getBytes()))
                 .as("a second checkpoint at the same key is refused").isInstanceOf(S3Exception.class);
         assertThat(archive.segments(run.toString())).hasSize(3);
 
