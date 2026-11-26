@@ -1,0 +1,16 @@
+Breaks: the load availability page resolves as soon as its series stop, before NunaCatalogGone fires.
+Module: catalog-server
+Test: AlertRulesTest#theCatalogRulesPassTheirUnitTests
+
+diff --git a/deploy/grafana/rules/nuna-catalog.rules.yaml b/deploy/grafana/rules/nuna-catalog.rules.yaml
+index 75511dba..e594fea2 100644
+--- a/deploy/grafana/rules/nuna-catalog.rules.yaml
++++ b/deploy/grafana/rules/nuna-catalog.rules.yaml
+@@ -209,7 +209,6 @@ groups:
+               / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome=~"2xx|3xx|5xx"}[30m]))
+             ) > 6 * 0.001
+           )
+-        keep_firing_for: 10m
+         labels:
+           severity: page
+         annotations:

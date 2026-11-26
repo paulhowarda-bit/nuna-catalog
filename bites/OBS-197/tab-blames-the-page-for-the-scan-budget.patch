@@ -1,0 +1,17 @@
+Breaks: an object's Audit tab, when the audit table's reader ran out of scan budget, offers a larger page, which would find nothing more.
+Module: catalog-server
+Test: ConsoleBrowserTest#anObjectsAuditTabSaysItsRecordsCameFromTheAuditTable
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index e5ea67bc..03b36c53 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -732,7 +732,7 @@ export function auditTab(target, {title} = {}) {
+       // Not complete: a full page may have older records behind it; a shorter one means the reader's scan budget ran
+       // out, which a larger page would not help.
+       ['Complete', body.complete ? 'Yes: every record about it is shown, up to about a minute ago.'
+-        : [h('b', null, 'No.'), records.length < asked
++        : [h('b', null, 'No.'), false
+           ? ' Only the newest part of the audit table was searched: search the SIEM for the full trail.'
+           : asked < 200 ? ' There may be older records about it: show the latest 200, or search the SIEM for the full trail.'
+             : ' There may be older records about it: search the SIEM for the full trail.']],

@@ -19,7 +19,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "pw-d1001",
+          "value": "${NUNA_TEST_PASSWORD}",
           "temporary": false
         }
       ],

@@ -1,0 +1,17 @@
+Breaks: an object's Audit tab reads only the audit topic, so on a server without Kafka it answers 503 though the audit table holds its records.
+Module: catalog-server
+Test: AuditFeedRoutesTest#withoutKafkaAnObjectsAuditTabReadsItsRecordsFromTheAuditTable
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index 7f8aeb58..cde045a8 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -122,7 +122,7 @@ class AuditReadRoutes {
+                 prefix, namespace, table, view);
+         guard.require(request, target, "readAudit", Privilege.MANAGE_GRANTS);
+         int wanted = limit(limit);
+-        boolean fromTable = feed.auditCatalog().isPresent();
++        boolean fromTable = false;
+         if (!fromTable && !recent.configured()) {
+             throw CatalogError.of(503, "ServiceUnavailableException", "Neither the audit tables"
+                     + " (nuna.audit.tables.catalog) nor the audit topic (nuna.audit.kafka-bootstrap-servers) is"

@@ -20,6 +20,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import javax.net.ssl.KeyManagerFactory;
@@ -35,7 +36,8 @@ import javax.net.ssl.SSLContext;
  */
 public final class PrivateCa {
 
-    private static final String PASSWORD = "nuna-test";
+    /** The key files' password: they live only in the CA's temporary folder, read by this JVM. */
+    private static final String PASSWORD = UUID.randomUUID().toString();
     private static PrivateCa shared;
 
     /** The CA's certificate as a PEM file. */

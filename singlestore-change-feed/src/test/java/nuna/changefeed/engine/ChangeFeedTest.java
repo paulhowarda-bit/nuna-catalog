@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.UUID;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -44,6 +45,8 @@ class ChangeFeedTest {
     static final TableIdentifier COPY = TableIdentifier.of(Namespace.of("it", "ops"), "orders");
     static final TableIdentifier FILLS = TableIdentifier.of(Namespace.of("it", "ops"), "fills");
     static final Duration WAIT = Duration.ofSeconds(90);
+    /** SingleStore's root password, made per run. */
+    static final String ROOT_PASSWORD = "pw-" + UUID.randomUUID();
 
     static GenericContainer<?> singlestore;
     static String url;
@@ -55,7 +58,7 @@ class ChangeFeedTest {
     @BeforeAll
     static void start() throws SQLException {
         singlestore = new GenericContainer<>(DockerImageName.parse("ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88"))
-                .withEnv("ROOT_PASSWORD", "it-root")
+                .withEnv("ROOT_PASSWORD", ROOT_PASSWORD)
                 .withEnv("SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES", "1")
                 .withExposedPorts(3306)
                 .withCreateContainerCmdModifier(cmd -> cmd.getHostConfig().withMemory(3L << 30))
@@ -209,7 +212,7 @@ class ChangeFeedTest {
         Map<String, String> props = new HashMap<>();
         props.put("singlestore.url", url);
         props.put("singlestore.user", "root");
-        props.put("singlestore.password", "it-root");
+        props.put("singlestore.password", ROOT_PASSWORD);
         props.put("singlestore.database", "ops");
         props.put("singlestore.table", table);
         props.put("singlestore.append-only", String.valueOf(appendOnly));
