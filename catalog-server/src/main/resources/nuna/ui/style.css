@@ -488,7 +488,7 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
   .nc-nav { display: none; }
   .nc-top { gap: 10px; padding: 0 12px; }
   .nc-brand { min-width: 0; }
-  .nc-go, .nc-who .who-text, .nc-top .seg, .nc-top .signout, .nc-pick .lbl { display: none; }
+  .nc-go, .nc-who .who-text, .nc-top .seg, .nc-top .signout { display: none; }
   .nc-menu { display: inline-flex; }
   .nc-main { padding: 16px 14px 24px; gap: 14px; }
   .ph { grid-template-columns: minmax(0, 1fr); }
@@ -1324,6 +1324,22 @@ details.tech[open] > summary { margin-bottom: 4px; }
   .nc-top .signout .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 8ch; }
 }
+
+/* The header on a phone (backlog 297; Atelier, 2026-11-26): the brand shows whole from 521 px and not at all below; the
+   catalog and ref names share the room and end in an ellipsis; the note that a page shows main only hangs under the
+   header as a strip, and the page moves down to clear it. */
+@container frame (max-width: 760px) {
+  .nc-top { gap: 8px; }
+  .nc-brand { flex: none; }
+  .nc-top .nc-pick .lbl { display: inline; position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .pick-wrap, .reading-slot, .reading-slot .ref-wrap, .nc-top .ref-pick .cref { min-width: 0; }
+  .nc-pick, .nc-top .ref-pick { max-width: 100%; padding: 0 8px; gap: 4px; }
+  .nc-top .ref-pick .cref .at { display: none; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm { min-width: 0; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .reading-slot .main-only { position: absolute; top: calc(100% + 1px); left: 0; right: 0; height: 28px; display: flex; align-items: center; margin: 0; padding: 0 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nc-app:has(.reading-slot .main-only) .slot > .nc-main { padding-top: 44px; }
+}
+@container frame (max-width: 520px) { .nc-brand { display: none; } }
 
 /* Row filters and column masks (backlog 243): five figures on the Governance page, and the rule dialog's fields. */
 .kpis.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
