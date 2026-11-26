@@ -17,8 +17,8 @@ import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceS
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
-import {fillKeptSlots} from './kept.js';
-import {droppedThroughRef, missingWords, readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
+import {fillKeptSlots, keptPanel} from './kept.js';
+import {droppedThroughRef, missingWords, readingRef, readOnlyNote, refChrome, refNote, replacedGuard} from './refs.js';
 import {closedNote, openingTab, trailOpen, trailWords} from './access.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
@@ -87,6 +87,14 @@ async function throughRef(target, loaded, what, draw) {
     await loaded();
   } catch (error) {
     if (noLiveRef(error)) return null;
+  }
+  // Main's path naming a newer table than the one the ref keeps: its data would be that table's (item 170).
+  const replaced = what && await replacedGuard(target, {health: 'maintenance', access: 'access', audit: 'audit'}[what]);
+  if (replaced) {
+    // On Access, item 279's panel for the table the ref keeps, beneath the line, in the slot 170 leaves.
+    const slot = $('[data-kept-panel][data-tab="access"]', replaced);
+    if (slot) fill(slot, await keptPanel(target));
+    return replaced;
   }
   return [what ? refNote(await readingRef(target.catalog, target.ref) || target.ref, what) : null, await draw()];
 }

@@ -890,6 +890,53 @@ class RefRoutesTest {
     }
 
     /**
+     * Each lookup of who dropped a table is a query of the audit table that the feed's rate limit does not see, so one
+     * answer looks up the newest five drops only, and each one past them says it was left out (the Nuna Security
+     * Expert's review of backlog 170).
+     */
+    @Test
+    void whoDroppedItIsLookedUpForTheNewestFiveDropsOnlyAndTheRestSayItWasLeftOut() {
+        List<CatalogObject> drops = new ArrayList<>();
+        for (int i = 1; i <= RefRoutes.DROPPERS_READ + 2; i++) {
+            CatalogObject each = dropped(object(hr, "Staff"), NOW.minus(DAY.multipliedBy(i)));
+            droppers.put(each.id(), new RefRoutes.Dropper("lee", null));
+            drops.add(each);
+        }
+        caller = SUE;
+
+        JsonNode objects = kept("hr", "staff").get("objects");
+
+        assertThat(objects.valueStream().filter(o -> o.has("dropped-by")).map(o -> o.get("id").asString()).toList())
+                .containsExactlyElementsOf(drops.subList(0, RefRoutes.DROPPERS_READ).stream()
+                        .map(o -> o.id().toString()).toList());
+        assertThat(objects.valueStream().filter(o -> o.path("dropped-by-left-out").asBoolean())
+                .map(o -> o.get("id").asString()).toList())
+                .containsExactlyElementsOf(drops.subList(RefRoutes.DROPPERS_READ, drops.size()).stream()
+                        .map(o -> o.id().toString()).toList());
+        assertThat(droppersAsked).hasSize(RefRoutes.DROPPERS_READ);
+        assertThat(kept("hr", "staff").has("cut-short")).isFalse();
+    }
+
+    /**
+     * The store has no lookup of dropped objects by name, so the read walks the namespace's dropped ones: at most
+     * {@link RefRoutes#KEPT_WALK_LIMIT}, past which the answer says it was cut short and gives what it found.
+     */
+    @Test
+    void theWalkOfANamespacesDroppedObjectsStopsAtItsLimitAndSaysSo() {
+        CatalogObject wanted = dropped(staff, NOW.minus(DAY));
+        for (int i = 0; i < RefRoutes.KEPT_WALK_LIMIT; i++) {
+            dropped(object(hr, "other" + i), NOW.minus(DAY));
+        }
+        caller = SUE;
+
+        JsonNode answer = kept("hr", "staff");
+
+        assertThat(answer.get("cut-short").asBoolean()).isTrue();
+        assertThat(answer.get("objects").valueStream().map(o -> o.get("id").asString()).toList())
+                .containsExactly(wanted.id().toString());
+    }
+
+    /**
      * Each ref that keeps a table says its kind and expiry; a branch past its expiry still keeps it until the worker
      * ends it, and says so; a branch that changed it gives its own version. Who made a ref is left out. Purged and
      * unregistered tables are no longer the catalog's to read.

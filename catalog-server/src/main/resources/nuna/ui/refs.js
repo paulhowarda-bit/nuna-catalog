@@ -305,7 +305,11 @@ export async function readingRef(c, name) {
 /** The tables and views at a target's path, live or dropped, newest first, with the refs that keep each; null if unread. */
 async function keptAt(target) {
   try {
-    return (await api.objectRefs(target)).objects || [];
+    const answer = await api.objectRefs(target);
+    const objects = answer.objects || [];
+    // The catalog walked at most so many of the namespace's dropped tables (the Security Expert's review of 170).
+    objects.cutShort = !!answer['cut-short'];
+    return objects;
   } catch {
     return null;
   }
@@ -318,7 +322,7 @@ const pathOf = target => [...target.namespace, target.name].join('.');
 /** The pill beside the name, once however often the page draws its body. */
 function droppedPill(title, text) {
   const old = $('[data-dropped-pill]', title);
-  const mark = pill('bad', text);
+  const mark = pill('warn', text);
   mark.dataset.droppedPill = '';
   if (old) old.replaceWith(mark);
   else title.append(mark);
@@ -327,7 +331,7 @@ function droppedPill(title, text) {
 /** The refs that keep a dropped object, each a link to its page, joined by commas. */
 function keptChips(c, o) {
   return (o.refs || []).flatMap((x, i) => [i ? ', ' : null, h('a', {href: refHref(c, x.name), 'data-kept-ref': x.name},
-    cref(x, {warn: !!x.expired}))]);
+    cref(x, {warn: !!x.expired}), x.expired ? ' (past its expiry)' : null)]);
 }
 
 /**
@@ -369,17 +373,25 @@ export async function missingWords(target, title) {
   const c = target.catalog;
   const path = pathOf(target);
   if (!target.ref) {
-    const o = objects.find(x => x.state !== 'active');
-    if (!o) return null;
+    // Every table dropped at the path, newest first, each with the refs that keep it (Atelier's check, 2026-11-25).
+    const dropped = objects.filter(x => x.state !== 'active');
+    if (!dropped.length) return null;
     droppedPill(title, 'Dropped on main');
-    const who = o['dropped-by'] && o['dropped-by'].principal;
-    const kept = (o.refs || []).length;
     return h('div', {class: 'notice kept-note', id: 'dropped-on-main', 'data-kept': 'dropped-main'}, icon('info'), h('div', null,
-      h('p', null, who ? `${who} dropped it on ${refAt(o['dropped-at'])}.` : `It was dropped on ${refAt(o['dropped-at'])}.`,
-        ' Main has no such table.', kept ? [' A ref made before then still keeps it: ', ...keptChips(c, o), '.']
-          : ' No branch or tag keeps it. Cleanup can purge it and delete its files.'),
-      // Item 279 draws here its control to take the table out of these refs (may-remove) or its steward line.
-      kept ? h('div', {class: 'kept-acts', 'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)}) : null));
+      dropped.map((o, i) => {
+        const who = o['dropped-by'] && o['dropped-by'].principal;
+        const t = refAt(o['dropped-at']);
+        const kept = (o.refs || []).length;
+        const opening = i === 0 ? [who ? `${who} dropped it on ${t}.` : `It was dropped on ${t}.`, ' Main has no such table.']
+          : [who ? `${who} dropped an earlier table at this path on ${t}.` : `An earlier table at this path was dropped on ${t}.`];
+        return h('div', {class: 'kept-object', 'data-kept-object': o.id}, h('p', null, ...opening,
+          kept ? [' Still kept by ', ...keptChips(c, o), '.'] : ' No branch or tag keeps it. Cleanup can purge it and delete its files.'),
+        // Item 279 draws here its control to take this table out of these refs (may-remove) or its steward line.
+        kept ? h('div', {class: 'kept-acts', 'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)}) : null);
+      }),
+      // A drop past the newest five has `dropped-by-left-out` and no actor: it takes the words without one, above.
+      objects.cutShort ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog stopped looking before it had read every '
+        + 'dropped table in this namespace, so an earlier table at this path may be missing here.') : null));
   }
   const r = await readingRef(c, target.ref);
   const cut = r && cutOf(r);
@@ -404,24 +416,62 @@ export async function missingWords(target, title) {
 }
 
 /**
- * A table read through a ref that main has dropped since (item 170): the pill beside its name and what the page says
- * under the band, or null when main still has it or this ref does not keep it.
+ * The table a ref keeps at a target's path that main has dropped (`o`), and main's live table now at that path, if any
+ * (`now`, a different table); null when the ref keeps none dropped. Read through a ref only.
+ */
+async function droppedKept(target) {
+  if (!target.ref || target.kind !== 'table') return null;
+  const objects = await keptAt(target);
+  const o = (objects || []).find(x => keeps(x, target.ref));
+  if (!o || o.state === 'active') return null;
+  return {o, now: objects.find(x => x.state === 'active' && x.id !== o.id) || null};
+}
+
+const onMain = (target, tab) => objectHref({...target, ref: null}, tab);
+
+/** "…until it is taken out of every branch and tag that keeps it.", "taken out of" a link to Access through the ref. */
+const untilTakenOut = target => [' It stays readable here, and its files stay, until it is ',
+  h('a', {href: objectHref(target, 'access'), 'data-kept-link': ''}, 'taken out of'), ' every branch and tag that keeps it.'];
+
+/**
+ * A table read through a ref that main has dropped since (item 170; Atelier's check, 2026-11-25): the pill beside its
+ * name and what the page says under the band, or null when main still has it or this ref does not keep it. Where main
+ * has made a new table by that name since, the note says main's is a different table and links to it.
  */
 export async function droppedThroughRef(target, title) {
-  if (!target.ref) return null;
-  const objects = await keptAt(target);
-  if (!objects || objects.some(x => x.state === 'active')) return null;
-  const o = objects.find(x => keeps(x, target.ref));
-  if (!o) return null;
+  const found = await droppedKept(target);
+  if (!found) return null;
+  const {o, now} = found;
   droppedPill(title, `Dropped on main ${dayMon(o['dropped-at'])}`);
   const who = o['dropped-by'] && o['dropped-by'].principal;
   const path = pathOf(target);
   const t = refAt(o['dropped-at']);
+  if (now) {
+    return h('div', {class: 'notice kept-note', id: 'replaced-on-main', 'data-kept': 'replaced'}, icon('info'), h('span', null,
+      who ? `${who} dropped ${path} on main on ${t}, and main made a new table by that name on ${refAt(now['made-at'])}.`
+        : `${path} was dropped on main on ${t}, and main made a new table by that name on ${refAt(now['made-at'])}.`,
+      ` @${target.ref} still keeps the old one, so this page reads the table as it was. `,
+      h('a', {href: onMain(target, null), 'data-main-table': ''}, `Main's ${path}`), ' is a different table.', ...untilTakenOut(target)));
+  }
   return h('div', {class: 'notice kept-note', id: 'dropped-through-ref', 'data-kept': 'dropped-ref'}, icon('info'), h('span', null,
     who ? `${who} dropped ${path} on main on ${t}.` : `${path} was dropped on main on ${t}.`,
-    ` @${target.ref} was made before then, so it still reads the table as it was; main answers 404 for it.`,
-    ' It stays readable here, and its files stay, until it is ', h('a', {href: objectHref(target, 'access'), 'data-kept-link': ''},
-      'taken out of'), ' every branch and tag that keeps it.'));
+    ` @${target.ref} still keeps it, so it reads the table as it was; main answers 404 for it.`, ...untilTakenOut(target)));
+}
+
+/**
+ * Access, Maintenance and Audit are main's, read by path: where main has a new table at the path of the one a ref
+ * keeps, they would show the new table's governance, health and trail on the old one's page. In that state each shows
+ * this line instead (Atelier, 2026-11-25), then an empty `[data-kept-panel]` named by the kept table's id, where item
+ * 279 draws its "Kept by branches and tags" panel on Access. Null in every other state. `tab` is the route's tab.
+ */
+export async function replacedGuard(target, tab) {
+  const found = await droppedKept(target);
+  if (!found || !found.now) return null;
+  const path = pathOf(target);
+  return h('div', {class: 'stack', id: 'main-tabs-replaced'}, h('div', {class: 'notice kept-note', 'data-kept': 'replaced-tab'},
+    icon('info'), h('span', null, `These tabs are main's, and main's ${path} is a different table from the one @${target.ref} reads. Open them on `,
+      h('a', {href: onMain(target, tab), 'data-main-tab': tab}, `main's ${path}`), '.')),
+  h('div', {'data-kept-panel': found.o.id, 'data-tab': tab}));
 }
 
 // ---- audit words for a ref's record ----
