@@ -688,7 +688,10 @@ function feedRow(r) {
   return row;
 }
 
-/** An object's recent audit records, read back from the audit topic: needs manage-grants on it. */
+/**
+ * An object's recent audit records: from the audit table where the server has one, which holds every record the log
+ * does, otherwise from the audit topic (backlog 197). Needs manage-grants on it.
+ */
 export function auditTab(target, {title} = {}) {
   const feed = h('div', {class: 'feed', 'data-feed': ''});
   const status = h('p', {class: 'fine feed-status', role: 'status'});
@@ -708,7 +711,9 @@ export function auditTab(target, {title} = {}) {
   const run = () => load(feed, async () => {
     const body = await api.recentAudit(target, limit.value);
     const records = body.records || [];
+    const fromTable = body.source === 'table';
     const w = body.window || {};
+    const t = body.table || {};
     const counts = {};
     for (const r of records) {
       const k = KIND_OF(String(r.type || '').replace(/^nuna\.catalog\./, ''));
@@ -722,7 +727,14 @@ export function auditTab(target, {title} = {}) {
       }}, label + ' ', h('span', {class: 'n'}, String(k === 'all' ? records.length : counts[k])))));
     const people = [...new Set(records.map(r => ((r.data || {}).actor || {}).principal).filter(Boolean))].sort();
     fill(who, h('option', {value: ''}, 'Anyone'), people.map(p => h('option', {value: p}, p)));
-    fill(windowBox, panel('How far back this goes', null, facts([
+    fill(windowBox, fromTable ? panel('How far back this goes', null, facts([
+      ['Complete', body.complete ? 'Yes: every record about it in the audit table is shown.'
+        : [h('b', null, 'No.'), ' The audit table holds older records: show more, or search the SIEM for the full trail.']],
+    ]), techDetails(facts([
+      ['Table', code(t.name || '')],
+      ['Written up to', t['committed-at'] ? at(t['committed-at']) : 'nothing written yet'],
+    ]), h('p', {class: 'fine window'}, `Read from the audit table ${t.name}, as its writer last committed it, about a minute behind.`)))
+    : panel('How far back this goes', null, facts([
       ['Complete', w.complete ? 'Yes: every record still kept is shown.'
         : [h('b', null, 'No.'), ' Older records may exist beyond the scanned window: search the SIEM for the full trail.']],
     ]), techDetails(facts([
@@ -732,7 +744,8 @@ export function auditTab(target, {title} = {}) {
     ]), h('p', {class: 'fine window'}, `Read from ${w.topic}, partition ${w.partition}, offsets ${w['from-offset']} to ${w['to-offset']}.`))));
     setTimeout(apply);
     return records.length ? records.map(feedRow)
-      : h('p', {class: 'muted feed-none'}, `No audit record about this ${target.kind} in the scanned window.`);
+      : h('p', {class: 'muted feed-none'}, fromTable ? `No audit record about this ${target.kind} in the audit table.`
+        : `No audit record about this ${target.kind} in the scanned window.`);
   });
   who.addEventListener('change', apply);
   limit.addEventListener('change', run);

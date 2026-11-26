@@ -2,7 +2,7 @@
 // kind, person, path and time, each record with its request id, where it was read from and its hash chain; the
 // last day's counts by kind and the busiest objects; and the archive check. These routes are for audit readers
 // only (D23): anyone else is shown the refusal as the catalog answered it, with the catalog's own records below,
-// read from Kafka as before, for those who manage its grants.
+// for those who manage its grants, read from the audit table, or from Kafka where there is none (backlog 197).
 
 import * as api from './api.js';
 import {at, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
