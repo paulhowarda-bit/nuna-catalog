@@ -1,0 +1,22 @@
+Breaks: a removal from refs on PostgreSQL and CockroachDB locks the object before its pointers, the reverse of unregister's order, so the two can deadlock (backlog 171's security review).
+Module: catalog-store-sql
+Test: SqlLockOrderTest#aRemovalFromRefsLocksTheCatalogTheRefsThePointersTheObjectAndTheNamespacesAboveItBeforeReadingHolds
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index 056c62b0..010c14bd 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -229,12 +229,12 @@ final class SqlRefs {
+                     locked++;
+                 }
+             }
+-            Pointers.lockObject(connection, objectId);
+             Optional<List<UUID>> path = first(connection, "SELECT namespace_path FROM catalog_object WHERE id = ?"
+                     + " AND state <> 'PURGED' FOR UPDATE", row -> Jdbc.uuids(row, "namespace_path"), objectId);
+             if (path.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
++            Pointers.lockObject(connection, objectId);
+             Guards.lockLevels(connection, path.get());
+             if (Guards.held(connection, objectId, catalog.get(), path.get())) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);

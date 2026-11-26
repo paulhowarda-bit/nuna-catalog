@@ -3,16 +3,16 @@ Module: catalog-store-mongo
 Test: MongoStoreSuiteTest$BranchCommits#aRefKeepsADroppedTablesFiles
 
 diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
-index de05ff3..fff1642 100644
+index 24978f4f..d1d64ef7 100644
 --- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 +++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
-@@ -325,9 +325,6 @@ final class MongoObjects {
+@@ -331,9 +331,6 @@ final class MongoObjects {
                      uuidList(object.get().get("namespacePath")))) {
                  return new WriteResult.Refused(WriteResult.Reason.FROZEN);
              }
 -            if (!MongoRefs.referenced(tx.database, tx.session, List.of(uuid(objectId))).isEmpty()) {
 -                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
 -            }
-             tx.see(object.get());
-             tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
-                     new BsonDocument("state", new BsonString(PURGING)).append("purgeClaimant", new BsonString(claimant))
+             BsonDocument catalog = tx.find(CATALOG, byId(object.get().get("catalogId"))).orElseThrow();
+             List<BsonDocument> namespaces = Guards.seeNamespaces(tx, uuidList(object.get().get("namespacePath")));
+             tx.see(catalog);

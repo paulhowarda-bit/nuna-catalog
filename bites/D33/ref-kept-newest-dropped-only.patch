@@ -2,15 +2,15 @@ Breaks: the read of which refs keep a table names only the newest object dropped
 Module: catalog-server
 Test: RefRoutesTest#aNameDroppedMadeAgainAndDroppedAgainIsTwoObjectsNewestFirst
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
-index e98d111e..0640c708 100644
+index 045c6ab9..807a9bdb 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
-@@ -1076,7 +1076,7 @@ class RefRoutes {
+@@ -1107,7 +1107,7 @@ class RefRoutes {
              }
          }
          dropped.sort(java.util.Comparator.comparing((CatalogObject o) -> o.droppedAt().orElseThrow()).reversed());
 -        found.addAll(dropped);
 +        found.addAll(dropped.subList(0, Math.min(1, dropped.size())));
-         return found;
+         return new AtPath(found, cutShort);
      }
  
