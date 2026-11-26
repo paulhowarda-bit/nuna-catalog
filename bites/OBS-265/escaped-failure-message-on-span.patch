@@ -1,0 +1,17 @@
+Breaks: a failure that escapes to the container is recorded on the server span as itself, its message included.
+Module: catalog-server
+Test: ServerSpanStatusTest#anEscapedFailureEndsItsServerSpanInError
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
+index a539b6ab..b28be703 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
+@@ -88,7 +88,7 @@ public final class RequestMetrics extends OncePerRequestFilter {
+             // Spring's observation filter records what escapes on the server span, message and all: it gets the class,
+             // and the log line the whole failure.
+             LOG.error("request failed outside the routes", e);
+-            throw new AnswerFailed(500, e.getClass().getName());
++            throw e;
+         } finally {
+             // A failure that escapes the chain becomes the container's 500.
+             int status = answered ? capture.getStatus() : 500;
