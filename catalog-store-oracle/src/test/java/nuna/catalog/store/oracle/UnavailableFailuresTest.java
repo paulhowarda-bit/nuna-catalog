@@ -131,8 +131,8 @@ class UnavailableFailuresTest {
         try {
             OracleDataSource dataSource = new OracleDataSource();
             dataSource.setURL("jdbc:oracle:thin:@//127.0.0.1:" + port + "/catalog_tg");
-            dataSource.setUser("catalog");
-            dataSource.setPassword("catalog");
+            dataSource.setUser(OracleFree.USER);
+            dataSource.setPassword(OracleFree.PASSWORD);
             Properties properties = new Properties();
             properties.setProperty("oracle.net.CONNECT_TIMEOUT", "5000");
             properties.setProperty("oracle.jdbc.ReadTimeout", "5000");

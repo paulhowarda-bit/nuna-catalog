@@ -247,15 +247,18 @@ class KubernetesJobsTest {
         assertThat(container.at("/command/2").asText())
                 .as("a trust store of the image's JDK CAs and the bundle's, built before Spark's driver starts on it")
                 .containsSubsequence(
+                        "tp=$(cat /proc/sys/kernel/random/uuid);",
                         "-importkeystore -srckeystore \"$JAVA_HOME/lib/security/cacerts\"",
-                        "-destkeystore /tmp/storage-trust.p12",
+                        "-destkeystore /tmp/storage-trust.p12", "-deststorepass \"$tp\";",
                         "for ca in /etc/nuna/storage-ca/*.pem; do",
-                        "-importcert", "-file \"$ca\" -keystore /tmp/storage-trust.p12",
+                        "-importcert", "-file \"$ca\" -keystore /tmp/storage-trust.p12 -storepass \"$tp\"",
                         "printf '%s' \"$NUNA_SCRIPT\" > /tmp/compact.py",
                         "exec /opt/spark/bin/spark-submit --master 'local[2]' --driver-memory \"$NUNA_DRIVER_MEMORY\"",
                         "--conf 'spark.driver.extraJavaOptions=-Djavax.net.ssl.trustStore=/tmp/storage-trust.p12"
-                                + " -Djavax.net.ssl.trustStorePassword=",
-                        "/tmp/compact.py");
+                                + " -Djavax.net.ssl.trustStorePassword='\"$tp\"",
+                        "/tmp/compact.py")
+                .as("the trust store's password is made as the script starts, never a fixed value in the Job")
+                .doesNotContainPattern("(?<!src)storepass [^\"]|trustStorePassword=[^']");
 
         // A table on a store with no bundle: its Job as it always was, and no ConfigMap.
         assertThat(compactor.launch(onAws, SMALL_FILES, night)).isEqualTo(Compactor.Launch.STARTED);
