@@ -3,15 +3,15 @@ Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$Refs#aDeletionLeavesNothing
 
 diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
-index faa7c83..c03e0a5 100644
+index 6ee1d814..71b29c3d 100644
 --- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
 +++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
-@@ -180,8 +180,6 @@ final class OracleRefs {
+@@ -207,8 +207,6 @@ final class OracleRefs {
      static void end(Connection connection, UUID refId) throws SQLException {
          String branch = refId.toString();
          update(connection, "DELETE FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")", branch, refId);
 -        update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
 -                branch, refId);
          update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+         update(connection, "DELETE FROM ref_grant WHERE ref_id = ?", refId);
          update(connection, "DELETE FROM ref WHERE id = ?", refId);
-     }

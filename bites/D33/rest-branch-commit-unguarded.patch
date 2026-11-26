@@ -3,16 +3,16 @@ Module: catalog-server
 Test: RefReadsTest#aFlaggedTableRefusesAnUntrustedCommitOnABranch+anUnclassifiedTableTakesNoCommitOnABranch+anIdentityLessWriteIsRefusedOnABranch
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
-index c26ea89..cb3dee5 100644
+index af075ed5..c5b617fe 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
-@@ -238,6 +238,9 @@ class Guard {
+@@ -251,6 +251,9 @@ class Guard {
      void onCommit(RequestContext request, OnRef on, CatalogObject object, List<String> path, Operation operation,
                    CatalogError missing) {
          Target target = new Target.TableOrView(object);
 +        if (!on.onMain()) {
 +            return;
 +        }
-         Decision decision = authorizer.decide(request.caller(), target, operation);
+         Decision decision = authorizer.decide(request.caller(), target, operation, on.refId());
          if (!on.onMain() && decision instanceof Decision.Exempted) {
              decision = new Decision.Denied(Authorizer.Reason.FLAGGED_TABLE, null, "table "
