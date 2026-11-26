@@ -1837,6 +1837,26 @@ A snapshot that changed the rows and that the feed did not make still stops it, 
 after the feed's last commit, the same copy once expiry has removed that commit, and a foreign append, which stops
 the feed. `ops.orders_to_lake` in the demo, started again, carries on.
 
+**Built, 2026-11-26** (worktree-changefeed-resume). Each commit writes its offsets twice in one transaction: in its
+snapshot summary as before, and as the table property `nuna.changefeed.offsets`. On start the feed reads them from
+the newest snapshot that changed the rows, looking past `replace` snapshots. Once expiry has removed every such
+snapshot, it reads the property instead. A snapshot that changed the rows and isn't the feed's still stops it while
+it's in the history; one that expiry has also removed goes unseen. While the feed runs, its own commits' conflict
+check still catches one. A copy last written before this change, whose feed commits have all expired, stops with
+"drop the copy for the feed to take a new snapshot". A commit that sets a property needs `modify`, not only `write`.
+The feeds already need it to add columns, and the demo's loaders hold it.
+
+Tests in `IcebergCopyTest`:
+- a copy compacted (data files and manifests) after the feed's last commit resumes, and commits again;
+- the same copy once expiry has removed every feed commit resumes from the property;
+- a foreign append beneath a compaction stops the feed, naming the append;
+- a copy written without the property, compacted and expired, stops with the message above.
+
+Bites `resume-stops-at-replace-snapshot` and `offsets-property-not-written` (in `bites/SingleStore/`) both bite.
+`second-writer-not-refused` was recorded again, the same break against the moved line, and bites.
+
+Left: start `ops.orders_to_lake` again on the demo once it runs this code, and see it carry on.
+
 ## Done and dropped
 
 | # | Item | Status | On |

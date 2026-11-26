@@ -15,6 +15,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DataOperations;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.OverwriteFiles;
@@ -28,6 +29,7 @@ import org.apache.iceberg.SnapshotUpdate;
 import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.Transaction;
 import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
@@ -55,6 +57,15 @@ import org.slf4j.LoggerFactory;
  * the table itself, and nothing is copied twice or skipped. Each commit also checks that no one else committed
  * since the snapshot it started from: a second writer (a task that should have stopped) fails instead of applying
  * the same changes again.
+ *
+ * <p>Maintenance also commits to the copy: compaction and manifest rewrites make {@code replace} snapshots, which
+ * keep the rows as they were and record no offsets, and snapshot expiry removes older snapshots, the feed's last
+ * commit among them in time. So each commit also writes its offsets as the table property {@link #OFFSETS}, in the
+ * same atomic commit, and the feed resumes from its last commit still in the history after any {@code replace}
+ * snapshots, or from the property once expiry has removed that commit. A commit that sets a property changes the
+ * table's definition, so the feed's principal needs {@code modify} on the copy, not only {@code write}; it already
+ * needs it to add columns. A snapshot after the feed's last commit that changed the rows stops the feed while it is
+ * in the history; one that expiry has also removed goes unseen.
  *
  * <p>Inserts and updates are written as data files. A key that existed before the batch (its first event in the
  * batch is an update or delete) gets an equality delete on the primary key, which removes its earlier rows. The
@@ -257,17 +268,35 @@ final class IcebergCopy {
         update.commit();
     }
 
-    /** The offsets the last commit covered, one per partition (null where none), or all null if never written. */
+    /**
+     * The offsets the feed's last commit covered, one per partition (null where none), or all null if never written:
+     * from the newest snapshot that changed the rows, past maintenance's {@code replace} snapshots, or from the table
+     * property once expiry has removed every such snapshot.
+     */
     String[] offsets() {
         String[] offsets = new String[source.partitions()];
         Snapshot current = table.currentSnapshot();
         if (current == null) {
             return offsets;
         }
-        String recorded = current.summary().get(OFFSETS);
-        if (recorded == null) {
-            throw new IllegalStateException(table.name() + " snapshot " + current.snapshotId()
-                    + " was not committed by the change feed: it records no offsets");
+        Snapshot changed = current;
+        while (changed != null && DataOperations.REPLACE.equals(changed.operation())) {
+            changed = changed.parentId() == null ? null : table.snapshot(changed.parentId());
+        }
+        String recorded;
+        if (changed != null) {
+            recorded = changed.summary().get(OFFSETS);
+            if (recorded == null) {
+                throw new IllegalStateException(table.name() + " snapshot " + changed.snapshotId() + " ("
+                        + changed.operation() + ") was not committed by the change feed: it records no offsets");
+            }
+        } else {
+            recorded = table.properties().get(OFFSETS);
+            if (recorded == null) {
+                throw new IllegalStateException(table.name() + " keeps no snapshot the change feed committed, only "
+                        + "maintenance's, and was last written before the feed kept its offsets as a table property: "
+                        + "drop the copy for the feed to take a new snapshot");
+            }
         }
         String[] parts = recorded.split(",", -1);
         if (parts.length != offsets.length) {
@@ -323,7 +352,8 @@ final class IcebergCopy {
          */
         Receipt commit(String[] offsets, String[] gapAfter) {
             close(data);
-            OverwriteFiles overwrite = table.newOverwrite().overwriteByRowFilter(Expressions.alwaysTrue());
+            Transaction transaction = table.newTransaction();
+            OverwriteFiles overwrite = transaction.newOverwrite().overwriteByRowFilter(Expressions.alwaysTrue());
             data.result().dataFiles().forEach(overwrite::addFile);
             // Without a starting snapshot, Iceberg checks the table's whole history: an empty table must still be empty.
             if (base != null) {
@@ -333,7 +363,7 @@ final class IcebergCopy {
             if (gapAfter != null) {
                 overwrite.set(GAP_AFTER, join(gapAfter));
             }
-            return IcebergCopy.this.commit(overwrite, UUID.randomUUID().toString(), gapAfter == null ? "snapshot" : "resnapshot",
+            return IcebergCopy.this.commit(transaction, overwrite, UUID.randomUUID().toString(), gapAfter == null ? "snapshot" : "resnapshot",
                     offsets, rows, 0);
         }
 
@@ -383,7 +413,8 @@ final class IcebergCopy {
             DeleteWriteResult result = writer.result();
             deleteFiles = result.deleteFiles();
         }
-        RowDelta delta = table.newRowDelta();
+        Transaction transaction = table.newTransaction();
+        RowDelta delta = transaction.newRowDelta();
         List<DataFile> dataFiles = data.result().dataFiles();
         dataFiles.forEach(delta::addRows);
         deleteFiles.forEach(delta::addDeletes);
@@ -391,15 +422,17 @@ final class IcebergCopy {
             delta.validateFromSnapshot(base);
         }
         delta.conflictDetectionFilter(Expressions.alwaysTrue()).validateNoConflictingDataFiles().validateNoConflictingDeleteFiles();
-        return commit(delta, commitId, "changes", batch.offsets(), rows, deletedKeys);
+        return commit(transaction, delta, commitId, "changes", batch.offsets(), rows, deletedKeys);
     }
 
     /**
-     * Commits with the offsets and a commit id in the summary. If the commit's answer is lost or it fails, the table
+     * Commits {@code update}, made in {@code transaction}, with the offsets and a commit id in its summary and the
+     * offsets as a table property too, in one catalog commit. If the commit's answer is lost or it fails, the table
      * is read back: a snapshot carrying the commit id means it landed. Otherwise the failure stands, the task stops,
      * and the next start resumes from the offsets the table holds.
      */
-    private Receipt commit(SnapshotUpdate<?> update, String commitId, String kind, String[] offsets, long rows, long keysDeleted) {
+    private Receipt commit(Transaction transaction, SnapshotUpdate<?> update, String commitId, String kind, String[] offsets,
+                           long rows, long keysDeleted) {
         update.set(OFFSETS, join(offsets));
         update.set(COMMIT_ID, commitId);
         update.set(KIND, kind);
@@ -407,6 +440,8 @@ final class IcebergCopy {
         update.set(KEYS_DELETED, String.valueOf(keysDeleted));
         try {
             update.commit();
+            transaction.updateProperties().set(OFFSETS, join(offsets)).commit();
+            transaction.commitTransaction();
             base = table.currentSnapshot().snapshotId();
         } catch (RuntimeException e) {
             Long landed = landed(commitId);
