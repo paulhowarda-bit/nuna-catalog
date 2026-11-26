@@ -1053,10 +1053,16 @@ feeds() {
 # their rows; and a change feed each into the lake under brokerage.singlestore, all in the one pipeline
 # brokerage_world_to_lake (brokerage-feeds-pipelines.sql), run only while Kafka is off. One pipeline is one Java
 # extractor in SingleStore's memory; a pipeline per table reserved 4.2 GB of its 2,764 MB. The copies hold the
-# party and ledger tables' rows, so their namespace is governed as those are: restricted and regulated.
+# party and ledger tables' rows, so their namespace is governed as those are: restricted and regulated, each copy
+# classified as the table it copies (brokerage_governance). A table in a regulated namespace is closed until it is
+# classified, and the connector makes the copies on its first start and stops at the first closed one, so the
+# namespace is marked regulated only once every copy is classified, as brokerage.party and brokerage.ledger are.
+WORLD_COPIES="calendar:public securities:public bars_5m:internal prices_eod:internal accounts:restricted
+  chart_of_accounts:confidential booking_schemes:confidential financial_transactions:confidential journal_lines:confidential
+  posting_rejections:confidential balances_eod:confidential"
 world_tables() { s2_file brokerage-feeds.sql >/dev/null; }
 world_feeds_start() {
-  local m=/management/v1/catalogs/$CATALOG
+  local m=/management/v1/catalogs/$CATALOG copy left next
   say "SingleStore: the brokerage world's feeds, a change feed per table into brokerage.singlestore (Kafka is off)"
   world_tables
   api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fsinglestore" '' 200 2>/dev/null \
@@ -1064,10 +1070,29 @@ world_feeds_start() {
     || api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fsinglestore" '' 200
   api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/classification" \
     '{"value":"restricted","provenance":"demo-seed: data catalogue"}'
-  api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/regulated" \
-    '{"value":"true","provenance":"demo-seed: compliance register"}'
   s2_file brokerage-feeds-pipelines.sql >/dev/null
   start_pipeline brokerage brokerage_world_to_lake
+  # Each copy is classified as soon as the catalog takes it: at once where the copy is there, else once the connector
+  # has made it; for about five minutes.
+  left=$WORLD_COPIES
+  for _ in $(seq 1 60); do
+    next=
+    for copy in $left; do
+      api stella PUT "$m/namespaces/brokerage%1Fsinglestore/tables/${copy%%:*}/attributes/classification" \
+        "{\"value\":\"${copy#*:}\",\"provenance\":\"demo-seed: data catalogue\"}" 2>/dev/null || next+=" $copy"
+    done
+    left=$next
+    [[ -n "${left// }" ]] || break
+    sleep 5
+  done
+  if [[ -n "${left// }" ]]; then
+    next=
+    for copy in $left; do next+=" ${copy%%:*}"; done
+    echo "the change feed made no copy in brokerage.singlestore for:$next (SingleStore: PIPELINES_ERRORS)" >&2
+    return 1
+  fi
+  api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/regulated" \
+    '{"value":"true","provenance":"demo-seed: compliance register"}'
 }
 world_feeds_stop() {
   local name stopped=

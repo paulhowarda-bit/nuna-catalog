@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**27 open:** 5 S, 9 M, 8 L, 5 XL.
+**27 open:** 5 S, 10 M, 7 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,12 +33,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
-| [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
 | [296](backlog/296.md) | S | Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind | one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down | 2026-11-26 |
 | [297](backlog/297.md) | S | Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides) | a few header rules below 761 px once Atelier says how the note shows on a phone; a browser test | 2026-11-26 |
+| [298](backlog/298.md) | M | Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot | where the feed resumes kept somewhere compaction and snapshot expiry leave alone, in one class, with tests of a compacted and an expired history | 2026-11-26 |
 
 ## Open items in full
 
@@ -1585,50 +1585,6 @@ were written and compiled, not run here. Open until the overnight run passes the
   run) now covers the note's words, the status line, Up to keeping the start, the button and `from=any`, the Record
   tab's link and a link's other time. Bite recorded, not run: `bites/UI/console-ref-start-dropped-with-up-to`.
 
-### 238. The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off
-
-- Added: 2026-11-24 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo-datagen/, demo/demo.sh, demo/k8s/brokerage.yaml, demo/k8s/brokerage-bootstrap.yaml, demo/k8s/kafka.yaml, demo/k8s/singlestore.yaml, demo/singlestore/, demo/brokerage/, demo/README.md, docs/design/brokerage-world.md, decision-ledger.md
-- Effort: L, a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory
-- Decided: 2026-11-24, D50 (amended: routes)
-
-Paul, 2026-11-24: "we need an option to divert the singlestore load through kafka. when singlestore is down and
-through singlestore when cdc/kafka is down. on the data generator application". He chose the demo switches as the
-trigger, and a change feed per table to bring the Kafka feeds into the lake while Kafka is off (D50, amended).
-
-Today `gen` needs both: its eleven feeds go only to Kafka and its orders only to SingleStore, `gen` turns `ss` on and
-`ss stop` turns `gen` off.
-
-Done looks like:
-- A `kafka` switch beside `cdc`, `gen` and `ss`; `gen` runs with either `ss` or `kafka` on. Paul, 2026-11-24 (relayed
-  by the Demo Expert session): "gen no longer depends on singlestore or cdc. It just needs kafka, or singlestore or
-  cdc running." So `gen` never turns `ss` on, and `ss stop` never turns `gen` off.
-- `ss` off, `kafka` on: each order change goes to topic `brokerage.trading.order-events`, which the sink appends to
-  `brokerage.trading.order_events`.
-- `kafka` off, `ss` on: each feed's rows go to SingleStore `brokerage.<table>` (key `seq`, the feed's record number),
-  and a change feed per table copies it into `brokerage.singlestore.<table>`.
-- A restart, and a change of route, resumes where the world stopped: each feed's records sent are those on its live
-  path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
-- The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
-
-**Checked on the demo, 2026-11-26: not finished.** The demo ran Podman's kind cluster (`kind-nuna`), `main` at
-65a1d354.
-- `demo.sh ss` stopped with `ERROR 1933 … Process died unexpectedly or didn't start` at the first Iceberg pipeline in
-  `load.sql`. The cause: every container in the kind node may run at most 307 tasks. Podman gives the node
-  container a PidsLimit of 2,048, and systemd inside the node gives each container scope its DefaultTasksMax, 15% of
-  that. SingleStore runs 284 tasks idle, so the pipeline's extractor JVM cannot make its threads. With SingleStore's
-  scope set to `TasksMax=infinity` (live only; it reverts when the pod restarts), the same pipeline loaded and `ss`
-  finished: the seed and its three pipelines. This route cannot run on kind until `deploy/kind` lifts the cap.
-- Memory with `ss` on and gen not yet started: SingleStore's container held 2,388 MB by its cgroup (578 of 2,764 MB
-  by its own count) and 519 tasks. The VM had 1.6 to 1.8 GB available. Windows had 343 to 1,089 MB free and paged in
-  15,000 to 117,000 pages a second for the seven minutes measured.
-- The eleven change feeds never started: the demo went down (D49, for container tests) while gen's bootstrap ran,
-  so gen was stopped. The arithmetic says they cannot all start as made. Each change feed's extractor reserves
-  `pipelines_cdc_java_heap_size`, 384 MB, from SingleStore's memory: 4,224 MB for the eleven, plus 768 MB for the two
-  orders feeds, against a `maximum_memory` of 2,764 MB.
-- To finish: lift the task cap in `deploy/kind`. Then fit the eleven feeds, either with a smaller extractor heap or
-  more memory for SingleStore and the VM. Then run this check again.
-
 ### 259. Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete?
 
 - Added: 2026-11-24 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
@@ -1851,6 +1807,36 @@ from 761 to 1,440 px it needs item 231's rules too.
 Done when, at 390 and 760 px with a branch carried onto a page that shows main only, the page is no wider than the
 window, the brand shows whole or not at all, as Atelier decides, and a browser test checks it.
 
+### 298. Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot
+
+- Added: 2026-11-26 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java, singlestore-change-feed/src/test/
+- Effort: M, where the feed resumes kept somewhere compaction and snapshot expiry leave alone, in one class, with tests of a compacted and an expired history
+
+**What is wrong.** A change feed (`singlestore-change-feed`) resumes from the offsets its last commit recorded in the
+copy's snapshot summary (`nuna.changefeed.offsets`). `IcebergCopy.offsets()` reads them from the current snapshot
+only, and fails when that snapshot has none ("was not committed by the change feed: it records no offsets"). Lakehouse
+maintenance (on in the demo since D30) compacts data and delete files and rewrites manifests, each a `replace`
+snapshot with no such summary. So the first restart of a feed after a compaction of its copy stops it for good.
+Expiry makes a quick fix unsafe: the demo's policy keeps only the newest 5 snapshots once they're an hour old, so after
+five `replace` snapshots the last one that has offsets is gone, and walking back past `replace` snapshots finds nothing.
+
+**The evidence.** On 2026-11-26, in the demo on `main` at 08e7f686, `ops.orders_to_lake` stopped with "changefeed
+markets.equities.eu.xetra.orders snapshot 6395387403722420145 was not committed by the change feed: it records no
+offsets". The copy's newest snapshots were the feed's `overwrite` (with offsets) followed by four `replace` snapshots
+from maintenance (added 1 / deleted 2 data files, deleted 1, added 1 / deleted 2, then an empty summary), the newest
+being current. One more `replace` would have expired the feed's snapshot. The same will happen to
+`brokerage.brokerage_orders_to_lake` (`brokerage.trading.orders`) and to `brokerage_world_to_lake`'s eleven copies
+under `brokerage.singlestore` once maintenance compacts them. The commit path is not affected: its conflict checks
+ignore `replace` snapshots.
+
+**What done looks like.** A feed resumes after any number of `replace` snapshots, including when expiry has removed
+every snapshot its commits made: where it resumes is kept somewhere compaction and expiry leave alone (for example a
+table property written in the same transaction as each commit), and checked against the history that's still there.
+A snapshot that changed the rows and that the feed did not make still stops it, as now. Tests cover a copy compacted
+after the feed's last commit, the same copy once expiry has removed that commit, and a foreign append, which stops
+the feed. `ops.orders_to_lake` in the demo, started again, carries on.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -2067,6 +2053,7 @@ window, the brand shows whole or not at all, as Atelier decides, and a browser t
 | [234](backlog/234.md) | Demo SingleStore refuses order writes once its pipelines' extractors fill the table-memory cap | done | 2026-11-24 |
 | [236](backlog/236.md) | Presenter, who holds every duty, lands on Overview | done | 2026-11-24 |
 | [237](backlog/237.md) | The demo keeps its data across down and up: volumes for PostgreSQL, Silo, Kafka and SingleStore; demo.sh wipe | done | 2026-11-24 |
+| [238](backlog/238.md) | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | done | 2026-11-26 |
 | [239](backlog/239.md) | Governance flag only on tables: a flag above a table shows but is not enforced | done | 2026-11-24 |
 | [240](backlog/240.md) | Column masks fail open when a column is renamed, dropped or misspelled | done | 2026-11-24 |
 | [241](backlog/241.md) | Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes | done | 2026-11-24 |
