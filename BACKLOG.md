@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**27 open:** 5 S, 10 M, 7 L, 5 XL.
+**26 open:** 5 S, 9 M, 7 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -37,7 +37,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
 | [296](backlog/296.md) | S | Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind | one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down | 2026-11-26 |
-| [298](backlog/298.md) | M | Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot | where the feed resumes kept somewhere compaction and snapshot expiry leave alone, in one class, with tests of a compacted and an expired history | 2026-11-26 |
 | [299](backlog/299.md) | S | Console prototype: bring its header up to the built console (the Reading slot, items 231 and 297) | porting header markup and rules that already exist in the built console into one file; no tests | 2026-11-26 |
 
 ## Open items in full
@@ -1791,56 +1790,6 @@ Done when the guard refuses while the demo's pods run in kind (for example by as
 nuna-demo get pods`, or by the kind node container being up with the demo's namespace in it), still lets
 `-Pnuna.demo-beside` through, and still starts the tests when the demo is down or kind is absent (a machine at work).
 
-### 298. Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot
-
-- Added: 2026-11-26 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java, singlestore-change-feed/src/test/
-- Effort: M, where the feed resumes kept somewhere compaction and snapshot expiry leave alone, in one class, with tests of a compacted and an expired history
-
-**What is wrong.** A change feed (`singlestore-change-feed`) resumes from the offsets its last commit recorded in the
-copy's snapshot summary (`nuna.changefeed.offsets`). `IcebergCopy.offsets()` reads them from the current snapshot
-only, and fails when that snapshot has none ("was not committed by the change feed: it records no offsets"). Lakehouse
-maintenance (on in the demo since D30) compacts data and delete files and rewrites manifests, each a `replace`
-snapshot with no such summary. So the first restart of a feed after a compaction of its copy stops it for good.
-Expiry makes a quick fix unsafe: the demo's policy keeps only the newest 5 snapshots once they're an hour old, so after
-five `replace` snapshots the last one that has offsets is gone, and walking back past `replace` snapshots finds nothing.
-
-**The evidence.** On 2026-11-26, in the demo on `main` at 08e7f686, `ops.orders_to_lake` stopped with "changefeed
-markets.equities.eu.xetra.orders snapshot 6395387403722420145 was not committed by the change feed: it records no
-offsets". The copy's newest snapshots were the feed's `overwrite` (with offsets) followed by four `replace` snapshots
-from maintenance (added 1 / deleted 2 data files, deleted 1, added 1 / deleted 2, then an empty summary), the newest
-being current. One more `replace` would have expired the feed's snapshot. The same will happen to
-`brokerage.brokerage_orders_to_lake` (`brokerage.trading.orders`) and to `brokerage_world_to_lake`'s eleven copies
-under `brokerage.singlestore` once maintenance compacts them. The commit path is not affected: its conflict checks
-ignore `replace` snapshots.
-
-**What done looks like.** A feed resumes after any number of `replace` snapshots, including when expiry has removed
-every snapshot its commits made: where it resumes is kept somewhere compaction and expiry leave alone (for example a
-table property written in the same transaction as each commit), and checked against the history that's still there.
-A snapshot that changed the rows and that the feed did not make still stops it, as now. Tests cover a copy compacted
-after the feed's last commit, the same copy once expiry has removed that commit, and a foreign append, which stops
-the feed. `ops.orders_to_lake` in the demo, started again, carries on.
-
-**Built, 2026-11-26** (worktree-changefeed-resume). Each commit writes its offsets twice in one transaction: in its
-snapshot summary as before, and as the table property `nuna.changefeed.offsets`. On start the feed reads them from
-the newest snapshot that changed the rows, looking past `replace` snapshots. Once expiry has removed every such
-snapshot, it reads the property instead. A snapshot that changed the rows and isn't the feed's still stops it while
-it's in the history; one that expiry has also removed goes unseen. While the feed runs, its own commits' conflict
-check still catches one. A copy last written before this change, whose feed commits have all expired, stops with
-"drop the copy for the feed to take a new snapshot". A commit that sets a property needs `modify`, not only `write`.
-The feeds already need it to add columns, and the demo's loaders hold it.
-
-Tests in `IcebergCopyTest`:
-- a copy compacted (data files and manifests) after the feed's last commit resumes, and commits again;
-- the same copy once expiry has removed every feed commit resumes from the property;
-- a foreign append beneath a compaction stops the feed, naming the append;
-- a copy written without the property, compacted and expired, stops with the message above.
-
-Bites `resume-stops-at-replace-snapshot` and `offsets-property-not-written` (in `bites/SingleStore/`) both bite.
-`second-writer-not-refused` was recorded again, the same break against the moved line, and bites.
-
-Left: start `ops.orders_to_lake` again on the demo once it runs this code, and see it carry on.
-
 ### 299. Console prototype: bring its header up to the built console (the Reading slot, items 231 and 297)
 
 - Added: 2026-11-26 by local_6686d222-bf16-416b-a4cb-e82501941da2
@@ -2127,3 +2076,4 @@ from 361 to 1,440 px with long names, as the console does.
 | [294](backlog/294.md) | kind's node caps every container at 307 tasks: SingleStore's pipelines, and the JVMs, run out of threads | done | 2026-11-26 |
 | [295](backlog/295.md) | AuditTablesTest's ForbiddenException for updateTable: confirm the cause and guard the fix with a bite | done | 2026-11-26 |
 | [297](backlog/297.md) | Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides) | done | 2026-11-26 |
+| [298](backlog/298.md) | Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot | done | 2026-11-26 |

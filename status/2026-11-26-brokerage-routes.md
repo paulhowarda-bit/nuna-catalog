@@ -20,3 +20,7 @@ Item 298 built (worktree-changefeed-resume): a change feed resumes past maintena
 the table property `nuna.changefeed.offsets` (written in the same transaction as each commit) once expiry has
 removed its commits. Four tests in `IcebergCopyTest`, two new bites and one recorded again, all biting. The check on
 the demo (`ops.orders_to_lake` started again) follows once the demo runs it.
+
+Item 298 done: on the demo rebuilt at a9c7ea81, `ops.orders_to_lake`, stopped since this afternoon by the
+compaction of its copy, ran again. A test order inserted and deleted in `ops.orders` was committed past the four
+`replace` snapshots, and the offsets property was written with the commit. The switches were left kafka only.
