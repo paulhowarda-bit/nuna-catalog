@@ -15,3 +15,8 @@ record twice. SingleStore held at most 2,236 MB of its 3 GiB and Windows paged i
 `world_feeds_start` now classifies each copy before marking `brokerage.singlestore` regulated: the copies were closed
 until classified. Added item 298: a change feed stops on restart once maintenance compacts its copy
 (`ops.orders_to_lake` is stopped in the demo that way). The switches were left as they were (kafka only).
+
+Item 298 built (worktree-changefeed-resume): a change feed resumes past maintenance's `replace` snapshots, and from
+the table property `nuna.changefeed.offsets` (written in the same transaction as each commit) once expiry has
+removed its commits. Four tests in `IcebergCopyTest`, two new bites and one recorded again, all biting. The check on
+the demo (`ops.orders_to_lake` started again) follows once the demo runs it.

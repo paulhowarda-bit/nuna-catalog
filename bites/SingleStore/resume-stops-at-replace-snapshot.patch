@@ -1,0 +1,18 @@
+Breaks: the feed reads its offsets from the current snapshot only, so the first compaction of its copy stops it on its next start.
+Module: singlestore-change-feed
+Test: IcebergCopyTest#theFeedResumesPastMaintenancesReplaceSnapshots
+
+diff --git a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java
+index 7a3b4060..93545106 100644
+--- a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java
++++ b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java
+@@ -280,9 +280,6 @@ final class IcebergCopy {
+             return offsets;
+         }
+         Snapshot changed = current;
+-        while (changed != null && DataOperations.REPLACE.equals(changed.operation())) {
+-            changed = changed.parentId() == null ? null : table.snapshot(changed.parentId());
+-        }
+         String recorded;
+         if (changed != null) {
+             recorded = changed.summary().get(OFFSETS);
