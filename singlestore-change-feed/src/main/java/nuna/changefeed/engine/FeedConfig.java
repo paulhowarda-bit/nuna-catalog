@@ -15,7 +15,9 @@ import org.apache.iceberg.catalog.TableIdentifier;
  * <ul>
  *   <li>{@code singlestore.url}, {@code singlestore.user}, {@code singlestore.password}: where the change feed is
  *       read. The connector runs on a leaf, so the URL names an aggregator.
- *   <li>{@code singlestore.database}, {@code singlestore.table}: the table whose changes are sent.
+ *   <li>{@code singlestore.database}, {@code singlestore.table}: the table whose changes are sent. A pipeline may
+ *       give {@code singlestore.tables} instead, a list of tables: its task then runs a feed for each, with
+ *       {@code singlestore.table} and {@code iceberg.table} set to the table's name (backlog 238).
  *   <li>{@code iceberg.catalog.*}: the Iceberg catalog's properties, without the prefix. A REST catalog unless
  *       {@code type} or {@code catalog-impl} says otherwise: {@code uri}, {@code warehouse}, {@code token},
  *       {@code header.X-Iceberg-Access-Delegation}, ...
