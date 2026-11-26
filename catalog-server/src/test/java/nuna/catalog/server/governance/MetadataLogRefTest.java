@@ -11,12 +11,18 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.ObjectRead;
+import nuna.catalog.audit.PointerState;
+import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.core.CatalogError;
+import nuna.catalog.core.commit.TableFiles;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
 import nuna.catalog.security.Authorizer;
@@ -57,8 +63,10 @@ import tools.jackson.databind.JsonNode;
  * the cut, never main's commits since; through a tag, main's log as the cut left it; through a ref made from a branch,
  * that branch's own versions up to its cut, then main's; through a ref made from one that has ended, the log stops at
  * the cut unless main wrote it. Two lines hold the same version numbers, so each entry names its line and a page token
- * names the line it stopped in. The route, guard and authorizer are the real ones over a store double, so this needs
- * only Java; {@code RefMergeRoutesTest} reads the log of commits the real commit engine made on a branch.
+ * names the line it stopped in. The export through a ref (backlog 172) is the ref's file, checked against its hash, and
+ * the same log, oldest first, audited through the ref. The routes, guard and authorizer are the real ones over a store
+ * double and metadata files in memory, so this needs only Java; {@code RefMergeRoutesTest} reads the log of commits the
+ * real commit engine made on a branch.
  */
 class MetadataLogRefTest {
 
@@ -73,6 +81,8 @@ class MetadataLogRefTest {
     private final CatalogObject staff = new CatalogObject(catalog.id(), staffId, hr.id(), new Name("staff", "staff"),
             CatalogObject.Kind.TABLE, CatalogObject.State.ACTIVE, Optional.empty(), Optional.empty(),
             "s3://gate/" + staffId, Optional.empty());
+    /** Staff as main has it now: active, unless a test drops it. */
+    private CatalogObject staffNow = staff;
     private final List<GrantRecord> grants = List.of(new GrantRecord(new Grant(catalog.id(),
             new Securable(Securable.Kind.NAMESPACE, hr.id()), "readers", Privilege.SELECT.wireName()), "test",
             Instant.EPOCH));
@@ -95,6 +105,8 @@ class MetadataLogRefTest {
     /** Made from quiet, which had no pointer of its own for staff: its cut is quiet's, main's version 3. */
     private final Ref hush = ref("hush", Ref.Kind.TAG, quiet);
     private final Map<PointerKey, List<JournalRecord>> journals = new HashMap<>();
+    private final List<CatalogEvent> audit = new ArrayList<>();
+    private final Set<String> tampered = new HashSet<>();
 
     private final LifecycleRoutes lifecycle;
     private final MockHttpServletRequest http = new MockHttpServletRequest();
@@ -119,8 +131,13 @@ class MetadataLogRefTest {
                 Duration.ofSeconds(60), Set.of("grant-admins"), Set.of("platform-ops"), Set.of("nuna-maintenance"),
                 false, Set.of());
         ManagementGuard guard = new ManagementGuard(authorizer, separation, security, denials, holdings);
-        // No governance settings, audit trail, storage or catalog names: the log needs none of them.
-        lifecycle = new LifecycleRoutes(store, management, guard, null, null, null, null, clock);
+        AuditTrail trail = new AuditTrail(Optional.<EventPublisher>of(stamped -> audit.add(stamped.event())),
+                URI.create("urn:nuna:test"), clock, Duration.ofMinutes(1));
+        // No governance settings or catalog names: the log and the export need neither. Each metadata file holds its
+        // own location, and is intact unless the test tampers with it.
+        lifecycle = new LifecycleRoutes(store, management, guard, null, trail, null, clock,
+                (catalogId, location, sha256) -> new TableFiles.Read("{\"file\":\"" + location + "\"}",
+                        "sha-" + location, !tampered.contains(location) && sha256.equals("sha-" + location)));
     }
 
     @Test
@@ -245,6 +262,109 @@ class MetadataLogRefTest {
         });
     }
 
+    // ---- the export through a ref (backlog 172) ----
+
+    @Test
+    void anExportThroughABranchIsItsHeadAndTheLogAsTheBranchReadsItOldestFirstAuditedThroughIt() {
+        JsonNode export = export("DEV");
+
+        assertThat(export.get("pointer").get("metadata-location").asString()).isEqualTo("dev-3");
+        assertThat(export.get("pointer").get("version").asLong()).isEqualTo(3);
+        assertThat(export.get("metadata").get("file").asString()).as("the branch's file, not main's")
+                .isEqualTo("dev-3");
+        assertThat(export.get("ref").get("name").asString()).isEqualTo("dev");
+        assertThat(export.get("ref").get("kind").asString()).isEqualTo("branch");
+        assertThat(export.get("ref").get("cut-version").asLong()).isEqualTo(3);
+        assertThat(export.get("ref").has("log-stops-at-cut")).isFalse();
+        assertThat(locations(export)).as("main's 4 and 5, made since the cut, are not the branch's")
+                .containsExactly("main-1", "main-2", "main-3", "dev-1", "dev-2", "dev-3");
+        assertThat(lines(export)).containsExactly("main", "main", "main", "dev", "dev", "dev");
+        assertThat(reads()).singleElement().satisfies(read -> {
+            assertThat(read.branch()).isEqualTo("dev");
+            assertThat(read.served()).isEqualTo(new PointerState("dev-3", 3, "sha-dev-3"));
+            assertThat(read.object().id()).isEqualTo(staffId);
+        });
+    }
+
+    @Test
+    void anExportThroughATagOrARefMadeFromABranchIsWhatTheLogReadsThroughIt() {
+        JsonNode tag = export("v1");
+        assertThat(tag.get("pointer").get("metadata-location").asString()).isEqualTo("main-3");
+        assertThat(tag.get("ref").get("kind").asString()).isEqualTo("tag");
+        assertThat(locations(tag)).containsExactly("main-1", "main-2", "main-3");
+
+        JsonNode branched = export("dev2");
+        assertThat(branched.get("pointer").get("metadata-location").asString()).isEqualTo("dev2-2");
+        assertThat(locations(branched)).as("main's at dev's cut, then dev's to dev2's cut, then dev2's own")
+                .containsExactly("main-1", "main-2", "main-3", "dev-1", "dev-2", "dev-3", "dev2-1", "dev2-2");
+        assertThat(lines(branched)).containsExactly("main", "main", "main", "dev", "dev", "dev", "dev2", "dev2");
+
+        JsonNode orphaned = export("orphan");
+        assertThat(orphaned.get("pointer").get("metadata-location").asString()).isEqualTo("old-2");
+        assertThat(orphaned.get("ref").get("log-stops-at-cut").asBoolean()).isTrue();
+        assertThat(locations(orphaned)).as("main's 2 is not the file the cut took").isEmpty();
+        assertThat(reads()).extracting(ObjectRead::branch).containsExactly("v1", "dev2", "orphan");
+    }
+
+    @Test
+    void aTableMainHasDroppedSinceIsExportedThroughTheBranchByItsId() {
+        staffNow = new CatalogObject(catalog.id(), staffId, hr.id(), staff.name(), CatalogObject.Kind.TABLE,
+                CatalogObject.State.DROPPED, Optional.of(NOW.minus(Duration.ofHours(1))),
+                Optional.of(NOW.plus(Duration.ofDays(7))), staff.locationRoot(), Optional.empty());
+
+        JsonNode export = export("dev");
+
+        assertThat(export.get("object").get("state").asString()).isEqualTo("dropped");
+        assertThat(export.get("pointer").get("metadata-location").asString()).isEqualTo("dev-3");
+        assertThat(locations(export)).containsExactly("main-1", "main-2", "main-3", "dev-1", "dev-2", "dev-3");
+    }
+
+    @Test
+    void anExportOnMainIsMainsWhateverTheRefsDid() {
+        JsonNode export = export(null);
+
+        assertThat(export.get("pointer").get("metadata-location").asString()).isEqualTo("main-5");
+        assertThat(export.get("metadata").get("file").asString()).isEqualTo("main-5");
+        assertThat(export.has("ref")).isFalse();
+        assertThat(locations(export)).containsExactly("main-1", "main-2", "main-3", "main-4", "main-5");
+        assertThat(reads()).extracting(ObjectRead::branch).containsExactly(PointerKey.MAIN);
+    }
+
+    @Test
+    void aRefsFileThatDoesNotMatchItsHashIsNotExported() {
+        tampered.add("dev-3");
+
+        assertThatThrownBy(() -> export("dev")).isInstanceOfSatisfying(CatalogError.class, e -> {
+            assertThat(e.status()).isEqualTo(500);
+            assertThat(e.type()).isEqualTo("MetadataIntegrityException");
+        });
+        assertThat(reads()).isEmpty();
+        assertThat(export(null).get("pointer").get("metadata-location").asString())
+                .as("main's file is another, and intact").isEqualTo("main-5");
+    }
+
+    @Test
+    void anExportThroughARefThatIsNotLiveOrDoesNotHoldTheTableAnswers404() {
+        assertThatThrownBy(() -> export("nope")).isInstanceOfSatisfying(CatalogError.class, e -> {
+            assertThat(e.status()).isEqualTo(404);
+            assertThat(e.type()).isEqualTo("NoSuchRefException");
+        });
+        assertThatThrownBy(() -> export("later")).isInstanceOfSatisfying(CatalogError.class, e -> {
+            assertThat(e.status()).isEqualTo(404);
+            assertThat(e.type()).isEqualTo("NoSuchObjectException");
+        });
+        assertThat(reads()).isEmpty();
+    }
+
+    private JsonNode export(String ref) {
+        return Management.JSON.readTree(lifecycle.export("gate", staffId.toString(), ref, http).getBody());
+    }
+
+    private List<ObjectRead> reads() {
+        return audit.stream().map(CatalogEvent::data).filter(ObjectRead.class::isInstance).map(ObjectRead.class::cast)
+                .toList();
+    }
+
     private JsonNode log(String ref, String token, Integer size) {
         return Management.JSON.readTree(lifecycle.metadataLog("gate", staffId.toString(), token, size, ref, http)
                 .getBody());
@@ -312,7 +432,7 @@ class MetadataLogRefTest {
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "findCatalog" -> Optional.of(catalog).filter(c -> c.normalizedName().equals(args[0]));
                     case "readNamespace" -> Optional.of(hr).filter(ns -> ns.id().equals(args[0]));
-                    case "readObject" -> Optional.of(staff).filter(o -> o.id().equals(args[0]));
+                    case "readObject" -> Optional.of(staffNow).filter(o -> o.id().equals(args[0]));
                     case "grantsFor" -> grants.stream()
                             .filter(g -> ((Set<Securable>) args[0]).contains(g.grant().securable())
                                     && ((Set<String>) args[1]).contains(g.grant().group()))

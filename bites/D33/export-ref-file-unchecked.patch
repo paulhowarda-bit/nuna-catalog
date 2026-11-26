@@ -1,0 +1,19 @@
+Breaks: the export returns a metadata file that does not match its recorded hash, through a ref as on main (backlog 172).
+Module: catalog-server
+Test: MetadataLogRefTest#aRefsFileThatDoesNotMatchItsHashIsNotExported
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index c263cda6..9ea344c0 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -365,10 +365,6 @@ class LifecycleRoutes {
+     private void exported(ObjectNode body, CatalogRecord catalog, String id, String location, long version,
+                           String sha256) {
+         TableFiles.Read read = metadata.read(catalog.id(), location, sha256);
+-        if (!read.intact()) {
+-            throw CatalogError.of(500, "MetadataIntegrityException", "The metadata file of " + id
+-                    + " does not match its recorded hash");
+-        }
+         ObjectNode node = body.putObject("pointer");
+         node.put("metadata-location", location);
+         node.put("version", version);

@@ -131,9 +131,10 @@ public final class MergeMetadata {
 
     /**
      * What main's journal records for a table or view a merge moved, as the one update of that commit: an action of its
-     * own, {@code merge-branch}, naming the branch, the branch's version and file main took a copy of, the cut's version,
-     * how many of main's commits since the cut it was rebased over, and what it changed beyond data, where a schema or
-     * partitioning change on a regulated table reads (D11a).
+     * own, {@code merge-branch}, naming the branch, the branch's version and file main took a copy of, main's version
+     * at the branch's cut (the merge's base, as {@code cut-version}), how many of main's commits since the cut it was
+     * rebased over, and what it changed beyond data, where a schema or partitioning change on a regulated table reads
+     * (D11a).
      */
     public static String journal(String branch, String branchId, long branchVersion, String branchLocation,
                                  long cutVersion, long rebasedOver, Optional<String> definition) {

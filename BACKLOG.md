@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 11 S, 16 M, 9 L, 5 XL.
+**44 open:** 11 S, 16 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,8 +39,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
-| [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
-| [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
 | [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
@@ -53,6 +51,11 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
 | [279](backlog/279.md) | S | Console: take a table out of refs, item 156's route, from the table page (item 156's Left) | one control and its dialog over a route already built (item 156), shown only to a caller holding manage-tags on the object, with a browser test that waits for the overnight heavy build | 2026-11-25 |
+| [281](backlog/281.md) | L | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | a chart value, a database CA and two certificates in demo.sh, PostgreSQL's TLS and pg_hba, a demo rebuild on a kept and a wiped volume, and the engine matrix's harness made to issue the same certificates | 2026-11-25 |
+| [282](backlog/282.md) | L | The demo's and the laptop runner's fixed passwords made once per machine, people's included | about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first | 2026-11-25 |
+| [283](backlog/283.md) | S | Kafka Connect's REST API is published on 8186 with no sign-in | oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check | 2026-11-25 |
+| [284](backlog/284.md) | S | The audit table writer stops for good when its table is dropped under it | one reopen path in LogWriter and TableWriter and a test that drops the table between commits | 2026-11-25 |
+| [285](backlog/285.md) | ? | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on | 2026-11-25 |
 
 ## Open items in full
 
@@ -1596,44 +1599,6 @@ Done when the purge claim and the removal lock the held levels (or the catalog r
 stores; a store suite case holds a namespace hold's write open while each runs and sees them serialized; bites
 recorded.
 
-### 172. Console: export a table's metadata and log as a catalog ref reads it (item 109's review)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/MetadataLogRefTest.java catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/table.js bites/D33/
-- Effort: S, the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name
-
-The table page's "Export metadata" (`panels.js`, `exportDialog`) calls `GET …/objects/{id}/export`, which reads main's
-pointer, main's metadata file and main's whole journal. Read through a catalog ref, the button exported main's, with no
-`@ref` in the file name, so the UI review of item 109 found it misleading; item 109 hides the button through a ref.
-
-Done looks like:
-- `GET …/objects/{id}/export?ref=<name>`: the ref's pointer (its own head on a branch, else its cut), that file checked
-  against its recorded hash, and the journal as the metadata log reads it through the ref (backlog 109: the ref's own
-  versions, then its source's, then main's at and below the cut, stopping at a cut from a ref that has ended), with
-  `ref {name, kind, cut-version}`; 404 as the log answers for a ref that is not live or does not hold the object.
-  The read is audited on the ref (`through @name`). A fast test with a bite in `bites/D33/`.
-- The console offers the button through a ref again, exporting through it, the file named `{path}@{ref}`.
-
-### 177. Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-core/src/test/java/nuna/catalog/core/commit/ bites/D33/
-- Effort: S, one check on the metadata location in two CommitEngine operations, a fast test and a bite
-
-Low, from the security review of item 107's merge-base fix (Nuna Security Expert session, 2026-11-23). Not a
-go-to-work condition.
-
-What is wrong: `CommitEngine.register` and `revive` take the client's `metadataLocation` and never check
-`TableFiles.onBranch`. So main's pointer, and main's journal, can be set to a branch's metadata file
-(`<v>-<uuid>.branch-<refid>.metadata.json`). Reconcile skips marked files when it builds main's chain (item 111), so
-after a regional failover a main pointer at a branch file is invisible to recovery. The merge's base walk (item 107)
-also accepts main's journal entry for such a file as main's position at a cut. That is true (main really was at that
-file), so no commit is overwritten, but it is a file main should never hold. Doing it needs create and drop on main.
-
-Done when register and revive refuse a location `TableFiles.onBranch` marks, with 400 `BadRequestException`, on main
-and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
-checked with `git apply --check`, not run).
-
 ### 197. After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's
 
 - Added: 2026-11-23 by Paul
@@ -2008,6 +1973,112 @@ left, and shows a refusal as the catalog answered it; callers without the right 
 (heavy) and the fast console rules tests. Atelier decides the control's design and words; ask her through the
 Catalog UI Expert before building.
 
+### 281. The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: deploy/helm/nuna-catalog/ deploy/README.md docs/install-at-work.md demo/demo.sh demo/k8s/stack.yaml demo/k8s/catalog-values.yaml demo/k8s/demo-values.yaml demo/README.md catalog-tests-engines/ catalog-tests-s3/src/main/java/nuna/catalog/tests/s3/TestS3.java demo/k8s/store-silo.yaml demo/k8s/store-ceph.yaml demo/k8s/seed.yaml
+- Effort: L, a chart value, a database CA and two certificates in demo.sh, PostgreSQL's TLS and pg_hba, a demo rebuild on a kept and a wiped volume, and the engine matrix's harness made to issue the same certificates
+
+The fixed `spring.datasource.password` in `demo/k8s/catalog-values.yaml` and `deploy/local/values.yaml` was refused by
+work's push protection (`docs/from-work/005-github-secret-scanning.md`). Work went further: on its machine the catalog
+signs in to the demo's PostgreSQL with a client certificate and no PostgreSQL account has a password, verified there
+(all ten connections TLS 1.3 with `/CN=catalog` in `pg_stat_ssl`; a connection without a certificate refused). That
+is the shape production takes too, with work's PKI in place of the script.
+
+catalog-security's review (2026-11-25) keeps the design with these changes to the note's: no
+`POSTGRES_HOST_AUTH_METHOD=trust` (initdb would write `host all all all trust`, open if `hba_file` were ever lost;
+set an unused random password instead, which fails closed); `ALTER ROLE catalog PASSWORD NULL` on a kept volume (D52);
+no `fsGroup` on PostgreSQL (it reaches the data volume) but the key copied in at start with mode 0600; the client
+key in a volume of its own, not the config-tree Secret whose every file becomes a Spring property, through a chart
+value `databaseTls` (secret name, mount path, mode 0440); the URL's TLS parameters in `catalog-values.yaml`, since
+`stack.yaml` enforces them for the matrix too; both pods rolled on a new certificate; a self-check in `up` (a TCP
+connection without a certificate fails, `SHOW hba_file` is the mounted file). Only the catalog connects over TCP;
+everything else uses the socket. The engine matrix applies the same `stack.yaml` and `catalog-values.yaml`, so its
+harness issues the certificates too (PrivateCa can), and the Silo key becomes a placeholder TestS3 fills.
+
+Done when a fresh `up` and an `up` on a kept volume both leave the catalog on a certificate (`pg_stat_ssl`), a
+connection without one is refused, no PostgreSQL role has a password, the chart renders `databaseTls`, the install
+guide says how work's PKI plugs in, and the next overnight engine matrix passes.
+
+### 282. The demo's and the laptop runner's fixed passwords made once per machine, people's included
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: demo/ deploy/local/
+- Effort: L, about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first
+
+The work note (`docs/from-work/005-github-secret-scanning.md`) expects the demo's fixed passwords to be flagged next:
+Silo's secret key, Keycloak's admin's and SingleStore's root's. catalog-security's sweep
+(2026-11-25) adds Grafana's and CloudBeaver's admins, the worker's Silo key, the CDC leg's database passwords and
+connector settings, and the people's passwords in `keycloak-realm.json`, `backoffice.sql`, `cdc/*.sql` and
+`cloudbeaver.yaml`. The people's passwords matter beyond the scanner: `presenter` may do everything, grants to their
+own groups included, so at work, with `NUNA_DEMO_HOST` set, anyone who has read the repository can sign in as them.
+
+`deploy/local` (the laptop runner) holds seven: backing.yaml:23/106-107, keycloak.yaml:35/99 (a client secret in a
+ConfigMap), values.yaml:78-79, worker-values.yaml:50-51. The note's fix reads the database password from
+`backing.yaml` with `sed`, which keeps the literal in git. It stays on a password: it is the one runner that takes
+the documented production path (`deploy/README.md`).
+
+Done when `up` makes each value once per machine under `~/.nuna-demo` (as `publish_keycloak_keys` does) and passes it
+with `--set-file` or a Secret, never on Helm's command line; people's passwords are typeable and printed by `up` to
+`~/.nuna-demo/people`, and the README names that file instead of listing them; kept volumes take the new values
+(PostgreSQL's ALTER ROLE, Grafana's reset; one `wipe` where an image cannot); every person signs in and `cdc` passes;
+`deploy/local/run.sh` makes its values in `~/.nuna-k8s`, and `up`, `smoke` and `worker` pass.
+
+### 283. Kafka Connect's REST API is published on 8186 with no sign-in
+
+- Added: 2026-11-25 by catalog-security, from its review of work note 005
+- Touches: demo/k8s/ports.yaml demo/k8s/connect.yaml demo/README.md
+- Effort: S, oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check
+
+Found while reviewing `docs/from-work/005-github-secret-scanning.md` (2026-11-25). While the CDC leg runs, the front
+door publishes Kafka Connect's REST API on 8186 with no sign-in (`ports.yaml:103`), and `EnvVarConfigProvider` is on
+(`connect.yaml:34-35`). Anyone who reaches 8186 can create a connector and copy the worker's environment into its
+settings, the catalog token `NUNA_TOKEN` included, and with the database's published superuser password Debezium's
+`database.initial.statements` would run SQL on the catalog's database (read from Debezium's documented option, not
+tried). Item 281 closes the database part; the API itself stays open.
+
+Done when an unauthenticated request to 8186 is refused (or nothing listens there) and a signed-in operator can still
+see the connectors.
+
+### 284. The audit table writer stops for good when its table is dropped under it
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: catalog-audit-tables/src/
+- Effort: S, one reopen path in LogWriter and TableWriter and a test that drops the table between commits
+
+From `docs/from-work/005-github-secret-scanning.md`, item 4: the writer makes `nuna_audit.audit.events` only as it
+starts. When the catalog's PostgreSQL is new but the writer's pod is not (a Helm upgrade that changes nothing leaves
+it running), the Audit page answers 503 "the audit table nuna_audit.audit.events does not exist yet" for good, and
+the writer logs `NoSuchTableException: Table does not exist: audit.events` every 10 seconds while holding its
+records. Work's stopgap restarts the writer from `demo.sh`; work says the better fix is the writer making its table
+again. catalog-security (2026-11-25): `LogWriter.reload()` reopens only when `table == null` (LogWriter.java:229-232),
+so once the table is gone every reload fails; TableWriter has the same shape.
+
+Done when, on `NoSuchTableException` only (never on a 403, which would hide a revoked grant), the writer drops its
+cached table and opens it again through the opener that creates it, logs a WARN that a dropped audit table should be
+undropped rather than replaced, and writes the records it held; a test drops the table between two commits and sees
+both commits' records in the new table.
+
+### 285. Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub
+
+- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
+- Touches: none
+- Effort: M if history is rewritten (a rewrite, its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on
+
+Push protection checks every commit pushed, so once 280 to 282 clean the tree, the old values in earlier commits
+still block a push of the full history (`docs/from-work/005-github-secret-scanning.md`). Work pushed one
+history-less snapshot for that reason.
+
+The facts (catalog-security, 2026-11-25): every value is in history from the commit that added it, under keel and
+fidice spellings before the renames (a60daba, 3040ff8). A rewrite changes every hash from about M0 on: it orphans the
+worktrees, `refs/backlog/claims/*`, `.overnight/worktree` and `~/.nuna-demo/checkout`, and leaves the hashes cited in
+CLAUDE.md, the ledger and `status/` pointing at nothing. `git filter-repo` is not installed here; the fast-export
+route in the notes works, proven by a byte-identical tip tree, with rules anchored so they match nothing in the
+cleaned tip (`catalog` is an ordinary word). Work's repository started from its snapshot, so a later full-history
+push would be unrelated history there.
+
+The question for Paul: rewrite history so the whole of it can go to work's GitHub, or keep pushing snapshots.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -2156,10 +2227,12 @@ Catalog UI Expert before building.
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
 | [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
 | [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
+| [172](backlog/172.md) | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | done | 2026-11-25 |
 | [173](backlog/173.md) | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | done | 2026-11-23 |
 | [174](backlog/174.md) | Demo: every UI signs in through Keycloak, Silo's console and Keycloak's admin console included | done | 2026-11-23 |
 | [175](backlog/175.md) | Brokerage world: the bootstrap fixes the world's settings on a brokerage namespace the change feed made | done | 2026-11-23 |
 | [176](backlog/176.md) | The fast build re-checks every bite each time, and agents run it again and again before landing | done | 2026-11-23 |
+| [177](backlog/177.md) | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | done | 2026-11-25 |
 | [179](backlog/179.md) | The demo catalog is OOMKilled under the brokerage world's load: 768Mi with a 75% heap leaves too little outside the heap | done | 2026-11-23 |
 | [180](backlog/180.md) | Demo: ana and presenter browse Silo's console, read-only | done | 2026-11-23 |
 | [181](backlog/181.md) | The brokerage world on the real clock: each event at its own time of day, quiet off-hours, its sink restarted when it fails | done | 2026-11-23 |
@@ -2246,3 +2319,4 @@ Catalog UI Expert before building.
 | [275](backlog/275.md) | The worker's first scan after a restart can't get a token, and readiness then says storage is missing | done | 2026-11-25 |
 | [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |
 | [277](backlog/277.md) | The console says no worker has reported when its newest scan reported no storage | done | 2026-11-25 |
+| [280](backlog/280.md) | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | done | 2026-11-25 |

@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import javax.sql.DataSource;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.SafetyFinding;
@@ -76,7 +77,8 @@ class OracleBackendTest {
     static class Oracle implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
         private static final String USER = "catalog";
-        private static final String PASSWORD = "catalog";
+        /** Made per JVM; Oracle wants a letter first. */
+        private static final String PASSWORD = "pw" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
         private static final String SERVICE = "catalog_tg";
         private static final String ALIAS = "oracle";
         private static final int PORT = 1521;
