@@ -186,7 +186,8 @@ function objectLink(catalog, kind, path, tab) {
   if (k === 'catalog' || !levels.length) return code(catalog);
   const target = k === 'namespace' ? {catalog, kind: k, namespace: levels}
     : {catalog, kind: k, namespace: levels.slice(0, -1), name: levels[levels.length - 1]};
-  return h('a', {href: objectHref(target, tab)}, levels.join('.'));
+  // The path breaks after each dot, so a long one wraps and the number columns beside it stay in view (backlog 220).
+  return h('a', {href: objectHref(target, tab)}, levels.flatMap((x, i) => i < levels.length - 1 ? [x + '.', h('wbr')] : [x]));
 }
 
 // ---- the feed ----
@@ -200,6 +201,8 @@ function feedPanel(catalog, summary, own) {
     autocomplete: 'off', spellcheck: 'false'});
   const upTo = h('select', {name: 'to', 'aria-label': 'Up to'}, UP_TO.map(([v, l]) => h('option', {value: v}, l)));
   const reads = h('input', {type: 'checkbox', name: 'audit-reads'});
+  // How many records the headline counts that the chips leave out while the audit's reads are hidden (backlog 220).
+  const hidden = h('span', {class: 'muted', 'data-hidden': ''});
   who.value = st.who;
   path.value = st.path;
   upTo.value = st.upTo;
@@ -230,6 +233,8 @@ function feedPanel(catalog, summary, own) {
   };
   const drawChips = () => {
     drawKinds();
+    const n = counted && !st.auditReads ? total(counted) - kindTotal(counted, typesOf('all')) : 0;
+    hidden.textContent = n ? ` · ${plural(n, 'record')} hidden` : '';
     chipBox.replaceChildren(...KINDS.map(([k, label]) => chip(k, label)));
   };
   const chip = (k, label) => {
@@ -325,7 +330,7 @@ function feedPanel(catalog, summary, own) {
       h('label', {class: 'ff'}, h('span', null, 'Table or namespace'), h('span', {class: 'field mono'}, icon('search'), path)),
       h('label', {class: 'ff'}, h('span', null, 'Who'), h('span', {class: 'field'}, who)),
       h('label', {class: 'ff'}, h('span', null, 'Up to'), h('span', {class: 'field select'}, upTo))),
-    chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads'), status, feed, more);
+    chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads', hidden), status, feed, more);
   function chooseKind(k) {
     st.kind = k;
     drawChips();

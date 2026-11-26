@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**42 open:** 11 S, 14 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**41 open:** 10 S, 14 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,7 +39,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
-| [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
@@ -1597,27 +1596,6 @@ Done when the purge claim and the removal lock the held levels (or the catalog r
 stores; a store suite case holds a namespace hold's write open while each runs and sees them serialized; bites
 recorded.
 
-### 220. Console: findings from Atelier's re-walk after items 212 to 217
-
-- Added: 2026-11-23 by local_6867d144-54ac-41a5-b94a-192a4c66770b
-- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: S, three small console fixes: one column's wrapping, one count's words, one button's label
-
-Atelier's re-walk after items 212 to 217 (2026-11-23, `status/2026-11-23-console-rewalk-fixes.md`), live in the demo
-at 1440 × 900 with that branch's console. Her two other findings were fixed on that branch (the regulated table's
-width, the merge verdict's one sentence). Left:
-- Audit's "Most recorded" side table clips its Records column (gary on lakehouse's Audit): the header reads "Reco" and
-  the numbers are hidden behind the long paths. Let the paths wrap or truncate with a title, so the number columns stay
-  in view.
-- Audit's headline and "Records in lakehouse" say 1,140 while the All chip and By kind's All say 1,124. Her guess, not
-  checked: the 16 are the audit's own reads, hidden while "Show audit reads" is off. Count the same records in both,
-  or say so ("1,140 records · 16 audit reads hidden").
-- The catalog page read through @sample has a "Copy name" button that does not say what it copies. Name it as 217 did
-  the ref page's ("Copy lakehouse@sample", aria-label "Copy the warehouse name lakehouse@sample").
-
-Done looks like: each as above, checked in the demo at 1440 × 900 (no column clipped: each table's scrollWidth within
-its card); the heavy browser cases that read the headline or the button updated.
-
 ### 231. Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides)
 
 - Added: 2026-11-24 by Paul
@@ -2187,6 +2165,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [217](backlog/217.md) | Console: smaller findings from Atelier's re-walk after phase 2 | done | 2026-11-23 |
 | [218](backlog/218.md) | Console browser tests beside the demo: the agent takes the demo down, runs them and brings it back up (D49) | done | 2026-11-23 |
 | [219](backlog/219.md) | Console: eight browser tests disagree with the pages S2, S3 and S5 made | done | 2026-11-23 |
+| [220](backlog/220.md) | Console: findings from Atelier's re-walk after items 212 to 217 | done | 2026-11-25 |
 | [221](backlog/221.md) | Console: branches and tags have a place in the rail, and making a branch is found there (Paul, 2026-11-23) | done | 2026-11-24 |
 | [222](backlog/222.md) | Console: Compact a table now offers the catalog's tables in a dropdown, tonight's queue first (Paul, 2026-11-23) | done | 2026-11-24 |
 | [223](backlog/223.md) | KafkaDownTest still expects a scan to fail while Kafka is down, which 195 changed: a Kafka outage blocks nothing | done | 2026-11-24 |
