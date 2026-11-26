@@ -1844,6 +1844,72 @@ class ConsoleBrowserTest {
         }
     }
 
+    /**
+     * Taking a table out of branches and tags from its Access tab (backlog 279; Atelier, 2026-11-25). A reader without
+     * {@code manage-tags} sees which refs keep a table main dropped and the steward's line, and no button; a tag steward,
+     * who holds {@code manage-tags} and not {@code select}, takes it out of the tag through the dialog, which opens on
+     * Cancel with nothing chosen, and reads what the answer left; the panel then says nothing keeps it.
+     */
+    @Test
+    void aStewardTakesADroppedTableOutOfATagFromAccessAndAReaderSeesNoButton() {
+        String ns = "out_" + Api.suffix();
+        String tag = "eod_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/orders", null), 204);
+            String access = "/ui/#" + at("table", List.of(ns), "orders", "access");
+
+            // The tester holds create and modify, not manage-tags: the list and the steward's line, no button.
+            signIn(tester());
+            browser.open(access);
+            WebElement panel = browser.await(By.cssSelector("#kept-by-refs .kept-panel"));
+            browser.awaitText(By.cssSelector("#kept-by-refs [data-kept-lead='dropped']"), "Main dropped this table on ");
+            assertThat(textContent(panel)).contains("Kept by branches and tags 1",
+                    "These still read it and keep its files from cleanup; once none does, cleanup can purge it and"
+                            + " delete its files.",
+                    "@" + tag, "tag · made ",
+                    "A tag steward, holding manage-tags on it, can take it out of them so cleanup can delete its files.");
+            assertThat(panel.findElement(By.cssSelector("[data-kept-row='" + tag + "'] a")).getDomAttribute("href"))
+                    .contains("r=" + tag);
+            assertThat(driver.findElements(By.cssSelector("button[data-act='take-out']"))).isEmpty();
+
+            // The steward: manage-tags on the catalog, and no select.
+            signIn(person("stella", GovernanceServer.STEWARDS));
+            browser.open(access);
+            browser.await(By.cssSelector("#kept-by-refs button[data-act='take-out']")).click();
+            WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
+            assertThat(textContent(dialog.findElement(By.id("dlg-h")))).isEqualTo("Take orders out of branches and tags");
+            assertThat(textContent(dialog)).contains("Each branch and tag you choose stops keeping " + ns + ".orders.",
+                    "Main dropped it on ", "This cannot be undone:", "Every branch and tag that keeps it (1)",
+                    "Only the ones I tick");
+            // Focus starts on Cancel, and nothing is chosen.
+            assertThat(textContent(driver.switchTo().activeElement())).isEqualTo("Cancel");
+            assertThat(dialog.findElements(By.cssSelector("input:checked"))).isEmpty();
+            WebElement submit = dialog.findElement(By.cssSelector("button[type='submit']"));
+            assertThat(textContent(submit)).isEqualTo("Take it out");
+            submit.click();
+            browser.awaitText(By.cssSelector("dialog.dlg .dlg-out"), "Choose which branches and tags to take it out of.");
+
+            // Ticking the tag chooses "Only the ones I tick", and the button names it.
+            dialog.findElement(By.cssSelector("input[name='ref'][value='" + tag + "']")).click();
+            assertThat(dialog.findElement(By.cssSelector("input[name='which'][value='some']")).isSelected()).isTrue();
+            assertThat(textContent(submit)).isEqualTo("Take it out of @" + tag);
+            submit.click();
+            WebElement took = browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Took " + ns + ".orders out of @" + tag);
+            assertThat(textContent(took)).contains("No branch or tag keeps it now. Cleanup can purge it and delete its files.");
+            assertThat(submit.isDisplayed()).isFalse();
+
+            // On close the panel reads again.
+            dialog.findElement(By.cssSelector("button.dlg-x")).click();
+            browser.awaitText(By.cssSelector("#kept-by-refs [data-kept-none]"), "No branch or tag keeps this table.");
+            assertThat(driver.findElements(By.cssSelector("button[data-act='take-out']"))).isEmpty();
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+        }
+    }
+
     // ---- fixtures ----
 
     /** The v2 table: three schemas, a second partition spec and sort order, three snapshots, a tag and a branch. */

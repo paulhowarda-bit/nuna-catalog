@@ -17,6 +17,7 @@ import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceS
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
+import {fillKeptSlots} from './kept.js';
 import {droppedThroughRef, missingWords, readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
 import {closedNote, openingTab, trailOpen, trailWords} from './access.js';
 
@@ -62,6 +63,8 @@ function refusedLoad(error, others, ref) {
 async function missingLoad(error, target, title) {
   if (error.status !== 404 || error.type !== 'NoSuchTableException') return null;
   const words = await missingWords(target, title);
+  // Item 279's control, or its steward line, in each slot the state leaves for a dropped object.
+  if (words) await fillKeptSlots(words, target);
   return words ? [failure(error, {big: true}), words] : null;
 }
 

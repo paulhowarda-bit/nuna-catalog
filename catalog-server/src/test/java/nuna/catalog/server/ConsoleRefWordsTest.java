@@ -110,4 +110,112 @@ class ConsoleRefWordsTest {
         assertThat(resource("refs.js")).contains("function refLine(c, refs) {", "refLine(c, refs),")
                 .doesNotContain("refLine(c, refs, list)");
     }
+
+    /** Item 279, Atelier's design of 2026-11-25: the Access tab's panel, its words, and who sees the control. */
+    @Test
+    void theAccessPanelListsTheRefsThatKeepItAndOffersTheControlOnlyToAStewardFreeOfHoldAndFreeze() throws IOException {
+        String kept = resource("kept.js");
+
+        assertThat(kept).contains("'Kept by branches and tags', n ? [' ', h('span', {class: 'meta'}, String(n))] : null",
+                "`Each reads this ${kind} as it was at its point, or as the branch has changed it, and keeps its `",
+                "+ 'files from cleanup.'",
+                "`Main dropped this ${kind} on ${dayMon(o['dropped-at'])}. These still read it and keep `",
+                "+ 'its files from cleanup; once none does, cleanup can purge it and delete its files.'",
+                "(o['purge-after'] ? ` Its purge time is ${dayMon(o['purge-after'])}.` : '')",
+                "`No branch or tag keeps this ${kind}.`",
+                "(x.kind === 'tag' ? `tag · made ${dayMon(x['created-at'])}` : `branch · expires ${dayMon(x['expires-at'])}`)",
+                "(x['own-version'] != null ? ` · changed it: its version ${x['own-version']}` : '')",
+                "(target.ref && sameRef(x.name, target.ref) ? ' · you are reading it here' : '')",
+                "`branch · past its expiry ${dayMon(x['expires-at'])}; the worker ends it at its next run`",
+                "'Take out of branches and tags'", "'data-act': 'take-out'",
+                "'Under a legal hold, so its branches and tags keep it until the hold is released.'",
+                "'Frozen for DR reconcile: nothing takes it out of a branch or tag until the freeze ends.'",
+                "'A tag steward, holding manage-tags on it, can take it out of them so cleanup can delete its files.'",
+                "failure(error, {compact: true})",
+                "id: 'kept-by-refs'",
+                // The control only for may.remove, with refs to leave; the steward line only for a dropped one.
+                "if (!(o.may || {}).remove) return dropped(o) && n ? h('p', {class: 'fine', 'data-kept-steward': ''}, STEWARD) : null;",
+                "if (!n) return null;",
+                // Hold and freeze from main's governance, only for a live object: a dropped one has none on main.
+                "if (dropped(o)) return null;",
+                "if ((g.holds || []).length) return 'held';",
+                "if ((g.effective || {})['dr-freeze']) return 'frozen';");
+        // Drawn from item 170's read alone, never the table's load.
+        assertThat(kept).contains("(await api.objectRefs(target)).objects").doesNotContain("api.table(", "loadTable");
+        // After governance on the Access tab, for a table or a view.
+        assertThat(resource("panels.js")).contains("gov, kept, rulesPanel(target), grants);",
+                "const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;");
+    }
+
+    /** Item 279: each object by its own id; through a ref, the one it keeps, never main's new table of the name. */
+    @Test
+    void thePanelShowsEachObjectByItsIdAndThroughARefTheOneItKeeps() throws IOException {
+        String kept = resource("kept.js");
+
+        assertThat(kept).contains("const kept = objects.filter(o => keeps(o, target.ref));",
+                "if (kept.length) return kept;",
+                "return active ? [active] : objects;",
+                "'data-kept-object': o.id",
+                "api.removeFromRefs(target.catalog, o.id, c.every ? {'all-refs': true} : {refs: ticked})",
+                "api.objectRefsById(target.catalog, slot.dataset.keptActs)");
+        // Item 170's slots each get the control or the steward line.
+        assertThat(resource("table.js")).contains("if (words) await fillKeptSlots(words, target);");
+        assertThat(resource("api.js")).contains("/objects/${enc(id)}/refs/remove`,", "{method: 'POST', body});");
+    }
+
+    /** Item 279: the dialog's words, its choice, the submit that follows it, and focus on Cancel. */
+    @Test
+    void theDialogSaysWhatTakingItOutDoesAndStartsOnCancel() throws IOException {
+        String kept = resource("kept.js");
+
+        assertThat(kept).contains("openDialog(`Take ${o.name} out of branches and tags`, body)",
+                "h('b', null, `Each branch and tag you choose stops keeping ${path}.`)",
+                "' Reads of it through them answer 404, as if they had never held it, and they no longer keep its files from cleanup.'",
+                "`Main dropped it on ${dayMon(o['dropped-at'])}. Once no branch or tag keeps it, cleanup can purge it and delete its files.`",
+                "'Main still has it. Files that only these reached are left to the orphan scan, which removes them once they '",
+                "+ 'are older than its minimum age.'",
+                "const owned = refs.some(x => x.kind === 'branch' && x['own-version'] != null);",
+                "'A branch\\'s own commits to it go too, so a merge can no longer bring them to main.'",
+                "h('b', null, 'This cannot be undone:'), ' no branch or tag can take it back. Each ref\\'s record in the audit names the change.'",
+                "h('legend', null, 'Take it out of')",
+                "`Every branch and tag that keeps it (${refs.length})`",
+                "'Those that keep it when the catalog runs this, a branch past its expiry included.'",
+                "'Only the ones I tick'",
+                "disabled: !!x.expired",
+                "'Past its expiry: Every takes it out, or the worker ends it at its next run.'",
+                "if (e.target.name === 'ref' && e.target.checked) $('input[name=\"which\"][value=\"some\"]', choice).checked = true;",
+                "if (every) return 'Take it out of every one';",
+                "if (ticked.length === 1) return `Take it out of @${ticked[0]}`;",
+                "if (ticked.length > 1) return `Take it out of ${ticked.length} branches and tags`;",
+                "return 'Take it out';",
+                "'Choose which branches and tags to take it out of.'",
+                "if (!c.every && !ticked.length) { fill(out, h('p', {class: 'fine grant-hint'}, NONE)); return; }",
+                "ok().classList.add('danger');",
+                "$('.dlg-acts .btn.ghost', dlg).focus();");
+        // Nothing is chosen when it opens.
+        assertThat(kept).doesNotContain("value: 'every', checked", "value: 'some', checked");
+        assertThat(resource("style.css")).contains(".dlg.kept-dlg .dlg-acts { position: sticky; bottom: 0;",
+                ".kept-ticks { padding-left: 24px; max-height: 32vh; overflow: auto;");
+    }
+
+    /** Item 279: what the answer left, the refusals' notes, the return to main, and the audit line. */
+    @Test
+    void theAnswerTheRefusalsAndTheAuditLineSayWhatHappened() throws IOException {
+        String kept = resource("kept.js");
+
+        assertThat(kept).contains("granted(h('span', null, `Took ${path} out of `, chipList(took)), answer, leftWords(o, after))",
+                "'No branch or tag keeps it now. Cleanup can purge it and delete its files.'",
+                "h('span', null, chipList(still), ' still keep it.')",
+                "'Main still has it; no branch or tag keeps it now.'",
+                "granted('Nothing to take out', answer, `No branch or tag kept ${path} when the catalog looked; nothing changed.`)",
+                "ok().hidden = true;",
+                "'The branches and tags changed since this list was read. The list above is read again; choose again.'",
+                "error.type === 'NoSuchRefException' || (error.type === 'NoSuchObjectException' && / on ref /.test(error.message || ''))",
+                "'It may have been purged since this page was read.'",
+                "tookFromPage = !!target.ref && took.some(x => sameRef(x.name, target.ref));",
+                "location.hash = objectHref({...target, ref: null},");
+        assertThat(resource("refs.js")).contains(
+                "case 'OBJECT_REMOVED': return `Took ${((d.tables || [])[0] || {path: []}).path.join('.')} out of the ${kind} ${name}, `",
+                "+ 'which no longer reads it or keeps its files';");
+    }
 }

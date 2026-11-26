@@ -13,6 +13,7 @@ import {liveRefLink, refWords} from './refs.js';
 import {heldHere} from './requests.js';
 import {rulesPanel, yourView} from './rules.js';
 import {grantAccess} from './grant.js';
+import {keptPanel} from './kept.js';
 
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
 const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', 'row-column-policy'];
@@ -505,6 +506,9 @@ export function accessTab(target, reload) {
   const gov = h('div');
   load(you, () => youMay(target));
   load(gov, () => governanceTab(target, reload));
+  // Which branches and tags keep a table or view, after its governance (item 279): from item 170's read alone.
+  const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;
+  if (kept) load(kept, () => keptPanel(target));
   const [grants, listAgain] = grantsPart(target);
   // Once the dialog closes after a grant, the grant's row is brought to the middle of the view, once the list has it.
   let listed = Promise.resolve(null);
@@ -516,7 +520,7 @@ export function accessTab(target, reload) {
   const acts = may(target.catalog, 'manage-grants') ? h('div', {class: 'refusal-acts access-acts'},
     h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target,
       {after: made => { listed = listAgain(made); }, closed: showMade})}, icon('key'), 'Grant access')) : null;
-  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grants);
+  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, kept, rulesPanel(target), grants);
 }
 
 /** The Access tab's grants, and what lists them again once the dialog makes one, marking it. */

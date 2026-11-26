@@ -15,7 +15,7 @@ const DAY = 86_400_000;
 const ms = iso => new Date(iso).getTime();
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "21 Dec" */
-const dayMon = iso => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+export const dayMon = iso => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 /** "21 Dec 06:41", always with the date. */
 const refAt = iso => { const d = new Date(iso); return `${dayMon(iso)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const daysTo = iso => Math.max(0, Math.ceil((ms(iso) - Date.now()) / DAY));
@@ -440,6 +440,10 @@ export function refWords(d) {
     case 'MERGED': return `Merged the branch ${name} into main: ${plural((d.tables || []).length, 'table')} moved in one transaction, and the branch ended`;
     case 'EXPIRING': return `Warned that the branch ${name} expires ${until}`;
     case 'EXPIRED': return `Ended the branch ${name}, which expired ${until}`;
+    // Item 156's record names the table or view it took out in `tables` (RefChange.tables, each a Securable whose path
+    // is its namespace levels, then its name).
+    case 'OBJECT_REMOVED': return `Took ${((d.tables || [])[0] || {path: []}).path.join('.')} out of the ${kind} ${name}, `
+      + 'which no longer reads it or keeps its files';
     default: return `${String(d.action || '').toLowerCase()} ${name}`;
   }
 }

@@ -1332,3 +1332,13 @@ details.setup-fold[open] > summary { margin-bottom: 6px; }
 .setup-tbl td[data-state="delete-refused"], .setup-tbl td[data-state="unprotected"] { color: var(--bad-ink); }
 .setup-tbl td[data-state="no-answer"] { color: var(--warn-ink); }
 .setup-prefixes code { overflow-wrap: break-word; }
+
+/* Which branches and tags keep a table or view, and taking it out of them (item 279): the Access panel's rows, the
+   dialog's choice, and at phone width a long list that scrolls inside the dialog while its buttons stay in view. */
+.kept-list, .kept-ticks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.kept-list li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.kept-choice label { display: flex; gap: 8px; align-items: flex-start; font-size: var(--t-13); }
+.kept-choice label > span { display: grid; gap: 2px; }
+.kept-ticks { padding-left: 24px; max-height: 32vh; overflow: auto; overscroll-behavior: contain; }
+.kept-ticks input:disabled + span { opacity: 0.7; }
+.dlg.kept-dlg .dlg-acts { position: sticky; bottom: 0; background: var(--surface); padding: 10px 0 4px; z-index: 1; }
