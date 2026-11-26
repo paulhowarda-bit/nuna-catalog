@@ -1,0 +1,15 @@
+Breaks: readiness gives scanned-at only from a newest scan that reported storage, so a newest scan that could not read its storage prefixes looks like no scan at all, and the console says no worker has reported (item 277).
+Module: catalog-server
+Test: ReadinessUnreadPrefixesTest#scannedAtTellsANewestScanWithoutStorageFromNoScanAtAll
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadinessRoutes.java
+@@ -91,7 +91,7 @@
+         ObjectNode body = Management.JSON.createObjectNode();
+         body.put("catalog", target.catalog().name());
+         body.put("names", names);
+-        scans.stream().findFirst().ifPresent(scan -> body.put("scanned-at", reportedAt(scan)));
++        last.ifPresent(scan -> body.put("scanned-at", reportedAt(scan)));
+         last.ifPresent(scan -> body.put("reported-at", reportedAt(scan)));
+         body.set("grant", grantStep(target, last, names));
+         body.set("storage", storageStep(profile, prefixes, last, names));
