@@ -1,0 +1,19 @@
+Breaks: The log writer keeps the table it cached when the catalog answers that the table does not exist, so every reload fails again and the table is never made again (backlog 284).
+Module: catalog-audit-tables
+Test: LogWriterTest#aTableDroppedBetweenCommitsIsMadeAgainWithTheRecordsItHeld
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+index d4a24f2e..9ea7785c 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+@@ -240,11 +240,9 @@ final class LogWriter {
+             offsets = table.reloadRecorded();
+         } catch (NoSuchTableException e) {
+             // Only this answer makes the table again: a refusal is thrown, so a revoked grant shows (backlog 284).
+-            table = null;
+             LOG.warn("The audit table is gone ({}); making it again and writing the {} records this writer holds. A"
+                     + " dropped audit table should be undropped rather than replaced: the rows written before are in"
+                     + " the dropped one (undrop needs the name free).", e.getMessage(), waiting());
+-            table = opener.get();
+             offsets = table.reloadRecorded();
+         }
+         long recorded = offsets.map(o -> o.getOrDefault(PARTITION, 0L)).orElse(0L);

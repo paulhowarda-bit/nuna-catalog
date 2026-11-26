@@ -1,0 +1,16 @@
+Breaks: a removal from refs on MongoDB no longer marks the namespaces above the table, so it does not conflict with a hold being placed on one of them and takes the table out of its refs though the hold commits first (backlog 171).
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Refs#aRemovalWaitsForAnOpenHoldAboveTheTable
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+index dbfb02dd..8d3555e4 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+@@ -504,7 +504,6 @@ final class MongoRefs {
+             tx.collection(POINTER).find(tx.session, own).projection(new BsonDocument("clock", new BsonInt32(1)))
+                     .forEach(tx::see);
+             tx.mark(OBJECT, object.get());
+-            namespaces.forEach(namespace -> tx.mark(NAMESPACE, namespace));
+             refs.forEach(ref -> tx.mark(REF, ref));
+             tx.collection(CATALOG).updateOne(tx.session, byId(uuid(catalogId)), new BsonDocument("$set",
+                     new BsonDocument("clock", tx.clock()).append("trimmed", tx.clock())));

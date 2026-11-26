@@ -1,0 +1,18 @@
+Breaks: a purge claim on PostgreSQL and CockroachDB locks the object before the catalog's row, against the lock order every other write keeps (catalog first), so it can deadlock with a conditional grant on the object, which locks the catalog's row for update and then the object (backlog 171).
+Module: catalog-store-sql
+Test: SqlLockOrderTest#aPurgeClaimLocksTheCatalogTheObjectAndTheNamespacesAboveItBeforeReadingHolds
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+index c93b5a03..61579322 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+@@ -237,8 +237,8 @@ final class SqlObjects {
+             if (catalog.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+-            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
+             Optional<Claim> locked = lockForPurge(connection, objectId);
++            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
+             if (locked.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }

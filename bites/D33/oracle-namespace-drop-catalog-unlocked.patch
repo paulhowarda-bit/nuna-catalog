@@ -1,0 +1,16 @@
+Breaks: a namespace drop on Oracle no longer locks the catalog's row, so it does not wait for a ref create in flight, and the ref commits naming a table whose namespace the drop took (backlog 158).
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Refs#aNamespaceDropWaitsForAnOpenRefCreate
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java
+index 9895c237..96289a1b 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java
+@@ -128,7 +128,6 @@ final class OracleNamespaces {
+             if (catalog.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.NAMESPACE);
+             }
+-            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", catalog.get());
+             Optional<UUID> catalogId = first(connection, "SELECT catalog_id FROM namespace WHERE id = ? FOR UPDATE",
+                     row -> Jdbc.uuid(row, "catalog_id"), namespaceId);
+             if (catalogId.isEmpty()) {
