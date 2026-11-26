@@ -60,7 +60,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
  * The catalog-wide audit feed's routes (D45; backlog 125): who may read them, settled as for the audit tables (D23,
  * amended 2026-11-22: {@code select} on the audit catalog, "Audit readers only"), with a test for each refusal; what
  * the feed, the day's counts and the archive check's status answer; the 400s and
- * 503s; and the per-caller audit read limit they share with {@code GET .../audit}. The routes, guard and authorizer
+ * 503s; and the per-caller audit read limit they share with {@code GET .../audit}, which on a server without Kafka
+ * reads an object's records from the same table (backlog 197). The routes, guard and authorizer
  * are the real ones over a store double; the audit table and the archive are doubles, so this needs only Java.
  * {@code EventsReaderTest} reads a real table and {@code ArchiveCheckTest} a real chain.
  */
@@ -89,6 +90,10 @@ class AuditFeedRoutesTest {
     private final AuditSettings auditSettings = new AuditSettings("kafka:9092", TOPIC, "nuna.catalog.changes",
             Duration.ofSeconds(5), Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(250),
             Duration.ofSeconds(30), 500, new AuditSettings.Archive("audit-archive", "store", "audit"));
+    /** This server's audit settings for the object's Audit tab: no Kafka, so no audit topic to read. */
+    private final AuditSettings withoutKafka = new AuditSettings(null, TOPIC, "nuna.catalog.changes",
+            Duration.ofSeconds(5), Duration.ofSeconds(2), Duration.ofSeconds(10), Duration.ofMillis(250),
+            Duration.ofSeconds(30), 500, new AuditSettings.Archive(null, null, "audit"));
     private final Table table = new Table();
     private final Archive archive = new Archive();
     private AuditCatalogSettings tables = new AuditCatalogSettings("nuna_audit", "auditors", "audit-writers");
@@ -114,7 +119,8 @@ class AuditFeedRoutesTest {
         trail = new AuditTrail(Optional.<EventPublisher>of(stamped -> audited.add(stamped.event())), URI.create("urn:nuna:test"),
                 clock, Duration.ofSeconds(1));
         AuditFeed feed = new Feed(store, clock);
-        routes = new AuditReadRoutes(management, guard, null, trail, settings, feed, archive, clock);
+        routes = new AuditReadRoutes(management, guard, new RecentAudit(withoutKafka), trail, settings, feed, archive,
+                clock);
     }
 
     // ---- who may read ----
@@ -536,6 +542,65 @@ class AuditFeedRoutesTest {
     }
 
     /** A read of gate's table hr.staff, as the audit table holds it. */
+    // ---- an object's Audit tab, without Kafka (backlog 197) ----
+
+    @Test
+    void withoutKafkaAnObjectsAuditTabReadsItsRecordsFromTheAuditTable() {
+        caller = GINA;
+        table.rows = List.of(row(-1, 41, "request-9"), row(0, 7, "request-8"));
+
+        ResponseEntity<String> answer = routes.recent("gate", null, null, null, "25", http);
+
+        assertThat(answer.getStatusCode().value()).isEqualTo(200);
+        String body = answer.getBody();
+        assertThat(JsonPath.<String>read(body, "$.source")).isEqualTo("table");
+        assertThat(JsonPath.<String>read(body, "$.target.id")).isEqualTo(gate.id().toString());
+        assertThat(JsonPath.<List<String>>read(body, "$.records[*].data.actor.requestId")).as("each as the log holds it")
+                .containsExactly("request-9", "request-8");
+        assertThat(JsonPath.<String>read(body, "$.records[0].type")).isEqualTo("nuna.catalog.read");
+        assertThat(JsonPath.<Boolean>read(body, "$.complete")).isTrue();
+        assertThat(JsonPath.<String>read(body, "$.table.name")).isEqualTo("nuna_audit.audit.events");
+        assertThat(table.asked).singleElement().satisfies(query -> {
+            assertThat(query.catalog()).isEqualTo("gate");
+            assertThat(query.objectId()).as("only the records about it").isEqualTo(gate.id().toString());
+            assertThat(query.limit()).isEqualTo(25);
+        });
+        assertThat(audited(AuditRead.class)).singleElement().satisfies(read -> {
+            assertThat(read.target().id()).isEqualTo(gate.id());
+            assertThat(read.returned()).isEqualTo(2);
+            assertThat(read.actor().principal()).isEqualTo("gina");
+        });
+    }
+
+    @Test
+    void theAuditTabSaysWhenTheTableHoldsOlderRecordsThanItShows() {
+        caller = GINA;
+        table.rows = List.of(row(-1, 41, "request-9"));
+        table.next = Optional.of(new EventsReader.Cursor(1_000, -1, 41));
+
+        String body = routes.recent("gate", null, null, null, "1", http).getBody();
+
+        assertThat(JsonPath.<Boolean>read(body, "$.complete")).isFalse();
+    }
+
+    @Test
+    void theAuditTabStillNeedsManageGrantsNotSelectOnTheAuditCatalog() {
+        caller = AUDREY;
+        assertThat(answer(() -> routes.recent("gate", null, null, null, null, http)))
+                .as("she holds nothing in gate, so it is hidden from her (D18)").isEqualTo(404);
+        caller = TOM;
+        assertThat(answer(() -> routes.recent("gate", null, null, null, null, http))).isEqualTo(403);
+        assertThat(table.asked).as("refused before the table is read").isEmpty();
+    }
+
+    @Test
+    void withNeitherTheAuditTablesNorKafkaTheTabAnswers503() {
+        caller = GINA;
+        tables = new AuditCatalogSettings(null, null, null);
+
+        assertThat(answer(() -> routes.recent("gate", null, null, null, null, http))).isEqualTo(503);
+    }
+
     private AuditRow row(int partition, long offset, String requestId) {
         nuna.catalog.audit.Securable staff = new nuna.catalog.audit.Securable(
                 nuna.catalog.audit.Securable.Kind.TABLE, UUID.randomUUID(), "gate", List.of("hr", "staff"));
@@ -686,6 +751,10 @@ class AuditFeedRoutesTest {
                             .filter(g -> ((Set<Securable>) args[0]).contains(g.grant().securable())
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
                             .toList();
+                    case "listGrantsOfGroups" -> new nuna.catalog.store.Page<>(grants.stream()
+                            .filter(g -> g.grant().catalogId().equals(args[0])
+                                    && ((Set<String>) args[1]).contains(g.grant().group()))
+                            .toList(), Optional.empty());
                     case "attributesOf", "holdsOn" -> List.of();
                     case "toString" -> "the test's store";
                     default -> throw new UnsupportedOperationException(method.getName());

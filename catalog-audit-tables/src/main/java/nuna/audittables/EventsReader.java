@@ -72,7 +72,7 @@ public final class EventsReader implements AutoCloseable {
     public static final int MAX_LIMIT = 200;
 
     private static final Schema SCAN = EventsTable.SCHEMA.select("time", "type", "principal", "catalog",
-            "object_path", "topic_partition", "topic_offset");
+            "object_id", "object_path", "topic_partition", "topic_offset");
     private static final Schema COUNT = EventsTable.SCHEMA.select("time", "type", "principal", "catalog",
             "object_kind", "object_id", "object_path");
     private static final String READ = "nuna.catalog.read";
@@ -124,9 +124,11 @@ public final class EventsReader implements AutoCloseable {
      * @param to        the time to give records before, exclusive, or null for now
      * @param after     the cursor of the page before, or empty for the first page
      * @param limit     the most rows to give, 1 to {@link #MAX_LIMIT}
+     * @param objectId  one object's stable id: only the records about it, as an object's Audit tab asks (backlog
+     *                  197); null for any
      */
     public record Query(String catalog, Set<String> types, String principal, List<String> path, Instant from,
-                        Instant to, Optional<Cursor> after, int limit) {
+                        Instant to, Optional<Cursor> after, int limit, String objectId) {
 
         public Query {
             Objects.requireNonNull(catalog, "catalog");
@@ -136,6 +138,12 @@ public final class EventsReader implements AutoCloseable {
             if (limit < 1 || limit > MAX_LIMIT) {
                 throw new IllegalArgumentException("limit must be from 1 to " + MAX_LIMIT + ", not " + limit);
             }
+        }
+
+        /** A page about any object. */
+        public Query(String catalog, Set<String> types, String principal, List<String> path, Instant from, Instant to,
+                     Optional<Cursor> after, int limit) {
+            this(catalog, types, principal, path, from, to, after, limit, null);
         }
     }
 
@@ -275,6 +283,9 @@ public final class EventsReader implements AutoCloseable {
         if (query.principal() != null) {
             filter = Expressions.and(filter, Expressions.equal("principal", query.principal()));
         }
+        if (query.objectId() != null) {
+            filter = Expressions.and(filter, Expressions.equal("object_id", query.objectId()));
+        }
 
         // The rows kept, the oldest at the head, so a newer row can push it out.
         PriorityQueue<Candidate> kept = new PriorityQueue<>(NEWEST_FIRST.reversed());
@@ -349,6 +360,9 @@ public final class EventsReader implements AutoCloseable {
             return false;
         }
         if (query.principal() != null && !query.principal().equals(record.getField("principal"))) {
+            return false;
+        }
+        if (query.objectId() != null && !query.objectId().equals(record.getField("object_id"))) {
             return false;
         }
         if (query.from() != null && row.time() < micros(query.from())) {

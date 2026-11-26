@@ -1,0 +1,17 @@
+Breaks: an object's Audit tab says it shows every record the audit table holds about it when there are more.
+Module: catalog-server
+Test: AuditFeedRoutesTest#theAuditTabSaysWhenTheTableHoldsOlderRecordsThanItShows
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index 7f8aeb58..d612deb2 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -182,7 +182,7 @@ class AuditReadRoutes {
+             records.add(event != null ? event : Management.JSON.createObjectNode().put("id", row.eventId())
+                     .put("type", row.type()).put("time", row.time().toString()).put("subject", row.objectId()));
+         }
+-        body.put("complete", read.page().next().isEmpty() && read.page().searchedTo().isEmpty());
++        body.put("complete", true);
+         body.set("table", table(read.table()));
+         return GovernanceRoutes.json(200, body);
+     }

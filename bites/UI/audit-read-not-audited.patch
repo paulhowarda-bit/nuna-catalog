@@ -3,13 +3,14 @@ Module: catalog-server
 Test: AuditReadRouteTest#eachReadIsAudited
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index 7f8aeb58..571404a0 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
-@@ -78,7 +78,6 @@
+@@ -142,7 +142,6 @@ class AuditReadRoutes {
              LOG.warn("audit topic could not be read for {}: {}", target.securable().id(), e.getMessage());
              throw CatalogError.of(503, "ServiceUnavailableException", "The audit topic cannot be read now; retry later");
          }
 -        trail.record(new AuditRead(target.audit(), result.records().size(), request.actor()));
          ObjectNode body = Management.JSON.createObjectNode();
          body.set("target", GovernanceRoutes.securable(target.securable()));
-         // The topic holds changes in relay order, after the synchronous records published meanwhile; a reader
+         body.put("source", "topic");

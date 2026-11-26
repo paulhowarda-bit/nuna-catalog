@@ -1,0 +1,29 @@
+Breaks: Audit's Most recorded no longer wraps its paths, so its Records and Reads columns run out of the card at 1440 px (backlog 220).
+Module: catalog-server
+Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index d8a0986c..faeea168 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -187,7 +187,7 @@ function objectLink(catalog, kind, path, tab) {
+   const target = k === 'namespace' ? {catalog, kind: k, namespace: levels}
+     : {catalog, kind: k, namespace: levels.slice(0, -1), name: levels[levels.length - 1]};
+   // The path breaks after each dot, so a long one wraps and the number columns beside it stay in view (backlog 220).
+-  return h('a', {href: objectHref(target, tab)}, levels.flatMap((x, i) => i < levels.length - 1 ? [x + '.', h('wbr')] : [x]));
++  return h('a', {href: objectHref(target, tab)}, levels.join('.'));
+ }
+ 
+ // ---- the feed ----
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index 68555ec3..cd66fe73 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1061,7 +1061,6 @@ tr[data-line]:not([data-line="main"]) .mlog-line { color: var(--cref-ink); }
+ .props-tbl td.name { overflow-wrap: anywhere; }
+ td.wrap { overflow-wrap: anywhere; }
+ /* Audit's Most recorded sits in the side column: its paths and writers wrap so Records and Reads stay in view (backlog 220). */
+-#audit-busiest td.name { overflow-wrap: anywhere; }
+ /* a settings table (item 141): what each setting does under its name, its value, then Change and Reset */
+ .tbl.settings td { vertical-align: top; }
+ .tbl.settings td.setting code { font-size: var(--t-12); color: var(--text-2); }

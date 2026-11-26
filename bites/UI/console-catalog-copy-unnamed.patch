@@ -1,0 +1,17 @@
+Breaks: the catalog page's copy button says "Copy name" again, not what it copies, and copies the bare name through a ref (backlog 220).
+Module: catalog-server
+Test: ConsoleBrowserTest#theTreeOpensDownToTablesAndViews+aBranchIsMadeCommittedOnPreviewedAndMerged
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/browse.js b/catalog-server/src/main/resources/nuna/ui/browse.js
+index ca3dd3cf..76d0c7b8 100644
+--- a/catalog-server/src/main/resources/nuna/ui/browse.js
++++ b/catalog-server/src/main/resources/nuna/ui/browse.js
+@@ -218,7 +218,7 @@ function catalogPage(catalog, tab, route) {
+       if (!ref || error.status !== 404) throw error;
+     }
+     // The button names what it copies: the warehouse name, through the ref the page reads (backlog 220).
+-    const side = h('div', {class: 'side'}, copyWarehouse(warehouseOf({catalog, ref})), copyLinkButton());
++    const side = h('div', {class: 'side'}, copyButton(catalog, 'Copy name'), copyLinkButton());
+     const head = h('div', {class: 'ph'},
+       h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('db')), h('h1', {tabindex: '-1'}, catalog), h('span', {class: 'muted'}, 'catalog')),
+       x ? h('p', {class: 'sub'}, `${countWords(x.ns.length, 'namespace')} · `,

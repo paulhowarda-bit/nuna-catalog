@@ -4,12 +4,18 @@
 # Draft: the series names assume Prometheus' default OTLP translation of nuna's Micrometer meters (dots to
 # underscores, unit and _total suffixes); docs/observability/dashboards-and-alerts.md lists them and what to rename
 # if work's Prometheus differs. Severity: page or warning.
+#
+# Every page rule keeps firing for 10 minutes after its condition clears (keep_firing_for, backlog 261): a catalog
+# that stops pushing empties the rules' windows, and its page would resolve before NunaCatalogGone fires. The fast
+# burn-rate pages have no `for` (the SRE workbook's advice): their short window already asks for a sustained burn.
+# deploy/grafana/tests/nuna-catalog.test.yaml holds promtool unit tests of these rules.
 groups:
   - name: nuna-catalog-slos
     # Multiwindow burn-rate alerts (Google SRE workbook, a 30-day budget) on the build plan's latency SLOs (R7, M8):
     # 99% of loads answered 200 within 50 ms, of loads answered 304 within 10 ms, and of commits (updateTable,
     # commitTransaction) answered 200 within 300 ms, from the bucket bounds of nuna.catalog.requests' histogram.
-    # The fourth, at least 500 commits a second, has no rule: see dashboards-and-alerts.md.
+    # The fourth, at least 500 commits a second, has no rule: see dashboards-and-alerts.md. A failed answer is in
+    # none of these (they time answers 2xx or 3xx), so nuna-catalog-availability below covers failures.
     rules:
       - alert: NunaLoadSloBurnFast
         expr: |
@@ -36,7 +42,7 @@ groups:
               / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[30m]))
             )) > 6 * 0.01
           )
-        for: 2m
+        keep_firing_for: 10m
         labels:
           severity: page
         annotations:
@@ -89,7 +95,7 @@ groups:
               / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[30m]))
             )) > 6 * 0.01
           )
-        for: 2m
+        keep_firing_for: 10m
         labels:
           severity: page
         annotations:
@@ -142,7 +148,7 @@ groups:
               / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[30m]))
             )) > 6 * 0.01
           )
-        for: 2m
+        keep_firing_for: 10m
         labels:
           severity: page
         annotations:
@@ -170,11 +176,184 @@ groups:
           description: >-
             {{ $value | humanizePercentage }} of commits answered 200 (updateTable and commitTransaction) took longer than 300 ms over the last 3 days and
             6 h; the SLO allows 1% (p99 under 300 ms, build plan R7). docs/observability/dashboards-and-alerts.md.
+  - name: nuna-catalog-availability
+    # Availability SLOs (backlog 261), with the latency SLOs' windows, factors and severities: 99.9% of loads
+    # (loadTable), of commits (updateTable, commitTransaction) and of every call nuna.catalog.requests times are not
+    # answered 5xx. A 5xx is bad, nuna's own 503s included (the store or the identity provider unreachable, a record
+    # that had to be audited first and was not): each is an outage, not load shedding. 2xx and 3xx (a 304 too) are
+    # good. 4xx is in neither, 409 commit conflicts included: a client's mistake or a lost race is not the catalog
+    # failing. The error budget is 0.1%; 99.9% is a draft, set at work as D43's names are.
+    rules:
+      - alert: NunaLoadAvailabilityBurnFast
+        expr: |
+          (
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="5xx"}[1h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome=~"2xx|3xx|5xx"}[1h]))
+            ) > 14.4 * 0.001
+            and
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="5xx"}[5m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome=~"2xx|3xx|5xx"}[5m]))
+            ) > 14.4 * 0.001
+          )
+          or
+          (
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="5xx"}[6h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome=~"2xx|3xx|5xx"}[6h]))
+            ) > 6 * 0.001
+            and
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="5xx"}[30m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome=~"2xx|3xx|5xx"}[30m]))
+            ) > 6 * 0.001
+          )
+        keep_firing_for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of loads were answered 5xx (4xx answers left out); the SLO allows
+            0.1%, a draft target (backlog 261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over
+            6 h and 30 min. The catalog dashboard's "Failed loads" names the error types.
+            docs/observability/dashboards-and-alerts.md.
+      - alert: NunaLoadAvailabilityBurnSlow
+        expr: |
+          (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="5xx"}[3d]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome=~"2xx|3xx|5xx"}[3d]))
+          ) > 1 * 0.001
+          and
+          (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="5xx"}[6h]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome=~"2xx|3xx|5xx"}[6h]))
+          ) > 1 * 0.001
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loads fail with 5xx more often than the availability SLO allows ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of loads were answered 5xx (4xx answers left out) over the last 3 days
+            and 6 h; the SLO allows 0.1%, a draft target (backlog 261). docs/observability/dashboards-and-alerts.md.
+      - alert: NunaCommitAvailabilityBurnFast
+        expr: |
+          (
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[1h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[1h]))
+            ) > 14.4 * 0.001
+            and
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[5m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[5m]))
+            ) > 14.4 * 0.001
+          )
+          or
+          (
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[6h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[6h]))
+            ) > 6 * 0.001
+            and
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[30m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[30m]))
+            ) > 6 * 0.001
+          )
+        keep_firing_for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Commits fail with 5xx fast enough to spend the availability SLO's error budget in days ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of commits (updateTable and commitTransaction) were answered 5xx (4xx
+            answers, 409 conflicts among them, left out); the SLO allows 0.1%, a draft target (backlog 261). Burning
+            at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. A 5xx commit may or may not
+            have happened (CommitStateUnknownException): the dashboard's "Refused, unknown and failed commits" says
+            which. docs/observability/dashboards-and-alerts.md.
+      - alert: NunaCommitAvailabilityBurnSlow
+        expr: |
+          (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[3d]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[3d]))
+          ) > 1 * 0.001
+          and
+          (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[6h]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[6h]))
+          ) > 1 * 0.001
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Commits fail with 5xx more often than the availability SLO allows ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of commits (updateTable and commitTransaction) were answered 5xx (4xx
+            answers left out) over the last 3 days and 6 h; the SLO allows 0.1%, a draft target (backlog 261).
+            docs/observability/dashboards-and-alerts.md.
+      - alert: NunaRequestAvailabilityBurnFast
+        expr: |
+          (
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome="5xx"}[1h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome=~"2xx|3xx|5xx"}[1h]))
+            ) > 14.4 * 0.001
+            and
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome="5xx"}[5m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome=~"2xx|3xx|5xx"}[5m]))
+            ) > 14.4 * 0.001
+          )
+          or
+          (
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome="5xx"}[6h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome=~"2xx|3xx|5xx"}[6h]))
+            ) > 6 * 0.001
+            and
+            (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome="5xx"}[30m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome=~"2xx|3xx|5xx"}[30m]))
+            ) > 6 * 0.001
+          )
+        keep_firing_for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Iceberg calls fail with 5xx fast enough to spend the availability SLO's error budget in days ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of the Iceberg REST calls nuna.catalog.requests times were answered 5xx
+            (4xx answers left out); the SLO allows 0.1%, a draft target (backlog 261). Burning at 14.4 times the
+            budget over 1 h and 5 min, or 6 times over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
+      - alert: NunaRequestAvailabilityBurnSlow
+        expr: |
+          (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome="5xx"}[3d]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome=~"2xx|3xx|5xx"}[3d]))
+          ) > 1 * 0.001
+          and
+          (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome="5xx"}[6h]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{outcome=~"2xx|3xx|5xx"}[6h]))
+          ) > 1 * 0.001
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Iceberg calls fail with 5xx more often than the availability SLO allows ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of the Iceberg REST calls nuna.catalog.requests times were answered 5xx
+            (4xx answers left out) over the last 3 days and 6 h; the SLO allows 0.1%, a draft target (backlog 261).
+            docs/observability/dashboards-and-alerts.md.
   - name: nuna-catalog-alerts
     # nuna's own alert kinds (catalog-metrics.md, "The alerts"): metadata integrity pages, the others warn.
     rules:
       - alert: NunaMetadataIntegrity
         expr: sum by (job) (increase(nuna_catalog_alerts_metadata_integrity_total[15m])) > 0
+        keep_firing_for: 10m
         labels:
           severity: page
         annotations:
@@ -197,3 +376,83 @@ groups:
           summary: "A loaded table's metadata is over the size or snapshot limit ({{ $labels.job }})"
           description: >-
             The limits are D14's. The nuna.alerts log line (large-metadata) names the table, its size and snapshot count; each file is alerted once per server. catalog-metrics.md, "The alerts".
+  - name: nuna-catalog-absence
+    # Pushed series have no `up` and no staleness marker, so when a catalog stops pushing, or its request series
+    # arrive under other names, the rules above return nothing: no page fires, and one firing resolves (backlog 261).
+    # These page instead. A catalog server registers its alert counters as it starts and pushes them every minute
+    # while it runs, busy or idle, so they tell a stopped server from a quiet one; its request series begin only at
+    # its first Iceberg call.
+    rules:
+      - alert: NunaCatalogGone
+        # No catalog reports at all. dashboards-and-alerts.md says how a deployment names the jobs it expects, so
+        # that one gone for over a day, or one that never reported, pages by name.
+        expr: |
+          absent_over_time(nuna_catalog_alerts_metadata_integrity_total[10m])
+        keep_firing_for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "No catalog server reports any metrics"
+          description: >-
+            nuna_catalog_alerts_metadata_integrity_total, which every catalog server pushes each minute from its
+            start, has had no sample for 10 minutes: no server runs, or their telemetry does not reach Prometheus.
+            docs/observability/dashboards-and-alerts.md.
+      - alert: NunaCatalogSilent
+        # One deployment (job) of several stopped: it reported within the last day and not for 10 minutes. When no
+        # catalog reports, NunaCatalogGone pages instead, once.
+        expr: |
+          group by (job) (last_over_time(nuna_catalog_alerts_metadata_integrity_total[1d]))
+            unless group by (job) (last_over_time(nuna_catalog_alerts_metadata_integrity_total[10m]))
+            unless on () absent_over_time(nuna_catalog_alerts_metadata_integrity_total[10m])
+        keep_firing_for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "A catalog deployment has stopped reporting metrics ({{ $labels.job }})"
+          description: >-
+            Its servers pushed metrics within the last day and none for 10 minutes: none runs, or their telemetry
+            does not reach Prometheus. Other deployments still report. docs/observability/dashboards-and-alerts.md.
+      - alert: NunaRequestSeriesMissing
+        # The deployment has reported for over an hour, but no request series has arrived for an hour: they are
+        # named otherwise or converted (native histograms, convert_histograms_to_nhcb), so every SLO rule above
+        # reads nothing. A deployment restarted into an hour with no Iceberg call fires it too.
+        expr: |
+          group by (job) (last_over_time(nuna_catalog_alerts_metadata_integrity_total[10m]))
+            and group by (job) (last_over_time(nuna_catalog_alerts_metadata_integrity_total[10m] offset 1h))
+            unless group by (job) (last_over_time(nuna_catalog_requests_milliseconds_count[1h]))
+        keep_firing_for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "A catalog deployment reports, but no request series has arrived for an hour ({{ $labels.job }})"
+          description: >-
+            nuna_catalog_requests_milliseconds_count has had no sample for an hour while the servers report. Its
+            series may arrive under other names (native histograms, seconds), and then no SLO rule sees anything; or
+            no Iceberg call has reached a server since it started. docs/observability/dashboards-and-alerts.md.
+      - alert: NunaSloBucketMissing
+        # An SLO's answers arrive but not the bucket at its bound: the timer's buckets changed or were dropped
+        # (percentiles configured for it, say), or `le` is written otherwise, and that SLO's rules read nothing.
+        expr: |
+          label_replace(
+            group by (job) (last_over_time(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[10m]))
+              unless group by (job) (last_over_time(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="2xx", le=~"50([.]0)?"}[10m])),
+            "slo", "loads answered 200 within 50 ms", "", "")
+          or
+          label_replace(
+            group by (job) (last_over_time(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[10m]))
+              unless group by (job) (last_over_time(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="3xx", le=~"10([.]0)?"}[10m])),
+            "slo", "loads answered 304 within 10 ms", "", "")
+          or
+          label_replace(
+            group by (job) (last_over_time(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[10m]))
+              unless group by (job) (last_over_time(nuna_catalog_requests_milliseconds_bucket{operation_id=~"updateTable|commitTransaction", outcome="2xx", le=~"300([.]0)?"}[10m])),
+            "slo", "commits answered 200 within 300 ms", "", "")
+        keep_firing_for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "The SLO {{ $labels.slo }} reads no bucket at its bound ({{ $labels.job }})"
+          description: >-
+            Its answers arrive in nuna_catalog_requests_milliseconds_count, but no _bucket series has the SLO's `le`
+            for 10 minutes, so its burn-rate rules return nothing. nuna.catalog.requests' buckets are set in code
+            (RequestMetrics.SLO). docs/observability/dashboards-and-alerts.md.
