@@ -83,6 +83,9 @@ from the catalog's log (`otlp`), so the page needs no Kafka:
 - Records wait in memory a commit interval and are answered at once; a writer that dies before its commit loses them
   (they are still on the catalog's stdout), and a shutdown commits them first. catalog-audit-tables/README.md has the
   detail.
+- A table gone under the writer (dropped, or the catalog's database new while it runs) is made again, with a WARN
+  that a dropped audit table should be undropped rather than replaced, and the waiting records written to it; the
+  rows committed before stay only in the dropped table and on stdout (backlog 284). A refusal never makes it again.
 
 ## The archive
 
