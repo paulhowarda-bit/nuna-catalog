@@ -1,0 +1,18 @@
+Breaks: who dropped a table is read from the audit table for a caller who does not read the audit (backlog 170).
+Module: catalog-server
+Test: AuditDropsTest#aCallerWhoDoesNotReadTheAuditIsToldNoOneAndTheTableIsNotAsked
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditDrops.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditDrops.java
+index 6dd9608d..3b197675 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditDrops.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditDrops.java
+@@ -48,9 +48,7 @@ final class AuditDrops implements RefRoutes.Drops {
+                                                  nuna.catalog.audit.Securable named) {
+         Optional<Instant> at = object.droppedAt();
+         Optional<CatalogRecord> audit = feed.auditCatalog();
+-        if (at.isEmpty() || audit.isEmpty() || !authorizer.decide(request.caller(),
+-                new Authorizer.Target.Catalog(audit.get().id()),
+-                new Authorizer.Operation("readAuditFeed", Privilege.SELECT, false)).allowed()) {
++        if (at.isEmpty() || audit.isEmpty()) {
+             return Optional.empty();
+         }
+         Optional<AuditRow> row;

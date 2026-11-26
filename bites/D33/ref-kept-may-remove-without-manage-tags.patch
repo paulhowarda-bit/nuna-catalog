@@ -1,0 +1,16 @@
+Breaks: the read of which refs keep a table offers its removal to a caller who may only describe it (backlog 170).
+Module: catalog-server
+Test: RefRoutesTest#whichRefsKeepATableNeedsDescribeAndOffersTheRemovalOnlyWithManageTags
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index e98d111e..4e23cd1f 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1105,7 +1105,7 @@ class RefRoutes {
+         ArrayNode objects = body.putArray("objects");
+         for (int i = 0; i < found.size(); i++) {
+             if (decisions.get(2 * i).allowed()) {
+-                objects.add(keptObject(request, catalog, found.get(i), decisions.get(2 * i + 1).allowed(), now));
++                objects.add(keptObject(request, catalog, found.get(i), decisions.get(2 * i).allowed(), now));
+             }
+         }
+         if (objects.isEmpty()) {
