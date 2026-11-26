@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +39,10 @@ import org.slf4j.LoggerFactory;
  * {@code commitInterval}, or sooner once {@code maxRows} wait. A commit that fails keeps them for the next; past twice
  * {@code maxRows} waiting, {@link #offer} refuses and the exporter retries. What waits is lost if the writer dies
  * before its commit; it is still in the catalog's log on stdout. A shutdown commits what waits first.
+ *
+ * <p>When the catalog answers that the table does not exist (it was dropped, or the catalog's database is new), the
+ * writer makes it again through its opener and writes what waits; the rows written before stay in the dropped table
+ * (backlog 284). A refusal never does: it is thrown, and the rows wait.
  *
  * <p>The records of the writer's own requests are left out, as {@link TableWriter} leaves them out. {@link #offer} may
  * be called from many threads; {@link #commitIfDue} and {@link #commit} from one.
@@ -230,7 +235,19 @@ final class LogWriter {
         if (table == null) {
             table = opener.get();
         }
-        long recorded = table.reloadRecorded().map(offsets -> offsets.getOrDefault(PARTITION, 0L)).orElse(0L);
+        Optional<Map<Integer, Long>> offsets;
+        try {
+            offsets = table.reloadRecorded();
+        } catch (NoSuchTableException e) {
+            // Only this answer makes the table again: a refusal is thrown, so a revoked grant shows (backlog 284).
+            table = null;
+            LOG.warn("The audit table is gone ({}); making it again and writing the {} records this writer holds. A"
+                    + " dropped audit table should be undropped rather than replaced: the rows written before are in"
+                    + " the dropped one (undrop needs the name free).", e.getMessage(), waiting());
+            table = opener.get();
+            offsets = table.reloadRecorded();
+        }
+        long recorded = offsets.map(o -> o.getOrDefault(PARTITION, 0L)).orElse(0L);
         Instant now = clock.instant();
         Set<String> written = table.eventIdsSince(now.minus(dedupWindow));
         synchronized (this) {
