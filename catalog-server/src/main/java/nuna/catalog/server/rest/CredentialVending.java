@@ -40,8 +40,8 @@ public interface CredentialVending {
                    String requestId, Optional<String> delegation, String refreshPath, boolean write,
                    Optional<String> writeUnder) {
 
-        Request(CatalogRecord catalog, UUID tableId, List<String> path, String location, Caller caller,
-                String requestId, Optional<String> delegation, String refreshPath, boolean write) {
+        public Request(CatalogRecord catalog, UUID tableId, List<String> path, String location, Caller caller,
+                       String requestId, Optional<String> delegation, String refreshPath, boolean write) {
             this(catalog, tableId, path, location, caller, requestId, delegation, refreshPath, write, Optional.empty());
         }
 

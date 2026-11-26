@@ -48,9 +48,10 @@ public final class CredentialVendor implements AutoCloseable {
         if (roleArn.isEmpty() && profile.kind() != StoreKind.MINIO) {
             throw new IllegalArgumentException(profile.kind() + " needs an STS role to vend credentials");
         }
-        // Every table lives at <table root>/<uuid>, so this is the longest policy the profile ever sends.
+        // Every table lives at <table root>/<uuid>, and a writer on one branch only writes beneath its
+        // branches/<uuid> (backlog 113), so this is the longest policy the profile ever sends.
         SessionPolicy.forTable(profile.tableRoot().child(new UUID(0, 0).toString()), Access.READ_WRITE,
-                profile.region(), profile.kmsKey());
+                profile.region(), profile.kmsKey(), Optional.of("branches/" + new UUID(0, 0)));
         StsClientBuilder builder = StsClient.builder()
                 .region(Region.of(profile.region()))
                 .credentialsProvider(credentials);

@@ -128,6 +128,9 @@ class RefReadsTest {
     /** Describe on the catalog, and nothing else. */
     private static final Caller DESCRIBER = new Caller(new Principal("di", Set.of("catalog-describers")), "spark",
             false, Optional.empty());
+    /** Select on namespace desk through every ref, and write on desk through branch dev only (backlog 113). */
+    private static final Caller DEV_WRITER = new Caller(new Principal("dw", Set.of("desk-readers", "dev-writers")),
+            "spark", false, Optional.empty());
     /** Select on a namespace of the catalog other than desk: nothing on desk, its tables or the catalog. */
     private static final Caller STRANGER = new Caller(new Principal("st", Set.of("elsewhere-readers")), "spark",
             false, Optional.empty());
@@ -154,12 +157,13 @@ class RefReadsTest {
     private final Map<String, Ref> refs = new HashMap<>();
     private final Map<UUID, List<RefEntry>> cuts = new HashMap<>();
     private final Map<PointerKey, Pointer> pointers = new HashMap<>();
-    private final List<GrantRecord> grants = List.of(
+    private final List<GrantRecord> grants = new CopyOnWriteArrayList<>(List.of(
             grant(new Securable(Securable.Kind.NAMESPACE, desk.id()), "desk-writers", Privilege.WRITE),
+            grant(new Securable(Securable.Kind.NAMESPACE, desk.id()), "desk-readers", Privilege.SELECT),
             grant(new Securable(Securable.Kind.CATALOG, catalog.id()), "catalog-describers", Privilege.DESCRIBE),
             grant(new Securable(Securable.Kind.NAMESPACE, UUID.randomUUID()), "elsewhere-readers",
                     Privilege.SELECT),
-            grant(new Securable(Securable.Kind.NAMESPACE, desk.id()), "desk-owners", Privilege.MODIFY));
+            grant(new Securable(Securable.Kind.NAMESPACE, desk.id()), "desk-owners", Privilege.MODIFY)));
     private final List<GovernanceAttribute> attributes = new CopyOnWriteArrayList<>();
     private final AtomicReference<Caller> caller = new AtomicReference<>(MO);
     /** The batches the store committed, and the branches it renewed. */
@@ -662,6 +666,49 @@ class RefReadsTest {
             assertForbidden(perform(get("/v1/" + prefix + "/namespaces/desk/tables/orders")));
         }
         assertThat(denials()).hasSize(2).allSatisfy(denial -> assertThat(denial.reason()).startsWith("unclassified"));
+    }
+
+    // ---- grants that name a branch (backlog 113, security finding 11) ----
+
+    @Test
+    @DisplayName("a grant that names a branch lets its group commit through that branch and no other ref; its loads"
+            + " and credentials through the branch write only beneath the branch's place, and say where")
+    void aBranchOnlyWriterCommitsThroughItsBranchAndWritesOnlyBeneathItsPlace() throws Exception {
+        grants.add(new GrantRecord(new Grant(catalog.id(), new Securable(Securable.Kind.NAMESPACE, desk.id()),
+                "dev-writers", Privilege.WRITE.wireName(), Optional.of(dev.id())), "test", Instant.EPOCH));
+        caller.set(DEV_WRITER);
+        String place = orders.locationRoot() + "/branches/" + dev.id();
+
+        assertForbidden(perform(commit("trading", "orders", APPEND)));
+        assertForbidden(perform(commit("trading@wip", "orders", APPEND)));
+        assertThat(batches).isEmpty();
+        committed(perform(commit("trading@dev", "orders", APPEND)));
+        assertThat(pointers).containsKey(dev.key(orders.id()));
+
+        vended.clear();
+        MockHttpServletResponse onDev = perform(get("/v1/trading@dev/namespaces/desk/tables/orders"));
+        assertThat(onDev.getStatus()).isEqualTo(200);
+        assertThat(perform(get("/v1/trading@dev/namespaces/desk/tables/orders/credentials")).getStatus())
+                .isEqualTo(200);
+        MockHttpServletResponse onMain = perform(get("/v1/trading/namespaces/desk/tables/orders"));
+        assertThat(vended).extracting(CredentialVending.Request::write).containsExactly(true, true, false);
+        assertThat(vended).extracting(CredentialVending.Request::writeUnder).containsExactly(
+                Optional.of("branches/" + dev.id()), Optional.of("branches/" + dev.id()), Optional.empty());
+        assertThat(JsonPath.<String>read(onDev.getContentAsString(), "$.metadata.properties['write.data.path']"))
+                .isEqualTo(place + "/data");
+        assertThat(JsonPath.<String>read(onDev.getContentAsString(),
+                "$.metadata.properties['write.metadata.path']")).isEqualTo(place + "/metadata");
+        assertThat(onMain.getContentAsString()).doesNotContain("write.data.path");
+        assertThat(onDev.getHeader(HttpHeaders.ETAG)).isNotNull();
+
+        caller.set(MO);
+        vended.clear();
+        assertThat(perform(get("/v1/trading@dev/namespaces/desk/tables/orders")).getContentAsString())
+                .as("a writer on every ref writes all of the table").doesNotContain("write.data.path");
+        assertThat(vended).singleElement().satisfies(request -> {
+            assertThat(request.write()).isTrue();
+            assertThat(request.writeUnder()).isEmpty();
+        });
     }
 
     // ---- governance on a branch's commits (security finding 4) ----

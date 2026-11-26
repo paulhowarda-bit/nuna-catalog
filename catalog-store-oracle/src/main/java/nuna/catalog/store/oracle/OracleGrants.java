@@ -74,11 +74,16 @@ final class OracleGrants {
 
     private static WriteResult insert(Connection connection, Grant grant, String grantedBy, Change change)
             throws SQLException {
-        // The branch before the securable: catalog, refs, then objects and namespaces, the order every write takes them.
-        if (grant.branch().isPresent()
-                && !exists(connection, "SELECT 1 FROM ref WHERE id = ? AND catalog_id = ? AND kind = 'BRANCH' FOR UPDATE",
-                grant.branch().get(), grant.catalogId())) {
-            return new WriteResult.Missing(WriteResult.Subject.REF);
+        // A branch grant locks in the order every write takes these rows (storage-design.md §9(f) rule 8): the
+        // catalog, then the branch, then the securable, a catalog securable included.
+        if (grant.branch().isPresent()) {
+            if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", grant.catalogId())) {
+                return new WriteResult.Missing(WriteResult.Subject.CATALOG);
+            }
+            if (!exists(connection, "SELECT 1 FROM ref WHERE id = ? AND catalog_id = ? AND kind = 'BRANCH' FOR UPDATE",
+                    grant.branch().get(), grant.catalogId())) {
+                return new WriteResult.Missing(WriteResult.Subject.REF);
+            }
         }
         Optional<WriteResult> missing = Guards.missing(connection, grant.securable(), Optional.of(grant.catalogId()));
         if (missing.isPresent()) {

@@ -80,7 +80,7 @@ public final class AuditRows {
                 actor == null ? null : actor.engine(), parts.requestId(),
                 object == null ? null : object.catalog(), object == null ? null : object.kind().name(),
                 object == null ? null : object.id().toString(), object == null ? null : object.path(),
-                parts.operation(), parts.privilege(), parts.reason(), EventCodec.MAPPER.writeValueAsString(event.data()),
+                parts.operation(), parts.privilege(), parts.reason(), EventCodec.payload(event),
                 partition, offset, stamp.map(s -> s.run().toString()).orElse(null),
                 stamp.map(LogStamp::sequence).orElse(null));
     }
@@ -94,7 +94,7 @@ public final class AuditRows {
     public static CatalogEvent event(AuditRow row) {
         EventType type = EventType.fromTypeName(row.type());
         try {
-            EventData data = EventCodec.MAPPER.readValue(row.data(), type.dataClass());
+            EventData data = EventCodec.payload(type, row.data());
             return new CatalogEvent(java.util.UUID.fromString(row.eventId()), java.net.URI.create(row.source()),
                     row.time(), data);
         } catch (tools.jackson.core.JacksonException e) {

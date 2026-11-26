@@ -57,13 +57,13 @@ class EventCodecTest {
             Map.entry(EventType.RUN_END, List.of("host")));
     private static final Map<EventType, List<String>> NULLABLE = Map.ofEntries(
             Map.entry(EventType.COMMIT, List.of("before")),
-            Map.entry(EventType.GRANT_CHANGE, List.of("branch", "branchId")),
+            Map.entry(EventType.GRANT_CHANGE, List.of()),
             Map.entry(EventType.DROP, List.of()),
             Map.entry(EventType.BREAK_GLASS, List.of()),
             Map.entry(EventType.OBJECT_READ, List.of()),
             Map.entry(EventType.DENIAL, List.of("securable", "privilege")),
             Map.entry(EventType.AUTH_FAILURE, List.of("issuer", "claimedSubject", "clientId", "remoteAddress")),
-            Map.entry(EventType.CREDENTIAL_ISSUE, List.of("writePrefix")),
+            Map.entry(EventType.CREDENTIAL_ISSUE, List.of()),
             Map.entry(EventType.NAMESPACE_CHANGE, List.of()),
             Map.entry(EventType.RENAME, List.of()),
             Map.entry(EventType.ENGINE_CHANGE, List.of()),
@@ -317,6 +317,64 @@ class EventCodecTest {
         }
         assertThatThrownBy(() -> new LogStamp(UUID.randomUUID(), 0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> EventCodec.envelope("[1]".getBytes(UTF_8))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** Backlog 113: a grant that names a branch is version 2; one on every ref stays version 1, as before. */
+    @Test
+    void aGrantNamingABranchIsVersion2AndOneOnEveryRefVersion1() {
+        UUID dev = UUID.fromString("b0000000-0000-0000-0000-000000000001");
+        CatalogEvent everyRef = SampleEvents.event(new GrantChange(GrantChange.Action.GRANTED, SampleEvents.CATALOG,
+                "grp-equities-write", "write", SampleEvents.ACTOR), 1);
+        CatalogEvent onDev = SampleEvents.event(new GrantChange(GrantChange.Action.GRANTED, SampleEvents.CATALOG,
+                "grp-equities-write", "write", SampleEvents.ACTOR, "dev", dev), 2);
+
+        JsonNode v1 = EventCodec.MAPPER.readTree(EventCodec.encode(everyRef));
+        JsonNode v2 = EventCodec.MAPPER.readTree(EventCodec.encode(onDev));
+
+        assertThat(v1.get("dataschema").asString()).isEqualTo("urn:nuna:catalog:event:grant:1");
+        assertThat(v1.get("data").has("branch")).isFalse();
+        assertThat(v1.get("data").has("branchId")).isFalse();
+        assertThat(v2.get("dataschema").asString()).isEqualTo("urn:nuna:catalog:event:grant:2");
+        assertThat(v2.get("data").get("branch").asString()).isEqualTo("dev");
+        assertThat(v2.get("data").get("branchId").asString()).isEqualTo(dev.toString());
+        assertThat(EventCodec.decode(EventCodec.encode(everyRef))).isEqualTo(everyRef);
+        assertThat(EventCodec.decode(EventCodec.encode(onDev))).isEqualTo(onDev);
+    }
+
+    /** Backlog 113: a credential that writes one branch's prefix only is version 2. */
+    @Test
+    void aCredentialWritingOneBranchIsVersion2() {
+        CatalogEvent branchWriter = SampleEvents.event(new CredentialIssue(SampleEvents.TABLE, "s3-east",
+                "s3://lake/t/7f0c/", CredentialIssue.Access.READ_WRITE, "nuna-svc-trino-req-0001",
+                SampleEvents.TIME.plusSeconds(900), SampleEvents.ACTOR, "s3://lake/t/7f0c/branches/b0/"), 1);
+
+        JsonNode encoded = EventCodec.MAPPER.readTree(EventCodec.encode(branchWriter));
+
+        assertThat(encoded.get("dataschema").asString()).isEqualTo("urn:nuna:catalog:event:credential-issue:2");
+        assertThat(encoded.get("data").get("writePrefix").asString()).isEqualTo("s3://lake/t/7f0c/branches/b0/");
+        assertThat(EventCodec.decode(EventCodec.encode(branchWriter))).isEqualTo(branchWriter);
+    }
+
+    /** Each version carries exactly its own fields: version 1 none of version 2's, version 2 all of them. */
+    @Test
+    void eachVersionCarriesItsOwnFieldsOnly() {
+        CatalogEvent everyRef = SampleEvents.event(new GrantChange(GrantChange.Action.GRANTED, SampleEvents.CATALOG,
+                "grp-equities-write", "write", SampleEvents.ACTOR), 1);
+        CatalogEvent onDev = SampleEvents.event(new GrantChange(GrantChange.Action.GRANTED, SampleEvents.CATALOG,
+                "grp-equities-write", "write", SampleEvents.ACTOR, "dev", UUID.randomUUID()), 2);
+        List<byte[]> broken = List.of(
+                mutateData(everyRef, d -> d.putNull("branch").putNull("branchId")),
+                mutateData(everyRef, d -> d.put("branch", "dev").put("branchId", UUID.randomUUID().toString())),
+                mutateData(onDev, d -> d.remove("branch")),
+                mutateData(onDev, d -> d.putNull("branch").putNull("branchId")),
+                mutateData(onDev, d -> d.putNull("branchId")));
+        for (byte[] json : broken) {
+            assertThatThrownBy(() -> EventCodec.decode(json)).isInstanceOf(IllegalArgumentException.class);
+        }
+        ObjectNode laterThanKnown = (ObjectNode) EventCodec.MAPPER.readTree(EventCodec.encode(onDev));
+        laterThanKnown.put("dataschema", "urn:nuna:catalog:event:grant:3");
+        assertThatThrownBy(() -> EventCodec.decode(EventCodec.MAPPER.writeValueAsBytes(laterThanKnown)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static Consumer<ObjectNode> edit(Consumer<ObjectNode> edit) {
