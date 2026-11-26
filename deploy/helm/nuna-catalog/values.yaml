@@ -67,6 +67,20 @@ secrets:
   # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
   values: {}
 
+# The database's TLS files, for a database that signs the catalog in by a client certificate instead of a password
+# (deploy/README.md, "The database"): a Secret in the release's namespace, mounted read-only at mountPath, whose files
+# the TLS parameters of config.spring.datasource.url name, e.g. sslrootcert=/etc/nuna/db-tls/ca.crt,
+# sslcert=/etc/nuna/db-tls/client.crt and sslkey=/etc/nuna/db-tls/client.pk8 (the key as PKCS #8 DER). A volume of its
+# own, not the `secrets` config tree, whose every file becomes a Spring property. A new certificate in the Secret
+# reaches the servers when they restart.
+databaseTls:
+  secretName: ""
+  mountPath: /etc/nuna/db-tls
+  # The files' mode. PostgreSQL's JDBC driver refuses a key file others can read: its owner's alone (0600), or, owned
+  # by root as a Secret's files are, its group's too (0640 at most). 0440 lets the server's group, podSecurityContext's
+  # fsGroup, read them, and no one else. An octal string, or the mode as a decimal number (288).
+  mode: "0440"
+
 # A ConfigMap in the release's namespace holding the CA bundles of on-prem stores whose certificates a private CA
 # signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A storage profile names its file as ca-bundle; only
 # that profile's S3 and STS clients trust it, beside the JVM's CAs (docs/install-at-work.md).

@@ -41,7 +41,8 @@ demo/demo.sh up
 - Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `docker-desktop`
   (`NUNA_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
-  - `stack.yaml`: PostgreSQL and `idp`, which serves the demo issuer's keys (`demo/Mint.java`).
+  - `stack.yaml`: PostgreSQL, which lets the catalog in over the network only by its client certificate (The
+    catalog's database, below), and `idp`, which serves the demo issuer's keys (`demo/Mint.java`).
   - `kafka.yaml`: Kafka and kafbat, which the demo applies only while the generator writes through it or `cdc` is on. The demo patches
     kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak; the engine matrix on its own leaves kafbat
     open.
@@ -155,6 +156,28 @@ The certificate is in `~/.nuna-demo/tls`, published as Secret `demo-tls`:
 - `up` refuses a certificate that does not name the host, has expired, is not its key's, or was not issued
   by `ca.crt`. A new certificate replaces the front door's pod; a new host also replaces Keycloak, kafbat,
   CloudBeaver, the catalog and SingleStore, whose image names Studio's SAML address.
+
+### The catalog's database
+
+The catalog signs in to its PostgreSQL by a client certificate, over TLS, and no PostgreSQL role has a password
+(backlog 281), the shape nuna's own deployment takes with work's PKI (`deploy/README.md`, "The database"). Only the
+catalog reaches PostgreSQL over the network; everything else (`up`'s setup, the readiness probe,
+`kubectl exec deployment/postgres -- psql -U catalog -d catalog`) uses the pod's own socket, which
+`k8s/stack.yaml`'s `pg_hba.conf` trusts. `up` makes the files once per machine in `~/.nuna-demo/db-tls` (`db_tls`), and
+`down` and `wipe` keep them:
+
+| File | What it is |
+|---|---|
+| `ca.crt`, `ca.key` | a database CA of the demo's own, which only PostgreSQL and the catalog trust, and only for this |
+| `server.crt`, `server.key` | PostgreSQL's certificate, for Service `postgres` by each of its names in the namespace |
+| `client.crt`, `client.key`, `client.pk8` | the catalog's, common name `catalog`; `client.pk8` is the key as PKCS #8 DER, the form the JDBC driver reads |
+| `initdb-password` | the password PostgreSQL's image asks for to make its first role: random, and taken away again |
+
+They are published as Secret `postgres-tls` (PostgreSQL's) and Secret `catalog-db-tls` (the catalog's, the chart's
+`databaseTls`). Each certificate is made again a month before its end, which replaces both pods. On every `up`,
+once the catalog serves, `up` checks and says: every network connection is TLS signed in as `CN=catalog`
+(`pg_stat_ssl`), one without a certificate is refused, and no role has a password. The engine matrix on its own
+makes the same two Secrets from its private CA.
 
 ## Sign in
 
@@ -301,7 +324,7 @@ Accounts that run the demo rather than people in it:
 | Keycloak `admin` | `nuna-test` | Keycloak's admin console, <https://localhost:8180/admin>, in the master realm: the only account that changes realm `nuna` |
 | SingleStore `root` | `nuna-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
 | Silo `nunatest` | `nunatest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>, by its access-key form: every bucket, its objects, users, policies and settings |
-| PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
+| PostgreSQL `catalog` | none: the catalog's client certificate | the catalog's database, which only the catalog reaches over the network; not published outside the cluster (The catalog's database, above) |
 | PostgreSQL `backoffice` | `nuna-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
 | Oracle `treasury` | `nuna-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
 | Oracle `SYS`, `SYSTEM` | `nuna-test` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
@@ -952,8 +975,8 @@ To start again from fresh sample data:
 demo/demo.sh wipe
 ```
 
-This is `down`, then deletes the namespace with its volumes. The signing key, tokens, Keycloak's keys and the
-certificate stay in `~/.nuna-demo` either way.
+This is `down`, then deletes the namespace with its volumes. The signing key, tokens, Keycloak's keys, the
+certificate and the database's certificates stay in `~/.nuna-demo` either way.
 
 ```bash
 demo/demo.sh status

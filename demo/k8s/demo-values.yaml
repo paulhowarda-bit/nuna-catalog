@@ -85,4 +85,4 @@ telemetry:
 
 secrets:
   values:
-    nuna.storage.profiles.s3.secret-access-key: nunatest-secret-key
+    nuna.storage.profiles.s3.secret-access-key: ${S3_SECRET_KEY}

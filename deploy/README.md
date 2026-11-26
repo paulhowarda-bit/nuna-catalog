@@ -90,6 +90,8 @@ migrates its schema. What each one asks of the catalog's database role is on the
 
 - `postgresql`, the default: PostgreSQL or CockroachDB. `config.spring.datasource.url` is
   `jdbc:postgresql://<host>:<port>/<database>`; the password goes in the Secret as `spring.datasource.password`.
+  On PostgreSQL the catalog can sign in by a client certificate instead, and its role then has no password
+  (below).
 - `oracle`: single instance, RAC or Exadata. The URL names the catalog's own service,
   `jdbc:oracle:thin:@//<host>:<port>/<service>`, which needs `COMMIT_OUTCOME = TRUE` (Transaction Guard) and
   no `FAILOVER_TYPE`, so the driver never replays a transaction. Set the driver's read timeout, which bounds
@@ -120,6 +122,42 @@ migrates its schema. What each one asks of the catalog's database role is on the
 
 `OracleBackendTest` and `MongodbBackendTest` (catalog-server, `heavy`) run the server this way on Oracle Free
 and a one-member replica set.
+
+**Signing in to PostgreSQL by a client certificate** (backlog 281). A CA the database trusts for client
+certificates (its `ssl_ca_file`) issues the catalog a certificate whose common name is the catalog's role, for
+client authentication. The database lets that role in over TLS by its certificate alone, with a `pg_hba.conf` line
+such as `hostssl <database> <role> <the cluster's addresses> cert`, and the role has no password
+(`ALTER ROLE <role> PASSWORD NULL`), so there is none to keep in the Secret or to leak. Put three files in a Secret
+of their own and name it in `databaseTls.secretName`. The chart mounts it at `databaseTls.mountPath`
+(`/etc/nuna/db-tls`), apart from the config tree, whose every file would become a Spring property:
+
+| Key | What it is |
+|---|---|
+| `ca.crt` | the certificates of the CA that issued the database's certificate, to its root (PEM): the driver checks the server against them |
+| `client.crt` | the catalog's certificate, then any intermediate certificates (PEM) |
+| `client.pk8` | its private key, unencrypted, as PKCS #8 DER: `openssl pkcs8 -topk8 -nocrypt -in client.key -outform DER -out client.pk8` |
+
+```bash
+kubectl -n <namespace> create secret generic nuna-catalog-db-tls \
+  --from-file=ca.crt=<CA PEM file> --from-file=client.crt=<certificate PEM file> --from-file=client.pk8=client.pk8
+```
+
+```yaml
+config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://<host>:5432/<database>?sslmode=verify-full&sslrootcert=/etc/nuna/db-tls/ca.crt&sslcert=/etc/nuna/db-tls/client.crt&sslkey=/etc/nuna/db-tls/client.pk8
+      username: <role>
+databaseTls:
+  secretName: nuna-catalog-db-tls
+```
+
+`sslmode=verify-full` also checks that the database's certificate names the URL's host. The JDBC driver refuses a
+key file that others can read, so the chart mounts the files with mode 0440 (`databaseTls.mode`): readable by the
+server's group (`podSecurityContext.fsGroup`) and no one else. Renew the certificate before it ends, then restart the
+servers (`kubectl rollout restart deployment/<release>`). The demo's stack signs in this way, with a CA of its own
+(`demo/demo.sh`'s `db_tls`, `demo/k8s/stack.yaml`); at work the certificate comes from work's PKI
+(`docs/install-at-work.md`, section 5).
 
 Before it migrates, each server runs the store's self-check of the database's safety settings [D8]: a
 synchronous standby and `synchronous_commit` on PostgreSQL, Transaction Guard and a synchronized Data Guard
@@ -326,7 +364,8 @@ telemetry:
   recorded (`MaintenanceRoutes.RECHECK_MARGIN`, item 108); replicas further apart than that could let it delete
   a file a new ref still names.
 - **TLS.** TLS from clients to the catalog is the Ingress's job. TLS from the catalog to the database goes
-  in the JDBC URL.
+  in the JDBC URL, and on PostgreSQL the catalog can sign in by a client certificate instead of a password (The
+  database, above).
 - **Resources.** The defaults (1 CPU, 2 GiB, heap at 75 % of that) are a starting point, not a measurement.
   Each metadata cache may hold up to `nuna.rest.metadata-cache-chars` (256 M characters by default).
   Size the limit on work hardware.
