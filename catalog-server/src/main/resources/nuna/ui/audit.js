@@ -8,6 +8,7 @@ import * as api from './api.js';
 import {at, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
   tbl} from './dom.js';
 import {objectHref, SEP} from './route.js';
+import {findRef, refsOf} from './refs.js';
 import {AUDIT_KINDS as KINDS, CHANGES, auditBadge, auditKindOf, auditTab, describe, shortType as short} from './panels.js';
 
 /** Every type a kind names: All, less the audit's own reads, is these. */
@@ -30,14 +31,16 @@ function readFilters() {
   const q = new URLSearchParams(location.hash.slice(1));
   const kind = q.get('kind');
   const to = q.get('to');
+  const from = q.get('from') || '';
   return {kind: KINDS.some(([k]) => k === kind) ? kind : 'all', who: q.get('who') || '', path: q.get('path') || '',
-    upTo: UP_TO.some(([v]) => v === to) ? to : '', auditReads: q.get('reads') === 'all'};
+    upTo: UP_TO.some(([v]) => v === to) ? to : '', auditReads: q.get('reads') === 'all',
+    from: Number.isNaN(new Date(from).getTime()) ? '' : from};
 }
 
 function keepFilters(st) {
   const q = new URLSearchParams(location.hash.slice(1));
   for (const [k, v] of [['kind', st.kind === 'all' ? '' : st.kind], ['who', st.who], ['path', st.path], ['to', st.upTo],
-    ['reads', st.auditReads ? 'all' : '']]) {
+    ['reads', st.auditReads ? 'all' : ''], ['from', st.from]]) {
     if (v) q.set(k, v);
     else q.delete(k);
   }
@@ -196,8 +199,13 @@ function feedPanel(catalog, summary, own) {
   const st = readFilters();
   const chipBox = h('div', {class: 'chips', role: 'group', 'aria-label': 'Filter by kind'});
   const who = h('input', {type: 'search', name: 'who', 'aria-label': 'Who', placeholder: 'Anyone', autocomplete: 'off', spellcheck: 'false'});
-  const path = h('input', {type: 'search', name: 'path', 'aria-label': 'Table or namespace', placeholder: 'a.b.table',
-    autocomplete: 'off', spellcheck: 'false'});
+  const path = h('input', {type: 'search', name: 'path', 'aria-label': 'Table or namespace',
+    placeholder: 'Table, namespace or @ref', autocomplete: 'off', spellcheck: 'false'});
+  // `@name` is the records through a catalog ref or about it (6.8; backlog 169): from the live ref's making on, unless
+  // the reader set a time, since a name an ended ref held can be taken again.
+  const refName = () => st.path.startsWith('@') ? st.path.slice(1).trim() : '';
+  const refNote = h('p', {class: 'fine', 'data-ref-note': ''});
+  let since = null;
   const upTo = h('select', {name: 'to', 'aria-label': 'Up to'}, UP_TO.map(([v, l]) => h('option', {value: v}, l)));
   const reads = h('input', {type: 'checkbox', name: 'audit-reads'});
   who.value = st.who;
@@ -233,7 +241,8 @@ function feedPanel(catalog, summary, own) {
     chipBox.replaceChildren(...KINDS.map(([k, label]) => chip(k, label)));
   };
   const chip = (k, label) => {
-    const n = counted ? (k === 'all' && st.auditReads ? total(counted) : kindTotal(counted, typesOf(k))) : null;
+    // The day's counts are the whole catalog's: none is shown beside a ref's records (6.8).
+    const n = counted && !refName() ? (k === 'all' && st.auditReads ? total(counted) : kindTotal(counted, typesOf(k))) : null;
     return h('button', {class: 'chip', type: 'button', 'data-f': k, 'aria-pressed': String(k === st.kind), onclick: () => {
       st.kind = k;
       for (const c of chipBox.children) c.setAttribute('aria-pressed', String(c.dataset.f === k));
@@ -250,7 +259,9 @@ function feedPanel(catalog, summary, own) {
     return {
       type: types ? types.map(t => PREFIX + t).join(',') : null,
       principal: st.who || null,
-      path: st.path ? st.path.split('.').filter(Boolean).join(SEP) : null,
+      path: st.path && !refName() ? st.path.split('.').filter(Boolean).join(SEP) : null,
+      branch: refName() || null,
+      from: st.from || since,
       to: st.upTo ? new Date(Date.now() - Number(st.upTo) * 3600_000).toISOString() : null,
       pageToken: token || null,
     };
@@ -283,7 +294,17 @@ function feedPanel(catalog, summary, own) {
     feed.replaceChildren(h('div', {'data-loading': ''}, h('span', {class: 'sk w60'})));
     more.replaceChildren();
     status.textContent = 'Reading the audit tables…';
-    page(null, my).then(() => {
+    refNote.replaceChildren();
+    since = null;
+    const name = refName();
+    // The live ref of that name, null when there is none, undefined when the list cannot be read.
+    const ref = name ? refsOf(catalog).then(list => findRef(list, name), () => undefined) : Promise.resolve(undefined);
+    ref.then(r => {
+      if (my !== gen) return;
+      if (r && !st.from && !st.upTo) since = r['created-at'];
+      if (r === null) refNote.textContent = `No live ref is named @${name}: these are records through every ref that had the name.`;
+      return page(null, my);
+    }).then(() => {
       const loading = feed.querySelector(':scope > [data-loading]');
       if (loading) loading.remove();
     }, error => {
@@ -302,7 +323,10 @@ function feedPanel(catalog, summary, own) {
     clearTimeout(typing);
     typing = setTimeout(() => {
       st.who = who.value.trim();
+      // A time a link set belongs to the ref it named.
+      if (path.value.trim() !== st.path) st.from = '';
       st.path = path.value.trim();
+      drawChips();
       restart();
     }, 350);
   };
@@ -323,7 +347,7 @@ function feedPanel(catalog, summary, own) {
       h('label', {class: 'ff'}, h('span', null, 'Table or namespace'), h('span', {class: 'field mono'}, icon('search'), path)),
       h('label', {class: 'ff'}, h('span', null, 'Who'), h('span', {class: 'field'}, who)),
       h('label', {class: 'ff'}, h('span', null, 'Up to'), h('span', {class: 'field select'}, upTo))),
-    chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads'), status, feed, more);
+    chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads'), refNote, status, feed, more);
   function chooseKind(k) {
     st.kind = k;
     drawChips();

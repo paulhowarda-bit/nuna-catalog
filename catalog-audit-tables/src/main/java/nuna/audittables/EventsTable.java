@@ -58,8 +58,10 @@ import org.apache.iceberg.util.PropertyUtil;
  * the same records again. Compaction's and manifest rewrites' snapshots add no rows, so they never stop it.
  *
  * <p>A row from the log also carries the server run that logged its record and its number there, {@code log_run} and
- * {@code log_seq} (backlog 272), which place it in the run's archive chain. The two columns came after the table's
- * first: a table made without them is given them when the writer opens it, so its earlier rows read null there.
+ * {@code log_seq} (backlog 272), which place it in the run's archive chain. A commit, a read or a ref record names
+ * the catalog ref in {@code branch}, and a ref record its ref and tables in {@code subject_ids} (backlog 169). These
+ * four columns came after the table's first: a table made without them is given them when the writer opens it, with
+ * no file rewritten, so its earlier rows read null there.
  */
 final class EventsTable {
 
@@ -69,7 +71,7 @@ final class EventsTable {
     /** The summary property counting the rows a commit added. */
     static final String ROWS = "nuna.audit-tables.rows";
 
-    /** The columns the table was first made with; a table is still made with these, then given {@link #LOGGED}. */
+    /** The columns the table was first made with; a table is still made with these, then given {@link #ADDED}. */
     private static final Schema FIRST = new Schema(
             required(1, "event_id", Types.StringType.get()),
             required(2, "time", Types.TimestampType.withZone()),
@@ -90,13 +92,19 @@ final class EventsTable {
             required(17, "topic_partition", Types.IntegerType.get()),
             required(18, "topic_offset", Types.LongType.get()));
     /**
-     * Where a record from the log was logged (backlog 272), added after the first columns with the ids a table made
-     * with those is given next, as every reader projects by id.
+     * The columns added after the first, in the order they were added, each with the id a table made with the first
+     * columns is given when they are added in this order, as every reader projects by id: where a record from the log
+     * was logged (backlog 272), then the catalog ref a record went through or is about and the ids it is about besides
+     * its object (backlog 169). A list's element takes the id after its own.
      */
-    private static final List<Types.NestedField> LOGGED = List.of(
+    private static final List<Types.NestedField> ADDED = List.of(
             optional(20, "log_run", Types.StringType.get(), "the server run that logged the record (nunarun)"),
-            optional(21, "log_seq", Types.LongType.get(), "the record's number in that run (nunaseq)"));
-    static final Schema SCHEMA = new Schema(Stream.concat(FIRST.columns().stream(), LOGGED.stream()).toList());
+            optional(21, "log_seq", Types.LongType.get(), "the record's number in that run (nunaseq)"),
+            optional(22, "branch", Types.StringType.get(),
+                    "the catalog ref a commit or read went through (main or its name), or a ref record's ref name"),
+            optional(23, "subject_ids", Types.ListType.ofRequired(24, Types.StringType.get()),
+                    "a ref record's ref id, then the ids of the tables and views it names"));
+    static final Schema SCHEMA = new Schema(Stream.concat(FIRST.columns().stream(), ADDED.stream()).toList());
     static final PartitionSpec SPEC = PartitionSpec.builderFor(FIRST).day("time").build();
 
     private final Table table;
@@ -138,7 +146,7 @@ final class EventsTable {
                     .withProperty(TableProperties.FORMAT_VERSION, "2").create();
         }
         Table opened = table;
-        List<Types.NestedField> absent = LOGGED.stream().filter(c -> opened.schema().findField(c.name()) == null)
+        List<Types.NestedField> absent = ADDED.stream().filter(c -> opened.schema().findField(c.name()) == null)
                 .toList();
         if (!absent.isEmpty()) {
             UpdateSchema update = table.updateSchema();
@@ -262,6 +270,8 @@ final class EventsTable {
         record.setField("topic_offset", row.topicOffset());
         record.setField("log_run", row.logRun());
         record.setField("log_seq", row.logSequence());
+        record.setField("branch", row.branch());
+        record.setField("subject_ids", row.subjectIds());
         return record;
     }
 

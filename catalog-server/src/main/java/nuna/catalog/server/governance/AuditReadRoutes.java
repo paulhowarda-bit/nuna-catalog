@@ -79,6 +79,8 @@ class AuditReadRoutes {
     private static final String AUDIT = "/audit";
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
+    /** The longest ref name the feed is asked for, as RefRoutes takes one. */
+    private static final int MAX_BRANCH = 1000;
     private static final Duration RATE_WINDOW = Duration.ofMinutes(1);
     /** The audit record types the feed may be filtered by. */
     private static final Set<String> TYPES = Arrays.stream(EventType.values()).map(EventType::typeName)
@@ -162,6 +164,8 @@ class AuditReadRoutes {
                                 @RequestParam(required = false) String type,
                                 @RequestParam(required = false) String principal,
                                 @RequestParam(required = false) String path,
+                                @RequestParam(required = false) String branch,
+                                @RequestParam(required = false) String subject,
                                 @RequestParam(required = false) String from,
                                 @RequestParam(required = false) String to,
                                 @RequestParam(required = false) String limit,
@@ -175,9 +179,12 @@ class AuditReadRoutes {
         if (since != null && until != null && !since.isBefore(until)) {
             throw CatalogError.badRequest("from must be before to");
         }
+        String about = subject == null || subject.isEmpty() ? null : uuid("subject", subject).toString();
+        // Each filter only narrows this catalog's records, which select on the audit catalog lets the caller read
+        // whole: none reaches another catalog's (backlog 169).
         EventsReader.Query query = new EventsReader.Query(catalog.name(), types(type),
                 principal == null || principal.isBlank() ? null : principal,
-                levels(path), since, until,
+                levels(path), branch(branch), about, since, until,
                 Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()).map(AuditReadRoutes::cursor), limit(limit));
         Optional<ResponseEntity<String>> limited = limited(request);
         if (limited.isPresent()) {
@@ -442,6 +449,7 @@ class AuditReadRoutes {
         node.put("end-user", row.endUser());
         node.put("engine", row.engine());
         node.put("request-id", row.requestId());
+        node.put("branch", row.branch());
         if (row.objectKind() == null) {
             node.putNull("object");
         } else {
@@ -527,6 +535,18 @@ class AuditReadRoutes {
                     + " 0x1F, none of them empty");
         }
         return levels;
+    }
+
+    /** A catalog ref's name, or main, as a prefix names it after its {@code @}; null for any. */
+    private static String branch(String branch) {
+        if (branch == null || branch.isEmpty()) {
+            return null;
+        }
+        if (branch.isBlank() || branch.indexOf('@') >= 0 || branch.length() > MAX_BRANCH) {
+            throw CatalogError.badRequest("branch must be a branch's or tag's name, or main, without its @, not "
+                    + branch);
+        }
+        return branch;
     }
 
     private static Instant instant(String name, String value) {

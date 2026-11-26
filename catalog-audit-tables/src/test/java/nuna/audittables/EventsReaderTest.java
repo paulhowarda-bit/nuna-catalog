@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -105,7 +106,7 @@ class EventsReaderTest {
             append(batch.toArray(AuditRow[]::new));
         }
         EventsReader reader = reader(25);
-        Query toms = new Query("lake", Set.of(), null, List.of("hr"), null, null, Optional.empty(), 50);
+        Query toms = new Query("lake", Set.of(), null, List.of("hr"), null, null, null, null, Optional.empty(), 50);
 
         Page first = reader.page(toms);
 
@@ -127,17 +128,94 @@ class EventsReaderTest {
         append(orders, refunds, namespace, sibling, denied, nothing);
         EventsReader reader = reader(EventsReader.DEFAULT_SCAN_BUDGET);
 
-        assertThat(reader.page(new Query("lake", Set.of(READ, DENIAL), null, List.of(), null, null, Optional.empty(), 50))
-                .rows()).containsExactly(denied, sibling, orders);
-        assertThat(reader.page(new Query("lake", Set.of(), "svc", List.of(), null, null, Optional.empty(), 50))
-                .rows()).containsExactly(namespace, refunds);
-        assertThat(reader.page(new Query("lake", Set.of(), null, List.of("SALES"), null, null, Optional.empty(), 50))
-                .rows()).as("a namespace, everything in it at any depth, compared as names are")
+        assertThat(reader.page(new Query("lake", Set.of(READ, DENIAL), null, List.of(), null, null, null, null,
+                Optional.empty(), 50)).rows()).containsExactly(denied, sibling, orders);
+        assertThat(reader.page(new Query("lake", Set.of(), "svc", List.of(), null, null, null, null,
+                Optional.empty(), 50)).rows()).containsExactly(namespace, refunds);
+        assertThat(reader.page(new Query("lake", Set.of(), null, List.of("SALES"), null, null, null, null,
+                Optional.empty(), 50)).rows()).as("a namespace, everything in it at any depth, compared as names are")
                 .containsExactly(denied, namespace, refunds, orders);
-        assertThat(reader.page(new Query("lake", Set.of(), null, List.of("sales", "orders"), null, null,
+        assertThat(reader.page(new Query("lake", Set.of(), null, List.of("sales", "orders"), null, null, null, null,
                 Optional.empty(), 50)).rows()).containsExactly(denied, orders);
-        assertThat(reader.page(new Query("lake", Set.of(), null, List.of(), at(11), at(14), Optional.empty(), 50))
-                .rows()).as("from inclusive, to exclusive").containsExactly(sibling, namespace, refunds);
+        assertThat(reader.page(new Query("lake", Set.of(), null, List.of(), null, null, at(11), at(14),
+                Optional.empty(), 50)).rows()).as("from inclusive, to exclusive").containsExactly(sibling, namespace,
+                refunds);
+    }
+
+    @Test
+    void filtersByTheRefARecordWentThroughOrIsAbout() {
+        // Backlog 169: commits and reads name the ref in branch, and a ref record its ref's name.
+        AuditRow onMain = through(row(10, READ, "ana", "lake", 0, List.of("sales", "orders")), "main");
+        AuditRow read = through(row(11, READ, "ana", "lake", 0, List.of("sales", "orders")), "Q3-Close");
+        AuditRow commit = through(row(12, COMMIT, "svc", "lake", 1, List.of("sales", "orders")), "q3-close");
+        AuditRow made = about(row(13, "nuna.catalog.ref", "ana", "lake", 1, List.of()), "Q3-close", UUID.randomUUID());
+        AuditRow other = through(row(14, READ, "ana", "lake", 2, List.of("sales", "orders")), "q4");
+        AuditRow grant = row(15, "nuna.catalog.grant-change", "gina", "lake", 2, List.of());
+        AuditRow elsewhere = through(row(16, READ, "ana", "other", 2, List.of("sales", "orders")), "q3-close");
+        append(onMain, read, commit, made, other, grant, elsewhere);
+        EventsReader reader = reader(EventsReader.DEFAULT_SCAN_BUDGET);
+
+        assertThat(reader.page(byBranch("q3-close")).rows())
+                .as("through the ref or about it, compared as names are, in this catalog only")
+                .containsExactly(made, commit, read);
+        assertThat(reader.page(byBranch("MAIN")).rows()).containsExactly(onMain);
+        assertThat(reader.page(byBranch("q5")).rows()).isEmpty();
+        assertThat(readAll(reader(2), byBranch("Q3-CLOSE"))).as("every page, a budget of two rows each")
+                .containsExactly(made, commit, read);
+    }
+
+    @Test
+    void filtersByTheObjectOrRefARecordIsAbout() {
+        // Backlog 169: a table's own records by object_id, and the ref records that name it in their tables (a table
+        // taken out of a ref, item 156, or moved by a merge) by subject_ids.
+        UUID orders = UUID.randomUUID();
+        UUID tag = UUID.randomUUID();
+        AuditRow read = row(10, READ, "ana", "lake", 0, List.of("sales", "orders"), orders);
+        AuditRow otherTable = row(11, READ, "ana", "lake", 0, List.of("sales", "refunds"), UUID.randomUUID());
+        AuditRow made = about(row(12, "nuna.catalog.ref", "ana", "lake", 1, List.of()), "q3", tag);
+        AuditRow removed = about(row(13, "nuna.catalog.ref", "sam", "lake", 1, List.of()), "q3", tag, orders);
+        AuditRow otherRef = about(row(14, "nuna.catalog.ref", "ana", "lake", 2, List.of()), "q4", UUID.randomUUID());
+        AuditRow elsewhere = row(15, READ, "ana", "other", 2, List.of("sales", "orders"), orders);
+        append(read, otherTable, made, removed, otherRef, elsewhere);
+        EventsReader reader = reader(EventsReader.DEFAULT_SCAN_BUDGET);
+
+        assertThat(reader.page(bySubject(orders)).rows()).containsExactly(removed, read);
+        assertThat(reader.page(bySubject(tag)).rows()).containsExactly(removed, made);
+        assertThat(reader.page(new Query("lake", Set.of("nuna.catalog.ref"), null, List.of(), null,
+                orders.toString(), null, null, Optional.empty(), 50)).rows())
+                .as("who took the table out of which ref, and when").singleElement().satisfies(row -> {
+                    assertThat(row.principal()).isEqualTo("sam");
+                    assertThat(row.branch()).isEqualTo("q3");
+                    assertThat(row.subjectIds()).containsExactly(tag.toString(), orders.toString());
+                });
+        assertThat(reader.page(bySubject(UUID.randomUUID())).rows()).isEmpty();
+        assertThat(readAll(reader(2), bySubject(orders))).containsExactly(removed, read);
+    }
+
+    private static Query byBranch(String branch) {
+        return new Query("lake", Set.of(), null, List.of(), branch, null, null, null, Optional.empty(), 50);
+    }
+
+    private static Query bySubject(UUID subject) {
+        return new Query("lake", Set.of(), null, List.of(), null, subject.toString(), null, null, Optional.empty(),
+                50);
+    }
+
+    private static AuditRow through(AuditRow row, String branch) {
+        return new AuditRow(row.eventId(), row.time(), row.type(), row.source(), row.principal(), row.endUser(),
+                row.engine(), row.requestId(), row.catalog(), row.objectKind(), row.objectId(), row.objectPath(),
+                row.operation(), row.privilege(), row.reason(), row.data(), row.topicPartition(), row.topicOffset(),
+                row.logRun(), row.logSequence(), branch, null);
+    }
+
+    /** A ref record of the ref {@code ref}, named {@code name}, naming {@code tables}; its object is the catalog. */
+    private static AuditRow about(AuditRow row, String name, UUID ref, UUID... tables) {
+        List<String> subjects = new ArrayList<>(List.of(ref.toString()));
+        Arrays.stream(tables).map(UUID::toString).forEach(subjects::add);
+        return new AuditRow(row.eventId(), row.time(), row.type(), row.source(), row.principal(), row.endUser(),
+                row.engine(), row.requestId(), row.catalog(), "CATALOG", UUID.randomUUID().toString(), List.of(),
+                row.operation(), row.privilege(), row.reason(), row.data(), row.topicPartition(), row.topicOffset(),
+                row.logRun(), row.logSequence(), name, subjects);
     }
 
     @Test
@@ -216,14 +294,74 @@ class EventsReaderTest {
     void aTableMadeBeforeTheLogColumnsIsGivenThemAndItsEarlierRowsReadNullThere() throws IOException {
         FaultyCatalog older = new FaultyCatalog();
         TableIdentifier id = TableIdentifier.of(NAMESPACE, EventsTable.NAME);
+        long written = madeBefore(older, false, "before-272");
+
+        EventsTable opened = EventsTable.open(older, NAMESPACE, LogWriter.SOURCE);
+        assertThat(older.loadTable(id).schema().findField("log_run").fieldId()).isEqualTo(20);
+        assertThat(older.loadTable(id).schema().findField("log_seq").fieldId()).isEqualTo(21);
+        assertThat(older.loadTable(id).schema().findField("branch").fieldId()).isEqualTo(22);
+        assertThat(older.loadTable(id).schema().findField("subject_ids").fieldId()).isEqualTo(23);
+        assertThat(older.loadTable(id).currentSnapshot().snapshotId()).as("no file rewritten").isEqualTo(written);
+        assertThat(EventsTable.open(older, NAMESPACE, LogWriter.SOURCE)).as("opened again as it is").isNotNull();
+        AuditRow after = stamped(row(20, READ, "ana", "lake", -1, List.of("sales", "orders")), RUN, 3);
+        opened.reload();
+        opened.append(List.of(after), Map.of(-1, 3L));
+
+        Page page = EventsReader.of(older.loadTable(id), EventsReader.DEFAULT_SCAN_BUDGET).page(query(50));
+
+        assertThat(page.rows()).extracting(AuditRow::eventId).containsExactly(after.eventId(), "before-272");
+        assertThat(page.rows().getFirst().logStamp()).contains(new LogStamp(RUN, 3));
+        assertThat(page.rows().getLast().logRun()).isNull();
+        assertThat(page.rows().getLast().logSequence()).isNull();
+        assertThat(page.rows().getLast().branch()).isNull();
+        assertThat(page.rows().getLast().subjectIds()).isNull();
+    }
+
+    @Test
+    void aTableMadeBeforeTheRefColumnsIsGivenThemAndItsEarlierRowsMatchNoRefOrSubject() throws IOException {
+        // Backlog 169: a table backlog 272 gave its log columns gains branch and subject_ids in place.
+        FaultyCatalog older = new FaultyCatalog();
+        TableIdentifier id = TableIdentifier.of(NAMESPACE, EventsTable.NAME);
+        long written = madeBefore(older, true, "before-169");
+
+        EventsTable opened = EventsTable.open(older, NAMESPACE, LogWriter.SOURCE);
+        Table evolved = older.loadTable(id);
+        assertThat(evolved.schema().findField("log_run").fieldId()).isEqualTo(20);
+        assertThat(evolved.schema().findField("branch").fieldId()).isEqualTo(22);
+        assertThat(evolved.schema().findField("subject_ids").fieldId()).isEqualTo(23);
+        assertThat(evolved.schema().findField("subject_ids").type().asListType().elementId()).isEqualTo(24);
+        assertThat(evolved.currentSnapshot().snapshotId()).as("no file rewritten").isEqualTo(written);
+        UUID ref = UUID.randomUUID();
+        AuditRow after = about(row(20, "nuna.catalog.ref", "ana", "lake", -1, List.of()), "q3", ref);
+        opened.reload();
+        opened.append(List.of(after), Map.of(-1, 3L));
+        EventsReader reader = EventsReader.of(older.loadTable(id), EventsReader.DEFAULT_SCAN_BUDGET);
+
+        assertThat(reader.page(query(50)).rows()).extracting(AuditRow::eventId)
+                .containsExactly(after.eventId(), "before-169");
+        assertThat(reader.page(query(50)).rows().getLast().branch()).isNull();
+        assertThat(reader.page(byBranch("q3")).rows()).containsExactly(after);
+        assertThat(reader.page(bySubject(ref)).rows()).containsExactly(after);
+    }
+
+    /**
+     * Makes the table as the writer made it before backlog 272 ({@code logged} false) or before backlog 169, with one
+     * row written then, and returns the snapshot that wrote it.
+     */
+    private static long madeBefore(FaultyCatalog older, boolean logged, String eventId) throws IOException {
+        TableIdentifier id = TableIdentifier.of(NAMESPACE, EventsTable.NAME);
         older.createNamespace(NAMESPACE);
-        Schema first = new Schema(EventsTable.SCHEMA.columns().stream()
-                .filter(c -> !c.name().startsWith("log_")).toList());
+        Schema first = new Schema(EventsTable.SCHEMA.columns().stream().filter(c -> c.fieldId() < 20).toList());
         Table made = older.buildTable(id, first).withPartitionSpec(EventsTable.SPEC)
                 .withProperty(TableProperties.FORMAT_VERSION, "2").create();
-        // A row as the writer wrote it before backlog 272: a data file without the two columns.
+        if (logged) {
+            made.updateSchema().addColumn("log_run", org.apache.iceberg.types.Types.StringType.get())
+                    .addColumn("log_seq", org.apache.iceberg.types.Types.LongType.get()).commit();
+            made.refresh();
+        }
+        // A row as the writer wrote it then: a data file without the later columns.
         GenericRecord before = GenericRecord.create(made.schema());
-        before.setField("event_id", "before-272");
+        before.setField("event_id", eventId);
         before.setField("time", at(10).atOffset(ZoneOffset.UTC));
         before.setField("type", READ);
         before.setField("source", "urn:nuna:deployment:test");
@@ -243,28 +381,14 @@ class EventsReaderTest {
         AppendFiles append = made.newAppend();
         files.result().dataFiles().forEach(append::appendFile);
         append.set(EventsTable.OFFSETS + LogWriter.SOURCE, "-1:2").commit();
-
-        EventsTable opened = EventsTable.open(older, NAMESPACE, LogWriter.SOURCE);
-        assertThat(older.loadTable(id).schema().findField("log_run").fieldId()).isEqualTo(20);
-        assertThat(older.loadTable(id).schema().findField("log_seq").fieldId()).isEqualTo(21);
-        assertThat(EventsTable.open(older, NAMESPACE, LogWriter.SOURCE)).as("opened again as it is").isNotNull();
-        AuditRow after = stamped(row(20, READ, "ana", "lake", -1, List.of("sales", "orders")), RUN, 3);
-        opened.reload();
-        opened.append(List.of(after), Map.of(-1, 3L));
-
-        Page page = EventsReader.of(older.loadTable(id), EventsReader.DEFAULT_SCAN_BUDGET).page(query(50));
-
-        assertThat(page.rows()).extracting(AuditRow::eventId).containsExactly(after.eventId(), "before-272");
-        assertThat(page.rows().getFirst().logStamp()).contains(new LogStamp(RUN, 3));
-        assertThat(page.rows().getLast().logRun()).isNull();
-        assertThat(page.rows().getLast().logSequence()).isNull();
+        return older.loadTable(id).currentSnapshot().snapshotId();
     }
 
     private static AuditRow stamped(AuditRow row, UUID run, long number) {
         return new AuditRow(row.eventId(), row.time(), row.type(), row.source(), row.principal(), row.endUser(),
                 row.engine(), row.requestId(), row.catalog(), row.objectKind(), row.objectId(), row.objectPath(),
                 row.operation(), row.privilege(), row.reason(), row.data(), row.topicPartition(), row.topicOffset(),
-                run.toString(), number);
+                run.toString(), number, row.branch(), row.subjectIds());
     }
 
     private EventsReader reader(long budget) {
@@ -273,7 +397,7 @@ class EventsReaderTest {
     }
 
     private static Query query(int limit) {
-        return new Query("lake", Set.of(), null, List.of(), null, null, Optional.empty(), limit);
+        return new Query("lake", Set.of(), null, List.of(), null, null, null, null, Optional.empty(), limit);
     }
 
     /** Every page, following the cursors, a bounded number of times. */
@@ -286,7 +410,8 @@ class EventsReaderTest {
             if (page.next().isEmpty()) {
                 return read;
             }
-            query = new Query(query.catalog(), query.types(), query.principal(), query.path(), query.from(),
+            query = new Query(query.catalog(), query.types(), query.principal(), query.path(), query.branch(),
+                    query.subject(), query.from(),
                     query.to(), page.next(), query.limit());
         }
         throw new AssertionError("the feed did not end within 1,000 pages");
@@ -329,7 +454,7 @@ class EventsReaderTest {
         return new AuditRow(id, at(second), type, "urn:nuna:deployment:test", principal, null,
                 principal == null ? null : "spark", "request-" + id, catalogName,
                 path == null ? null : "TABLE", object == null ? null : object.toString(), path, null, null, null,
-                "{\"n\":\"" + id + "\"}", partition, offset, null, null);
+                "{\"n\":\"" + id + "\"}", partition, offset, null, null, null, null);
     }
 
     private static Instant at(int second) {

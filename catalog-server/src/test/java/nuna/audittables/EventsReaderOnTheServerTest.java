@@ -41,7 +41,7 @@ class EventsReaderOnTheServerTest {
         String location = audit.append(third);
 
         EventsReader reader = EventsReader.open("nuna_audit.audit.events", location, audit.s3());
-        EventsReader.Page page = reader.page(new EventsReader.Query("lake", Set.of(), null, List.of(), null, null,
+        EventsReader.Page page = reader.page(new EventsReader.Query("lake", Set.of(), null, List.of(), null, null, null, null,
                 Optional.empty(), 50));
         EventsReader.Summary summary = reader.summary(T0, T0.plusSeconds(60), 5);
 

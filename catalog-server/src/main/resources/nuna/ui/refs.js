@@ -335,7 +335,8 @@ async function refRecords(c, pages = 2) {
   try {
     for (let i = 0; i < pages; i++) {
       const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', from: new Date(Date.now() - DAY).toISOString(), pageToken});
-      out.push(...(answer.records || []));
+      // Each feed row carries its record as `event`, whose `data` is the ref change (backlog 169).
+      out.push(...(answer.records || []).map(x => x.event || {time: x.time, type: x.type}));
       pageToken = answer['next-page-token'];
       if (!pageToken) break;
     }
@@ -745,15 +746,20 @@ async function recordTab(c, r) {
   const records = [];
   let pageToken = null;
   try {
+    // The feed keeps the records whose subject is this ref's id (backlog 169); a page that stopped short searches on.
     for (let i = 0; i < 4; i++) {
-      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', pageToken});
-      records.push(...(answer.records || []).filter(x => x.subject === r.id || (x.data && x.data.ref === r.id)));
+      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', subject: r.id, pageToken});
+      records.push(...(answer.records || []).map(x => x.event || {time: x.time, type: x.type}));
       pageToken = answer['next-page-token'];
       if (!pageToken) break;
     }
   } catch (error) {
     return h('div', {class: 'grid-21'}, h('div', {class: 'panel'}, h('h2', null, `What happened to @${r.name}`), failure(error)), where);
   }
+  // A name an ended ref held can be taken again: its records start when this ref was made (Atelier, 2026-11-25).
+  const through = pageHref('audit', c) + '&' + new URLSearchParams({path: '@' + r.name, from: r['created-at']});
+  const every = h('p', null, h('a', {class: 'btn sm', href: through, 'data-act': 'every-record'},
+    `Every record through @${r.name} since it was made`));
   return h('div', {class: 'grid-21'}, h('div', {class: 'panel', id: 'ref-record'}, h('h2', null, `What happened to @${r.name} `,
     h('span', {class: 'meta'}, 'newest first')),
   // Every row is a record of this ref, so no badge says so; its type is the row's title (Atelier, 2026-11-23; backlog 214).
@@ -763,7 +769,7 @@ async function recordTab(c, r) {
     : h('p', {class: 'muted'}, pageToken ? ['Not in the newest ref records; see the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.']
       : 'No record of it in the audit tables yet: they are about a minute behind.'),
   records.length && pageToken ? h('p', {class: 'fine'}, 'Older records are not in the newest ref records read here; see the ',
-    h('a', {href: pageHref('audit', c)}, 'audit feed'), '.') : null), where);
+    h('a', {href: pageHref('audit', c)}, 'audit feed'), '.') : null, every), where);
 }
 
 // ---- the merge ----

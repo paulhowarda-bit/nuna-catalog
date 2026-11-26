@@ -186,7 +186,7 @@ class TableWriterTest {
         assertThat(table.schema().columns()).extracting(Types.NestedField::name).containsExactly("event_id", "time",
                 "type", "source", "principal", "end_user", "engine", "request_id", "catalog", "object_kind", "object_id",
                 "object_path", "operation", "privilege", "reason", "data", "topic_partition", "topic_offset", "log_run",
-                "log_seq");
+                "log_seq", "branch", "subject_ids");
         assertThat(table.schema().findType("time")).isEqualTo(Types.TimestampType.withZone());
         assertThat(table.schema().findType("object_path").toString()).isEqualTo("list<string>");
         assertThat(table.spec().fields()).singleElement().satisfies(field -> {
@@ -227,6 +227,8 @@ class TableWriterTest {
         assertThat(written.getField("object_id")).isEqualTo(ORDERS.id().toString());
         assertThat(written.getField("object_path")).isEqualTo(List.of("sales", "orders"));
         assertThat(written.getField("data")).isEqualTo(expected.data());
+        assertThat(written.getField("branch")).as("the ref the commit went through").isEqualTo("main");
+        assertThat(written.getField("subject_ids")).isNull();
     }
 
     @Test
