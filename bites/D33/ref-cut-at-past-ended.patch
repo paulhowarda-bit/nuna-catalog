@@ -1,0 +1,16 @@
+Breaks: a ref whose line passes through one that has ended still gives a cut-at, the making of the last ref the walk reached, as if that one had been made from main (backlog 168).
+Module: catalog-server
+Test: RefRoutesTest#aRefsCutWasTakenWhenTheRefAtTheFootOfItsLineWasMadeFromMain
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index e3f05183..d73f6381 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1084,7 +1084,7 @@ class RefRoutes {
+             }
+             at = source.get();
+         }
+-        if (at.fromRef().isEmpty()) {
++        if (true) {
+             node.put("cut-at", at.createdAt().toString());
+         }
+         if (!changes.isEmpty()) {

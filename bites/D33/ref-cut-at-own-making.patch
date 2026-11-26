@@ -1,0 +1,16 @@
+Breaks: a ref made from a branch or tag says its cut was taken when it was made, not when the ref at the foot of its line was made from main (backlog 168).
+Module: catalog-server
+Test: RefRoutesTest#aRefsCutWasTakenWhenTheRefAtTheFootOfItsLineWasMadeFromMain
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index e3f05183..f3dd6614 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1085,7 +1085,7 @@ class RefRoutes {
+             at = source.get();
+         }
+         if (at.fromRef().isEmpty()) {
+-            node.put("cut-at", at.createdAt().toString());
++            node.put("cut-at", ref.createdAt().toString());
+         }
+         if (!changes.isEmpty()) {
+             node.set("branch-changes", changes);

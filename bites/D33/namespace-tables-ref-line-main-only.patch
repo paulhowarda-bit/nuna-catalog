@@ -1,0 +1,16 @@
+Breaks: through a ref made from a branch, the line of a pointer the cut took from that branch is looked for on main alone, so its version is given on no line and its last commit is lost (backlog 168).
+Module: catalog-server
+Test: NamespaceTablesRoutesTest#aRefMadeFromABranchReadsTheBranchsPointerOnTheBranchsLine
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+index e2e70266..cea59f92 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+@@ -516,7 +516,7 @@ class NamespaceTablesRoutes {
+      */
+     private Optional<Line> line(Ref ref, CatalogObject table, RefEntry.At cut) {
+         Ref at = ref;
+-        while (at.fromRef().isPresent()) {
++        while (false && at.fromRef().isPresent()) {
+             UUID from = at.fromRef().get();
+             Optional<JournalRecord> wrote = entry(new PointerKey(table.id(), from.toString()), cut.version(),
+                     Optional.of(cut.metadataLocation()));
