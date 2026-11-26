@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**44 open:** 11 S, 16 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**42 open:** 11 S, 14 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,13 +39,11 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
-| [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
 | [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
-| [261](backlog/261.md) | M | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's) | 2026-11-24 |
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
@@ -1599,31 +1597,6 @@ Done when the purge claim and the removal lock the held levels (or the catalog r
 stores; a store suite case holds a namespace hold's write open while each runs and sees them serialized; bites
 recorded.
 
-### 197. After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's
-
-- Added: 2026-11-23 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RecentAudit.java, catalog-server/src/main/resources/nuna/ui/audit.js, catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/test/java/nuna/catalog/server/governance/RecentAudit, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, docs/observability/
-- Effort: M, one route's source and three console pages' words, with their tests; waits on nothing
-
-What is wrong: item 195 (D23, amended 2026-11-23) made the log `nuna.audit` the record of audit and Kafka optional,
-and the demo runs without Kafka unless `gen` or `cdc` is on (D50). Item 195's agent left the console alone, since its
-files were claimed, and reported:
-- `RecentAudit` (`GET .../audit`, a table's or namespace's Audit tab) reads the audit topic, so without Kafka it
-  answers 503 ("needs Kafka"). In the demo, with `gen` and `cdc` off, every object's Audit tab fails.
-- Rows the audit table writer takes over OTLP have `topic_partition` -1 and no hash chain; with an archive configured
-  the console shows them as "unverified", and a chain lookup for partition -1 answers 400.
-- `audit.js` says "event as Kafka holds it", and `app.js` describes the archive as Kafka's.
-- The Health page's "Publishes failed" and the acknowledgement p99 (`ObservedPublisher`'s timer) now measure only
-  the best-effort Kafka copy, and are empty without Kafka.
-
-Done looks like:
-- A table's or namespace's Audit tab answers from the audit table (`nuna_audit.audit.events`, as the catalog-wide feed
-  does, D45) when there is no Kafka, under the same rules as today (audit readers, D45), with a test without Kafka.
-- Log rows show "from the log, no hash chain" rather than "unverified", and no chain lookup is offered for them.
-- The console's words say what is true without Kafka; Health labels the publish figures as the Kafka copy's and hides
-  or explains them when Kafka is not configured.
-- The console checked in the demo with every switch off, signed in as gary.
-
 ### 220. Console: findings from Atelier's re-walk after items 212 to 217
 
 - Added: 2026-11-23 by local_6867d144-54ac-41a5-b94a-192a4c66770b
@@ -1734,64 +1707,6 @@ overnight run has no AWS leg.
   limited to the generated prefixes) and the test with it; if it is let in outside the prefix, the delete policy is
   wrong and that is a new item.
 - The run is recorded in `status/`.
-
-### 261. Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone
-
-- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
-- Touches: deploy/grafana/rules/nuna-catalog.rules.yaml deploy/grafana/dashboards/nuna-catalog.json docs/observability/dashboards-and-alerts.md
-- Effort: M, about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's)
-
-**What is wrong.** The catalog's alert rules (item 44, drafted at home under D43) have two blind spots.
-
-- **Errors.** Every SLI in `deploy/grafana/rules/nuna-catalog.rules.yaml` filters `outcome="2xx"` (or `"3xx"`) in its
-  numerator and its denominator (lines 18 and 19, and every pair after). A catalog answering every call 500 gives
-  0/0, no ratio, and fires nothing; a partial error rate is invisible; and requests that slow until they fail as 5xx
-  leave the latency SLI looking better. `docs/observability/dashboards-and-alerts.md` says so under "Not covered"
-  ("No alert on errors", line 142). D43 decided the drafting and the 500-commits panel, nothing about errors, so
-  adding error alerts needs no ruling.
-- **Absence.** A burn-rate expression returns nothing once its input series stop, so a catalog that dies or stops
-  pushing fires nothing, and a page already firing resolves itself when its short window empties. Pushed OTLP series
-  have no `up` and no staleness marker (Prometheus' OTLP converter writes one only for a point flagged
-  NoRecordedValue), so nothing else notices. The worker's rules already use `absent_over_time`
-  (`deploy/grafana/rules/nuna-maintenance.rules.yaml`, line 27); the catalog's have none. If work's Prometheus or
-  collector turns on native-histogram conversion (`convert_histograms_to_nhcb`), every `_bucket` selector goes empty
-  in the same silent way.
-
-**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
-`research/reports/Nuna observability and audit grounding.md`), "Burn-rate windows match the Workbook, but an all-500
-catalog pages no one". The windows themselves are the SRE Workbook's Table 5-8 exactly. Its worked example counts
-5xx against availability (https://sre.google/workbook/implementing-slos/); Sloth and Pyrra pair each latency SLO with
-an availability SLO, and Pyrra generates an `SLOMetricAbsent` alert by default, on the threshold bucket too
-(https://github.com/pyrra-dev/pyrra/blob/main/slo/rules.go); Prometheus' `keep_firing_for` exists for resolutions
-caused by lost data (https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/).
-
-**What to build.**
-
-- **Availability SLOs**, in a group of their own, with the latency SLOs' windows, factors and severities (14.4 and 6
-  page, 1 warns): loads (`loadTable`), commits (`updateTable` and `commitTransaction`), and every route the request
-  timer times, each per `job`. A `5xx` answer is bad; `2xx` and `3xx` are good (a 304 is a good answer); `4xx` is
-  left out of both, 409 commit conflicts included, since a client's mistake or a lost race is not the catalog
-  failing. nuna's own 503s are outages, not load shedding (the store unreachable, `ErrorResponses.java:54`; a record
-  that had to be audited first and was not, `AuditUnavailableResponses.java`), so they count bad. Its one 429 is the
-  audit read routes' per-caller limit (`AuditReadRoutes.java:504`), a 4xx and left out. `outcome` carries the status
-  class (`docs/observability/catalog-metrics.md`, `nuna.catalog.requests`), so none of this needs `error.type`.
-  Target 99.9 %, a draft to set at work as D43's names are. The R7 latency SLOs stay as written.
-- **Absence alerts**, severity `page`: `absent_over_time` per `job` over about 10 minutes on
-  `nuna_catalog_requests_milliseconds_count`, and on each SLO's `_bucket{le=...}` series, so a renamed or converted
-  bucket pages instead of going quiet. An idle catalog still pushes its unchanged cumulative counts, so this tells a
-  dead process from a quiet one (inferred). `absent_over_time` per `job` cannot see a job that never reported: say in
-  the doc how a deployment names the jobs it expects, or alert on the number of jobs reporting.
-- **`keep_firing_for: 10m`** on every page rule, so a page does not resolve because its data stopped.
-- **The page rules' `for: 2m`.** The Workbook advises against `for` on burn-rate alerts. Drop it, or keep it and write
-  the detection time in the doc: at a total latency failure the 1 h window crosses 14.4 % after about 8.6 minutes, so
-  with `for: 2m`, a push and an evaluation the page comes 11 to 12 minutes after the onset (the report's arithmetic).
-- **A panel for each availability SLO** on the catalog dashboard's "SLOs" row, beside the latency ones.
-
-**Done when** the rules are in the rule file and the doc's alert table, "No alert on errors" is gone from "Not
-covered", and `promtool test rules` unit tests (the `prom/prometheus` image carries promtool) show that: every call
-answered 500 for 15 minutes pages; 409s alone do not; no series for 10 minutes pages; and a firing page whose series
-stop keeps firing for `keep_firing_for`. Item 233's demo is where the rules first meet live series; item 44 renames
-them at work with the rest.
 
 ### 263. Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer
 
@@ -2250,6 +2165,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [194](backlog/194.md) | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | done | 2026-11-23 |
 | [195](backlog/195.md) | Audit goes to logs: the catalog serves and vends without Kafka, and the audit table writer takes the audit records over OTLP (D23) | done | 2026-11-23 |
 | [196](backlog/196.md) | Demo switches: demo.sh gen and ss turn the brokerage generator and SingleStore on and off, as cdc does its leg; Kafka runs only while cdc or gen is on | done | 2026-11-23 |
+| [197](backlog/197.md) | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | done | 2026-11-25 |
 | [198](backlog/198.md) | Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1) | done | 2026-11-23 |
 | [199](backlog/199.md) | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | done | 2026-11-23 |
 | [200](backlog/200.md) | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | done | 2026-11-23 |
@@ -2306,6 +2222,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
 | [258](backlog/258.md) | Grants: refuse write on a view, which gives only select there yet counts as a data duty | done | 2026-11-25 |
 | [260](backlog/260.md) | Console: the Grants page lists the catalog's groups with their duties when no group is named | done | 2026-11-25 |
+| [261](backlog/261.md) | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | done | 2026-11-25 |
 | [262](backlog/262.md) | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | done | 2026-11-25 |
 | [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
 | [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |

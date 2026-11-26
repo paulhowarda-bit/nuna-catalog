@@ -53,12 +53,14 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * {@code GET .../audit}: the recent audit records of a catalog, namespace, table or view, newest first by record
- * time, read
- * back from the audit topic (D23; see {@link RecentAudit} for what it can and cannot see). Needs
+ * time, read from the audit table where the audit tables are configured ({@link AuditFeed}), and otherwise back from
+ * the audit topic (D23; see {@link RecentAudit} for what it can and cannot see): the log is the record of audit and
+ * Kafka is optional, so the table, written from the log or the topic, is where the records are (backlog 197). Needs
  * {@code manage-grants} on the target or above: the trail shows who used the object and who was refused,
  * which is the evidence an access review needs (D19), and separation of duties keeps grant admins away from
  * the data itself (D18). Each read is audited as an {@link AuditRead}; a refusal is a {@code Denial}.
- * Each read opens a Kafka consumer, so one caller may read at most {@code audit-reads-per-minute} times a minute
+ * Each read scans the audit table or opens a Kafka consumer, so one caller may read at most
+ * {@code audit-reads-per-minute} times a minute
  * on a server (each replica counts its own); beyond that the route answers 429 with {@code Retry-After}, as a
  * purge claim over its limit is, and like that one the 429 is not audited: it is no authorization decision and
  * reads nothing (backlog 19). The reasons are in build-plan.md, UI v1.
@@ -120,13 +122,18 @@ class AuditReadRoutes {
                 prefix, namespace, table, view);
         guard.require(request, target, "readAudit", Privilege.MANAGE_GRANTS);
         int wanted = limit(limit);
-        if (!recent.configured()) {
-            throw CatalogError.of(503, "ServiceUnavailableException",
-                    "The audit topic is not configured on this server (nuna.audit.kafka-bootstrap-servers)");
+        boolean fromTable = feed.auditCatalog().isPresent();
+        if (!fromTable && !recent.configured()) {
+            throw CatalogError.of(503, "ServiceUnavailableException", "Neither the audit tables"
+                    + " (nuna.audit.tables.catalog) nor the audit topic (nuna.audit.kafka-bootstrap-servers) is"
+                    + " configured on this server");
         }
         Optional<ResponseEntity<String>> limited = limited(request);
         if (limited.isPresent()) {
             return limited.get();
+        }
+        if (fromTable) {
+            return fromTable(request, target, wanted);
         }
         RecentAudit.Result result;
         try {
@@ -138,6 +145,7 @@ class AuditReadRoutes {
         trail.record(new AuditRead(target.audit(), result.records().size(), request.actor()));
         ObjectNode body = Management.JSON.createObjectNode();
         body.set("target", GovernanceRoutes.securable(target.securable()));
+        body.put("source", "topic");
         // The topic holds changes in relay order, after the synchronous records published meanwhile; a reader
         // wants them by when they happened.
         ArrayNode records = body.putArray("records");
@@ -152,6 +160,30 @@ class AuditReadRoutes {
         window.put("to-offset", result.window().to());
         window.put("complete", result.window().complete());
         window.put("scan-limit", RecentAudit.SCAN_LIMIT);
+        return GovernanceRoutes.json(200, body);
+    }
+
+    /**
+     * An object's records from the audit table: those whose {@code object_id} is the target's, newest first, each as
+     * the log holds it. {@code complete} says whether the table holds no older one (backlog 197).
+     */
+    private ResponseEntity<String> fromTable(Request request, Target target, int wanted) {
+        EventsReader.Query query = new EventsReader.Query(target.catalog().name(), Set.of(), null, List.of(), null, null,
+                Optional.empty(), wanted, target.securable().id().toString());
+        AuditFeed.Read read = readTable(() -> feed.page(query));
+        trail.record(new AuditRead(target.audit(), read.page().rows().size(), request.actor()));
+        ObjectNode body = Management.JSON.createObjectNode();
+        body.set("target", GovernanceRoutes.securable(target.securable()));
+        body.put("source", "table");
+        ArrayNode records = body.putArray("records");
+        for (AuditRow row : read.page().rows()) {
+            JsonNode event = event(row);
+            // A type this server does not know, from a newer server: its columns still say what and when.
+            records.add(event != null ? event : Management.JSON.createObjectNode().put("id", row.eventId())
+                    .put("type", row.type()).put("time", row.time().toString()).put("subject", row.objectId()));
+        }
+        body.put("complete", read.page().next().isEmpty() && read.page().searchedTo().isEmpty());
+        body.set("table", table(read.table()));
         return GovernanceRoutes.json(200, body);
     }
 
@@ -478,13 +510,23 @@ class AuditReadRoutes {
                     .or(() -> gaps.stream().filter(r -> r.to() < n).min(Comparator.comparingLong(ArchiveCheck.Range::from)))
                     .ifPresent(r -> chain.putObject("missing").put("from", r.from()).put("to", r.to()));
         }
-        try {
-            node.set("event", Management.JSON.readTree(EventCodec.encode(AuditRows.event(row))));
-        } catch (IllegalArgumentException e) {
+        JsonNode event = event(row);
+        if (event == null) {
             // A type or payload this server does not know, from a newer server: its columns still say what it was.
             node.putNull("event");
+        } else {
+            node.set("event", event);
         }
         return node;
+    }
+
+    /** The row's record as the log holds it, or null for a type or payload this server does not know. */
+    private static JsonNode event(AuditRow row) {
+        try {
+            return Management.JSON.readTree(EventCodec.encode(AuditRows.event(row)));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static ObjectNode table(AuditFeed.Snapshot snapshot) {
