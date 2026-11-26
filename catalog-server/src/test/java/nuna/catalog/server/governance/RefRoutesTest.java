@@ -369,6 +369,51 @@ class RefRoutesTest {
         assertThat(events(RefChange.Action.RENEWED)).isEmpty();
     }
 
+    // ---- when the cut was taken (backlog 168) ----
+
+    /**
+     * A ref's cut was taken from main when the ref at the foot of its line was made from main: a tag made from dev an
+     * hour later, and a branch made from that tag, both read main as dev did, and hold dev's changes as they were
+     * when the tag was made. Once dev ends, what it was made from is not kept: the time is left out, and the ref that
+     * ended is named.
+     */
+    @Test
+    void aRefsCutWasTakenWhenTheRefAtTheFootOfItsLineWasMadeFromMain() {
+        create("dev", "branch", null, null);
+        clock.advance(Duration.ofHours(1));
+        create("snap", "tag", "dev", null);
+        clock.advance(Duration.ofHours(1));
+        create("fix", "branch", "snap", null);
+
+        JsonNode dev = json(routes.read("gate", "dev", http));
+        assertThat(dev.get("cut-at").asString()).isEqualTo(NOW.toString());
+        assertThat(dev.has("branch-changes")).isFalse();
+        JsonNode snap = json(routes.read("gate", "snap", http));
+        assertThat(snap.get("cut-at").asString()).as("dev's making, not its own").isEqualTo(NOW.toString());
+        assertThat(snap.get("branch-changes")).singleElement().satisfies(held -> {
+            assertThat(held.get("branch").asString()).isEqualTo("dev");
+            assertThat(held.get("as-of").asString()).isEqualTo(NOW.plus(Duration.ofHours(1)).toString());
+        });
+        JsonNode fix = json(routes.read("gate", "fix", http));
+        assertThat(fix.get("cut-at").asString()).isEqualTo(NOW.toString());
+        assertThat(fix.get("branch-changes")).as("a tag changes nothing; it carries dev's as it took them")
+                .singleElement().satisfies(held -> {
+                    assertThat(held.get("branch").asString()).isEqualTo("dev");
+                    assertThat(held.get("as-of").asString()).isEqualTo(NOW.plus(Duration.ofHours(1)).toString());
+                });
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
+                .map(ref -> ref.get("cut-at").asString()).distinct().toList()).containsExactly(NOW.toString());
+
+        assertThat(routes.delete("gate", "dev", null, http).getStatusCode().value()).isEqualTo(204);
+
+        for (String name : List.of("snap", "fix")) {
+            JsonNode ended = json(routes.read("gate", name, http));
+            assertThat(ended.has("cut-at")).as(name).isFalse();
+            assertThat(ended.get("cut-from-ended").asString()).as(name).isEqualTo("dev");
+            assertThat(ended.has("branch-changes")).as(name).isFalse();
+        }
+    }
+
     // ---- delete ----
 
     @Test

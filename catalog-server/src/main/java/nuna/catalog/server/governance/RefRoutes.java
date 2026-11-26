@@ -154,7 +154,7 @@ class RefRoutes {
      * The catalog's refs by name, paged. A branch past its expiry is left out, unless {@code expired=true}: then it is
      * listed with {@code expired}, as it holds its name until the maintenance worker ends it. Each branch has its
      * {@code changed-count}, the tables and views with a pointer of its own, all of them, as the merge's dry run counts
-     * them to the same callers. The answer carries the catalog's {@code limits} (P11's settings) and what the caller
+     * them to the same callers, and each ref when its cut was taken ({@code cut-at}, {@link #cut}). The answer carries the catalog's {@code limits} (P11's settings) and what the caller
      * {@code may} do, asked, not required, so the console offers only what the server would allow (backlog 109).
      */
     @GetMapping(path = REFS, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -203,7 +203,10 @@ class RefRoutes {
         return limits;
     }
 
-    /** One ref; for a branch, also the tables and views it changed that the caller can describe. */
+    /**
+     * One ref, with when its cut was taken ({@code cut-at}, {@link #cut}); for a branch, also the tables and views it
+     * changed that the caller can describe.
+     */
     @GetMapping(path = REF, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> read(@PathVariable("catalog") String prefix, @PathVariable("ref") String name,
                                 HttpServletRequest http) {
@@ -1051,7 +1054,42 @@ class RefRoutes {
             node.put("max-expires-at", settings.lastExpiry(ref.createdAt()).toString());
             node.put("expiring", settings.expiring(ref, now));
         });
+        cut(node, ref);
         return node;
+    }
+
+    /**
+     * When the ref's cut was taken from main, and the branches whose changes it holds besides (backlog 168), from the
+     * refs it was made from. A ref made from main was cut when it was made. One made from another ref took that ref's
+     * cut, so the walk goes down the refs each was made from, to the one made from main: {@code cut-at} is its making.
+     * A ref made from a branch also took that branch's own pointers as they were at its making: {@code branch-changes}
+     * names each such branch, nearest first, with {@code as-of}, when they were taken. A tag in the chain carries what
+     * it took on. Where a ref in the chain has been deleted (or merged, which ends it), what it was made from is not
+     * kept, so the walk stops: {@code cut-at} is left out and {@code cut-from-ended} names that ref, as it was named
+     * when the one above was made from it. A branch past its expiry is kept until the worker ends it, so the walk
+     * passes through it.
+     */
+    private void cut(ObjectNode node, Ref ref) {
+        Ref at = ref;
+        ArrayNode changes = Management.JSON.createArrayNode();
+        while (at.fromRef().isPresent()) {
+            Optional<Ref> source = store.readRef(at.fromRef().get());
+            if (source.isEmpty()) {
+                node.put("cut-from-ended", at.fromName());
+                break;
+            }
+            if (source.get().kind() == Ref.Kind.BRANCH) {
+                changes.addObject().put("branch", source.get().name().display())
+                        .put("as-of", at.createdAt().toString());
+            }
+            at = source.get();
+        }
+        if (at.fromRef().isEmpty()) {
+            node.put("cut-at", at.createdAt().toString());
+        }
+        if (!changes.isEmpty()) {
+            node.set("branch-changes", changes);
+        }
     }
 
     /** Whether the caller holds create on the catalog; asked, not required, so a no is no refusal. */

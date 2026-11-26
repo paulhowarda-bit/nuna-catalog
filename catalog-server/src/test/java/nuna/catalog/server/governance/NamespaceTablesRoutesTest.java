@@ -48,6 +48,8 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.Securable;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
@@ -83,6 +85,11 @@ class NamespaceTablesRoutesTest {
     private final Map<PointerKey, List<JournalRecord>> journal = new LinkedHashMap<>();
     private final List<GrantRecord> grants = new ArrayList<>();
     private final List<CatalogEvent> audit = new ArrayList<>();
+    private final Map<UUID, Ref> refs = new LinkedHashMap<>();
+    private final Map<UUID, List<RefEntry>> cuts = new LinkedHashMap<>();
+    /** The object store's metadata files, by location, which only a read through a ref may open. */
+    private final Map<String, String> files = new LinkedHashMap<>();
+    private final List<String> filesRead = new ArrayList<>();
 
     private final NamespaceRecord desk = namespace(null, "desk");
     private final NamespaceRecord lobby = namespace(null, "lobby");
@@ -135,7 +142,8 @@ class NamespaceTablesRoutesTest {
         Management management = new Management(store, request -> caller, settings, holdings);
         // No security settings: they name only the maintenance principals, whom this route never asks for.
         ManagementGuard guard = new ManagementGuard(authorizer, separation, null, denials, holdings);
-        routes = new NamespaceTablesRoutes(store, management, guard, holdings, authorizer);
+        routes = new NamespaceTablesRoutes(store, management, guard, holdings, authorizer,
+                (catalogId, location, sha256) -> readFile(location), clock);
     }
 
     @Test
@@ -182,7 +190,7 @@ class NamespaceTablesRoutesTest {
     @Test
     void aCallerWhoHoldsNothingOnTheNamespaceIsAnsweredAsForOneThatDoesNotExist() {
         caller = OTTO;
-        Throwable refused = catchThrowable(() -> routes.tables("gate", "desk", null, null, http));
+        Throwable refused = catchThrowable(() -> routes.tables("gate", "desk", null, null, null, http));
         assertThat(refused).isInstanceOfSatisfying(CatalogError.class, error -> {
             assertThat(error.status()).isEqualTo(404);
             assertThat(error.type()).isEqualTo("NoSuchNamespaceException");
@@ -193,7 +201,7 @@ class NamespaceTablesRoutesTest {
         assertThat(denials().getFirst().securable().path()).containsExactly("desk");
 
         caller = NED;
-        assertThat(catchThrowable(() -> routes.tables("gate", "desk", null, null, http)))
+        assertThat(catchThrowable(() -> routes.tables("gate", "desk", null, null, null, http)))
                 .isInstanceOfSatisfying(CatalogError.class, error ->
                         assertThat(error.type()).isEqualTo("NoSuchWarehouseException"));
     }
@@ -246,7 +254,7 @@ class NamespaceTablesRoutesTest {
 
     @Test
     void aTokenTheStoreDidNotIssueIsABadRequest() {
-        Throwable refused = catchThrowable(() -> routes.tables("gate", "desk", "nope", null, http));
+        Throwable refused = catchThrowable(() -> routes.tables("gate", "desk", "nope", null, null, http));
 
         assertThat(refused).isInstanceOfSatisfying(CatalogError.class, error -> {
             assertThat(error.status()).isEqualTo(400);
@@ -325,7 +333,7 @@ class NamespaceTablesRoutesTest {
     @Test
     void aCallerWhoHoldsNothingOnTheParentIsAnsweredAsForANamespaceThatDoesNotExist() {
         caller = OTTO;
-        Throwable refused = catchThrowable(() -> routes.namespaces("gate", "desk", null, null, http));
+        Throwable refused = catchThrowable(() -> routes.namespaces("gate", "desk", null, null, null, http));
         assertThat(refused).isInstanceOfSatisfying(CatalogError.class, error -> {
             assertThat(error.status()).isEqualTo(404);
             assertThat(error.type()).isEqualTo("NoSuchNamespaceException");
@@ -333,7 +341,7 @@ class NamespaceTablesRoutesTest {
         assertThat(denials()).extracting(Denial::operation).containsExactly("listNamespaceTotals");
 
         caller = NED;
-        assertThat(catchThrowable(() -> routes.namespaces("gate", null, null, null, http)))
+        assertThat(catchThrowable(() -> routes.namespaces("gate", null, null, null, null, http)))
                 .isInstanceOfSatisfying(CatalogError.class, error ->
                         assertThat(error.type()).isEqualTo("NoSuchWarehouseException"));
     }
@@ -397,21 +405,270 @@ class NamespaceTablesRoutesTest {
 
     @Test
     void aNamespaceTokenTheStoreDidNotIssueIsABadRequest() {
-        assertThat(catchThrowable(() -> routes.namespaces("gate", "desk", "nope", null, http)))
+        assertThat(catchThrowable(() -> routes.namespaces("gate", "desk", "nope", null, null, http)))
                 .isInstanceOfSatisfying(CatalogError.class, error -> assertThat(error.status()).isEqualTo(400));
+    }
+
+    // ---- through a branch or tag (backlog 168) ----
+
+    /**
+     * A tag made when trades was at version 4: main has committed since, so through the tag trades reads the cut's
+     * pointer, on main's line, with the format and snapshots of the cut's file, read from the object store, and the
+     * journal's entry that wrote it. Positions main has not touched reads main's projection, and no file is read for
+     * it. A table main made since is not on the tag; one main dropped since still is.
+     */
+    @Test
+    void throughATagEachTableReadsAsTheCutHasIt() {
+        Ref eod = refFromMain("eod", Ref.Kind.TAG);
+        files.put(location(trades, 4), "{\"format-version\":2,\"snapshots\":[{},{},{}]}");
+        commits(trades, 2, 7, List.of(
+                new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("trino", "ana", "trino", "[]", "[]"),
+                new JournalEntry("late", null, "spark", "[]", "[]")));
+        table(desk, "later");
+        CatalogObject dropped = table(desk, "gone");
+        cuts.get(eod.id()).add(new RefEntry(eod.id(), dropped.id(), RefEntry.Kind.TABLE, desk.id(), dropped.name(),
+                Optional.of(new RefEntry.At(1, location(dropped, 1), "0".repeat(64)))));
+        objects.put(dropped.id(), dropped(dropped));
+
+        JsonNode body = tables("desk", null, null, "eod");
+
+        assertThat(names(body)).containsExactly("gone", "positions", "trades");
+        JsonNode row = body.get("tables").get(2);
+        assertThat(row.get("format-version").asInt()).isEqualTo(2);
+        assertThat(row.get("snapshots").asLong()).as("the cut's file's, not main's 7").isEqualTo(3);
+        assertThat(row.get("ref").get("pointer").asString()).isEqualTo("cut");
+        assertThat(row.get("ref").get("version").asLong()).isEqualTo(4);
+        assertThat(row.get("ref").get("line").asString()).isEqualTo("main");
+        JsonNode last = row.get("last-commit");
+        assertThat(last.get("version").asLong()).isEqualTo(4);
+        assertThat(last.get("line").asString()).isEqualTo("main");
+        assertThat(last.get("principal").asString()).as("the commit that wrote the cut's file").isEqualTo("trino");
+        assertThat(last.get("end-user").asString()).isEqualTo("ana");
+
+        JsonNode untouched = body.get("tables").get(1);
+        assertThat(untouched.get("format-version").asInt()).isEqualTo(3);
+        assertThat(untouched.get("snapshots").asLong()).isZero();
+        assertThat(untouched.get("ref").get("version").asLong()).isEqualTo(1);
+        assertThat(filesRead).as("main's projection serves a table main has not moved, a dropped one too")
+                .containsExactly(location(trades, 4));
+        assertThat(denials()).as("a listing records nothing per table").isEmpty();
+    }
+
+    /** A branch's own pointer, numbered from 1 on its own line (item 105), with its projection and its own journal. */
+    @Test
+    void throughABranchATableItChangedReadsItsOwnPointer() {
+        Ref dev = refFromMain("dev", Ref.Kind.BRANCH);
+        commitOnBranch(dev, trades, 9, new JournalEntry("ana", null, "spark", "[]", "[]"));
+
+        JsonNode row = tables("desk", null, null, "dev").get("tables").get(1);
+
+        assertThat(row.get("name").asString()).isEqualTo("trades");
+        assertThat(row.get("snapshots").asLong()).isEqualTo(9);
+        assertThat(row.get("ref").get("pointer").asString()).isEqualTo("own");
+        assertThat(row.get("ref").get("version").asLong()).isEqualTo(1);
+        assertThat(row.get("ref").get("line").asString()).isEqualTo("dev");
+        assertThat(row.get("last-commit").get("principal").asString()).isEqualTo("ana");
+        assertThat(row.get("last-commit").get("line").asString()).isEqualTo("dev");
+        assertThat(filesRead).isEmpty();
+    }
+
+    /**
+     * A tag made from a branch took the branch's own pointer: through it trades reads that pointer, on the branch's
+     * line, its entry from the branch's journal, which stays, keyed by the branch's id, once the branch has ended.
+     */
+    @Test
+    void aRefMadeFromABranchReadsTheBranchsPointerOnTheBranchsLine() {
+        Ref dev = refFromMain("dev", Ref.Kind.BRANCH);
+        commitOnBranch(dev, trades, 9, new JournalEntry("ana", null, "spark", "[]", "[]"));
+        refFrom("snap", Ref.Kind.TAG, dev);
+        files.put(branchLocation(dev, trades), "{\"format-version\":2,\"snapshots\":[{},{}]}");
+        refs.remove(dev.id());
+        pointers.remove(dev.key(trades.id()));
+
+        JsonNode body = tables("desk", null, null, "snap");
+
+        JsonNode row = body.get("tables").get(1);
+        assertThat(row.get("ref").get("pointer").asString()).isEqualTo("cut");
+        assertThat(row.get("ref").get("version").asLong()).isEqualTo(1);
+        assertThat(row.get("ref").get("line").asString()).isEqualTo("dev");
+        assertThat(row.get("snapshots").asLong()).isEqualTo(2);
+        assertThat(row.get("last-commit").get("principal").asString()).isEqualTo("ana");
+        assertThat(body.get("tables").get(0).get("ref").get("line").asString())
+                .as("positions: main's, which dev's cut took").isEqualTo("main");
+    }
+
+    /**
+     * Rights through a ref are main's: Tom sees trades alone; Otto, who holds nothing on desk, is answered as for a
+     * namespace that does not exist, and audited; Ned, nothing in the catalog. A ref no one has made, and a namespace
+     * main made after the cut, are not found.
+     */
+    @Test
+    void throughARefOnlyWhatTheCallerMayDescribeIsListed() {
+        refFromMain("eod", Ref.Kind.TAG);
+        NamespaceRecord later = namespace(null, "later");
+        grant(new Securable(Securable.Kind.NAMESPACE, later.id()), "desk-readers", Privilege.DESCRIBE);
+
+        caller = TOM;
+        assertThat(names(tables("desk", null, null, "eod"))).containsExactly("trades");
+        JsonNode top = totals(null, null, null, "eod");
+        assertThat(rowNames(top)).containsExactly("desk");
+        assertThat(top.get("namespaces").get(0).get("tables").asInt()).isEqualTo(1);
+        assertThat(denials()).isEmpty();
+
+        caller = OTTO;
+        assertThat(catchThrowable(() -> routes.tables("gate", "desk", null, null, "eod", http)))
+                .isInstanceOfSatisfying(CatalogError.class, error ->
+                        assertThat(error.type()).isEqualTo("NoSuchNamespaceException"));
+        assertThat(denials()).extracting(Denial::operation).containsExactly("listNamespaceTables");
+        assertThat(denials().getFirst().securable().path()).containsExactly("desk");
+
+        caller = NED;
+        assertThat(catchThrowable(() -> routes.tables("gate", "desk", null, null, "eod", http)))
+                .isInstanceOfSatisfying(CatalogError.class, error ->
+                        assertThat(error.type()).isEqualTo("NoSuchWarehouseException"));
+
+        caller = RITA;
+        assertThat(catchThrowable(() -> routes.tables("gate", "desk", null, null, "nope", http)))
+                .isInstanceOfSatisfying(CatalogError.class, error ->
+                        assertThat(error.type()).isEqualTo("NoSuchRefException"));
+        assertThat(catchThrowable(() -> routes.tables("gate", "later", null, null, "eod", http)))
+                .isInstanceOfSatisfying(CatalogError.class, error ->
+                        assertThat(error.type()).isEqualTo("NoSuchNamespaceException"));
+        assertThat(rowNames(totals(null, null, null, "eod"))).as("later is main's, made after the cut")
+                .containsExactly("desk");
+    }
+
+    /** Totals through a ref count each table as the ref reads it, and name the newest commit's line. */
+    @Test
+    void throughARefTotalsCountEachTableAsTheRefHasIt() {
+        Ref dev = refFromMain("dev", Ref.Kind.BRANCH);
+        commitOnBranch(dev, trades, 9, new JournalEntry("ana", null, "spark", "[]", "[]"));
+        commits(quotes, 2, 50, List.of(new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("spark", "bo", "spark", "[]", "[]"),
+                new JournalEntry("late", null, "spark", "[]", "[]")), Duration.ofSeconds(1));
+        files.put(location(quotes, 2), "{\"format-version\":2,\"snapshots\":[{},{},{},{},{}]}");
+
+        JsonNode deskRow = totals(null, null, null, "dev").get("namespaces").get(0);
+
+        assertThat(deskRow.get("tables").asInt()).isEqualTo(4);
+        assertThat(deskRow.get("snapshots").asLong()).as("trades' own 9, positions 0, fills 2, quotes' cut 5")
+                .isEqualTo(9 + 0 + 2 + 5);
+        JsonNode newest = deskRow.get("newest-commit");
+        assertThat(newest.get("table").valueStream().map(JsonNode::asString)).containsExactly("trades");
+        assertThat(newest.get("line").asString()).isEqualTo("dev");
+        assertThat(newest.get("version").asLong()).isEqualTo(1);
     }
 
     // ---- helpers ----
 
+    private JsonNode tables(String namespace, String token, Integer size, String ref) {
+        ResponseEntity<String> response = routes.tables("gate", namespace, token, size, ref, http);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        return Management.JSON.readTree(response.getBody());
+    }
+
+    private JsonNode totals(String namespace, String token, Integer size, String ref) {
+        ResponseEntity<String> response = routes.namespaces("gate", namespace, token, size, ref, http);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        return Management.JSON.readTree(response.getBody());
+    }
+
+    /** A ref made from main now: every namespace, and every active table and view at its main pointer. */
+    private Ref refFromMain(String name, Ref.Kind kind) {
+        Ref ref = ref(name, kind, Optional.empty());
+        List<RefEntry> cut = new ArrayList<>();
+        namespaces.values().forEach(ns -> cut.add(new RefEntry(ref.id(), ns.id(), RefEntry.Kind.NAMESPACE,
+                ns.parentId(), ns.name(), Optional.empty())));
+        objects.values().stream().filter(o -> o.state() == CatalogObject.State.ACTIVE).forEach(o -> {
+            Pointer at = pointers.getOrDefault(o.mainKey(), new Pointer(location(o, 1), 1, "0".repeat(64),
+                    new byte[0]));
+            cut.add(new RefEntry(ref.id(), o.id(), RefEntry.of(o.kind()), o.namespaceId(), o.name(),
+                    Optional.of(new RefEntry.At(at.version(), at.metadataLocation(), at.sha256()))));
+        });
+        cuts.put(ref.id(), cut);
+        return ref;
+    }
+
+    /** A ref made from another now: its cut, with the source's own pointer where it has one, as the stores make it. */
+    private Ref refFrom(String name, Ref.Kind kind, Ref source) {
+        Ref ref = ref(name, kind, Optional.of(source));
+        cuts.put(ref.id(), new ArrayList<>(cuts.get(source.id()).stream().map(entry -> new RefEntry(ref.id(),
+                entry.id(), entry.kind(), entry.parentId(), entry.name(), entry.pointer().map(kept -> Optional
+                        .ofNullable(pointers.get(source.key(entry.id())))
+                        .map(own -> new RefEntry.At(own.version(), own.metadataLocation(), own.sha256()))
+                        .orElse(kept)))).toList()));
+        return ref;
+    }
+
+    private Ref ref(String name, Ref.Kind kind, Optional<Ref> from) {
+        Ref ref = new Ref(catalog.id(), UUID.randomUUID(), new Name(Names.normalize(name), name), kind, NOW, "bea",
+                from.map(Ref::id), from.map(r -> r.name().display()).orElse(Ref.MAIN),
+                kind == Ref.Kind.BRANCH ? Optional.of(NOW.plus(Duration.ofDays(30))) : Optional.empty());
+        refs.put(ref.id(), ref);
+        return ref;
+    }
+
+    /** One commit on the branch: its own pointer at version 1 (item 105), and its own journal's entry for it. */
+    private void commitOnBranch(Ref branch, CatalogObject table, int snapshots, JournalEntry entry) {
+        PointerKey key = branch.key(table.id());
+        journal.put(key, List.of(new JournalRecord(UUID.randomUUID(), key, NOW.minusSeconds(5), entry,
+                Optional.of(location(table, 4)), branchLocation(branch, table), 1)));
+        String projection = "{\"kind\":\"table\",\"uuid\":\"" + table.id() + "\",\"format-version\":2"
+                + ",\"current-schema-id\":0,\"default-spec-id\":0,\"snapshots\":" + snapshots + "}";
+        pointers.put(key, new Pointer(branchLocation(branch, table), 1, "0".repeat(64),
+                projection.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static String branchLocation(Ref branch, CatalogObject table) {
+        return table.locationRoot() + "/metadata/00001-x.branch-" + branch.id() + ".metadata.json";
+    }
+
+    private static CatalogObject dropped(CatalogObject table) {
+        return new CatalogObject(table.catalogId(), table.id(), table.namespaceId(), table.name(), table.kind(),
+                CatalogObject.State.DROPPED, Optional.of(NOW), Optional.of(NOW.plus(Duration.ofDays(30))),
+                table.locationRoot(), Optional.empty());
+    }
+
+    private Optional<String> readFile(String location) {
+        filesRead.add(location);
+        return Optional.ofNullable(files.get(location));
+    }
+
+    private List<RefEntry> entries(UUID refId, UUID parentId, RefEntry.Kind kind) {
+        return cuts.getOrDefault(refId, List.of()).stream()
+                .filter(entry -> entry.parentId().equals(parentId) && entry.kind() == kind)
+                .sorted(Comparator.comparing((RefEntry entry) -> entry.name().normalized())
+                        .thenComparing(RefEntry::id))
+                .toList();
+    }
+
+    private Optional<RefEntry> findRefNamespace(UUID refId, List<String> path) {
+        UUID parent = catalog.id();
+        RefEntry found = null;
+        for (String level : path) {
+            UUID above = parent;
+            found = entries(refId, above, RefEntry.Kind.NAMESPACE).stream()
+                    .filter(entry -> entry.name().normalized().equals(level)).findFirst().orElse(null);
+            if (found == null) {
+                return Optional.empty();
+            }
+            parent = found.id();
+        }
+        return Optional.ofNullable(found);
+    }
+
     private JsonNode tables(String namespace, String token, Integer size) {
-        ResponseEntity<String> response = routes.tables("gate", namespace, token, size, http);
+        ResponseEntity<String> response = routes.tables("gate", namespace, token, size, null, http);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         return Management.JSON.readTree(response.getBody());
     }
 
     /** The child namespaces of {@code namespace}, or of the catalog when it is null, with their totals. */
     private JsonNode totals(String namespace, String token, Integer size) {
-        ResponseEntity<String> response = routes.namespaces("gate", namespace, token, size, http);
+        ResponseEntity<String> response = routes.namespaces("gate", namespace, token, size, null, http);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         return Management.JSON.readTree(response.getBody());
     }
@@ -556,6 +813,14 @@ class NamespaceTablesRoutesTest {
                             .filter(g -> g.grant().catalogId().equals(args[0])
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
                             .toList(), Optional.empty());
+                    case "findRef" -> refs.values().stream().filter(ref -> ref.catalogId().equals(args[0])
+                            && ref.name().normalized().equals(args[1])).findFirst();
+                    case "readRef" -> Optional.ofNullable(refs.get((UUID) args[0]));
+                    case "findRefNamespace" -> findRefNamespace((UUID) args[0], (List<String>) args[1]);
+                    case "listRefNamespaces" -> page(entries((UUID) args[0], (UUID) args[1], RefEntry.Kind.NAMESPACE),
+                            (PageRequest) args[2]);
+                    case "listRefObjects" -> page(entries((UUID) args[0], (UUID) args[1], RefEntry.of((Kind) args[2])),
+                            (PageRequest) args[3]);
                     case "toString" -> "the test's store";
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
