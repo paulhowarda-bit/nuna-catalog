@@ -91,9 +91,11 @@ final class MongoRefs {
     }
 
     /**
-     * Reads the cut, writes it, then inserts the ref. A removal from refs (backlog 156) committed after the snapshot
-     * read the cut sets the catalog's {@code trimmed}, so the insert sees it and the create cuts again: a cut read
-     * before a removal could still name the object it took out of the ref the cut was copied from, or out of every ref.
+     * Reads the cut, writes it, then inserts the ref. A removal from refs (backlog 156) or a namespace drop (backlog
+     * 158) committed after the snapshot read the cut sets the catalog's {@code trimmed}, so the insert sees it and the
+     * create cuts again: a cut read before a removal could still name the object it took out of the ref the cut was
+     * copied from, or out of every ref, and one read before a namespace drop could name a dropped table of the
+     * namespace, which the drop found no ref naming. One open when the insert runs conflicts with it on the catalog.
      */
     WriteResult create(Ref ref, RefLimits limits, Change change) {
         while (true) {
@@ -130,7 +132,7 @@ final class MongoRefs {
         }
     }
 
-    /** The stamp of the last removal from a catalog's refs, on its document; 0 when none was made. */
+    /** The stamp of the last removal from a catalog's refs or drop of one of its namespaces; 0 when none was made. */
     private static long trimmed(BsonDocument catalog) {
         BsonValue trimmed = catalog.get("trimmed");
         return trimmed == null ? 0 : trimmed.asNumber().longValue();

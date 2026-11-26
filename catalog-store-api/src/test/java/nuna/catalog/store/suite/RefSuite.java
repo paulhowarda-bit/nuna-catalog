@@ -388,7 +388,8 @@ public abstract class RefSuite extends GroupSuite {
     }
 
     @Test
-    @DisplayName("Refs: every table in a cut has the namespace that held it, while namespaces come and go")
+    @DisplayName("Refs: every table in a cut has the namespace that held it, in the cut and on main, while namespaces"
+            + " come and go (backlog 158)")
     void everyTableInACutHasItsNamespace() throws Exception {
         UUID catalog = newCatalog();
         Map<UUID, UUID> tableOfNamespace = new ConcurrentHashMap<>();
@@ -414,6 +415,8 @@ public abstract class RefSuite extends GroupSuite {
                             PageRequest.first(1)).items().isEmpty();
                     assertThat(!tableIn || namespaces.contains(namespaceId)).as("cut %d, namespace %s", i, namespaceId)
                             .isTrue();
+                    assertThat(!tableIn || store.readNamespace(namespaceId).isPresent())
+                            .as("cut %d, namespace %s on main", i, namespaceId).isTrue();
                 }
             }
         } finally {
@@ -461,6 +464,34 @@ public abstract class RefSuite extends GroupSuite {
         assertApplied(store.dropNamespace(tables.id(), change()));
         assertApplied(store.dropNamespace(views.id(), change()));
         assertThat(store.attributesOf(Set.of(regulated))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Refs: a namespace drop waits for a ref made from main that is open before its COMMIT, while a table of"
+            + " the cut was dropped meanwhile, and then is refused: a ref never names a table whose namespace is gone"
+            + " (backlog 158)")
+    void aNamespaceDropWaitsForAnOpenRefCreate() throws Exception {
+        UUID catalog = newCatalog();
+        NamespaceRecord outer = newNamespace(catalog, "outer");
+        NamespaceRecord inner = newNamespace(outer, "inner");
+        CatalogObject table = newTable(inner, "t");
+        Ref ref = tag(catalog, "v1", now());
+        Change create = change();
+
+        Overlap raced = whileOpen(create, held -> held.createRef(ref, RefLimits.P11, create), () -> {
+            assertApplied(store.dropObject(table.id(), now().plus(Duration.ofDays(30)), change()));
+            return store.dropNamespace(inner.id(), change());
+        });
+
+        assertThat(raced.open()).isEqualTo(WriteResult.APPLIED);
+        assertThat(raced.meanwhile()).isIn(WriteResult.APPLIED, REFERENCED);
+        if (raced.meanwhile().equals(WriteResult.APPLIED)) {
+            assertThat(store.listRefPointers(table.id())).as("the namespace went, so no ref names its table").isEmpty();
+        } else {
+            assertThat(store.listRefPointers(table.id())).extracting(RefPointers::ref).containsExactly(ref);
+            assertThat(store.readNamespace(inner.id())).as("a ref names its table, so the namespace stays").isPresent();
+        }
+        assertThat(raced.waited()).as("the drop waited for the ref create").isTrue();
     }
 
     @Test
