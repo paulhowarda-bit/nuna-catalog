@@ -1,0 +1,17 @@
+Breaks: a ref made on MongoDB loses the description it was made with (backlog 167).
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Refs#aRefKeepsItsDescription
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+index 94d95696..f2a985b9 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+@@ -644,7 +644,7 @@ final class MongoRefs {
+                 Ref.Kind.valueOf(doc.getString("kind").getValue()), instant(doc.get("createdAt")),
+                 doc.getString("createdBy").getValue(),
+                 fromRef == null || fromRef.isNull() ? Optional.empty() : Optional.of(uuid(fromRef)),
+-                doc.getString("fromName").getValue(), optionalInstant(doc, "expiresAt"), description(doc));
++                doc.getString("fromName").getValue(), optionalInstant(doc, "expiresAt"), Optional.empty());
+     }
+ 
+     /** The ref's description (backlog 167): none when the field is null, or absent from a ref made before it. */

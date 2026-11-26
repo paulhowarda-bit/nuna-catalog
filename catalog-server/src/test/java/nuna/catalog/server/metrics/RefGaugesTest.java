@@ -48,7 +48,7 @@ class RefGaugesTest {
         branch("expiring", NOW.plus(DAY.multipliedBy(3)));
         for (int i = 0; i < 3; i++) {
             refs.add(new Ref(gate.id(), UUID.randomUUID(), new Name("v" + i, "v" + i), Ref.Kind.TAG, NOW, "bea",
-                    Optional.empty(), Ref.MAIN, Optional.empty()));
+                    Optional.empty(), Ref.MAIN, Optional.empty(), Optional.empty()));
         }
         new RefGauges(store(), List.of("gate", "Undeclared-yet"), SETTINGS, clock).bindTo(registry);
     }
@@ -96,7 +96,8 @@ class RefGaugesTest {
 
     private void branch(String name, Instant expiresAt) {
         refs.add(new Ref(gate.id(), UUID.randomUUID(), new Name(name, name), Ref.Kind.BRANCH,
-                NOW.minus(DAY.multipliedBy(30)), "bea", Optional.empty(), Ref.MAIN, Optional.of(expiresAt)));
+                NOW.minus(DAY.multipliedBy(30)), "bea", Optional.empty(), Ref.MAIN, Optional.of(expiresAt),
+                Optional.empty()));
     }
 
     /** The refs, listed two to a page so a count walks the pages. */

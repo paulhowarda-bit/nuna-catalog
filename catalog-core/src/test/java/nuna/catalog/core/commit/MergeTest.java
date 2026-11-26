@@ -682,7 +682,7 @@ class MergeTest {
     /** A branch made now, whose cut takes the namespace and main's pointer of each object, expiring in 30 days. */
     private Ref branch(String display, CatalogObject... cut) {
         Ref ref = new Ref(catalogId, UUID.randomUUID(), name(display), Ref.Kind.BRANCH, START, "alice",
-                Optional.empty(), Ref.MAIN, Optional.of(START.plus(DAY.multipliedBy(30))));
+                Optional.empty(), Ref.MAIN, Optional.of(START.plus(DAY.multipliedBy(30))), Optional.empty());
         refs.put(ref.id(), ref);
         List<RefEntry> entries = new ArrayList<>();
         entries.add(new RefEntry(ref.id(), sales.id(), RefEntry.Kind.NAMESPACE, catalogId, sales.name(),
@@ -702,7 +702,8 @@ class MergeTest {
      */
     private Ref branchFrom(String display, Ref source, CatalogObject... cut) {
         Ref ref = new Ref(catalogId, UUID.randomUUID(), name(display), Ref.Kind.BRANCH, START, "alice",
-                Optional.of(source.id()), source.name().display(), Optional.of(START.plus(DAY.multipliedBy(30))));
+                Optional.of(source.id()), source.name().display(), Optional.of(START.plus(DAY.multipliedBy(30))),
+                Optional.empty());
         refs.put(ref.id(), ref);
         List<RefEntry> entries = new ArrayList<>();
         entries.add(new RefEntry(ref.id(), sales.id(), RefEntry.Kind.NAMESPACE, catalogId, sales.name(),
