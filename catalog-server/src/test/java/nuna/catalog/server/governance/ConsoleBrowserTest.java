@@ -1604,7 +1604,9 @@ class ConsoleBrowserTest {
      * overlapping: what gives way as the window narrows is Atelier's order (backlog 231; Atelier, 2026-11-26), and every
      * control keeps a name that says what it does once its words are hidden. Before, the header ran past the window from
      * 761 to 1,016 px and from 1,241 to 1,297 px. It is checked on a catalog page reading main and on Governance carried
-     * through a branch, which adds the branch chip and the note that the page shows main only.
+     * through a branch, which adds the branch chip and the note that the page shows main only. As in Atelier's harness,
+     * the names are long, so each ends in an ellipsis: the name signed in, shown from {@code preferred_username} while the
+     * catalog goes by the subject, and the branch's.
      */
     @Test
     void betweenAPhoneAndAWideScreenTheHeaderFitsAtEveryWidth() {
@@ -1612,6 +1614,7 @@ class ConsoleBrowserTest {
                 "demo-operators", "demo-stewards");
         Instant now = clock.instant();
         signIn(IssuerForTests.sign(IssuerForTests.claims("tester", "nuna-console", groups.toArray(String[]::new))
+                .claim("preferred_username", "tester-at-the-desk")
                 .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plus(Duration.ofHours(1))))
                 .build()));
         int[] frames = {761, 800, 850, 900, 901, 1000, 1100, 1101, 1240, 1241, 1260, 1320, 1321, 1400, 1401, 1440};
@@ -1637,9 +1640,9 @@ class ConsoleBrowserTest {
         assertThat(driver.findElements(By.cssSelector("#top .seg button")).stream().map(WebElement::getAccessibleName))
                 .containsExactly("Light", "Dark", "Auto");
         assertThat(driver.findElement(By.cssSelector("#who .avatar")).getAccessibleName())
-                .startsWith("Signed in as tester, 6 groups, until ");
+                .startsWith("Signed in as tester-at-the-desk, 6 groups, until ");
 
-        String branch = "wide_" + Api.suffix();
+        String branch = "wide_branch_" + Api.suffix();
         expect(api.manage("POST", "/refs", "{\"name\":\"" + branch + "\",\"kind\":\"branch\"}"), 201);
         try {
             driver.manage().window().setSize(new Dimension(1440, 900));
