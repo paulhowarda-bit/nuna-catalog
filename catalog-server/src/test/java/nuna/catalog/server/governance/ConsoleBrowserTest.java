@@ -2013,6 +2013,62 @@ class ConsoleBrowserTest {
         }
     }
 
+    /**
+     * A tag made with a purpose in the console (backlog 167; Atelier, 2026-11-22 and 11-25): the make dialog's field
+     * in her words, the purpose under the tag's chip in the list and first on its page's sub-line, shown as the text
+     * it is, markup included; a tag made without one shows no line and no filler.
+     */
+    @Test
+    void aRefMadeWithAPurposeShowsItAsText() {
+        String tag = "why_" + Api.suffix();
+        String plain = "plain_" + Api.suffix();
+        String purpose = "before the <b>November</b> restatement & <img src=x onerror=alert(1)>";
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + plain + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            signIn(tester());
+            browser.open("/ui/#c=trading");
+            browser.await(By.cssSelector("#nav a[data-k='refs']")).click();
+            browser.await(By.cssSelector("#refs-page .ph button[data-act='ref-new'], #refs-page .refs-empty button[data-act='ref-new']"))
+                    .click();
+            WebElement make = browser.await(By.cssSelector("dialog.dlg"));
+            make.findElement(By.cssSelector("button[data-k='tag']")).click();
+            WebElement why = make.findElement(By.cssSelector("input[name='description']"));
+            assertThat(why.getDomAttribute("placeholder")).isEqualTo("why it exists, such as: before the November restatement");
+            assertThat(why.getDomAttribute("maxlength")).isEqualTo("200");
+            WebElement field = why.findElement(By.xpath("ancestor::label[1]"));
+            assertThat(textContent(field.findElement(By.cssSelector(":scope > span:first-child")))).isEqualTo("Purpose (optional)");
+            assertThat(textContent(field.findElement(By.cssSelector(":scope > span.fine")))).isEqualTo("One line, at most 200"
+                    + " characters. Everyone who can see trading's branches and tags reads it, and the audit keeps it.");
+            make.findElement(By.cssSelector("input[name='name']")).sendKeys(tag);
+            why.sendKeys(purpose);
+            make.findElement(By.cssSelector("button[type='submit']")).click();
+            browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Made the tag @" + tag);
+            HttpResponse<String> made = expect(api.manage("GET", "/refs/" + tag, null), 200);
+            assertThat(JsonPath.<String>read(made.body(), "$.description")).isEqualTo(purpose);
+
+            browser.open("/ui/#c=trading&tab=refs");
+            WebElement line = browser.await(By.cssSelector("tr[data-ref='" + tag + "'] td.name .why"));
+            assertThat(textContent(line)).isEqualTo(purpose);
+            assertThat(line.findElements(By.xpath("*"))).as("the purpose is text, not markup").isEmpty();
+            assertThat(driver.findElements(By.cssSelector("tr[data-ref='" + plain + "'] td.name .why"))).isEmpty();
+
+            browser.open("/ui/#c=trading&k=ref&n=" + tag);
+            WebElement sub = browser.awaitText(By.cssSelector(".ph .sub"), "Made from main");
+            assertThat(textContent(sub)).startsWith(purpose + ". Made from main by ");
+            assertThat(sub.findElements(By.cssSelector("img"))).isEmpty();
+            // Its record's words end with the purpose in typographic quotes, as text (Atelier, 2026-11-25).
+            WebElement record = browser.awaitText(By.cssSelector("#ref-record .what"), "Its purpose");
+            assertThat(textContent(record)).endsWith("; it never expires. Its purpose: “" + purpose + "”");
+            assertThat(record.findElements(By.cssSelector("img, b"))).isEmpty();
+            browser.open("/ui/#c=trading&k=ref&n=" + plain);
+            assertThat(textContent(browser.awaitText(By.cssSelector(".ph .sub"), "Made from main")))
+                    .startsWith("Made from main by ");
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+            api.manage("DELETE", "/refs/" + plain, null);
+        }
+    }
+
     // ---- fixtures ----
 
     /** The v2 table: three schemas, a second partition spec and sort order, three snapshots, a tag and a branch. */

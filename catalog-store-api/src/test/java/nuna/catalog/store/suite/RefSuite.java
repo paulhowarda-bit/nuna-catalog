@@ -181,7 +181,7 @@ public abstract class RefSuite extends GroupSuite {
         Ref other = created(branch(newCatalog(), "other", now));
         Ref none = Refs.from(taken, "x", Ref.Kind.TAG, now);
         Ref ghost = new Ref(catalog, UUID.randomUUID(), name("ghost"), Ref.Kind.TAG, now, "svc-suite",
-                Optional.of(UUID.randomUUID()), "gone", Optional.empty());
+                Optional.of(UUID.randomUUID()), "gone", Optional.empty(), Optional.empty());
 
         assertThat(store.createRef(branch(UUID.randomUUID(), "x", now), RefLimits.P11, change()))
                 .isEqualTo(new WriteResult.Missing(WriteResult.Subject.CATALOG));
@@ -190,7 +190,7 @@ public abstract class RefSuite extends GroupSuite {
         assertThat(store.createRef(ghost, new RefLimits(0, 0), change())).as("a missing source before the limit")
                 .isEqualTo(MISSING_REF);
         assertThat(store.createRef(new Ref(catalog, UUID.randomUUID(), name("y"), Ref.Kind.TAG, now, "svc-suite",
-                Optional.of(other.id()), "other", Optional.empty()), RefLimits.P11, change()))
+                Optional.of(other.id()), "other", Optional.empty(), Optional.empty()), RefLimits.P11, change()))
                 .as("a ref of another catalog").isEqualTo(MISSING_REF);
         assertThat(store.createRef(none, RefLimits.P11, changeAt(now.plus(Refs.LIFETIME))))
                 .as("a branch at its expiry").isEqualTo(MISSING_REF);
@@ -267,6 +267,33 @@ public abstract class RefSuite extends GroupSuite {
         assertThat(store.renewRef(dev.id(), later.plus(Duration.ofDays(1)), changeAt(later))).as("at its expiry")
                 .isEqualTo(MISSING_REF);
         assertThat(store.readRef(dev.id()).flatMap(Ref::expiresAt)).contains(later);
+    }
+
+    @Test
+    @DisplayName("Refs: a ref keeps the description it was made with, through every read and a renewal (backlog 167)")
+    void aRefKeepsItsDescription() {
+        UUID catalog = newCatalog();
+        CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+        Instant now = now();
+        // The route's longest: 200 characters, some outside the BMP, with the characters HTML escapes.
+        String start = "Before the <b>November</b> restatement & \"Q3\" 'close' é 🧊 ";
+        String purpose = start + "x".repeat(200 - start.codePointCount(0, start.length()));
+        Ref dev = created(Refs.described(branch(catalog, "dev", now), purpose));
+        Ref v1 = created(tag(catalog, "v1", now));
+        Ref fromDev = created(Refs.from(dev, "dev-2", Ref.Kind.BRANCH, now));
+
+        assertThat(store.readRef(dev.id())).contains(dev);
+        assertThat(store.readRef(dev.id()).flatMap(Ref::description)).contains(purpose);
+        assertThat(store.findRef(catalog, "dev")).contains(dev);
+        assertThat(store.readRef(v1.id()).flatMap(Ref::description)).as("made without one").isEmpty();
+        assertThat(store.readRef(fromDev.id()).flatMap(Ref::description)).as("not inherited from its source")
+                .isEmpty();
+        assertThat(store.listRefs(catalog, PageRequest.first(10)).items()).containsExactly(dev, fromDev, v1);
+        assertThat(store.listRefPointers(table.id())).extracting(RefPointers::ref).containsExactly(dev, fromDev, v1);
+
+        Instant later = now.plus(Duration.ofDays(90));
+        assertApplied(store.renewRef(dev.id(), later, change()));
+        assertThat(store.readRef(dev.id()).flatMap(Ref::description)).as("after a renewal").contains(purpose);
     }
 
     @Test

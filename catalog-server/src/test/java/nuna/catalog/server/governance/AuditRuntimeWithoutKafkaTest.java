@@ -122,7 +122,7 @@ class AuditRuntimeWithoutKafkaTest {
         CatalogEvent warning = CatalogEvent.create(SOURCE, Instant.now(), new RefChange(RefChange.Action.EXPIRING,
                 UUID.randomUUID(), "audit-2026", RefChange.Kind.BRANCH,
                 new Securable(Securable.Kind.CATALOG, UUID.randomUUID(), "lake", List.of()), "main",
-                Instant.now().plus(Duration.ofDays(7)), List.of(), WRITER));
+                Instant.now().plus(Duration.ofDays(7)), null, List.of(), WRITER));
 
         try (AuditRuntime runtime = runtime()) {
             runtime.notices().deliver(List.of(warning));

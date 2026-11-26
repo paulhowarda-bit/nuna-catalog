@@ -1,6 +1,7 @@
 package nuna.catalog.server.governance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.lang.reflect.Proxy;
 import java.net.URI;
@@ -77,6 +78,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * A catalog's ref routes (D33, item 106): making, renewing and deleting a ref needs {@code create} on the catalog and
@@ -341,6 +343,70 @@ class RefRoutesTest {
 
         assertThat(refs).hasSize(1);
         assertThat(events(RefChange.Action.CREATED)).hasSize(1);
+    }
+
+    @Test
+    void aDescriptionIsKeptOnTheRefShownToEveryReaderAndRecordedOnItsCreation() {
+        String purpose = "before the <b>November</b> restatement & \"Q3\" 🧊";
+        JsonNode dev = made(described("dev", "branch", null, "  " + purpose + "\u00A0\u2003 ")); // ends stripped
+        JsonNode v1 = made(described("v1", "tag", null, " \t ")); // blank is none
+        JsonNode fix = made(described("fix", "branch", "dev", null)); // null is none
+
+        assertThat(dev.get("description").asString()).isEqualTo(purpose);
+        assertThat(refs.get(id(dev)).description()).contains(purpose);
+        assertThat(v1.has("description")).isFalse();
+        assertThat(refs.get(id(v1)).description()).isEmpty();
+        assertThat(fix.has("description")).as("not taken from the ref it is made from").isFalse();
+        for (Caller reader : List.of(BEA, HAL, VIC)) {
+            caller = reader;
+            Map<String, JsonNode> listed = new HashMap<>();
+            json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
+                    .forEach(ref -> listed.put(ref.get("name").asString(), ref));
+            assertThat(listed.get("dev").get("description").asString()).as("listed to %s", reader).isEqualTo(purpose);
+            assertThat(listed.get("v1").has("description")).as("listed to %s", reader).isFalse();
+            assertThat(json(routes.read("gate", "dev", http)).get("description").asString()).as("read by %s", reader)
+                    .isEqualTo(purpose);
+        }
+
+        caller = BEA;
+        clock.advance(DAY);
+        assertThat(json(routes.renew("gate", "dev", null, http)).get("description").asString()).isEqualTo(purpose);
+        assertThat(refs.get(id(dev)).description()).as("kept by a renewal").contains(purpose);
+
+        assertThat(events(RefChange.Action.CREATED)).extracting(RefChange::name, RefChange::description)
+                .containsExactly(tuple("dev", purpose),
+                        tuple("v1", null),
+                        tuple("fix", null));
+        assertThat(events(RefChange.Action.RENEWED)).extracting(RefChange::description).containsExactly((String) null);
+    }
+
+    @Test
+    void aDescriptionPastTheLimitOrNotOneLineOfTextIsRefused() {
+        String start = "why it exists 🧊 ";
+        String longest = start + "x".repeat(RefRoutes.MAX_DESCRIPTION - start.codePointCount(0, start.length()));
+        assertThat(made(described("dev", "branch", null, longest)).get("description").asString())
+                .as("%d characters, one outside the BMP", RefRoutes.MAX_DESCRIPTION).isEqualTo(longest);
+
+        Answer tooLong = answer(() -> routes.create("gate", null, described("qa", "branch", null, longest + "x"), http));
+        assertThat(tooLong.status()).isEqualTo(400);
+        assertThat(tooLong.message()).isEqualTo("Field description is longer than 200 characters (201)");
+        // Raw JSON escapes, so the request carries each character as a client could send it.
+        for (String escape : List.of("\\n", "\\r", "\\t", "\\u0000", "\\u001b", "\\u007f", "\\u0085", "\\u2028",
+                "\\u2029", "\\u202e", "\\u2066", "\\ud800")) {
+            Answer refused = answer(() -> routes.create("gate", null,
+                    "{\"name\":\"qa\",\"kind\":\"branch\",\"description\":\"line one" + escape + "two\"}", http));
+            assertThat(refused.status()).as(escape).isEqualTo(400);
+            assertThat(refused.message()).as(escape).startsWith("Field description must be one line of plain text:"
+                    + " character 9 is U+");
+        }
+        assertThat(answer(() -> routes.create("gate", null,
+                "{\"name\":\"qa\",\"kind\":\"branch\",\"description\":42}", http)))
+                .isEqualTo(new Answer(400, "BadRequestException", "Field description must be a string"));
+
+        assertThat(refs).hasSize(1);
+        assertThat(events(RefChange.Action.CREATED)).hasSize(1);
+        assertThat(json(routes.list("gate", null, null, false, http)).get("limits").get("max-description").asInt())
+                .isEqualTo(RefRoutes.MAX_DESCRIPTION);
     }
 
     // ---- renew ----
@@ -1233,7 +1299,7 @@ class RefRoutesTest {
             return WriteResult.UNCHANGED;
         }
         refs.put(id, new Ref(ref.catalogId(), id, ref.name(), ref.kind(), ref.createdAt(), ref.createdBy(),
-                ref.fromRef(), ref.fromName(), Optional.of(expiresAt)));
+                ref.fromRef(), ref.fromName(), Optional.of(expiresAt), ref.description()));
         write(change);
         return WriteResult.APPLIED;
     }
@@ -1453,6 +1519,22 @@ class RefRoutesTest {
                 : Optional.of(NOW.plus(DAY.multipliedBy(7))), object.locationRoot(), Optional.empty());
         objects.put(object.id(), changed);
         return changed;
+    }
+
+    private JsonNode made(String body) {
+        ResponseEntity<String> response = routes.create("gate", null, body, http);
+        assertThat(response.getStatusCode().value()).as(response.getBody()).isEqualTo(201);
+        return Management.JSON.readTree(response.getBody());
+    }
+
+    /** A create's body with a description, or with {@code "description": null} for none. */
+    private static String described(String name, String kind, String from, String description) {
+        ObjectNode body = Management.JSON.createObjectNode().put("name", name).put("kind", kind);
+        if (from != null) {
+            body.put("from", from);
+        }
+        body.put("description", description);
+        return body.toString();
     }
 
     private static String body(String name, String kind, String from) {

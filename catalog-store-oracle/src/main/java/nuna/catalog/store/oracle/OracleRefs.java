@@ -48,7 +48,7 @@ import java.util.stream.Collectors;
 final class OracleRefs {
 
     private static final String COLUMNS = "id, catalog_id, name_norm, name, kind, created_at, created_by, from_ref,"
-            + " from_name, expires_at";
+            + " from_name, expires_at, description";
     private static final String ENTRY_COLUMNS = "ref_id, object_id, kind, parent_id, name_norm, name, version,"
             + " metadata_location, sha256";
     private static final WriteResult MISSING = new WriteResult.Missing(WriteResult.Subject.REF);
@@ -86,9 +86,11 @@ final class OracleRefs {
                     ref.kind().name(), change.at()).orElseThrow();
             try {
                 update(connection, "INSERT INTO ref (catalog_id, name_norm, name, kind, expires_at, id, created_at,"
-                                + " created_by, from_ref, from_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ref.catalogId(),
+                                + " created_by, from_ref, from_name, description)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ref.catalogId(),
                         ref.name().normalized(), ref.name().display(), ref.kind().name(), ref.expiresAt().orElse(null),
-                        ref.id(), ref.createdAt(), ref.createdBy(), ref.fromRef().orElse(null), ref.fromName());
+                        ref.id(), ref.createdAt(), ref.createdBy(), ref.fromRef().orElse(null), ref.fromName(),
+                        ref.description().orElse(null));
             } catch (SQLIntegrityConstraintViolationException e) {
                 if (!Jdbc.violates(e, "REF_PK")) {
                     throw e;
@@ -138,7 +140,7 @@ final class OracleRefs {
     List<RefPointers> listPointers(UUID objectId) {
         return transactions.snapshot("ref pointers of an object", connection -> {
             List<RefPointers> cuts = query(connection, "SELECT r.id, r.catalog_id, r.name_norm, r.name, r.kind,"
-                    + " r.created_at, r.created_by, r.from_ref, r.from_name, r.expires_at, e.version,"
+                    + " r.created_at, r.created_by, r.from_ref, r.from_name, r.expires_at, r.description, e.version,"
                     + " e.metadata_location, e.sha256 FROM ref_entry e JOIN ref r ON r.id = e.ref_id"
                     + " WHERE e.object_id = ? ORDER BY r.name_norm", row -> new RefPointers(ref(row),
                     new RefEntry.At(row.getLong("version"), Jdbc.text(row, "metadata_location"),
@@ -393,7 +395,8 @@ final class OracleRefs {
         return new Ref(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "id"),
                 new Name(Jdbc.text(row, "name_norm"), Jdbc.text(row, "name")), Ref.Kind.valueOf(Jdbc.text(row, "kind")),
                 instant(row, "created_at"), Jdbc.text(row, "created_by"), Optional.ofNullable(Jdbc.uuid(row, "from_ref")),
-                Jdbc.text(row, "from_name"), Optional.ofNullable(instant(row, "expires_at")));
+                Jdbc.text(row, "from_name"), Optional.ofNullable(instant(row, "expires_at")),
+                Optional.ofNullable(Jdbc.text(row, "description")));
     }
 
     private static RefEntry entry(ResultSet row) throws SQLException {
