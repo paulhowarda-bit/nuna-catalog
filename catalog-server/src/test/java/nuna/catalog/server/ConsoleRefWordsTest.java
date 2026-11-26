@@ -156,7 +156,17 @@ class ConsoleRefWordsTest {
     void theAccessPanelListsTheRefsThatKeepItAndOffersTheControlOnlyToAStewardFreeOfHoldAndFreeze() throws IOException {
         String kept = resource("kept.js");
 
-        assertThat(kept).contains("'Kept by branches and tags', n ? [' ', h('span', {class: 'meta'}, String(n))] : null",
+        assertThat(kept).contains("'Kept by branches and tags', several ? [' ', h('span', {class: 'meta'}, `dropped ${refAt(o['dropped-at'])}`",
+                "+ (n ? ` · ${n}` : ''))] : n ? [' ', h('span', {class: 'meta'}, String(n))] : null),",
+                "await Promise.all(shown.map(o => objectPanel(target, o, shown.length > 1)))",
+                // An expired ref's chip opens the ref's page, not the table through it, which answers 404.
+                "h('a', {href: x.expired ? refHref(target.catalog, x.name) : objectHref(objectTarget(target, o, x.name))}",
+                // On main with a live table, each dropped one refs still keep (Atelier, 2026-11-25).
+                "const earlier = !target.ref && !dropped(shown[0]) ? objects.filter(o => dropped(o) && (o.refs || []).length) : [];",
+                "h('p', {class: 'fine', 'data-kept-earlier': o.id}, `An earlier ${kindOf(o)} at this path, dropped on `",
+                "+ `${dayMon(o['dropped-at'])}, is still kept by `",
+                "objectHref(objectTarget(target, o, x.name), 'access')",
+                "'. Open it through one of them to take it out.'",
                 "`Each reads this ${kind} as it was at its point, or as the branch has changed it, and keeps its `",
                 "+ 'files from cleanup.'",
                 "`Main dropped this ${kind} on ${dayMon(o['dropped-at'])}. These still read it and keep `",
@@ -238,10 +248,18 @@ class ConsoleRefWordsTest {
                 "'Choose which branches and tags to take it out of.'",
                 "if (!c.every && !ticked.length) { fill(out, h('p', {class: 'fine grant-hint'}, NONE)); return; }",
                 "ok().classList.add('danger');",
+                // In the dialog an expired row says only that it is past its expiry, then its fine line.
+                "x.expired ? `branch · past its expiry ${dayMon(x['expires-at'])}` : rowWords(x, target)),",
                 "$('.dlg-acts .btn.ghost', dlg).focus();");
         // Nothing is chosen when it opens.
         assertThat(kept).doesNotContain("value: 'every', checked", "value: 'some', checked");
-        assertThat(resource("style.css")).contains(".dlg.kept-dlg .dlg-acts { position: sticky; bottom: 0;",
+        // A destructive submit is solid red, its words on the surface colour (Atelier, 2026-11-25), in the Delete ref
+        // dialog too.
+        assertThat(resource("refs.js")).contains("$('button[type=submit]', body).classList.add('danger');");
+        assertThat(resource("style.css")).contains(
+                ".btn.primary.danger { background: var(--bad-ink); border-color: var(--bad-ink); color: var(--surface); }",
+                ".btn.primary.danger:hover, .btn.primary.danger.is-hover { background: oklch(from var(--bad-ink) calc(l - 0.04) c h); }",
+                ".dlg.kept-dlg .dlg-acts { position: sticky; bottom: 0;",
                 ".kept-ticks { padding-left: 24px; max-height: 32vh; overflow: auto;");
     }
 
@@ -252,7 +270,7 @@ class ConsoleRefWordsTest {
 
         assertThat(kept).contains("granted(h('span', null, `Took ${path} out of `, chipList(took)), answer, leftWords(o, after))",
                 "'No branch or tag keeps it now. Cleanup can purge it and delete its files.'",
-                "h('span', null, chipList(still), ' still keep it.')",
+                "h('span', null, chipList(still), still.length === 1 ? ' still keeps it.' : ' still keep it.')",
                 "'Main still has it; no branch or tag keeps it now.'",
                 "granted('Nothing to take out', answer, `No branch or tag kept ${path} when the catalog looked; nothing changed.`)",
                 "ok().hidden = true;",

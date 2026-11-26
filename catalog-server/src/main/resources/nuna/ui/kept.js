@@ -7,7 +7,7 @@
 import * as api from './api.js';
 import {$, $$, dialogForm, failure, fill, granted, h, openDialog} from './dom.js';
 import {objectHref} from './route.js';
-import {cref, dayMon} from './refs.js';
+import {cref, dayMon, refAt, refHref} from './refs.js';
 
 const sameRef = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
 const keeps = (o, name) => (o.refs || []).some(x => sameRef(x.name, name));
@@ -70,8 +70,11 @@ export async function keptActs(target, o) {
     onclick: () => takeOutDialog(target, o)}, 'Take out of branches and tags'));
 }
 
-/** One object's panel: title, lead, a row per ref, then the control. */
-async function objectPanel(target, o) {
+/**
+ * One object's panel: title, lead, a row per ref, then the control. With several at one path (`several`, on main with
+ * no live table), the meta names when each was dropped (Atelier, 2026-11-25).
+ */
+async function objectPanel(target, o, several) {
   const kind = kindOf(o);
   const refs = o.refs || [];
   const n = refs.length;
@@ -82,10 +85,12 @@ async function objectPanel(target, o) {
       : h('p', {'data-kept-lead': 'live'}, `Each reads this ${kind} as it was at its point, or as the branch has changed it, and keeps its `
         + 'files from cleanup.');
   const rows = n ? h('ul', {class: 'kept-list'}, refs.map(x => h('li', {'data-kept-row': x.name, class: x.expired ? 'expired' : null},
-    h('a', {href: objectHref(objectTarget(target, o, x.name))}, cref(x, {warn: !!x.expired})), ' ',
+    // An expired ref answers 404 for the table read through it: its chip opens the ref's page (Catalog UI Expert).
+    h('a', {href: x.expired ? refHref(target.catalog, x.name) : objectHref(objectTarget(target, o, x.name))}, cref(x, {warn: !!x.expired})), ' ',
     h('span', {class: 'fine'}, rowWords(x, target))))) : null;
   return h('div', {class: 'panel kept-panel', 'data-kept-object': o.id},
-    h('h2', null, 'Kept by branches and tags', n ? [' ', h('span', {class: 'meta'}, String(n))] : null),
+    h('h2', null, 'Kept by branches and tags', several ? [' ', h('span', {class: 'meta'}, `dropped ${refAt(o['dropped-at'])}`
+      + (n ? ` · ${n}` : ''))] : n ? [' ', h('span', {class: 'meta'}, String(n))] : null),
     lead, rows, await keptActs(target, o));
 }
 
@@ -110,7 +115,15 @@ export async function keptPanel(target) {
       cut ? h('p', {class: 'muted', 'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped tables and found none '
         + 'at this path among them; one dropped earlier may still be kept by a branch or tag.') : null));
   }
-  return h('div', {class: 'stack', id: 'kept-by-refs'}, await Promise.all(shown.map(o => objectPanel(target, o))),
+  // On main with a live table, each dropped one at the path that refs still keep is named under its panel, with a way to
+  // it through those refs (Atelier, 2026-11-25).
+  const objects = answer.objects || [];
+  const earlier = !target.ref && !dropped(shown[0]) ? objects.filter(o => dropped(o) && (o.refs || []).length) : [];
+  return h('div', {class: 'stack', id: 'kept-by-refs'}, await Promise.all(shown.map(o => objectPanel(target, o, shown.length > 1))),
+    earlier.map(o => h('p', {class: 'fine', 'data-kept-earlier': o.id}, `An earlier ${kindOf(o)} at this path, dropped on `
+      + `${dayMon(o['dropped-at'])}, is still kept by `, o.refs.flatMap((x, i) => [i ? ', ' : null,
+      h('a', {href: x.expired ? refHref(target.catalog, x.name) : objectHref(objectTarget(target, o, x.name), 'access')},
+        cref(x, {warn: !!x.expired}))]), '. Open it through one of them to take it out.')),
     cut && shown.every(dropped) ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped '
       + 'tables and stopped before the end, so an earlier table at this path, and the branches and tags that keep it, may be '
       + 'missing here.') : null);
@@ -158,7 +171,7 @@ function refusalNote(error) {
 /** What a fresh read of the object says is left, after a removal. */
 function leftWords(o, after) {
   const still = (after && after.refs) || [];
-  if (still.length) return h('span', null, chipList(still), ' still keep it.');
+  if (still.length) return h('span', null, chipList(still), still.length === 1 ? ' still keeps it.' : ' still keep it.');
   if (!after) return null;
   return dropped(o) ? 'No branch or tag keeps it now. Cleanup can purge it and delete its files.'
     : 'Main still has it; no branch or tag keeps it now.';
@@ -188,7 +201,8 @@ export function takeOutDialog(target, o) {
       h('label', {class: 'kept-some'}, h('input', {type: 'radio', name: 'which', value: 'some'}), h('span', null, 'Only the ones I tick')),
       h('ul', {class: 'kept-ticks'}, refs.map(x => h('li', null, h('label', null,
         h('input', {type: 'checkbox', name: 'ref', value: x.name, disabled: !!x.expired}),
-        h('span', null, cref(x, {warn: !!x.expired}), ' ', h('span', {class: 'fine'}, rowWords(x, target)),
+        h('span', null, cref(x, {warn: !!x.expired}), ' ', h('span', {class: 'fine'},
+          x.expired ? `branch · past its expiry ${dayMon(x['expires-at'])}` : rowWords(x, target)),
           x.expired ? h('span', {class: 'fine'}, 'Past its expiry: Every takes it out, or the worker ends it at its next run.') : null))))));
   };
   // Ticking a box selects "Only the ones I tick".

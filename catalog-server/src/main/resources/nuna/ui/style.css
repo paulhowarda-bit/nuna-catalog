@@ -253,6 +253,9 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .btn[disabled], .btn.is-disabled { opacity: 0.55; cursor: not-allowed; }
 .btn.is-hover { background: var(--surface-2); }
 .btn.primary.is-hover { background: oklch(from var(--accent) calc(l - 0.04) c h); }
+/* A destructive submit (Delete a ref, Take out of branches and tags): solid red, its words on the surface colour. */
+.btn.primary.danger { background: var(--bad-ink); border-color: var(--bad-ink); color: var(--surface); }
+.btn.primary.danger:hover, .btn.primary.danger.is-hover { background: oklch(from var(--bad-ink) calc(l - 0.04) c h); }
 .btn.is-focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn.proposed { border-style: dashed; color: var(--text-2); background: transparent; }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 800ms linear infinite; }

@@ -17,7 +17,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 /** "21 Dec" */
 export const dayMon = iso => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 /** "21 Dec 06:41", always with the date. */
-const refAt = iso => { const d = new Date(iso); return `${dayMon(iso)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+export const refAt = iso => { const d = new Date(iso); return `${dayMon(iso)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const daysTo = iso => Math.max(0, Math.ceil((ms(iso) - Date.now()) / DAY));
 const untilWords = iso => { const n = daysTo(iso); return n ? `in ${plural(n, 'day')}` : 'today'; };
 /** Whole days in an ISO-8601 duration as Java writes one (PT720H). */
