@@ -2,7 +2,6 @@ package nuna.catalog.audit;
 
 import java.net.URI;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * The event types of D23, each with its current payload schema version. Changes (commits, grants,
@@ -11,6 +10,10 @@ import java.util.Optional;
  * the outbox; reads, denials, authentication failures, credential issues, audit reads and maintenance
  * exemptions are published synchronously, and so is a branch's expiry warning, which changes no record. A server's
  * run end is the last record it writes to the log (backlog 262).
+ *
+ * <p>A type whose current version added fields to the one before still writes the one before whenever all of those
+ * fields would be null, so a reader that knows only the earlier version reads every record it could have read before.
+ * A ref record made with a description is version 2; every other ref record, version 1 (backlog 167).
  */
 public enum EventType {
     COMMIT("commit", 1, Commit.class),
@@ -41,21 +44,19 @@ public enum EventType {
     RUN_END("run-end", 1, RunEnd.class);
 
     private final String typeName;
-    private final URI dataSchema;
-    private final URI previousSchema;
+    private final String name;
+    private final int version;
     private final Class<? extends EventData> dataClass;
     private final List<String> added;
 
-    /**
-     * @param added the nullable fields the current version added to the one before it; when there are some, the
-     *              previous version is still read, those fields being null in it (records already logged, archived or
-     *              kept in the audit table stay readable)
-     */
+    /** @param added the fields {@code version} added to the version before it; none when it is version 1 */
     EventType(String name, int version, Class<? extends EventData> dataClass, String... added) {
+        if ((version == 1) != (added.length == 0)) {
+            throw new IllegalArgumentException(name + ": a later version names the fields it added");
+        }
         this.typeName = "nuna.catalog." + name;
-        this.dataSchema = URI.create("urn:nuna:catalog:event:" + name + ":" + version);
-        this.previousSchema = added.length == 0 ? null
-                : URI.create("urn:nuna:catalog:event:" + name + ":" + (version - 1));
+        this.name = name;
+        this.version = version;
         this.dataClass = dataClass;
         this.added = List.of(added);
     }
@@ -65,23 +66,28 @@ public enum EventType {
         return typeName;
     }
 
-    /** The CloudEvents {@code dataschema} attribute; it names the payload version. */
+    /** The CloudEvents {@code dataschema} attribute of the current payload version. */
     public URI dataSchema() {
-        return dataSchema;
+        return dataSchema(version);
+    }
+
+    /** The CloudEvents {@code dataschema} attribute naming one payload version. */
+    public URI dataSchema(int version) {
+        return URI.create("urn:nuna:catalog:event:" + name + ":" + version);
+    }
+
+    /** The current payload version. */
+    public int version() {
+        return version;
+    }
+
+    /** The fields the current version added to the one before; a payload of the one before has none of them. */
+    List<String> added() {
+        return added;
     }
 
     Class<? extends EventData> dataClass() {
         return dataClass;
-    }
-
-    /** The {@code dataschema} of the version before the current one, when the codec still reads it. */
-    Optional<URI> previousSchema() {
-        return Optional.ofNullable(previousSchema);
-    }
-
-    /** The nullable fields the current version added to the previous one. */
-    List<String> added() {
-        return added;
     }
 
     static EventType fromTypeName(String typeName) {

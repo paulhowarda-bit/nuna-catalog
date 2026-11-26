@@ -1802,6 +1802,10 @@ class ConsoleBrowserTest {
             WebElement sub = browser.awaitText(By.cssSelector(".ph .sub"), "Made from main");
             assertThat(textContent(sub)).startsWith(purpose + ". Made from main by ");
             assertThat(sub.findElements(By.cssSelector("img"))).isEmpty();
+            // Its record's words end with the purpose in typographic quotes, as text (Atelier, 2026-11-25).
+            WebElement record = browser.awaitText(By.cssSelector("#ref-record .what"), "Its purpose");
+            assertThat(textContent(record)).endsWith("; it never expires. Its purpose: “" + purpose + "”");
+            assertThat(record.findElements(By.cssSelector("img, b"))).isEmpty();
             browser.open("/ui/#c=trading&k=ref&n=" + plain);
             assertThat(textContent(browser.awaitText(By.cssSelector(".ph .sub"), "Made from main")))
                     .startsWith("Made from main by ");

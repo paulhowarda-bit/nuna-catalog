@@ -91,7 +91,7 @@ export function cref(r, o = {}) {
  */
 function purpose(r) {
   const d = r.description;
-  return d ? [h('span', {class: 'purpose'}, d), /[.!?…]$/u.test(d) ? ' ' : '. '] : null;
+  return d ? [h('span', {class: 'purpose'}, d), /[.!?…]["'”’)\]]*$/u.test(d) ? ' ' : '. '] : null;
 }
 
 function madeFrom(r, list) {
@@ -310,8 +310,10 @@ export function refWords(d) {
   const from = isMain(d.from) ? 'main' : '@' + d.from;
   const until = d.expiresAt ? refAt(d.expiresAt) : '';
   switch (String(d.action || '').toUpperCase()) {
-    case 'CREATED': return kind === 'tag' ? `Made the tag ${name} from ${from}; it never expires`
-      : `Made the branch ${name} from ${from}; it expires ${until} unless a commit or a renewal moves that`;
+    // Its purpose, as made (backlog 167; Atelier, 2026-11-25): text only, in typographic quotes, no period after.
+    case 'CREATED': return (kind === 'tag' ? `Made the tag ${name} from ${from}; it never expires`
+      : `Made the branch ${name} from ${from}; it expires ${until} unless a commit or a renewal moves that`)
+      + (d.description ? `. Its purpose: “${d.description}”` : '');
     case 'RENEWED': return `Renewed the branch ${name}: it now expires ${until}`;
     case 'DELETED': return kind === 'tag' ? `Deleted the tag ${name}` : `Deleted the branch ${name}; changes main never took are gone with it`;
     case 'MERGED': return `Merged the branch ${name} into main: ${plural((d.tables || []).length, 'table')} moved in one transaction, and the branch ended`;

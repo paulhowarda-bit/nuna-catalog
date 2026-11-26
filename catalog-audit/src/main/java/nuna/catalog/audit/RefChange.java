@@ -19,7 +19,7 @@ import java.util.UUID;
  * @param from      what the ref was made from: {@code main}, or another ref's name then
  * @param expiresAt a branch's expiry after the change; null for a tag, which never expires
  * @param description the purpose its maker gave the ref, in the record of its creation; null when it was made without
- *                    one, and for every other action (schema version 2, backlog 167)
+ *                    one, and for every other action; a record with one is schema version 2, every other version 1 (backlog 167)
  * @param tables    the tables and views a merge moved onto main, or the one taken out of the ref; empty for every
  *                  other action
  * @param actor     who made the change: the caller, or for an expiry the maintenance principal
