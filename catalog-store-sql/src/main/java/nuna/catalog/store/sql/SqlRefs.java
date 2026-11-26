@@ -205,8 +205,10 @@ final class SqlRefs {
      * Takes an object out of refs (backlog 156). Locks the catalog's record for share, which a create locks for
      * update, so no ref is made meanwhile; then each ref for update, in id order, as a deletion locks it, so a commit on
      * the branch in flight lands first and a later one finds the object outside the cut; then the object for update,
-     * as a purge claim locks it, before its holds and freezes are read. Then deletes each branch's own pointer for the
-     * object with its pieces, and the object's entry in each ref's cut.
+     * as a purge claim locks it; then the namespaces above it for share (backlog 171), before its holds and freezes are
+     * read: a hold or freeze placed on the catalog or one of those namespaces locks it for update, so the two take
+     * turns. Then deletes each branch's own pointer for the object with its pieces, and the object's entry in each
+     * ref's cut.
      */
     WriteResult remove(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
         return transactions.change(change, "ref removal", connection -> {
@@ -230,6 +232,7 @@ final class SqlRefs {
             if (path.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
+            Guards.lockLevels(connection, path.get());
             if (Guards.held(connection, objectId, catalog.get(), path.get())) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }

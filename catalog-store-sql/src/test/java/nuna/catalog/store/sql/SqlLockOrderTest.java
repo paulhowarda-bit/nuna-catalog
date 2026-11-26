@@ -1,14 +1,20 @@
 package nuna.catalog.store.sql;
 
+import static nuna.catalog.store.sql.ScriptedDatabase.row;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.store.Change;
+import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.OutboxEvent;
+import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -22,17 +28,20 @@ import org.junit.jupiter.api.Test;
 class SqlLockOrderTest {
 
     private static final UUID CATALOG = UUID.randomUUID();
+    private static final UUID OUTER = UUID.randomUUID();
     private static final UUID NAMESPACE = UUID.randomUUID();
+    private static final UUID OBJECT = UUID.randomUUID();
     private static final Change CHANGE = new Change(UUID.randomUUID(), Instant.parse("2026-11-25T09:00:00Z"),
             List.of(new OutboxEvent("test.changed", "{}")), Optional.empty());
+    private static final OffsetDateTime DROPPED = OffsetDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
 
     @Test
     void aNamespaceDropLocksTheCatalogForShareBeforeTheNamespaceAndReadsRefsAfterBoth() {
         ScriptedDatabase database = new ScriptedDatabase()
-                .answer("SELECT catalog_id FROM namespace WHERE id = ?", Map.of("catalog_id", CATALOG))
-                .answer("SELECT 1 FROM catalog WHERE id = ? FOR SHARE", Map.of("one", 1))
+                .answer("SELECT catalog_id FROM namespace WHERE id = ?", row("catalog_id", CATALOG))
+                .answer("SELECT 1 FROM catalog WHERE id = ? FOR SHARE", row("one", 1))
                 .answer("SELECT catalog_id, ancestors FROM namespace WHERE id = ? FOR UPDATE",
-                        Map.of("catalog_id", CATALOG, "ancestors", new UUID[0]));
+                        row("catalog_id", CATALOG, "ancestors", new UUID[] {OUTER}));
 
         assertThat(new SqlNamespaces(database.transactions()).drop(NAMESPACE, CHANGE)).isEqualTo(WriteResult.APPLIED);
 
@@ -42,5 +51,77 @@ class SqlLockOrderTest {
         assertThat(catalog).as("the catalog's row is locked").isNotNegative();
         assertThat(catalog).as("before the namespace").isLessThan(namespace);
         assertThat(namespace).as("and both before refs are read").isLessThan(refs);
+    }
+
+    @Test
+    void aPurgeClaimLocksTheCatalogTheObjectAndTheNamespacesAboveItBeforeReadingHolds() {
+        ScriptedDatabase database = new ScriptedDatabase()
+                .answer("SELECT catalog_id FROM catalog_object WHERE id = ?", row("catalog_id", CATALOG))
+                .answer("SELECT 1 FROM catalog WHERE id = ? FOR SHARE", row("one", 1))
+                .answer("FROM catalog_object WHERE id = ? AND state IN ('DROPPED', 'PURGING') FOR UPDATE",
+                        row("catalog_id", CATALOG, "namespace_path", new UUID[] {OUTER, NAMESPACE},
+                                "purge_after", DROPPED, "purge_claimant", null))
+                .answer("FROM namespace WHERE id = ANY(?) ORDER BY id FOR SHARE", row("id", OUTER), row("id", NAMESPACE))
+                .answer("FROM legal_hold", row("one", 1));
+
+        assertThat(new SqlObjects(database.transactions()).claimPurge(OBJECT, "worker", CHANGE))
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+
+        assertLockedInOrderBeforeHolds(database, "FROM catalog WHERE id = ? FOR SHARE",
+                "FROM catalog_object WHERE id = ? AND state IN ('DROPPED', 'PURGING') FOR UPDATE",
+                "FROM namespace WHERE id = ANY(?) ORDER BY id FOR SHARE");
+    }
+
+    @Test
+    void aRemovalFromRefsLocksTheCatalogTheRefsTheObjectAndTheNamespacesAboveItBeforeReadingHolds() {
+        UUID ref = UUID.randomUUID();
+        ScriptedDatabase database = new ScriptedDatabase()
+                .answer("SELECT catalog_id FROM catalog_object WHERE id = ?", row("catalog_id", CATALOG))
+                .answer("SELECT 1 FROM catalog WHERE id = ? FOR SHARE", row("one", 1))
+                .answer("SELECT 1 FROM ref WHERE id = ? AND catalog_id = ? FOR UPDATE", row("one", 1))
+                .answer("SELECT namespace_path FROM catalog_object", row("namespace_path", new UUID[] {OUTER, NAMESPACE}))
+                .answer("FROM namespace WHERE id = ANY(?) ORDER BY id FOR SHARE", row("id", OUTER), row("id", NAMESPACE))
+                .answer("FROM legal_hold", row("one", 1));
+
+        assertThat(new SqlRefs(database.transactions()).remove(OBJECT, Set.of(ref), false, CHANGE))
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+
+        assertLockedInOrderBeforeHolds(database, "FROM catalog WHERE id = ? FOR SHARE",
+                "FROM ref WHERE id = ? AND catalog_id = ? FOR UPDATE", "SELECT namespace_path FROM catalog_object",
+                "FROM namespace WHERE id = ANY(?) ORDER BY id FOR SHARE");
+    }
+
+    @Test
+    void aHoldOrAFreezeLocksItsTargetForUpdateAndAnyOtherAttributeForShare() {
+        ScriptedDatabase database = new ScriptedDatabase()
+                .answer("SELECT catalog_id FROM namespace WHERE id = ?", row("catalog_id", CATALOG))
+                .answer("SELECT id FROM catalog WHERE id = ?", row("id", CATALOG));
+        SqlGovernance governance = new SqlGovernance(database.transactions());
+        Securable namespace = new Securable(Securable.Kind.NAMESPACE, NAMESPACE);
+        Securable catalog = new Securable(Securable.Kind.CATALOG, CATALOG);
+
+        assertThat(governance.placeHold(new LegalHold(UUID.randomUUID(), namespace, "matter", "legal", CHANGE.at()),
+                CHANGE)).isEqualTo(WriteResult.APPLIED);
+        assertThat(governance.putAttribute(new GovernanceAttribute(catalog, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                "api", "admin", CHANGE.at()), CHANGE)).isEqualTo(WriteResult.APPLIED);
+        assertThat(governance.putAttribute(new GovernanceAttribute(catalog, GovernanceAttribute.Kind.REGULATED, "true",
+                "api", "steward", CHANGE.at()), CHANGE)).isEqualTo(WriteResult.APPLIED);
+
+        assertThat(database.sent()).filteredOn(sql -> sql.startsWith("SELECT")).containsExactly(
+                "SELECT version()",
+                "SELECT catalog_id FROM namespace WHERE id = ? FOR UPDATE",
+                "SELECT id FROM catalog WHERE id = ? FOR UPDATE",
+                "SELECT id FROM catalog WHERE id = ? FOR SHARE");
+    }
+
+    /** Each of {@code locks} was sent, in that order, and all before the first read of legal holds. */
+    private static void assertLockedInOrderBeforeHolds(ScriptedDatabase database, String... locks) {
+        int previous = -1;
+        for (String lock : locks) {
+            int at = database.indexOf(lock);
+            assertThat(at).as("%s, after the lock before it", lock).isGreaterThan(previous);
+            previous = at;
+        }
+        assertThat(database.indexOf("FROM legal_hold")).as("holds are read after every lock").isGreaterThan(previous);
     }
 }

@@ -30,6 +30,15 @@ final class ScriptedDatabase {
         return this;
     }
 
+    /** A row: column names and values in turn, in column order; a value may be null. */
+    static Map<String, Object> row(Object... columnsAndValues) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (int i = 0; i < columnsAndValues.length; i += 2) {
+            row.put((String) columnsAndValues[i], columnsAndValues[i + 1]);
+        }
+        return row;
+    }
+
     /** Every statement sent, in order. */
     List<String> sent() {
         return List.copyOf(sent);

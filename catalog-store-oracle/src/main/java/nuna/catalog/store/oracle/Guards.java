@@ -54,6 +54,18 @@ final class Guards {
                 row -> Jdbc.uuid(row, "id"), namespaceId);
     }
 
+    /**
+     * Locks the namespaces of {@code path}, in id order, before a write reads the holds and DR freezes above a record
+     * it has locked (backlog 171). A hold or freeze placed on one of them locks it ({@link #missing}), so the two take
+     * turns. The caller has locked the catalog's row first, which a hold or freeze on the catalog locks too.
+     */
+    static void lockLevels(Connection connection, List<UUID> path) throws SQLException {
+        List<Object> parameters = new ArrayList<>();
+        String in = Jdbc.in("id", path, parameters);
+        Jdbc.query(connection, "SELECT id FROM namespace WHERE " + in + " ORDER BY id FOR UPDATE", row -> true,
+                parameters.toArray());
+    }
+
     /** Whether a legal hold is placed on the record itself, any namespace in {@code path}, or its catalog (D24). */
     static boolean held(Connection connection, UUID id, UUID catalogId, List<UUID> path) throws SQLException {
         List<UUID> targets = new ArrayList<>(path);

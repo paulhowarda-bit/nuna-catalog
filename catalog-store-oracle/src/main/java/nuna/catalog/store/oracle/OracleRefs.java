@@ -217,8 +217,9 @@ final class OracleRefs {
      * Takes an object out of refs (backlog 156). Locks the catalog's record for update, as a create does, so no ref is
      * made meanwhile; then each ref for update, in id order, as a deletion locks it, so a commit on the branch in flight
      * lands first and a later one finds the object outside the cut; then the object for update, as a purge claim locks
-     * it, before its holds and freezes are read. Then deletes each branch's own pointer for the object with its pieces,
-     * and the object's entry in each ref's cut.
+     * it; then the namespaces above it (backlog 171), before its holds and freezes are read: a hold or freeze placed on
+     * the catalog or one of those namespaces locks it, so the two take turns. Then deletes each branch's own pointer
+     * for the object with its pieces, and the object's entry in each ref's cut.
      */
     WriteResult remove(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
         return transactions.change(change, "ref removal", connection -> {
@@ -243,6 +244,7 @@ final class OracleRefs {
             }
             List<UUID> path = query(connection, "SELECT namespace_id FROM object_path WHERE object_id = ?",
                     row -> Jdbc.uuid(row, "namespace_id"), objectId);
+            Guards.lockLevels(connection, path);
             if (Guards.held(connection, objectId, catalog.get(), path)) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }

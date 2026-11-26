@@ -194,6 +194,34 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         }
     }
 
+    @Test
+    @DisplayName("Objects: a purge claim waits for a hold being placed on a namespace above the object, or on its"
+            + " catalog, and then is refused (backlog 171)")
+    void aPurgeClaimWaitsForAnOpenHoldAboveTheObject() throws Exception {
+        UUID catalog = newCatalog();
+        NamespaceRecord outer = newNamespace(catalog, "outer");
+        NamespaceRecord inner = newNamespace(outer, "inner");
+        for (Securable level : List.of(new Securable(Securable.Kind.NAMESPACE, outer.id()),
+                new Securable(Securable.Kind.CATALOG, catalog))) {
+            CatalogObject table = newTable(inner, "t-" + level.kind());
+            Change drop = change();
+            assertApplied(store.dropObject(table.id(), drop.at(), drop));
+            LegalHold hold = new LegalHold(UUID.randomUUID(), level, "matter", "legal", now());
+            Change place = change();
+            Change due = new Change(UUID.randomUUID(), drop.at().plusSeconds(1), change().outbox(), Optional.empty());
+
+            Overlap raced = whileOpen(place, held -> held.placeHold(hold, place),
+                    () -> store.claimPurge(table.id(), "worker", due));
+
+            assertThat(raced.open()).isEqualTo(WriteResult.APPLIED);
+            assertThat(raced.meanwhile()).as("a hold on the %s", level.kind())
+                    .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+            assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
+            assertThat(raced.waited()).as("the claim waited for the hold on the %s", level.kind()).isTrue();
+            assertApplied(store.releaseHold(hold.id(), "counsel", change()));
+        }
+    }
+
     @Tag("heavy")
     @Test
     @DisplayName("Objects: a create whose answer is lost is unknown, and findCommit resolves it to COMMITTED")

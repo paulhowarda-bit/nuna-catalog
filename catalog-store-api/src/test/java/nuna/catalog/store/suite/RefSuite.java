@@ -591,6 +591,31 @@ public abstract class RefSuite extends GroupSuite {
     }
 
     @Test
+    @DisplayName("Refs: a removal from refs waits for a hold being placed on a namespace above the table, or on its"
+            + " catalog, and then is refused (backlog 171)")
+    void aRemovalWaitsForAnOpenHoldAboveTheTable() throws Exception {
+        UUID catalog = newCatalog();
+        NamespaceRecord outer = newNamespace(catalog, "outer");
+        NamespaceRecord inner = newNamespace(outer, "inner");
+        CatalogObject table = newTable(inner, "t");
+        Ref v1 = created(tag(catalog, "v1", now()));
+        for (Securable level : List.of(new Securable(Securable.Kind.NAMESPACE, outer.id()),
+                new Securable(Securable.Kind.CATALOG, catalog))) {
+            LegalHold hold = new LegalHold(UUID.randomUUID(), level, "matter", "legal", now());
+            Change place = change();
+
+            Overlap raced = whileOpen(place, held -> held.placeHold(hold, place),
+                    () -> store.removeFromRefs(table.id(), Set.of(v1.id()), false, change()));
+
+            assertThat(raced.open()).isEqualTo(WriteResult.APPLIED);
+            assertThat(raced.meanwhile()).as("a hold on the %s", level.kind()).isEqualTo(HELD);
+            assertThat(store.listRefPointers(table.id())).extracting(RefPointers::ref).containsExactly(v1);
+            assertThat(raced.waited()).as("the removal waited for the hold on the %s", level.kind()).isTrue();
+            assertApplied(store.releaseHold(hold.id(), "counsel", change()));
+        }
+    }
+
+    @Test
     @DisplayName("Refs: once no ref names a dropped table or view, its purge claim goes through and its namespace can"
             + " be dropped; an expired branch is taken out as any ref, and a ref made from a branch after a removal"
             + " does not name what it took out (backlog 156)")
