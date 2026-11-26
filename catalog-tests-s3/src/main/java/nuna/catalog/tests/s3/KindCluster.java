@@ -63,7 +63,7 @@ public final class KindCluster {
     }
 
     /** The name a node gives an image a pod names: Docker Hub's, for a name without a registry. */
-    static String ref(String image) {
+    public static String ref(String image) {
         int slash = image.indexOf('/');
         if (slash < 0) {
             return "docker.io/library/" + image;

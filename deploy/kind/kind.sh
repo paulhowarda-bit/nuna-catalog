@@ -48,15 +48,30 @@ kind_up() {
       ;;
     *) podman start "$KIND_NODE" >/dev/null ;;
   esac
+  # A node just started refuses connections until its API server is up.
+  local try
+  for try in $(seq 1 60); do
+    kubectl --context "$KIND_CONTEXT" get nodes >/dev/null 2>&1 && break
+    sleep 3
+  done
   kubectl --context "$KIND_CONTEXT" wait --for=condition=Ready "node/$KIND_NODE" --timeout=3m >/dev/null
   kind_host_alias
 }
 
-# host.docker.internal in the cluster's DNS: this machine as the node reaches it (Podman's host.containers.internal),
-# which can change when the Podman machine restarts, so up looks again each time.
+# host.docker.internal in the cluster's DNS: this machine, as Docker Desktop's pods had it. With the Podman
+# machine's user-mode networking (podman machine set --user-mode-networking=true), 192.168.127.254 is this
+# machine's localhost, which reaches both programs here (a test's catalog server) and the ports Podman publishes (a
+# test's S3 store). Without it no one address reaches both: Podman's host.containers.internal reaches programs
+# here, if Windows' firewall lets them, and changes when the machine restarts, so up looks again each time.
 kind_host_alias() {
   local ip corefile
-  ip=$(podman exec "$KIND_NODE" getent hosts host.containers.internal | awk '{print $1; exit}')
+  if [[ "$(podman machine inspect --format '{{.UserModeNetworking}}' 2>/dev/null)" == true ]]; then
+    ip=192.168.127.254
+  else
+    echo "the Podman machine runs without user-mode networking: pods reach this machine's programs but not the" \
+      "ports Podman publishes on it (podman machine set --user-mode-networking=true, with the machine stopped)" >&2
+    ip=$(podman exec "$KIND_NODE" getent hosts host.containers.internal | awk '{print $1; exit}')
+  fi
   [[ -n "$ip" ]] || return 0
   corefile=$(kubectl --context "$KIND_CONTEXT" -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}')
   grep -q " $ip host.docker.internal$" <<<"$corefile" && return 0
@@ -69,6 +84,9 @@ kind_host_alias() {
   ' <<<"$corefile")
   kubectl --context "$KIND_CONTEXT" -n kube-system create configmap coredns --from-literal=Corefile="$corefile" \
     --dry-run=client -o yaml | kubectl --context "$KIND_CONTEXT" replace -f - >/dev/null
+  # Restarted rather than left to reload the file, which each of its pods does in its own time.
+  kubectl --context "$KIND_CONTEXT" -n kube-system rollout restart deployment/coredns >/dev/null
+  kubectl --context "$KIND_CONTEXT" -n kube-system rollout status deployment/coredns --timeout=2m >/dev/null
 }
 
 kind_load() {
