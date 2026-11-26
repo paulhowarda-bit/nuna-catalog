@@ -3,14 +3,14 @@ Module: catalog-audit-tables
 Test: LogWriterTest#eachRowKeepsTheRunAndNumberItWasLoggedWithAndARecordLoggedTwiceKeepsItsFirst
 
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
-index 2193e655..21832922 100644
+index 33b483d4..10421e5f 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
-@@ -261,7 +261,6 @@ final class EventsTable {
+@@ -269,7 +269,6 @@ final class EventsTable {
          record.setField("topic_partition", row.topicPartition());
          record.setField("topic_offset", row.topicOffset());
          record.setField("log_run", row.logRun());
 -        record.setField("log_seq", row.logSequence());
+         record.setField("branch", row.branch());
+         record.setField("subject_ids", row.subjectIds());
          return record;
-     }
- 

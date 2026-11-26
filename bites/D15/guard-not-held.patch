@@ -1,17 +1,16 @@
 Breaks: A transaction does not hold its read guards, so a guarded table can move between the check and the swap.
 Module: catalog-core
 Test: TransactionTest$Retrying#guardMovedBeforeTheSwap
-
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-index b202be9..4e9e4cc 100644
+index 570fb5cc..94016337 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-@@ -965,8 +965,8 @@ public final class CommitEngine {
+@@ -982,8 +982,8 @@ public final class CommitEngine {
                                  && governance.get(i).regulated();
                          planned.add(new Planned(object, base, changed, json, regulated));
                      }
 -                    case Outcome.NoChange noChange ->
--                            base.expected().ifPresent(read -> held.add(new PointerHold(base.key(), read)));
+-                            held.add(new PointerHold(base.key(), base.expected()));
 +                    case Outcome.NoChange noChange -> {
 +                    }
                      case Outcome.RequirementFailed failed -> {

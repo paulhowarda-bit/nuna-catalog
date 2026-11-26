@@ -72,7 +72,7 @@ public final class EventsReader implements AutoCloseable {
     public static final int MAX_LIMIT = 200;
 
     private static final Schema SCAN = EventsTable.SCHEMA.select("time", "type", "principal", "catalog",
-            "object_id", "object_path", "topic_partition", "topic_offset");
+            "object_id", "object_path", "topic_partition", "topic_offset", "branch", "subject_ids");
     private static final Schema COUNT = EventsTable.SCHEMA.select("time", "type", "principal", "catalog",
             "object_kind", "object_id", "object_path");
     private static final String READ = "nuna.catalog.read";
@@ -120,6 +120,12 @@ public final class EventsReader implements AutoCloseable {
      * @param path      a namespace's levels, or a namespace's levels and a table or view name: only records about it
      *                  and, for a namespace, everything in it; empty for the whole catalog. Compared as the catalog
      *                  compares names.
+     * @param branch    a catalog ref's name, or {@code main}: only the commits and reads through it and the ref records
+     *                  of refs of that name (backlog 169), compared as the catalog compares names; null for any. A
+     *                  name a deleted ref held and a later ref took matches both: {@code from} tells them apart.
+     * @param subject   an id: only the records about that object, by their {@code object_id}, and the ref records
+     *                  whose ref is that id or whose tables name it, by their {@code subject_ids} (backlog 169); null
+     *                  for any
      * @param from      the oldest time to give, inclusive, or null
      * @param to        the time to give records before, exclusive, or null for now
      * @param after     the cursor of the page before, or empty for the first page
@@ -127,13 +133,15 @@ public final class EventsReader implements AutoCloseable {
      * @param objectId  one object's stable id: only the records about it, as an object's Audit tab asks (backlog
      *                  197); null for any
      */
-    public record Query(String catalog, Set<String> types, String principal, List<String> path, Instant from,
-                        Instant to, Optional<Cursor> after, int limit, String objectId) {
+    public record Query(String catalog, Set<String> types, String principal, List<String> path, String branch,
+                        String subject, Instant from, Instant to, Optional<Cursor> after, int limit,
+                        String objectId) {
 
         public Query {
             Objects.requireNonNull(catalog, "catalog");
             types = Set.copyOf(types);
             path = path.stream().map(Names::normalize).toList();
+            branch = branch == null ? null : Names.normalize(branch);
             Objects.requireNonNull(after, "after");
             if (limit < 1 || limit > MAX_LIMIT) {
                 throw new IllegalArgumentException("limit must be from 1 to " + MAX_LIMIT + ", not " + limit);
@@ -143,7 +151,19 @@ public final class EventsReader implements AutoCloseable {
         /** A page about any object. */
         public Query(String catalog, Set<String> types, String principal, List<String> path, Instant from, Instant to,
                      Optional<Cursor> after, int limit) {
-            this(catalog, types, principal, path, from, to, after, limit, null);
+            this(catalog, types, principal, path, null, null, from, to, after, limit, null);
+        }
+
+        /** A page about one object, by its id (backlog 197). */
+        public Query(String catalog, Set<String> types, String principal, List<String> path, Instant from, Instant to,
+                     Optional<Cursor> after, int limit, String objectId) {
+            this(catalog, types, principal, path, null, null, from, to, after, limit, objectId);
+        }
+
+        /** A page through a ref, or about an object or ref with its ref records (backlog 169). */
+        public Query(String catalog, Set<String> types, String principal, List<String> path, String branch,
+                     String subject, Instant from, Instant to, Optional<Cursor> after, int limit) {
+            this(catalog, types, principal, path, branch, subject, from, to, after, limit, null);
         }
     }
 
@@ -283,6 +303,10 @@ public final class EventsReader implements AutoCloseable {
         if (query.principal() != null) {
             filter = Expressions.and(filter, Expressions.equal("principal", query.principal()));
         }
+        if (query.branch() != null) {
+            // Names compare normalized, which no file's bounds know: only files without a branch are passed over.
+            filter = Expressions.and(filter, Expressions.notNull("branch"));
+        }
         if (query.objectId() != null) {
             filter = Expressions.and(filter, Expressions.equal("object_id", query.objectId()));
         }
@@ -371,6 +395,17 @@ public final class EventsReader implements AutoCloseable {
         if (query.to() != null && row.time() >= micros(query.to())) {
             return false;
         }
+        if (query.branch() != null && (record.getField("branch") == null
+                || !query.branch().equals(Names.normalize((String) record.getField("branch"))))) {
+            return false;
+        }
+        if (query.subject() != null && !query.subject().equals(record.getField("object_id"))) {
+            @SuppressWarnings("unchecked")
+            List<String> subjects = (List<String>) record.getField("subject_ids");
+            if (subjects == null || !subjects.contains(query.subject())) {
+                return false;
+            }
+        }
         if (!query.path().isEmpty()) {
             @SuppressWarnings("unchecked")
             List<String> path = (List<String>) record.getField("object_path");
@@ -428,7 +463,8 @@ public final class EventsReader implements AutoCloseable {
                 (String) record.getField("operation"), (String) record.getField("privilege"),
                 (String) record.getField("reason"), (String) record.getField("data"),
                 (Integer) record.getField("topic_partition"), (Long) record.getField("topic_offset"),
-                (String) record.getField("log_run"), (Long) record.getField("log_seq"));
+                (String) record.getField("log_run"), (Long) record.getField("log_seq"),
+                (String) record.getField("branch"), (List<String>) record.getField("subject_ids"));
     }
 
     // ---- the counts ----

@@ -31,6 +31,7 @@ import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.support.ui.Select;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -1150,6 +1151,132 @@ class ConsoleBrowserTest {
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip()).isEqualTo("Show audit reads");
         assertThat(lastAsked()).isNull();
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
+    }
+
+    /**
+     * The audit feed in the page's own answers, each request's parameters kept in {@code window.feedAsked}: every page
+     * is one ref record of the tag {@code window.refName}, whose id is {@code window.refId} (backlog 169).
+     */
+    private static final String REF_RECORDS_IN_THE_PAGE = """
+            const real = window.fetch;
+            window.feedAsked = [];
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              const now = new Date().toISOString();
+              if (u.pathname.endsWith('/audit/summary')) {
+                return json({'by-type': {'nuna.catalog.ref': 1}, from: new Date(Date.now() - 86400000).toISOString(), to: now,
+                  busiest: []});
+              }
+              if (u.pathname.endsWith('/audit/archive')) return json({chains: [], configured: false});
+              if (u.pathname.endsWith('/audit/feed')) {
+                window.feedAsked.push(Object.fromEntries(u.searchParams));
+                return json({records: [{time: now, type: 'nuna.catalog.ref', principal: 'tester', 'event-id': 'e1', partition: 0,
+                  offset: 1, 'request-id': 'r1', branch: window.refName, object: null, chain: {status: 'no-archive'},
+                  event: {type: 'nuna.catalog.ref', time: now, subject: window.refId, data: {action: 'CREATED', ref: window.refId,
+                    name: window.refName, kind: 'TAG', from: 'main', tables: [], actor: {principal: 'tester'}}}}]});
+              }
+              return real(url, init);
+            };
+            """;
+
+    /**
+     * The feed's {@code @name} search and a ref's Record tab (6.8; Atelier, 2026-11-25; backlog 169): {@code @name}
+     * asks for the records through the ref from the live ref's making on, shows no day's counts beside them, and with no
+     * live ref of that name says the records may be several refs'; the Record tab asks for the ref's records by its id
+     * and links every record through it since it was made.
+     */
+    @Test
+    void theFeedsRefSearchReadsFromTheLiveRefsMakingAndTheRecordTabAsksByItsId() {
+        String tag = "since_" + Api.suffix();
+        String gone = "gone_" + Api.suffix();
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            HttpResponse<String> made = expect(api.manage("GET", "/refs/" + tag, null), 200);
+            String id = JsonPath.read(made.body(), "$.id");
+            String createdAt = JsonPath.read(made.body(), "$.created-at");
+            signIn(api.grantAdmin());
+            browser.open("/ui/");
+            browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+            driver.executeScript("window.refName = arguments[0]; window.refId = arguments[1];" + REF_RECORDS_IN_THE_PAGE
+                    + "location.hash = '#p=audit&c=trading&path=%40' + arguments[0];", tag, id);
+
+            browser.await("the feed did not ask for the tag's records", d -> tag.equals(lastFeedAsked().get("branch")));
+            assertThat(lastFeedAsked()).as("from the live tag's making on").containsEntry("from", createdAt)
+                    .doesNotContainKey("path");
+            browser.await(By.cssSelector("#audit-feed .feed-row[data-type='ref']"));
+            assertThat(driver.findElements(By.cssSelector("#audit-feed .chip .n"))).as("no counts beside a ref's records")
+                    .isEmpty();
+            assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed [data-ref-note]"))))
+                    .startsWith("From @" + tag + "'s making, ")
+                    .endsWith(": records through an earlier ref of the same name are left out. Include earlier refs named @"
+                            + tag);
+            browser.await("the status did not say where the feed starts", d -> textContent(d.findElement(
+                    By.cssSelector("#audit-feed .feed-status"))).matches(".* shown, newest first, from .+, as of the last commit at .+"));
+
+            // Up to sets only the end: the tag's making still starts the feed, and the tag made since an hour ago has
+            // nothing through it before then, so the feed asks nothing.
+            int asked = feedsAsked();
+            new Select(driver.findElement(By.cssSelector("#audit-feed select[name='to']"))).selectByValue("1");
+            assertThat(textContent(browser.await(By.cssSelector("#audit-feed .feed-none"))))
+                    .startsWith("No record went through @" + tag + " by ")
+                    .endsWith(". Set Up to later, or include earlier refs named @" + tag + ".");
+            assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-status")))).isEmpty();
+            assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed [data-ref-note]"))))
+                    .as("Up to keeps the start").startsWith("From @" + tag + "'s making, ");
+            assertThat(feedsAsked()).isEqualTo(asked);
+
+            // The way out drops the start, keeps the search and Up to, and is kept in the link.
+            driver.findElement(By.cssSelector("#audit-feed [data-ref-note] [data-act='any-time']")).click();
+            browser.awaitText(By.cssSelector("#audit-feed [data-ref-note]"),
+                    "Records through every ref that has had the name @" + tag + ".");
+            assertThat(lastFeedAsked()).doesNotContainKey("from").containsEntry("branch", tag).containsKey("to");
+            assertThat(driver.getCurrentUrl()).contains("from=any");
+
+            WebElement path = driver.findElement(By.cssSelector("#audit-feed input[name='path']"));
+            assertThat(path.getDomAttribute("placeholder")).isEqualTo("Table, namespace or @ref");
+            path.sendKeys(Keys.chord(Keys.CONTROL, "a"), Keys.BACK_SPACE);
+            path.sendKeys("@" + gone);
+            browser.await("the feed did not ask for the name's records", d -> gone.equals(lastFeedAsked().get("branch")));
+            assertThat(lastFeedAsked()).doesNotContainKey("from");
+            browser.awaitText(By.cssSelector("#audit-feed [data-ref-note]"), "No live ref is named @" + gone
+                    + ": these are records through every ref that had the name.");
+
+            driver.executeScript("location.hash = '#c=trading&k=ref&n=' + arguments[0] + '&tab=record';", tag);
+            browser.awaitText(By.cssSelector("#ref-record .feed-row .what"), "Made the tag @" + tag
+                    + " from main; it never expires");
+            assertThat(lastFeedAsked()).containsEntry("subject", id).containsEntry("type", "nuna.catalog.ref");
+            WebElement every = driver.findElement(By.cssSelector("#ref-record a[data-act='every-record']"));
+            assertThat(textContent(every)).isEqualTo("Every record through @" + tag + " since it was made");
+            every.click();
+            browser.await("the feed did not open on the tag", d -> d.getCurrentUrl().contains("p=audit")
+                    && tag.equals(lastFeedAsked().get("branch")));
+            assertThat(lastFeedAsked()).as("the link's time, the tag's making").containsEntry("from", createdAt);
+            browser.await("the linked making was not explained", d -> textContent(d.findElement(
+                    By.cssSelector("#audit-feed [data-ref-note]"))).startsWith("From @" + tag + "'s making, "));
+
+            // A time the link set that is not the ref's making.
+            driver.executeScript("location.hash = '#p=audit&c=trading&path=%40' + arguments[0]"
+                    + " + '&from=2020-01-01T00%3A00%3A00Z';", tag);
+            browser.await("the feed did not ask from the link's time",
+                    d -> "2020-01-01T00:00:00Z".equals(lastFeedAsked().get("from")));
+            browser.await("the link's time was not explained", d -> textContent(d.findElement(
+                    By.cssSelector("#audit-feed [data-ref-note]"))).endsWith(", as the link asked. Show earlier records too"));
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+        }
+    }
+
+    /** How many times the feed was asked, from {@link #REF_RECORDS_IN_THE_PAGE}. */
+    private int feedsAsked() {
+        return ((Number) driver.executeScript("return (window.feedAsked || []).length;")).intValue();
+    }
+
+    /** The parameters of the feed's last request, from {@link #REF_RECORDS_IN_THE_PAGE}; empty before any. */
+    @SuppressWarnings("unchecked")
+    private Map<String, String> lastFeedAsked() {
+        Object asked = driver.executeScript("const a = window.feedAsked || []; return a[a.length - 1] || {};");
+        return (Map<String, String>) asked;
     }
 
     /**

@@ -74,7 +74,7 @@ class AuditFeedReaderTest {
     }
 
     private static List<AuditRow> rows(AuditFeed feed) {
-        return feed.page(new EventsReader.Query("lake", Set.of(), null, List.of(), null, null, Optional.empty(), 50))
+        return feed.page(new EventsReader.Query("lake", Set.of(), null, List.of(), null, null, null, null, Optional.empty(), 50))
                 .page().rows();
     }
 
