@@ -1,0 +1,16 @@
+Breaks: a purge claim on PostgreSQL and CockroachDB no longer share-locks the namespaces above the object, so it reads holds while a hold on one of them is being placed and is claimed though the hold commits first (backlog 171).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#aPurgeClaimWaitsForAnOpenHoldAboveTheObject
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+index c93b5a03..dff4dcca 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+@@ -250,7 +250,6 @@ final class SqlObjects {
+             if (claim.purgeAfter().isAfter(change.at())) {
+                 return new WriteResult.Refused(WriteResult.Reason.NOT_DUE);
+             }
+-            Guards.lockLevels(connection, claim.path());
+             if (Guards.held(connection, objectId, claim.catalogId(), claim.path())) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }

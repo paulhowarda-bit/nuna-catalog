@@ -29,7 +29,8 @@ import java.util.UUID;
  * a child create and its parent's drop serialize. The unique (parent, normalized name) index makes
  * a create wait for an open create of the same name. A drop is refused while a ref's cut names a
  * table or view of the namespace, in any state, since a read through the ref takes its governance
- * from the namespace (D33, backlog 157).
+ * from the namespace (D33, backlog 157); it share-locks the catalog first, so it and a ref create
+ * take turns (backlog 158).
  */
 final class SqlNamespaces {
 
@@ -122,8 +123,20 @@ final class SqlNamespaces {
     private record Locked(UUID catalogId, List<UUID> ancestors) {
     }
 
+    /**
+     * Locks the catalog's row for share, then the namespace for update, the order a conditional grant takes (catalog,
+     * then securable). A ref create locks the catalog's row for update, so a create in flight commits before this
+     * drop reads refs, and a create after it cuts without the namespace (backlog 158): a ref never names a table whose
+     * namespace the drop took.
+     */
     WriteResult drop(UUID namespaceId, Change change) {
         return transactions.change(change, "namespace drop", connection -> {
+            Optional<UUID> catalog = first(connection, "SELECT catalog_id FROM namespace WHERE id = ?",
+                    row -> Jdbc.uuid(row, "catalog_id"), namespaceId);
+            if (catalog.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.NAMESPACE);
+            }
+            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
             Optional<Locked> locked = first(connection, "SELECT catalog_id, ancestors FROM namespace WHERE id = ? FOR UPDATE",
                     row -> new Locked(Jdbc.uuid(row, "catalog_id"), Jdbc.uuids(row, "ancestors")), namespaceId);
             if (locked.isEmpty()) {

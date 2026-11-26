@@ -1,0 +1,16 @@
+Breaks: a purge claim on MongoDB no longer marks its catalog, so it does not conflict with a hold being placed on the catalog and is claimed though the hold commits first (backlog 171).
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#aPurgeClaimWaitsForAnOpenHoldAboveTheObject
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
+index 24978f4f..e933ec59 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
+@@ -338,7 +338,6 @@ final class MongoObjects {
+             List<BsonDocument> namespaces = Guards.seeNamespaces(tx, uuidList(object.get().get("namespacePath")));
+             tx.see(catalog);
+             tx.see(object.get());
+-            tx.mark(CATALOG, catalog);
+             namespaces.forEach(namespace -> tx.mark(NAMESPACE, namespace));
+             tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
+                     new BsonDocument("state", new BsonString(PURGING)).append("purgeClaimant", new BsonString(claimant))

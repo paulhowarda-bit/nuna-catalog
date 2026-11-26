@@ -1,0 +1,16 @@
+Breaks: a purge claim on PostgreSQL and CockroachDB no longer share-locks the catalog's row, so it reads holds while a hold on the catalog is being placed and is claimed though the hold commits first (backlog 171).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#aPurgeClaimWaitsForAnOpenHoldAboveTheObject
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+index c93b5a03..7a144be4 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+@@ -237,7 +237,6 @@ final class SqlObjects {
+             if (catalog.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+-            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
+             Optional<Claim> locked = lockForPurge(connection, objectId);
+             if (locked.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
