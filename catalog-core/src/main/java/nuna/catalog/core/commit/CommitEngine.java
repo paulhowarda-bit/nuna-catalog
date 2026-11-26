@@ -548,8 +548,14 @@ public final class CommitEngine {
         String metadataLocation = table
                 ? RestRequest.register(request.json()).metadataLocation()
                 : RestRequest.registerView(request.json()).metadataLocation();
-        TableFiles.Read read = files.read(metadataLocation, "");
         String kind = table ? "Table" : "View";
+        if (TableFiles.onBranch(metadataLocation)) {
+            // Main never holds a branch's file: DR reconcile skips such files on main's chain (backlog 177).
+            return new Failure(400, "BadRequestException", "Metadata file " + metadataLocation + " was written by a"
+                    + " commit on a branch, and a " + kind.toLowerCase(java.util.Locale.ROOT) + " is registered only"
+                    + " from a file of main's; merge the branch, or register a file main's commits wrote");
+        }
+        TableFiles.Read read = files.read(metadataLocation, "");
         Outcome outcome = table
                 ? Metadata.registerTable(read.json(), metadataLocation)
                 : Metadata.registerView(read.json(), metadataLocation);
