@@ -33,8 +33,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * What a platform operator sets up outside the catalog (backlog 254, Atelier's design and her answers of 2026-11-24):
  * Service's "Worker storage" panel and the dialog "Set up the worker's storage for <catalog>", from item 253's route,
  * as {@code oscar}, a platform operator holding no grant, with the run's store in each state the worker's reports give
- * it: not reached (the worker holds no identity there, so the worker's settings are shown), reached, refused and not
- * answering. Maintenance's steps 2 and 3 open the dialog for trading's profile, and Open Worker storage opens Service
+ * it: not reached (the worker holds no identity there, so the worker's settings are shown), reached, refused, not
+ * answering, and not known (the newest scan did not report its access, item 277). Maintenance's steps 2 and 3 open the dialog for trading's profile, and Open Worker storage opens Service
  * at the profile's row.
  *
  * <p>The server has one storage profile, protected, on the run's store, so an unprotected profile and the AWS S3 and Ceph
@@ -144,6 +144,28 @@ class ConsoleStorageSetupBrowserTest {
         row.findElement(By.cssSelector("[data-act='what-to-set-up']")).click();
         WebElement dialog = dialog("Set up the worker's storage for " + catalogWords());
         assertThat(dialog.findElement(By.cssSelector(".setup-intro")).getText()).isEqualTo(ONE);
+        assertThat(dialog.findElements(By.cssSelector("[data-block='worker-settings']"))).isEmpty();
+        assertStoreBlock(dialog.findElement(By.cssSelector("[data-block='store']")));
+    }
+
+    @Test
+    void aScanThatDidNotReportItsAccessLeavesTheIdentityNotKnownAndTheSettingsPerhaps() {
+        // The newest scan could not read its storage prefixes, as just after a restart (items 275, 277): a worker did
+        // report, so not "No report yet", and the dialog can't say whether the worker needs settings.
+        report(identity("\"listed\":\"ok\""));
+        reportUnreadPrefixes();
+        oscar();
+        browser.open("/ui/#p=service");
+
+        WebElement row = row(S3ForTests.PROFILE);
+        assertThat(cell(row, 3)).matches("Not known: the worker's last scan, at (\\d{1,2} [A-Z][a-z]{2}( \\d{4})? )?"
+                + "\\d\\d:\\d\\d, did not report it");
+        assertThat(cell(row, 4)).isEqualTo("Not checked");
+        row.findElement(By.cssSelector("[data-act='what-to-set-up']")).click();
+        WebElement dialog = dialog("Set up the worker's storage for " + catalogWords());
+        assertThat(dialog.findElement(By.cssSelector(".setup-intro")).getText()).isEqualTo("One change outside the "
+                + "catalog, in the store, and perhaps one in the worker's settings: the worker's last scan did not report "
+                + "its access, so the catalog can't tell until a scan does.");
         assertThat(dialog.findElements(By.cssSelector("[data-block='worker-settings']"))).isEmpty();
         assertStoreBlock(dialog.findElement(By.cssSelector("[data-block='store']")));
     }
@@ -383,6 +405,19 @@ class ConsoleStorageSetupBrowserTest {
         String body = "{\"started-at\":\"" + at.minusSeconds(20) + "\",\"ended-at\":\"" + at + "\",\"outcome\":"
                 + "\"succeeded\",\"failures\":{},\"storage\":[" + storage + "]}";
         String id = UUID.nameUUIDFromBytes(at.toString().getBytes(StandardCharsets.UTF_8)).toString();
+        expect(api.manage("PUT", "/maintenance/scans/" + id, body, GovernanceServer.PRINCIPAL, "maintenance",
+                GovernanceServer.GROUPS, "workers-" + Api.suffix()), 204);
+    }
+
+    /**
+     * A scan that ended now and could not read its storage prefixes (item 275): no {@code storage} at all. A
+     * millisecond later than any scan reported before it, so it is the newest.
+     */
+    private void reportUnreadPrefixes() {
+        Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS).plusMillis(1);
+        String body = "{\"started-at\":\"" + at.minusSeconds(20) + "\",\"ended-at\":\"" + at + "\",\"outcome\":"
+                + "\"succeeded\",\"failures\":{\"storage-prefixes\":1}}";
+        String id = UUID.nameUUIDFromBytes(("unread " + at).getBytes(StandardCharsets.UTF_8)).toString();
         expect(api.manage("PUT", "/maintenance/scans/" + id, body, GovernanceServer.PRINCIPAL, "maintenance",
                 GovernanceServer.GROUPS, "workers-" + Api.suffix()), 204);
     }
