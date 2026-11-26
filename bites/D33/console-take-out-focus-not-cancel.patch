@@ -1,0 +1,14 @@
+Breaks: the take-out dialog opens with focus on its first input, not Cancel, so one Enter can go on to remove (backlog 279).
+Module: catalog-server
+Test: ConsoleRefWordsTest#theDialogSaysWhatTakingItOutDoesAndStartsOnCancel
+diff --git a/catalog-server/src/main/resources/nuna/ui/kept.js b/catalog-server/src/main/resources/nuna/ui/kept.js
+index fdebb209..8cdafed9 100644
+--- a/catalog-server/src/main/resources/nuna/ui/kept.js
++++ b/catalog-server/src/main/resources/nuna/ui/kept.js
+@@ -244,6 +244,5 @@ export function takeOutDialog(target, o) {
+     }
+   });
+   // Focus starts on Cancel, so one Enter never removes anything.
+-  $('.dlg-acts .btn.ghost', dlg).focus();
+   return dlg;
+ }

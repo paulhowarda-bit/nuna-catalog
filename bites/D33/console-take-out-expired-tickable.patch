@@ -1,0 +1,16 @@
+Breaks: the take-out dialog lets an expired branch be ticked by name, which the route refuses (backlog 279).
+Module: catalog-server
+Test: ConsoleRefWordsTest#theDialogSaysWhatTakingItOutDoesAndStartsOnCancel
+diff --git a/catalog-server/src/main/resources/nuna/ui/kept.js b/catalog-server/src/main/resources/nuna/ui/kept.js
+index fdebb209..ae0304ba 100644
+--- a/catalog-server/src/main/resources/nuna/ui/kept.js
++++ b/catalog-server/src/main/resources/nuna/ui/kept.js
+@@ -176,7 +176,7 @@ export function takeOutDialog(target, o) {
+           h('span', {class: 'fine'}, 'Those that keep it when the catalog runs this, a branch past its expiry included.'))),
+       h('label', {class: 'kept-some'}, h('input', {type: 'radio', name: 'which', value: 'some'}), h('span', null, 'Only the ones I tick')),
+       h('ul', {class: 'kept-ticks'}, refs.map(x => h('li', null, h('label', null,
+-        h('input', {type: 'checkbox', name: 'ref', value: x.name, disabled: !!x.expired}),
++        h('input', {type: 'checkbox', name: 'ref', value: x.name}),
+         h('span', null, cref(x, {warn: !!x.expired}), ' ', h('span', {class: 'fine'}, rowWords(x, target)),
+           x.expired ? h('span', {class: 'fine'}, 'Past its expiry: Every takes it out, or the worker ends it at its next run.') : null))))));
+   };
