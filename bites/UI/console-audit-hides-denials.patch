@@ -3,14 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#theAuditTrailShowsCommitsReadsCredentialsAndDenials
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index e5ea67bc..1847f3a9 100644
 --- a/catalog-server/src/main/resources/nuna/ui/panels.js
 +++ b/catalog-server/src/main/resources/nuna/ui/panels.js
-@@ -356,7 +356,7 @@
-   };
+@@ -711,7 +711,7 @@ export function auditTab(target, {title} = {}) {
    const run = () => load(feed, async () => {
-     const body = await api.recentAudit(target, limit.value);
+     const asked = Number(limit.value);
+     const body = await api.recentAudit(target, asked);
 -    const records = body.records || [];
 +    const records = (body.records || []).filter(r => r.type !== 'nuna.catalog.denial');
+     const fromTable = body.source === 'table';
      const w = body.window || {};
-     const counts = {};
-     for (const r of records) {
+     const t = body.table || {};
