@@ -1583,6 +1583,22 @@ class ConsoleBrowserTest {
         assertThat(sideways()).isFalse();
     }
 
+    /**
+     * A frozen and held table's page fits a 1440 px window once its governance has loaded: the freeze's reason, in a pill
+     * in Overview's governance facts, wraps in its column instead of running past the window (backlog 232).
+     */
+    @Test
+    void aFrozenAndHeldTablesPageFitsTheWindowOnceItsGovernanceLoads() {
+        signIn(tester());
+        driver.manage().window().setSize(new Dimension(1440, 900));
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.awaitText(By.cssSelector("#table-page h1"), "trades");
+        WebElement reason = browser.await(By.cssSelector("#table-page dd .pill.frozen"));
+        assertThat(textContent(reason)).contains(FREEZE_REASON);
+        browser.await(By.cssSelector("#table-page .title-row .pill.frozen"));
+        assertThat(sideways()).isFalse();
+    }
+
     /** Whether the header and its last control, Sign out, end within the window. */
     private boolean headerFits() {
         return (Boolean) driver.executeScript("const w = document.documentElement.clientWidth;"

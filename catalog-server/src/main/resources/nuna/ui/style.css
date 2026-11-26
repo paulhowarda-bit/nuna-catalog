@@ -310,6 +310,8 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .facts dt { color: var(--text-2); }
 .facts dd { min-width: 0; overflow-wrap: anywhere; }
 .facts dd code { color: var(--text); }
+/* A pill in a fact can carry free text, a hold's or a freeze's reason: it wraps in its column, never past it (backlog 232). */
+.facts dd .pill { white-space: normal; height: auto; min-height: 22px; padding: 4px 8px; line-height: 1.3; max-width: 100%; overflow-wrap: anywhere; }
 
 /* refusal, empty, loading */
 .refusal { position: relative; border: 1px solid var(--bad-ink); border-left-width: 4px; border-radius: var(--r-md); background: var(--bad-wash); padding: 14px 16px; display: grid; gap: 8px; }
