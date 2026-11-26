@@ -205,6 +205,10 @@ subprojects {
 
     dependencies {
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
+        // Testcontainers' Docker client for Podman (FreshPipeStrategy, named below), in every test JVM.
+        if (project.name != "catalog-tests-docker") {
+            "testRuntimeOnly"(project(":catalog-tests-docker"))
+        }
     }
 
     tasks.withType<JavaCompile>().configureEach {
@@ -246,6 +250,9 @@ subprojects {
         // The one S3 store every test uses (catalog-tests-s3, TestS3): -Ps3=silo, ceph or aws.
         listOf("s3", "silo.image", "ceph.image").forEach { systemProperty(it, project.property(it)!!) }
         systemProperty("nuna.aws.profile", providers.gradleProperty("nuna.aws.profile").getOrElse(""))
+        // Podman's API closes a connection idle for 10 s, and Testcontainers' own client reuses it: a container
+        // created or exec'd in after a quiet spell failed (backlog 291). This client reuses none that old.
+        environment("TESTCONTAINERS_DOCKER_CLIENT_STRATEGY", "nuna.catalog.tests.docker.FreshPipeStrategy")
         // In the fast build every test of some modules is tagged out.
         failOnNoDiscoveredTests = false
         // What the test JVMs had under Maven on this 16 GB machine (the JVM's default, a quarter
