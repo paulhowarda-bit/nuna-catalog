@@ -331,18 +331,23 @@ function keptChips(c, o) {
 }
 
 /**
- * Who took an object out of a ref, from the ref's own `nuna.catalog.ref` records, for a caller who reads the feed: null
- * otherwise, or when no newest record says so. The feed's subject filter (item 169) narrows the records to the ref's;
- * a feed without it lists every ref's, which the match below sorts the same, over fewer of them.
+ * Who took an object out of a ref, and when, from the `nuna.catalog.ref` records about the object, for a caller who
+ * reads the feed: null otherwise, when the feed refuses, or when no record it reaches says so. The feed's subject
+ * filter (item 169) keeps the records about the object, each an `OBJECT_REMOVED` of one ref it left; a page that
+ * stopped short searches on. A feed without the filter ignores it and lists every ref's records, which the match
+ * below (this ref's id, the action, the object's id) sorts the same, over fewer of them.
  */
 async function takenOutBy(c, r, objectId) {
   if (!r.id || !auditOpen(c)) return null;
   let pageToken = null;
   try {
     for (let i = 0; i < 4; i++) {
-      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', subject: r.id, pageToken});
-      const hit = (answer.records || []).find(x => x.data && x.data.ref === r.id
-        && String(x.data.action || '').toUpperCase() === 'OBJECT_REMOVED' && (x.data.tables || []).some(t => t.id === objectId));
+      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', subject: objectId, pageToken});
+      const hit = (answer.records || []).find(x => {
+        const d = (x.event || {}).data || {};
+        return d.ref === r.id && String(d.action || '').toUpperCase() === 'OBJECT_REMOVED'
+          && (d.tables || []).some(t => t.id === objectId);
+      });
       if (hit) return hit;
       pageToken = answer['next-page-token'];
       if (!pageToken) break;
@@ -386,7 +391,7 @@ export async function missingWords(target, title) {
     const line = h('p', null, `@${r.name} no longer keeps ${path}, though main had it at the point: it was taken out of it.`);
     const note = h('div', {class: 'notice kept-note', id: 'taken-out', 'data-kept': 'taken-out'}, icon('info'), h('div', null, line));
     takenOutBy(c, r, then.id).then(x => {
-      const who = x && (x.principal || ((x.data || {}).actor || {}).principal);
+      const who = x && (x.principal || (((x.event || {}).data || {}).actor || {}).principal);
       if (who) line.append(` ${who} took it out on ${refAt(x.time)}.`);
     });
     return note;

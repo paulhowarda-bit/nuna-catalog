@@ -93,9 +93,11 @@ class ConsoleRefWordsTest {
                 "if (who) line.append(` ${who} took it out on ${refAt(x.time)}.`);",
                 // Only an audit reader asks the feed, and the match holds with or without item 169's subject filter.
                 "if (!r.id || !auditOpen(c)) return null;",
-                "api.auditFeed(c, {type: 'nuna.catalog.ref', subject: r.id, pageToken})",
-                "x.data.ref === r.id",
-                "=== 'OBJECT_REMOVED' && (x.data.tables || []).some(t => t.id === objectId)");
+                "api.auditFeed(c, {type: 'nuna.catalog.ref', subject: objectId, pageToken})",
+                "const d = (x.event || {}).data || {};",
+                "return d.ref === r.id && String(d.action || '').toUpperCase() === 'OBJECT_REMOVED'",
+                "&& (d.tables || []).some(t => t.id === objectId);",
+                "const who = x && (x.principal || (((x.event || {}).data || {}).actor || {}).principal);");
         // The fourth state is judged before "made after the point", so a table taken out never reads as made after.
         assertThat(refs.indexOf("it was taken out of it.")).isLessThan(refs.indexOf("A ref holds only what main held then."));
         assertThat(resource("table.js")).contains("if (error.status !== 404 || error.type !== 'NoSuchTableException') return null;",
