@@ -120,8 +120,8 @@ public final class EventsReader implements AutoCloseable {
      * @param path      a namespace's levels, or a namespace's levels and a table or view name: only records about it
      *                  and, for a namespace, everything in it; empty for the whole catalog. Compared as the catalog
      *                  compares names.
-     * @param branch    a catalog ref's name, or {@code main}: only the commits and reads through it and the ref records
-     *                  of refs of that name (backlog 169), compared as the catalog compares names; null for any. A
+     * @param branch    a catalog ref's name, or {@code main}: only the commits and reads through it, the ref records
+     *                  of refs of that name (backlog 169) and the grants that name it (backlog 113), compared as the catalog compares names; null for any. A
      *                  name a deleted ref held and a later ref took matches both: {@code from} tells them apart.
      * @param subject   an id: only the records about that object, by their {@code object_id}, and the ref records
      *                  whose ref is that id or whose tables name it, by their {@code subject_ids} (backlog 169); null

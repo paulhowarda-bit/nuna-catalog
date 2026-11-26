@@ -1,0 +1,17 @@
+Breaks: A writer through a branch grant only is vended write on the whole table, main's files included.
+Module: catalog-server
+Test: RefReadsTest#aBranchOnlyWriterCommitsThroughItsBranchAndWritesOnlyBeneathItsPlace
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+index af075ed5..1a682f1a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+@@ -331,7 +331,7 @@ class Guard {
+         if (!throughRef.allowed()) {
+             return Writes.NONE;
+         }
+-        return throughMain.allowed() ? Writes.ALL : Writes.BRANCH;
++        return Writes.ALL;
+     }
+ 
+     private boolean allows(RequestContext request, Target target, Securable named, Operation operation,

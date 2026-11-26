@@ -2,10 +2,10 @@ Breaks: any worker completes a purge another worker claimed.
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$CatalogObjects#purgeIsClaimedThenCompleted
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
-index 0ce21608..9c340c82 100644
+index 754f74e6..cabd2a8d 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
-@@ -261,9 +261,6 @@ final class SqlObjects {
+@@ -272,9 +272,6 @@ final class SqlObjects {
              if (locked.isEmpty() || locked.get().claimant() == null) {
                  return new WriteResult.Missing(WriteResult.Subject.OBJECT);
              }
@@ -14,4 +14,4 @@ index 0ce21608..9c340c82 100644
 -            }
              update(connection, "UPDATE catalog_object SET state = 'PURGED', purge_claimant = NULL WHERE id = ?", objectId);
              update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
-             update(connection, "DELETE FROM row_column_rule WHERE table_id = ?", objectId);
+             update(connection, "DELETE FROM ref_grant WHERE securable_id = ?", objectId);

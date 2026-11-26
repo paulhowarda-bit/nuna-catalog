@@ -3,15 +3,15 @@ Module: catalog-security
 Test: AuthorizerTest#aGrantOnAChildDoesNotReachUpOrAcross+aBatchCheckGivesEachTargetOnlyTheGrantsOnItsOwnChain
 
 diff --git a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
-index 7eb5785..1118b69 100644
+index 1d3f21bc..6dc77ae8 100644
 --- a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
 +++ b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
-@@ -185,7 +185,7 @@ public final class Authorizer {
+@@ -265,7 +265,7 @@ public final class Authorizer {
          Operation operation = request.operation();
          Privilege needed = operation.privilege();
          boolean granted = (grantAdmin && Privilege.MANAGE_GRANTS.implies(needed))
--                || held.stream().filter(g -> chain.contains(g.grant().securable()))
-+                || held.stream().filter(g -> true)
+-                || held.stream().filter(g -> chain.contains(g.grant().securable()) && g.grant().holdsOn(request.ref()))
++                || held.stream().filter(g -> g.grant().holdsOn(request.ref()))
                          .flatMap(g -> known(g).stream())
                          .anyMatch(p -> p.implies(needed));
          if (!granted) {

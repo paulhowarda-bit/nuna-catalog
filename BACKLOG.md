@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**37 open:** 8 S, 13 M, 10 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**36 open:** 8 S, 13 M, 9 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -26,7 +26,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
-| [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [151](backlog/151.md) | L | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150 | 2026-11-22 |
 | [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
@@ -1231,29 +1230,6 @@ Fixed on branch `worktree-overnight-fix-2026-11-24-catalog-tests-engines`: `imag
 tables with `format-version` 2, as `pyiceberg_matrix.py` does for the tables PyIceberg writes. Not run: the engine
 matrix is overnight only, so the next overnight run checks it.
 
-### 113. Grants that name a branch (later, D33)
-
-- Decided: 2026-11-20, D33
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-security/ catalog-server/src/main/java/nuna/catalog/server/governance/
-- Effort: L, a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites
-
-Item 26's design (2026-11-20) builds branches with a table's grants holding on every ref (its choice 12), so whoever
-may write a table on a branch may also write it on main. A grant that names a branch would let a group write on `dev`
-without writing main, which changes D18's model (grants to groups on catalog objects) on all four stores.
-
-Paul put it off on 2026-11-20 (D33, amended: "No, later"): it is not part of the branches milestone. Start it only
-when Paul asks.
-
-Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
-every ref, the governance routes and the console show the branch, and a test on each store shows it.
-
-From the security review of 2026-11-22 (finding 11, low, recorded by item 105): a branch's vended write credentials
-cover the table's whole prefix, main's files included, so a group allowed to write only on `dev` could still write
-main's files with them. A grant that names a branch needs credentials scoped to the branch rather than the table's
-whole prefix; the catalog marks only a branch's metadata files (`<version>-<uuid>.branch-<ref id>.metadata.json`), so
-the engines' data and manifest files would need a place of the branch's own too.
-
 ### 118. Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20)
 
 - Decided: 2026-11-21, D20
@@ -2267,6 +2243,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [108](backlog/108.md) | Cleanup protects every ref, and the worker warns of and ends expired branches (item 26) | done | 2026-11-25 |
 | [110](backlog/110.md) | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | done | 2026-11-23 |
 | [111](backlog/111.md) | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | done | 2026-11-25 |
+| [113](backlog/113.md) | Grants that name a branch (D33) | done | 2026-11-25 |
 | [114](backlog/114.md) | Run a table's maintenance now, from the console, outside the cleanup window too | done | 2026-11-22 |
 | [115](backlog/115.md) | Row filters and column masks stored in the catalog, served to Trino (D20) | done | 2026-11-24 |
 | [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |

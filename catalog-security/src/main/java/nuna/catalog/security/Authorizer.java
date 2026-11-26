@@ -32,6 +32,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * (inheritance covers objects created later). The deployment's grant-admin groups hold
  * {@code manage-grants} on every catalog. There is no DENY and no superuser.
  *
+ * <p>A request is made through a ref: main, a branch or a tag (D33). A grant that names a branch counts only for
+ * requests through that branch (backlog 113); every other grant counts through every ref. A request that names no
+ * ref is through main.
+ *
  * <p>Three governance rules then apply, in this order, to tables and views:
  * <ol>
  *   <li>D27: a table without its own classification, in a regulated area (the table, a namespace above
@@ -86,7 +90,17 @@ public final class Authorizer {
         }
     }
 
-    public record Request(Target target, Operation operation) {
+    /** @param ref the branch or tag the request is through; empty for main */
+    public record Request(Target target, Operation operation, Optional<UUID> ref) {
+
+        public Request {
+            Objects.requireNonNull(ref, "ref");
+        }
+
+        /** A request through main. */
+        public Request(Target target, Operation operation) {
+            this(target, operation, Optional.empty());
+        }
     }
 
     public enum Reason {
@@ -167,7 +181,12 @@ public final class Authorizer {
     }
 
     public Decision decide(Caller caller, Target target, Operation operation) {
-        return decide(caller, List.of(new Request(target, operation))).getFirst();
+        return decide(caller, target, operation, Optional.empty());
+    }
+
+    /** @param ref the branch or tag the request is through; empty for main */
+    public Decision decide(Caller caller, Target target, Operation operation, Optional<UUID> ref) {
+        return decide(caller, List.of(new Request(target, operation, ref))).getFirst();
     }
 
     /** The batch check: one decision per request, in order (D18, D19). */
@@ -195,15 +214,24 @@ public final class Authorizer {
         return decisions;
     }
 
-    /** Every privilege {@code groups} hold on the target through grants on it or above it. */
+    /** Every privilege {@code groups} hold on the target through main, by grants on it or above it. */
     public Set<Privilege> privileges(Set<String> groups, Target target) {
+        return privileges(groups, target, Optional.empty());
+    }
+
+    /**
+     * Every privilege {@code groups} hold on the target through {@code ref} (empty for main), by grants on it or above
+     * it that hold on that ref.
+     */
+    public Set<Privilege> privileges(Set<String> groups, Target target, Optional<UUID> ref) {
         List<Securable> chain = chain(target);
         Set<Privilege> privileges = new HashSet<>();
         if (groups.stream().anyMatch(separation.grantAdminGroups()::contains)) {
             privileges.add(Privilege.MANAGE_GRANTS);
         }
         if (!groups.isEmpty()) {
-            grants.grantsFor(Set.copyOf(chain), groups).forEach(g -> known(g).ifPresent(privileges::add));
+            grants.grantsFor(Set.copyOf(chain), groups).stream().filter(g -> g.grant().holdsOn(ref))
+                    .forEach(g -> known(g).ifPresent(privileges::add));
         }
         return privileges;
     }
@@ -237,12 +265,13 @@ public final class Authorizer {
         Operation operation = request.operation();
         Privilege needed = operation.privilege();
         boolean granted = (grantAdmin && Privilege.MANAGE_GRANTS.implies(needed))
-                || held.stream().filter(g -> chain.contains(g.grant().securable()))
+                || held.stream().filter(g -> chain.contains(g.grant().securable()) && g.grant().holdsOn(request.ref()))
                         .flatMap(g -> known(g).stream())
                         .anyMatch(p -> p.implies(needed));
         if (!granted) {
             return new Decision.Denied(Reason.NO_PRIVILEGE, needed, caller.subject().id() + " holds no privilege that gives "
-                    + needed.wireName() + " for " + operation.name());
+                    + needed.wireName() + " for " + operation.name()
+                    + (request.ref().isPresent() ? " on this branch or tag" : ""));
         }
         if (!(request.target() instanceof Target.TableOrView(CatalogObject object))) {
             return ALLOWED;

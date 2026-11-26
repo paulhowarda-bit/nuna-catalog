@@ -3,15 +3,15 @@ Module: catalog-server
 Test: GovernanceRoutesTest#loadsCarryTheEffectiveLabelsAndALabelChangeChangesTheETag
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java b/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java
-index 4ddb81e..826312c 100644
+index 77ba2772..12620f4a 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java
-@@ -37,7 +37,7 @@ final class ETags {
+@@ -46,7 +46,7 @@ final class ETags {
          new TreeMap<>(labels).forEach((label, value) -> labelled.append(label.length()).append(':').append(label)
                  .append(value.length()).append(':').append(value));
          String canonical = String.join("\n", metadataLocation, refsOnly ? "refs" : "all",
 -                referencedBy == null ? "" : referencedBy, credentialEpoch, labelled)
 +                referencedBy == null ? "" : referencedBy, credentialEpoch)
-                 + ref.map(id -> "\nref:" + id).orElse("");
+                 + ref.map(id -> "\nref:" + id).orElse("")
+                 + (places.isEmpty() ? "" : "\nplaces:" + new TreeMap<>(places));
          try {
-             byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));

@@ -57,7 +57,23 @@ public final class MetadataViews {
      */
     public String loadTable(String location, String json, boolean refsOnly, Map<String, String> config,
                             List<StorageCredential> credentials, Map<String, String> labels) {
+        return loadTable(location, json, refsOnly, config, credentials, labels, Map.of());
+    }
+
+    /**
+     * {@link #loadTable(String, String, boolean, Map, List, Map)} with {@code properties} set in the table metadata it
+     * answers, for this answer only: the file and the cached copy are as they were. A writer on one branch only is
+     * told this way to write its data and manifests beneath the branch's place (backlog 113); a commit sends updates,
+     * not properties, so they never reach the table.
+     */
+    public String loadTable(String location, String json, boolean refsOnly, Map<String, String> config,
+                            List<StorageCredential> credentials, Map<String, String> labels,
+                            Map<String, String> properties) {
         TableMetadata metadata = table(location, json, refsOnly);
+        if (!properties.isEmpty()) {
+            metadata = TableMetadata.buildFrom(metadata).setProperties(properties).discardChanges()
+                    .withMetadataLocation(location).build();
+        }
         return LoadTableResponseParser.toJson(LoadTableResponse.builder()
                 .withTableMetadata(metadata)
                 .addAllConfig(new HashMap<>(config))

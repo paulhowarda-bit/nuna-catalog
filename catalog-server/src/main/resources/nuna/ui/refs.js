@@ -265,9 +265,11 @@ export function refNote(r, what) {
     governance: [h('b', null, 'Governance holds on every ref.'), ' Holds, freezes, classifications and the regulated area are main\'s '
       + 'record of the table, by its id: what you see here binds ', chip, ' too, and a merge is judged by it.'],
     access: [h('b', null, 'Governance and grants hold on every ref.'), ' They are main\'s record of the object, by its id: '
-      + 'what you see here binds ', chip, ' too, and whoever may write it on main may write it there. A grant cannot name a branch.'],
-    grants: [h('b', null, 'Grants hold on every ref.'), ' Whoever may write this table on main may write it on ', chip,
-      ', and no one else: a grant cannot name a branch.'],
+      + 'what you see here binds ', chip, ' too, and whoever may write it on main may write it there. '
+      + (tag ? 'A tag takes no write.' : 'A grant of write or modify may also name one branch, and holds on it alone.')],
+    grants: tag ? [h('b', null, 'Grants hold on every ref.'), ' Reading through ', chip, ' needs what reading main needs; a tag takes no write.']
+      : [h('b', null, 'Grants hold on every ref.'), ' Whoever may write this table on main may write it on ', chip,
+        ', and so may a group granted write or modify on ', code('@' + name), ' alone. Such a grant shows here as ', code('on @' + name + ' only'), '.'],
     audit: [h('b', null, 'This is the table\'s whole audit trail.'), ' Records of reads and commits through a ref name it, as ',
       code('on @' + name), ' or ', code('through @' + name), '.'],
     props: tag ? [h('b', null, 'Read-only through a tag.'), ' These are the properties in the metadata file the tag keeps.']

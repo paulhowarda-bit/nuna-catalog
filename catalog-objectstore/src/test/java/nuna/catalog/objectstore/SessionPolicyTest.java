@@ -47,6 +47,39 @@ class SessionPolicyTest {
     }
 
     @Test
+    @DisplayName("a writer on one branch only reads the whole table but writes only beneath the branch's place,"
+            + " with the profile's key there (backlog 113)")
+    void aBranchWriterWritesOnlyBeneathItsPlace() {
+        String branch = "branches/0b4f6c1e-6a3e-4b8e-9d2a-5f1c7e2a9b30";
+
+        assertThat(SessionPolicy.forTable(ORDERS, Access.READ_WRITE, "us-east-1", NO_KEY, Optional.of(branch)))
+                .isEqualTo("{\"Version\":\"2012-10-17\",\"Statement\":["
+                + "{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::lake/t/orders/*\"},"
+                + "{\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:AbortMultipartUpload\","
+                + "\"s3:ListMultipartUploadParts\"],\"Resource\":\"arn:aws:s3:::lake/t/orders/" + branch + "/*\"},"
+                + "{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"arn:aws:s3:::lake\","
+                + "\"Condition\":{\"StringLike\":{\"s3:prefix\":\"t/orders/*\"}}}]}");
+        assertThat(SessionPolicy.forTable(ORDERS, Access.READ_WRITE, "us-east-1", Optional.of(KEY),
+                Optional.of(branch))).isEqualTo("{\"Version\":\"2012-10-17\",\"Statement\":["
+                + "{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::lake/t/orders/*\"},"
+                + "{\"Effect\":\"Allow\",\"Action\":[\"s3:AbortMultipartUpload\",\"s3:ListMultipartUploadParts\"],"
+                + "\"Resource\":\"arn:aws:s3:::lake/t/orders/" + branch + "/*\"},"
+                + "{\"Effect\":\"Allow\",\"Action\":\"s3:PutObject\",\"Resource\":\"arn:aws:s3:::lake/t/orders/" + branch
+                + "/*\",\"Condition\":{\"StringEquals\":{\"s3:x-amz-server-side-encryption\":\"aws:kms\","
+                + "\"s3:x-amz-server-side-encryption-aws-kms-key-id\":\"" + KEY + "\"}}},"
+                + "{\"Effect\":\"Allow\",\"Action\":[\"kms:GenerateDataKey\",\"kms:Decrypt\"],\"Resource\":\"" + KEY
+                + "\"},"
+                + "{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"arn:aws:s3:::lake\","
+                + "\"Condition\":{\"StringLike\":{\"s3:prefix\":\"t/orders/*\"}}}]}");
+        assertThatThrownBy(() -> SessionPolicy.forTable(ORDERS, Access.READ, "us-east-1", NO_KEY, Optional.of(branch)))
+                .as("a reader writes nowhere").isInstanceOf(IllegalArgumentException.class);
+        for (String bad : List.of("branches/*", "../main", "branches/", "", "a\"b", "Branches/x")) {
+            assertThatThrownBy(() -> SessionPolicy.forTable(ORDERS, Access.READ_WRITE, "us-east-1", NO_KEY,
+                    Optional.of(bad))).as(bad).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
     @DisplayName("with a KMS key, read access may decrypt but neither write nor generate data keys")
     void readersOnlyDecrypt() {
         String policy = SessionPolicy.forTable(ORDERS, Access.READ, "us-east-1", Optional.of(KEY));
@@ -98,6 +131,8 @@ class SessionPolicyTest {
         assertThat(SessionPolicy.forTable(assigned, Access.READ_WRITE, "us-east-1", NO_KEY).length()).isLessThan(500);
         assertThat(SessionPolicy.forTable(assigned, Access.READ_WRITE, "us-east-1", Optional.of(KEY)).length())
                 .isLessThan(1000);
+        assertThat(SessionPolicy.forTable(assigned, Access.READ_WRITE, "us-east-1", Optional.of(KEY),
+                Optional.of("branches/" + UUID.randomUUID())).length()).as("a writer on one branch only").isLessThan(1300);
 
         String longSegment = "x".repeat(1000);
         ObjectLocation tooLong = ObjectLocation.parse("s3://lake/" + longSegment);

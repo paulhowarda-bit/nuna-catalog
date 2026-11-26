@@ -2,15 +2,15 @@ Breaks: cached credentials are shared by every caller, so one caller is handed a
 Module: catalog-server
 Test: VendingRouteTest#auditedBeforeHandOutAndFailsClosed
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-index 9289da3..a781cd6 100644
+index 6766651b..a5f3f434 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-@@ -88,7 +88,7 @@ public final class StsCredentialVending implements CredentialVending {
+@@ -96,7 +96,7 @@ public final class StsCredentialVending implements CredentialVending {
          Access access = request.write() ? Access.READ_WRITE : Access.READ;
          String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
          CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
--                caller.principal().id(), subject, caller.engine());
-+                "any", "any", caller.engine());
+-                caller.principal().id(), subject, caller.engine(), request.writeUnder());
++                "any", "any", caller.engine(), request.writeUnder());
          AtomicBoolean minted = new AtomicBoolean();
          VendedCredentials credentials;
          try {

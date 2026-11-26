@@ -1,0 +1,17 @@
+Breaks: A grant may name a tag, which takes no write.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Grants#aGrantMayNameABranch
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java
+index 03dbe161..deb5be44 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGrants.java
+@@ -77,7 +77,7 @@ final class SqlGrants {
+             if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", grant.catalogId())) {
+                 return new WriteResult.Missing(WriteResult.Subject.CATALOG);
+             }
+-            if (!exists(connection, "SELECT 1 FROM ref WHERE id = ? AND catalog_id = ? AND kind = 'BRANCH' FOR UPDATE",
++            if (!exists(connection, "SELECT 1 FROM ref WHERE id = ? AND catalog_id = ? FOR UPDATE",
+                     grant.branch().get(), grant.catalogId())) {
+                 return new WriteResult.Missing(WriteResult.Subject.REF);
+             }

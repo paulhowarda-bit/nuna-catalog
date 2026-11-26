@@ -13,17 +13,19 @@ import java.util.List;
  *
  * <p>A type whose current version added fields to the one before still writes the one before whenever all of those
  * fields would be null, so a reader that knows only the earlier version reads every record it could have read before.
- * A ref record made with a description is version 2; every other ref record, version 1 (backlog 167).
+ * A ref record made with a description is version 2; every other ref record, version 1 (backlog 167). A grant that
+ * names a branch is version 2; a grant on every ref, version 1. A credential that writes one branch's prefix only is
+ * version 2; one that writes its whole table, version 1 (backlog 113).
  */
 public enum EventType {
     COMMIT("commit", 1, Commit.class),
-    GRANT_CHANGE("grant", 1, GrantChange.class),
+    GRANT_CHANGE("grant", 2, GrantChange.class, "branch", "branchId"),
     DROP("drop", 1, Drop.class),
     BREAK_GLASS("break-glass", 1, BreakGlass.class),
     OBJECT_READ("read", 1, ObjectRead.class),
     DENIAL("denial", 1, Denial.class),
     AUTH_FAILURE("auth-failure", 1, AuthFailure.class),
-    CREDENTIAL_ISSUE("credential-issue", 1, CredentialIssue.class),
+    CREDENTIAL_ISSUE("credential-issue", 2, CredentialIssue.class, "writePrefix"),
     NAMESPACE_CHANGE("namespace", 1, NamespaceChange.class),
     RENAME("rename", 1, Rename.class),
     ENGINE_CHANGE("engine", 1, EngineChange.class),
