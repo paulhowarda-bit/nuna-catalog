@@ -400,17 +400,18 @@ export function drFreeze(target, frozen, reload) {
 /**
  * Export: the object's pointer, its metadata and the commit journal, as one JSON file; needs select. Read through a catalog
  * ref, it is the ref's: its metadata and the journal as it reads it, in a file named {path}@{ref} (item 172).
+ * `objectId` answers the object's id as the page reads it: through a ref, the one the ref holds under that name, which
+ * main may have dropped, or replaced with another of the same name, since.
  */
-export async function exportDialog(target) {
+export async function exportDialog(target, objectId) {
   const out = h('div', {class: 'dlg-out'});
   const at = target.ref ? '@' + target.ref : '';
   const dlg = openDialog(`Export ${lastWord(target)}${at}`, h('div', null,
-    h('p', null, (target.ref ? `The metadata, every snapshot and ref, and the commit journal of this ${target.kind} as ${at} reads it,`
+    h('p', null, (target.ref ? `The metadata, every snapshot and snapshot ref, and the commit journal of this ${target.kind} as ${at} reads it,`
       : 'The current metadata, every snapshot and ref, and the catalog\'s commit journal for this ' + target.kind + ',')
       + ' as one JSON file. The data files stay where they are; a restore registers it again from this file.'), out), {wide: true});
   await load(out, async () => {
-    const {g} = await governanceOf(target);
-    const x = await api.exportObject(target.catalog, g.target.id, target.ref);
+    const x = await api.exportObject(target.catalog, await objectId(), target.ref);
     const json = api.toJson(x, 2);
     const url = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
     dlg.addEventListener('close', () => URL.revokeObjectURL(url));

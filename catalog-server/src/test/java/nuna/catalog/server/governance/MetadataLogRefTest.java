@@ -81,6 +81,8 @@ class MetadataLogRefTest {
     private final CatalogObject staff = new CatalogObject(catalog.id(), staffId, hr.id(), new Name("staff", "staff"),
             CatalogObject.Kind.TABLE, CatalogObject.State.ACTIVE, Optional.empty(), Optional.empty(),
             "s3://gate/" + staffId, Optional.empty());
+    /** Staff as main has it now: active, unless a test drops it. */
+    private CatalogObject staffNow = staff;
     private final List<GrantRecord> grants = List.of(new GrantRecord(new Grant(catalog.id(),
             new Securable(Securable.Kind.NAMESPACE, hr.id()), "readers", Privilege.SELECT.wireName()), "test",
             Instant.EPOCH));
@@ -305,6 +307,19 @@ class MetadataLogRefTest {
     }
 
     @Test
+    void aTableMainHasDroppedSinceIsExportedThroughTheBranchByItsId() {
+        staffNow = new CatalogObject(catalog.id(), staffId, hr.id(), staff.name(), CatalogObject.Kind.TABLE,
+                CatalogObject.State.DROPPED, Optional.of(NOW.minus(Duration.ofHours(1))),
+                Optional.of(NOW.plus(Duration.ofDays(7))), staff.locationRoot(), Optional.empty());
+
+        JsonNode export = export("dev");
+
+        assertThat(export.get("object").get("state").asString()).isEqualTo("dropped");
+        assertThat(export.get("pointer").get("metadata-location").asString()).isEqualTo("dev-3");
+        assertThat(locations(export)).containsExactly("main-1", "main-2", "main-3", "dev-1", "dev-2", "dev-3");
+    }
+
+    @Test
     void anExportOnMainIsMainsWhateverTheRefsDid() {
         JsonNode export = export(null);
 
@@ -417,7 +432,7 @@ class MetadataLogRefTest {
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "findCatalog" -> Optional.of(catalog).filter(c -> c.normalizedName().equals(args[0]));
                     case "readNamespace" -> Optional.of(hr).filter(ns -> ns.id().equals(args[0]));
-                    case "readObject" -> Optional.of(staff).filter(o -> o.id().equals(args[0]));
+                    case "readObject" -> Optional.of(staffNow).filter(o -> o.id().equals(args[0]));
                     case "grantsFor" -> grants.stream()
                             .filter(g -> ((Set<Securable>) args[0]).contains(g.grant().securable())
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
