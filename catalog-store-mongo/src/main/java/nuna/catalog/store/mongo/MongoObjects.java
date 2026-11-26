@@ -12,6 +12,7 @@ import static nuna.catalog.store.mongo.Docs.uuid;
 import static nuna.catalog.store.mongo.Docs.uuidList;
 import static nuna.catalog.store.mongo.Docs.uuids;
 import static nuna.catalog.store.mongo.MongoCatalogStore.ATTRIBUTE;
+import static nuna.catalog.store.mongo.MongoCatalogStore.CATALOG;
 import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.REF_GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.RULE;
@@ -303,6 +304,9 @@ final class MongoObjects {
      * Claims a dropped object's purge for {@code claimant}. The claim writes the object, so a hold or DR
      * freeze placed on the object at the same moment conflicts with it; holds and freezes above the
      * object are read in the same snapshot, as a drop reads holds, and so are the refs whose cut names it.
+     * The claim marks the namespaces above the object and its catalog too (backlog 171), which a hold or
+     * freeze placed on one of them marks, so one placed meanwhile conflicts with the claim: either commits
+     * first and the other, run again, reads its write.
      * A ref made from another marks its source as it inserts itself, so it either commits before the
      * source's deletion, which this snapshot then shows, or conflicts with it and finds its source gone.
      */
@@ -331,7 +335,12 @@ final class MongoObjects {
             if (!MongoRefs.referenced(tx.database, tx.session, List.of(uuid(objectId))).isEmpty()) {
                 return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
             }
+            BsonDocument catalog = tx.find(CATALOG, byId(object.get().get("catalogId"))).orElseThrow();
+            List<BsonDocument> namespaces = Guards.seeNamespaces(tx, uuidList(object.get().get("namespacePath")));
+            tx.see(catalog);
             tx.see(object.get());
+            tx.mark(CATALOG, catalog);
+            namespaces.forEach(namespace -> tx.mark(NAMESPACE, namespace));
             tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
                     new BsonDocument("state", new BsonString(PURGING)).append("purgeClaimant", new BsonString(claimant))
                             .append("clock", tx.clock())));

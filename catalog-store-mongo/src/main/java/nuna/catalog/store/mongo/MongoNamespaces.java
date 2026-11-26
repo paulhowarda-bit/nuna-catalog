@@ -41,11 +41,14 @@ import org.bson.BsonValue;
  * Namespaces. A namespace document embeds its properties and the ids of the namespaces above it.
  * A new namespace marks its parent namespace, so a concurrent drop of the parent conflicts with
  * it. A catalog is never removed, so a top-level namespace does not mark it, and creates under
- * one catalog do not conflict. The drop of a namespace marks its parent, catalog included, so a
- * namespace created later under the same name stamps higher than the drop. A drop is refused while
+ * one catalog do not conflict. The drop of a namespace marks its parent namespace, if any, and its
+ * catalog, so a namespace created later under the same name stamps higher than the drop. A drop is refused while
  * a ref's cut names a table or view of the namespace, in any state, read in the drop's snapshot as
  * a purge claim reads refs, since a read through the ref takes its governance from the namespace
- * (D33, backlog 157).
+ * (D33, backlog 157). A drop also sets the catalog's {@code trimmed} to its stamp, as a removal from
+ * refs does: that write conflicts with a ref create's transaction, which marks the catalog, and tells
+ * a create whose cut was read before the drop to cut again (backlog 158), so a ref never names a
+ * table whose namespace a drop took.
  */
 final class MongoNamespaces {
 
@@ -168,11 +171,15 @@ final class MongoNamespaces {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }
             UUID parentId = uuid(namespace.get("parentId"));
-            String parentCollection = parentId.equals(catalogId) ? CATALOG : NAMESPACE;
-            Optional<BsonDocument> parent = tx.find(parentCollection, byId(uuid(parentId)));
+            Optional<BsonDocument> parent = parentId.equals(catalogId) ? Optional.empty()
+                    : tx.find(NAMESPACE, byId(uuid(parentId)));
+            BsonDocument catalog = tx.find(CATALOG, byId(uuid(catalogId))).orElseThrow();
             parent.ifPresent(tx::see);
+            tx.see(catalog);
             tx.see(namespace);
-            parent.ifPresent(doc -> tx.mark(parentCollection, doc));
+            parent.ifPresent(doc -> tx.mark(NAMESPACE, doc));
+            tx.collection(CATALOG).updateOne(tx.session, byId(uuid(catalogId)), new BsonDocument("$set",
+                    new BsonDocument("clock", tx.clock()).append("trimmed", tx.clock())));
             tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(namespaceId)));
             tx.collection(REF_GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(namespaceId)));
             tx.collection(ATTRIBUTE).deleteMany(tx.session, new BsonDocument("targetId", uuid(namespaceId)));

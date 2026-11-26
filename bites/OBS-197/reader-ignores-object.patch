@@ -1,0 +1,28 @@
+Breaks: the audit table's reader gives every object's records when asked for one object's.
+Module: catalog-audit-tables
+Test: EventsReaderTest#anObjectsRecordsAreThoseWithItsIdWhateverItWasCalled
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+index 6eeb5549..f7bf4fcd 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+@@ -283,9 +283,6 @@ public final class EventsReader implements AutoCloseable {
+         if (query.principal() != null) {
+             filter = Expressions.and(filter, Expressions.equal("principal", query.principal()));
+         }
+-        if (query.objectId() != null) {
+-            filter = Expressions.and(filter, Expressions.equal("object_id", query.objectId()));
+-        }
+ 
+         // The rows kept, the oldest at the head, so a newer row can push it out.
+         PriorityQueue<Candidate> kept = new PriorityQueue<>(NEWEST_FIRST.reversed());
+@@ -362,9 +359,6 @@ public final class EventsReader implements AutoCloseable {
+         if (query.principal() != null && !query.principal().equals(record.getField("principal"))) {
+             return false;
+         }
+-        if (query.objectId() != null && !query.objectId().equals(record.getField("object_id"))) {
+-            return false;
+-        }
+         if (query.from() != null && row.time() < micros(query.from())) {
+             return false;
+         }

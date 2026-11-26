@@ -397,22 +397,28 @@ export function drFreeze(target, frozen, reload) {
 
 // ---- export ----
 
-/** Export: the object's pointer, its metadata and the commit journal, as one JSON file; needs select. */
-export async function exportDialog(target) {
+/**
+ * Export: the object's pointer, its metadata and the commit journal, as one JSON file; needs select. Read through a catalog
+ * ref, it is the ref's: its metadata and the journal as it reads it, in a file named {path}@{ref} (item 172).
+ * `objectId` answers the object's id as the page reads it: through a ref, the one the ref holds under that name, which
+ * main may have dropped, or replaced with another of the same name, since.
+ */
+export async function exportDialog(target, objectId) {
   const out = h('div', {class: 'dlg-out'});
-  const dlg = openDialog(`Export ${lastWord(target)}`, h('div', null,
-    h('p', null, 'The current metadata, every snapshot and ref, and the catalog\'s commit journal for this ' + target.kind
-      + ', as one JSON file. The data files stay where they are; a restore registers it again from this file.'), out), {wide: true});
+  const at = target.ref ? '@' + target.ref : '';
+  const dlg = openDialog(`Export ${lastWord(target)}${at}`, h('div', null,
+    h('p', null, (target.ref ? `The metadata, every snapshot and snapshot ref, and the commit journal of this ${target.kind} as ${at} reads it,`
+      : 'The current metadata, every snapshot and snapshot ref, and the catalog\'s commit journal for this ' + target.kind + ',')
+      + ' as one JSON file. The data files stay where they are; a restore registers it again from this file.'), out), {wide: true});
   await load(out, async () => {
-    const {g} = await governanceOf(target);
-    const x = await api.exportObject(target.catalog, g.target.id);
+    const x = await api.exportObject(target.catalog, await objectId(), target.ref);
     const json = api.toJson(x, 2);
     const url = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
     dlg.addEventListener('close', () => URL.revokeObjectURL(url));
     const preview = Object.assign({}, x, {metadata: x.metadata ? '… the table\'s metadata, in the file' : x.metadata,
       journal: Array.isArray(x.journal) && x.journal.length > 3 ? [...x.journal.slice(0, 3), `… ${x.journal.length - 3} more in the file`] : x.journal});
     return [jsonPre(preview), h('div', {class: 'dlg-acts'},
-      h('a', {class: 'btn sm primary', href: url, download: `${target.catalog}.${dotted(target)}.export.json`}, icon('down'), 'Download the file'),
+      h('a', {class: 'btn sm primary', href: url, download: `${target.catalog}.${dotted(target)}${at}.export.json`}, icon('down'), 'Download the file'),
       copyButton(json, 'Copy the JSON'))];
   });
 }
@@ -693,7 +699,10 @@ function feedRow(r) {
   return row;
 }
 
-/** An object's recent audit records, read back from the audit topic: needs manage-grants on it. */
+/**
+ * An object's recent audit records: from the audit table where the server has one, which holds every record the log
+ * does, otherwise from the audit topic (backlog 197). Needs manage-grants on it.
+ */
 export function auditTab(target, {title} = {}) {
   const feed = h('div', {class: 'feed', 'data-feed': ''});
   const status = h('p', {class: 'fine feed-status', role: 'status'});
@@ -711,9 +720,12 @@ export function auditTab(target, {title} = {}) {
     status.textContent = `${plural(shown, 'record')} shown, newest first. Reading the trail is itself audited.`;
   };
   const run = () => load(feed, async () => {
-    const body = await api.recentAudit(target, limit.value);
+    const asked = Number(limit.value);
+    const body = await api.recentAudit(target, asked);
     const records = body.records || [];
+    const fromTable = body.source === 'table';
     const w = body.window || {};
+    const t = body.table || {};
     const counts = {};
     for (const r of records) {
       const k = KIND_OF(String(r.type || '').replace(/^nuna\.catalog\./, ''));
@@ -727,7 +739,19 @@ export function auditTab(target, {title} = {}) {
       }}, label + ' ', h('span', {class: 'n'}, String(k === 'all' ? records.length : counts[k])))));
     const people = [...new Set(records.map(r => ((r.data || {}).actor || {}).principal).filter(Boolean))].sort();
     fill(who, h('option', {value: ''}, 'Anyone'), people.map(p => h('option', {value: p}, p)));
-    fill(windowBox, panel('How far back this goes', null, facts([
+    fill(windowBox, fromTable ? panel('How far back this goes', null, facts([
+      // Not complete: a full page may have older records behind it; a shorter one means the reader's scan budget ran
+      // out, which a larger page would not help.
+      ['Complete', body.complete ? 'Yes: every record about it is shown, up to about a minute ago.'
+        : [h('b', null, 'No.'), records.length < asked
+          ? ' Only the newest part of the audit table was searched: search the SIEM for the full trail.'
+          : asked < 200 ? ' There may be older records about it: show the latest 200, or search the SIEM for the full trail.'
+            : ' There may be older records about it: search the SIEM for the full trail.']],
+    ]), techDetails(facts([
+      ['Table', code(t.name || '')],
+      ['Last commit', t['committed-at'] ? at(t['committed-at']) : 'none yet'],
+    ]), h('p', {class: 'fine window'}, `Read from ${t.name} as of its last commit: its writer commits about once a minute.`)))
+    : panel('How far back this goes', null, facts([
       ['Complete', w.complete ? 'Yes: every record still kept is shown.'
         : [h('b', null, 'No.'), ' Older records may exist beyond the scanned window: search the SIEM for the full trail.']],
     ]), techDetails(facts([
@@ -737,7 +761,9 @@ export function auditTab(target, {title} = {}) {
     ]), h('p', {class: 'fine window'}, `Read from ${w.topic}, partition ${w.partition}, offsets ${w['from-offset']} to ${w['to-offset']}.`))));
     setTimeout(apply);
     return records.length ? records.map(feedRow)
-      : h('p', {class: 'muted feed-none'}, `No audit record about this ${target.kind} in the scanned window.`);
+      : h('p', {class: 'muted feed-none'}, !fromTable ? `No audit record about this ${target.kind} in the scanned window.`
+        : body.complete ? `No audit record about this ${target.kind}, up to about a minute ago.`
+          : `No audit record about this ${target.kind} in the newest part of the audit table.`);
   });
   who.addEventListener('change', apply);
   limit.addEventListener('change', run);

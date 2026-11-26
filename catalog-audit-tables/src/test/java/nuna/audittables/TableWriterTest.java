@@ -40,6 +40,8 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.IcebergGenerics;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
+import org.apache.iceberg.exceptions.ForbiddenException;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.types.Types;
@@ -51,7 +53,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The audit table writer (D23, amended 2026-11-20) against Kafka's own fake consumer and Iceberg's in-memory catalog:
  * it writes every record once with its offset, resumes after the last offset the table holds, writes no record twice
- * and skips none when a commit fails or a second writer races it, and leaves out the records of its own requests.
+ * and skips none when a commit fails or a second writer races it, and leaves out the records of its own requests; a
+ * table dropped under it is made again and filled from the topic, a refusal never makes it again.
  */
 class TableWriterTest {
 
@@ -73,6 +76,8 @@ class TableWriterTest {
     private final Map<Integer, List<ConsumerRecord<byte[], byte[]>>> log = new HashMap<>(Map.of(0, new ArrayList<>(),
             1, new ArrayList<>()));
     private final List<Running> running = new ArrayList<>();
+    /** How many times a writer's opener was called. */
+    private final AtomicInteger opened = new AtomicInteger();
 
     /** A writer and the fake consumer it reads through. */
     private record Running(TableWriter writer, MockConsumer<byte[], byte[]> consumer) {
@@ -127,8 +132,10 @@ class TableWriterTest {
 
     private Running start(int maxRows) {
         MockConsumer<byte[], byte[]> consumer = new MockConsumer<>("earliest");
-        TableWriter writer = new TableWriter(consumer, TOPIC, () -> EventsTable.open(catalog, NAMESPACE, TOPIC), WRITER,
-                INTERVAL, maxRows, clock);
+        TableWriter writer = new TableWriter(consumer, TOPIC, () -> {
+            opened.incrementAndGet();
+            return EventsTable.open(catalog, NAMESPACE, TOPIC);
+        }, WRITER, INTERVAL, maxRows, clock);
         List<TopicPartition> partitions = log.keySet().stream().map(p -> new TopicPartition(TOPIC, p)).toList();
         consumer.rebalance(partitions);
         Map<TopicPartition, Long> beginnings = new HashMap<>();
@@ -463,5 +470,65 @@ class TableWriterTest {
 
         assertThatThrownBy(start()::poll).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("snapshot expiry");
+    }
+
+    @Test
+    void aTableDroppedBetweenCommitsIsMadeAgainWithBothCommitsRecords() {
+        // Backlog 284: the catalog's database new under a running writer, or the table dropped.
+        Running writer = start();
+        List<Row> expected = new ArrayList<>();
+        expected.add(row(0, 0, send(0, read("alice"))));
+        expected.add(row(1, 0, send(1, read("bob"))));
+        writer.poll();
+        clock.advance(INTERVAL);
+        writer.poll();
+        assertThat(rows()).hasSize(2);
+        UUID dropped = catalog.loadTable(EVENTS).uuid();
+        catalog.dropTable(EVENTS, false);
+
+        expected.add(row(0, 1, send(0, read("carol"))));
+        writer.poll();
+        clock.advance(INTERVAL);
+        assertThatThrownBy(writer::poll).isInstanceOf(NoSuchTableException.class);
+
+        // The new table holds no offsets: the writer goes back to the start of every partition.
+        redeliver(writer);
+        writer.poll();
+        clock.advance(INTERVAL);
+        writer.poll();
+
+        assertThat(catalog.loadTable(EVENTS).uuid()).as("a new table").isNotEqualTo(dropped);
+        assertThat(rows()).containsExactlyInAnyOrderElementsOf(expected);
+        assertThat(current().summary()).containsEntry(EventsTable.OFFSETS + TOPIC, "0:2,1:1");
+        assertThat(opened).hasValue(2);
+    }
+
+    @Test
+    void aRefusalIsThrownAndNeverMakesTheTableAgain() {
+        // Backlog 284: a 403 is a revoked grant, which a new table would hide.
+        Running writer = start();
+        List<Row> expected = new ArrayList<>();
+        expected.add(row(0, 0, send(0, read("alice"))));
+        writer.poll();
+        clock.advance(INTERVAL);
+        writer.poll();
+        UUID table = catalog.loadTable(EVENTS).uuid();
+        catalog.refuse(true);
+
+        expected.add(row(0, 1, send(0, read("bob"))));
+        writer.poll();
+        clock.advance(INTERVAL);
+        assertThatThrownBy(writer::poll).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(writer::poll).as("read again, still refused").isInstanceOf(ForbiddenException.class);
+        assertThat(opened).as("the table is not opened again").hasValue(1);
+
+        catalog.refuse(false);
+        redeliver(writer);
+        writer.poll();
+        clock.advance(INTERVAL);
+        writer.poll();
+        assertThat(catalog.loadTable(EVENTS).uuid()).isEqualTo(table);
+        assertThat(rows()).containsExactlyInAnyOrderElementsOf(expected);
+        assertThat(opened).hasValue(1);
     }
 }

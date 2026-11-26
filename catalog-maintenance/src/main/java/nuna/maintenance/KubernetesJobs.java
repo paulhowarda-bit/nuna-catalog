@@ -72,24 +72,24 @@ final class KubernetesJobs implements Compactor {
             + "spark-submit --master 'local[2]' --driver-memory \"$NUNA_DRIVER_MEMORY\" /tmp/compact.py";
     /**
      * The trust store Spark's driver uses with a storage CA bundle, and its password: it holds only public certificates,
-     * but keytool needs one.
+     * but keytool needs one, so the script makes one as it starts ({@code $tp}): no fixed value sits in the Job.
      */
     private static final String TRUST_STORE = "/tmp/storage-trust.p12";
-    private static final String TRUST_PASSWORD = "nuna-storage-trust";
     /**
      * {@link #COMMAND} with a storage CA bundle: keytool, quiet unless it fails, copies the image's JDK CAs into
      * {@link #TRUST_STORE} and adds each certificate of the bundle; then Spark's driver JVM trusts that store. The JVM
      * options go on spark-submit's command line: the driver is already running when the script builds its session.
      */
-    private static final String TRUSTING_COMMAND = "keytool_quiet() { \"$JAVA_HOME/bin/keytool\" \"$@\" -noprompt"
+    private static final String TRUSTING_COMMAND = "tp=$(cat /proc/sys/kernel/random/uuid);"
+            + " keytool_quiet() { \"$JAVA_HOME/bin/keytool\" \"$@\" -noprompt"
             + " > /tmp/keytool.log 2>&1 || { cat /tmp/keytool.log >&2; exit 1; }; };"
             + " keytool_quiet -importkeystore -srckeystore \"$JAVA_HOME/lib/security/cacerts\" -srcstorepass changeit"
-            + " -destkeystore " + TRUST_STORE + " -deststoretype PKCS12 -deststorepass " + TRUST_PASSWORD + ";"
+            + " -destkeystore " + TRUST_STORE + " -deststoretype PKCS12 -deststorepass \"$tp\";"
             + " for ca in " + STORAGE_CA + "/*.pem; do keytool_quiet -importcert -alias \"nuna-storage-$(basename \"$ca\""
-            + " .pem)\" -file \"$ca\" -keystore " + TRUST_STORE + " -storepass " + TRUST_PASSWORD + "; done;"
+            + " .pem)\" -file \"$ca\" -keystore " + TRUST_STORE + " -storepass \"$tp\"; done;"
             + " printf '%s' \"$NUNA_SCRIPT\" > /tmp/compact.py && exec /opt/spark/bin/spark-submit --master 'local[2]'"
             + " --driver-memory \"$NUNA_DRIVER_MEMORY\" --conf 'spark.driver.extraJavaOptions=-Djavax.net.ssl.trustStore="
-            + TRUST_STORE + " -Djavax.net.ssl.trustStorePassword=" + TRUST_PASSWORD + "' /tmp/compact.py";
+            + TRUST_STORE + " -Djavax.net.ssl.trustStorePassword='\"$tp\" /tmp/compact.py";
 
     /** How long a finished Job is kept: a day, for its log. It schedules nothing. */
     static final Duration KEPT = Duration.ofDays(1);

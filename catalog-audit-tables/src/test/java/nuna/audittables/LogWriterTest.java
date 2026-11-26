@@ -24,6 +24,8 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.IcebergGenerics;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
+import org.apache.iceberg.exceptions.ForbiddenException;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.io.CloseableIterable;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +33,7 @@ import org.junit.jupiter.api.Test;
  * The audit table writer's source {@code otlp} (D23, amended 2026-11-23), against Iceberg's in-memory catalog: records
  * from the log are written once each, deduplicated by CloudEvent id across repeats, a commit whose answer was lost and
  * a restart; their rows are in no topic partition and their numbers rise and never repeat; a failed commit loses
- * nothing; the writer's own records are left out.
+ * nothing; the writer's own records are left out; a table dropped under the writer is made again, a refusal never.
  */
 class LogWriterTest {
 
@@ -48,10 +50,14 @@ class LogWriterTest {
 
     private final FaultyCatalog catalog = new FaultyCatalog();
     private final MovableClock clock = new MovableClock();
+    /** How many times a writer's opener was called. */
+    private final AtomicInteger opened = new AtomicInteger();
 
     private LogWriter writer(int maxRows) {
-        return new LogWriter(() -> EventsTable.open(catalog, NAMESPACE, LogWriter.SOURCE), WRITER, INTERVAL, maxRows,
-                WINDOW, clock);
+        return new LogWriter(() -> {
+            opened.incrementAndGet();
+            return EventsTable.open(catalog, NAMESPACE, LogWriter.SOURCE);
+        }, WRITER, INTERVAL, maxRows, WINDOW, clock);
     }
 
     private CatalogEvent read(String principal) {
@@ -231,5 +237,60 @@ class LogWriterTest {
         assertThatThrownBy(writer::commitIfDue).isInstanceOf(IllegalStateException.class);
         writer.commitIfDue();
         assertThat(offer(writer, reads(1)).written()).isEqualTo(1);
+    }
+
+    @Test
+    void aTableDroppedBetweenCommitsIsMadeAgainWithTheRecordsItHeld() {
+        // Backlog 284: the catalog's database new under a running writer, or the table dropped.
+        LogWriter writer = writer(1_000);
+        List<CatalogEvent> before = reads(2);
+        offer(writer, before);
+        writer.commit();
+        UUID dropped = catalog.loadTable(EVENTS).uuid();
+        catalog.dropTable(EVENTS, false);
+
+        List<CatalogEvent> held = reads(3);
+        offer(writer, held);
+        assertThatThrownBy(writer::commit).isInstanceOf(NoSuchTableException.class);
+        assertThat(writer.waiting()).isEqualTo(3);
+        writer.commitIfDue();
+        clock.advance(INTERVAL);
+        writer.commitIfDue();
+
+        assertThat(catalog.loadTable(EVENTS).uuid()).as("a new table").isNotEqualTo(dropped);
+        assertThat(rows()).as("the rows written before stay in the dropped table").extracting(Row::eventId)
+                .containsExactlyInAnyOrderElementsOf(ids(held));
+        assertThat(writer.waiting()).isZero();
+        assertThat(opened).hasValue(2);
+
+        List<CatalogEvent> after = reads(1);
+        offer(writer, after);
+        writer.commit();
+        assertThat(rows()).hasSize(4);
+    }
+
+    @Test
+    void aRefusalIsThrownAndNeverMakesTheTableAgain() {
+        // Backlog 284: a 403 is a revoked grant, which a new table would hide.
+        LogWriter writer = writer(1_000);
+        List<CatalogEvent> before = reads(1);
+        offer(writer, before);
+        writer.commit();
+        UUID table = catalog.loadTable(EVENTS).uuid();
+        catalog.refuse(true);
+
+        List<CatalogEvent> held = reads(2);
+        offer(writer, held);
+        assertThatThrownBy(writer::commit).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(writer::commit).as("read again, still refused").isInstanceOf(ForbiddenException.class);
+        assertThat(opened).as("the table is not opened again").hasValue(1);
+        assertThat(writer.waiting()).isEqualTo(2);
+
+        catalog.refuse(false);
+        writer.commit();
+        assertThat(catalog.loadTable(EVENTS).uuid()).isEqualTo(table);
+        assertThat(rows()).extracting(Row::eventId).containsExactlyInAnyOrderElementsOf(
+                java.util.stream.Stream.concat(before.stream(), held.stream()).map(e -> e.id().toString()).toList());
+        assertThat(opened).hasValue(1);
     }
 }

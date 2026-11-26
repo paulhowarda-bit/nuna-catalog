@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.function.Supplier;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -30,6 +31,10 @@ import org.slf4j.LoggerFactory;
  * with each partition's next offset in the same Iceberg commit ({@link EventsTable}); the writer starts each partition
  * from the offset the table holds, so after a crash, a restart, a rebalance or a failed commit no record is written
  * twice or skipped. The relay is at least once (D23), so an {@code event_id} can still repeat at another offset.
+ *
+ * <p>When the catalog answers that the table does not exist (it was dropped, or the catalog's database is new), the
+ * writer makes it again through its opener and, the new table holding no offsets, writes the topic into it from the
+ * earliest record Kafka keeps (backlog 284). A refusal never does: it is thrown, and the writer retries.
  *
  * <p>The records of the writer's own requests are left out: its every commit makes records (its loads, credentials
  * and commits), which would otherwise make the next commit. They stay in the topic, the SIEM and the archive.
@@ -166,7 +171,18 @@ final class TableWriter implements AutoCloseable {
         if (table == null) {
             table = opener.get();
         }
-        committed = table.reload();
+        try {
+            committed = table.reload();
+        } catch (NoSuchTableException e) {
+            // Only this answer makes the table again: a refusal is thrown, so a revoked grant shows (backlog 284).
+            table = null;
+            LOG.warn("The audit table is gone ({}); making it again and writing {} into it from the earliest record"
+                    + " Kafka keeps. A dropped audit table should be undropped rather than replaced: rows older than"
+                    + " the topic keeps are only in the dropped one (undrop needs the name free).", e.getMessage(),
+                    topic);
+            table = opener.get();
+            committed = table.reload();
+        }
         stale = false;
         seek(consumer.assignment());
     }

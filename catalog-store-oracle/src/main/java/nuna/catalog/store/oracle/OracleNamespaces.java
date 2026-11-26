@@ -28,7 +28,8 @@ import java.util.UUID;
  * and its parent's drop serialize; Oracle has no shared row lock, so creates under one parent
  * serialize too. The unique (parent, normalized name) key makes a create wait for an open create
  * of the same name. A drop is refused while a ref's cut names a table or view of the namespace, in
- * any state, since a read through the ref takes its governance from the namespace (D33, backlog 157).
+ * any state, since a read through the ref takes its governance from the namespace (D33, backlog 157);
+ * it locks the catalog first, so it and a ref create take turns (backlog 158).
  */
 final class OracleNamespaces {
 
@@ -115,8 +116,19 @@ final class OracleNamespaces {
         });
     }
 
+    /**
+     * Locks the catalog's row, then the namespace, the order a conditional grant takes (catalog, then securable). A
+     * ref create locks the catalog's row too, so a create in flight commits before this drop reads refs, and a create
+     * after it cuts without the namespace (backlog 158): a ref never names a table whose namespace the drop took.
+     */
     WriteResult drop(UUID namespaceId, Change change) {
         return transactions.change(change, "namespace drop", connection -> {
+            Optional<UUID> catalog = first(connection, "SELECT catalog_id FROM namespace WHERE id = ?",
+                    row -> Jdbc.uuid(row, "catalog_id"), namespaceId);
+            if (catalog.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.NAMESPACE);
+            }
+            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", catalog.get());
             Optional<UUID> catalogId = first(connection, "SELECT catalog_id FROM namespace WHERE id = ? FOR UPDATE",
                     row -> Jdbc.uuid(row, "catalog_id"), namespaceId);
             if (catalogId.isEmpty()) {

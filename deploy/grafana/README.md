@@ -7,11 +7,12 @@ series names it assumes, and what to rename if work's Prometheus names them othe
 
 | File | What |
 |---|---|
-| `dashboards/nuna-catalog.json` | The catalog servers: the SLOs, loads and the 304 share, commits, credential vending, the audit's Kafka acknowledgement, nuna's alerts. |
+| `dashboards/nuna-catalog.json` | The catalog servers: the latency and availability SLOs, loads and the 304 share, commits, credential vending, the audit's Kafka acknowledgement, nuna's alerts. |
 | `dashboards/nuna-maintenance.json` | The maintenance worker: its last successful scan, failures by kind, the work it did, compaction. |
 | `dashboards/nuna-client-reports.json` | What engines report about their scans and commits, by engine. |
-| `rules/nuna-catalog.rules.yaml` | Burn-rate alerts on the three latency SLOs; one alert for each of nuna's alert kinds. |
+| `rules/nuna-catalog.rules.yaml` | Burn-rate alerts on the three latency SLOs and the three availability SLOs; alerts for a catalog that stops reporting or whose SLO series go missing; one alert for each of nuna's alert kinds. |
 | `rules/nuna-maintenance.rules.yaml` | The worker's alerts, as worker-metrics.md designs them. |
+| `tests/nuna-catalog.test.yaml` | promtool unit tests of the catalog's rules, which `AlertRulesTest` (catalog-server, heavy) runs. Not a rule file: keep it out of `rules/`, which Prometheus loads whole. |
 
 **Dashboards.** Import each JSON file into Grafana (Dashboards, New, Import) and pick a Prometheus data source in the
 `datasource` variable at the top; no data source is named in the files. The `job` variable picks the deployment.

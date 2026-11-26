@@ -9,6 +9,7 @@ import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogSettings;
 import nuna.catalog.store.CatalogStore;
+import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitHook;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -21,8 +22,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -90,6 +96,38 @@ public abstract class GroupSuite {
 
     protected CatalogObject newTable(NamespaceRecord namespace, String display) {
         return newObject(namespace, display, CatalogObject.Kind.TABLE);
+    }
+
+    /**
+     * What a write held open before its COMMIT answered, what another write run meanwhile answered, and whether that
+     * one was still running when the first was let commit.
+     */
+    protected record Overlap(WriteResult open, WriteResult meanwhile, boolean waited) {
+    }
+
+    /**
+     * Runs {@code open} through a store that holds the write of {@code change} just before its COMMIT, runs {@code
+     * meanwhile} on the suite's store, then after 1.5 s lets the open write commit. A write that does not wait for the
+     * open one finishes inside the 1.5 s; one that does (a lock on the SQL stores, a write conflict MongoDB retries)
+     * runs on once the open one has committed.
+     */
+    protected Overlap whileOpen(Change change, Function<CatalogStore, WriteResult> open, Callable<WriteResult> meanwhile)
+            throws Exception {
+        CountDownLatch atCommit = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CatalogStore held = underTest().store(changeId -> {
+            if (changeId.equals(change.id())) {
+                atCommit.countDown();
+                CommitSuite.awaitLatch(release);
+            }
+        });
+        CompletableFuture<WriteResult> opened = CompletableFuture.supplyAsync(() -> open.apply(held), background);
+        assertThat(atCommit.await(60, TimeUnit.SECONDS)).as("the open write reached its COMMIT").isTrue();
+        Future<WriteResult> other = background.submit(meanwhile);
+        Thread.sleep(1_500);
+        boolean waited = !other.isDone();
+        release.countDown();
+        return new Overlap(opened.get(60, TimeUnit.SECONDS), other.get(60, TimeUnit.SECONDS), waited);
     }
 
     protected static void assertApplied(WriteResult result) {

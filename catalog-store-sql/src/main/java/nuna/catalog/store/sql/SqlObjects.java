@@ -225,9 +225,19 @@ final class SqlObjects {
      * are read as a drop reads holds, so one placed before the claim refuses it. So are the refs whose cut
      * names it: a ref made from another copies its source's cut under a share lock on the source, so a
      * ref that comes to name the object committed before its source's deletion, and this read sees it.
+     * The held levels are locked too, for share, before holds are read (backlog 171): the catalog's row
+     * first, as every write that locks it does, then the object, then the namespaces above it. A hold
+     * or freeze placed on any of them locks it for update, so it commits first and refuses the claim,
+     * or waits for the claim.
      */
     WriteResult claimPurge(UUID objectId, String claimant, Change change) {
         return transactions.change(change, "purge claim", connection -> {
+            Optional<UUID> catalog = first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ?",
+                    row -> Jdbc.uuid(row, "catalog_id"), objectId);
+            if (catalog.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
             Optional<Claim> locked = lockForPurge(connection, objectId);
             if (locked.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
@@ -240,6 +250,7 @@ final class SqlObjects {
             if (claim.purgeAfter().isAfter(change.at())) {
                 return new WriteResult.Refused(WriteResult.Reason.NOT_DUE);
             }
+            Guards.lockLevels(connection, claim.path());
             if (Guards.held(connection, objectId, claim.catalogId(), claim.path())) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }

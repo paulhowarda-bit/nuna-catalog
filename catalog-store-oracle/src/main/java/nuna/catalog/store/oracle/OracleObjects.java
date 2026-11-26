@@ -233,10 +233,19 @@ final class OracleObjects {
      * Locks the dropped or claimed object, then judges the claim under the lock: the holds and DR freezes
      * are read as a drop reads holds, so one placed before the claim refuses it. So are the refs whose cut
      * names it: a ref made from another copies its source's cut under a lock on the source, so a ref that
-     * comes to name the object committed before its source's deletion, and this read sees it.
+     * comes to name the object committed before its source's deletion, and this read sees it. The held
+     * levels are locked too before holds are read (backlog 171): the catalog's row first, as every write
+     * that locks it does, then the object, then the namespaces above it. A hold or freeze placed on any
+     * of them locks it, so it commits first and refuses the claim, or waits for the claim.
      */
     WriteResult claimPurge(UUID objectId, String claimant, Change change) {
         return transactions.change(change, "purge claim", connection -> {
+            Optional<UUID> catalog = first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ?",
+                    row -> Jdbc.uuid(row, "catalog_id"), objectId);
+            if (catalog.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", catalog.get());
             Optional<Claim> locked = lockForPurge(connection, objectId);
             if (locked.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
@@ -250,6 +259,7 @@ final class OracleObjects {
                 return new WriteResult.Refused(WriteResult.Reason.NOT_DUE);
             }
             List<UUID> path = path(connection, objectId);
+            Guards.lockLevels(connection, path);
             if (Guards.held(connection, objectId, claim.catalogId(), path)) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }

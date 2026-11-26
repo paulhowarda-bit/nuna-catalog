@@ -1,0 +1,16 @@
+Breaks: a removal from refs on Oracle no longer locks the namespaces above the table, so it reads holds while a hold on one of them is being placed and takes the table out of its refs though the hold commits first (backlog 171).
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Refs#aRemovalWaitsForAnOpenHoldAboveTheTable
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
+index 52f6c491..7cf588b8 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
+@@ -244,7 +244,6 @@ final class OracleRefs {
+             }
+             List<UUID> path = query(connection, "SELECT namespace_id FROM object_path WHERE object_id = ?",
+                     row -> Jdbc.uuid(row, "namespace_id"), objectId);
+-            Guards.lockLevels(connection, path);
+             if (Guards.held(connection, objectId, catalog.get(), path)) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }
