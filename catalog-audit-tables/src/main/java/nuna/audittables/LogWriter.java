@@ -26,9 +26,12 @@ import org.slf4j.LoggerFactory;
  * amended 2026-11-23), about a commit interval behind, as {@link TableWriter} writes the audit topic's.
  *
  * <p>The log has no offsets to resume from, and a record can arrive twice: the exporter retries a batch whose answer
- * it lost, and the catalog's outbox relay is at least once. So rows are deduplicated by CloudEvent id: an id seen in
- * the last {@code dedupWindow} (taken here, or in a row whose record time is that recent when the table is read) is
- * left out. Each row's {@code topic_partition} is {@value #PARTITION}, no topic's, and its {@code topic_offset} a
+ * it lost, and the catalog's outbox relay is at least once, and a copy can come hours late: a collector's persistent
+ * queue re-sending after a crash or draining a backlog, a log file read again (backlog 263). So rows are deduplicated
+ * by CloudEvent id, however late the copy: an id seen in the last {@code dedupWindow} (taken here, or in a row whose
+ * record time is that recent when the table is read) is left out as it arrives, and before each commit, a waiting row
+ * whose record time is older than that window is looked up among the table's rows of its record's day (the table's
+ * partition) and left out if it is there. Each row's {@code topic_partition} is {@value #PARTITION}, no topic's, and its {@code topic_offset} a
  * number this writer gives it: the current time in microseconds, or one more than the last it gave, whichever is
  * higher. The numbers rise, stay unique across restarts while the writer's clock does not go back, and keep rows apart
  * where the feed's reader orders and finds them by partition and offset. Each commit records the next one, under
@@ -204,6 +207,7 @@ final class LogWriter {
         if (stale) {
             reload();
         }
+        dropLateCopies();
         List<AuditRow> batch;
         long next;
         synchronized (this) {
@@ -225,6 +229,39 @@ final class LogWriter {
             rows.subList(0, batch.size()).clear();
             waitingSince = rows.isEmpty() ? null : clock.instant();
         }
+    }
+
+    /**
+     * Leaves out the waiting rows whose record time is older than the dedup window and whose id the table holds in
+     * their record's day already: copies too late for the ids remembered in memory (backlog 263). Only rows that late
+     * are looked up, so the common case reads nothing.
+     */
+    private void dropLateCopies() {
+        Instant before = clock.instant().minus(dedupWindow);
+        Map<String, Instant> late = new LinkedHashMap<>();
+        synchronized (this) {
+            for (AuditRow row : rows) {
+                if (row.time().isBefore(before)) {
+                    late.put(row.eventId(), row.time());
+                }
+            }
+        }
+        if (late.isEmpty()) {
+            return;
+        }
+        Set<String> written = table.eventIdsAmong(late);
+        if (written.isEmpty()) {
+            return;
+        }
+        synchronized (this) {
+            // Only this thread removes rows.
+            rows.removeIf(row -> written.contains(row.eventId()));
+            if (rows.isEmpty()) {
+                waitingSince = null;
+            }
+        }
+        LOG.info("{} waiting audit records older than {} are in the table already; they are not written again",
+                written.size(), dedupWindow);
     }
 
     /**

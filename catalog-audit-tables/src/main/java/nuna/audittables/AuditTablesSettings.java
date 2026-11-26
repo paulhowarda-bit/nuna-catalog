@@ -186,7 +186,9 @@ public record AuditTablesSettings(
      * @param token       the shared token every request must carry in {@code X-Nuna-Audit-Token}: at least 32
      *                    characters, letters, digits, {@code -}, {@code _}, {@code .} or {@code ~}, so it travels in
      *                    {@code OTEL_EXPORTER_OTLP_LOGS_HEADERS} unencoded
-     * @param dedupWindow how long a record's id is remembered to leave out a second copy of it
+     * @param dedupWindow how long a record's id is remembered in memory to leave out a second copy of it; a copy whose
+     *                    record time is older than this is looked up in the table, in its record's day, before the
+     *                    commit, so it is left out however late it comes (backlog 263)
      */
     public record Otlp(@DefaultValue("4318") int port, String token, @DefaultValue("15m") Duration dedupWindow) {
 

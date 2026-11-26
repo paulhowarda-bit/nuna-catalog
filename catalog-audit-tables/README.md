@@ -89,10 +89,14 @@ With `source: otlp` the writer listens for OTLP/HTTP log exports, `POST /v1/logs
   catalog's log); 400 for a body that is no OTLP request, 413 past 16 MiB, 415 for another content type, and 503 with
   `Retry-After` while twice `max-rows` wait, or while the archive cannot take the request's records, which the
   exporter retries.
-- **Each record once.** The log has no offsets, and a record can arrive twice: the exporter retries a batch whose
-  answer it lost, and the catalog's relay is at least once. Rows are deduplicated by CloudEvent id: an id seen in the
-  last `otlp.dedup-window` (15 minutes) is left out. On start and after a failed commit the writer reads the ids of the
-  table's rows of that window back, so a commit whose answer was lost, or a restart, writes nothing twice.
+- **Each record once**, however late a copy comes. The log has no offsets, and a record can arrive twice: the
+  exporter retries a batch whose answer it lost, the catalog's relay is at least once, and a collector's persistent
+  queue re-sends its batches after a crash or drains a backlog hours after an outage. Rows are deduplicated by
+  CloudEvent id. An id seen in the last `otlp.dedup-window` (15 minutes) is left out as it arrives; on start and after
+  a failed commit the writer reads back the ids of the table's rows whose record time is in that window, so a commit
+  whose answer was lost, or a restart, writes nothing twice. Before each commit, a waiting record whose own time is
+  older than the window is looked up among the table's rows of its day (the table's partition), and left out if it is
+  there (backlog 263). Only such late records are looked up, so the common case reads nothing more.
 - **Partition and offset.** A row from the log is in no topic: its `topic_partition` is `-1`, and its `topic_offset` a
   number the writer gives it, the current time in microseconds or one more than the last it gave, whichever is higher.
   The numbers rise, never repeat while the writer's clock does not go back, and keep rows apart where the feed's reader
@@ -101,8 +105,11 @@ With `source: otlp` the writer listens for OTLP/HTTP log exports, `POST /v1/logs
   logged it and its number there, goes in `log_run` and `log_seq` (backlog 272); of a record that arrives twice, the
   first copy's.
 - **Waiting rows.** Records wait in memory and are committed as from the topic, every `commit-interval` or at
-  `max-rows`. A commit that fails keeps them for the next. A writer that dies before its commit loses them (they are
-  still on the catalog's stdout); a shutdown stops the receiver and commits them first.
+  `max-rows`. A commit that fails keeps them for the next. The exporter is answered when its records are taken, not
+  when they are committed: a writer that dies before its commit loses them from the table (they are still on the
+  catalog's stdout), and a shutdown stops the receiver and commits them first. Answering after the commit would need a
+  commit every few seconds, which the table cannot carry; docs/observability/audit-log.md, "The audit table writer's
+  source `otlp`", says why (backlog 263), which rows the table can lack, and how to find them.
 - **A table gone under it**, as from the topic, is made again with a WARN, and the records waiting are written to it;
   rows committed before are only in the dropped table (and the catalog's log). A refusal never makes it again.
 - A table the topic filled before can be written from the log: the two sources' offsets are kept apart.
@@ -164,7 +171,7 @@ on stdout.
 | `kafka.properties.*` | none | further Kafka client settings (TLS, SASL); the writer owns `bootstrap.servers`, `group.id`, `enable.auto.commit`, `auto.offset.reset`, `isolation.level` and the deserializers |
 | `otlp.port` | `4318` | the logs receiver's port, for `otlp` |
 | `otlp.token` | required for `otlp` | the token every request carries in `X-Nuna-Audit-Token`; at least 32 letters, digits, `-`, `_`, `.` or `~` |
-| `otlp.dedup-window` | `15m` | how long a record's id is remembered, to leave out a second copy |
+| `otlp.dedup-window` | `15m` | how long a record's id is remembered in memory, to leave out a second copy; an older copy is looked up in the table |
 | `client-properties.*` | none | further Iceberg client properties, e.g. `s3.endpoint` |
 | `archive.bucket` | none | the archive's bucket, created with Object Lock; none, no archive. For `otlp` only |
 | `archive.prefix` | `audit` | the key prefix in it; the catalog's `nuna.audit.archive.prefix` must match |
