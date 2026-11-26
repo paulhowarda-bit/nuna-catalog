@@ -1,0 +1,15 @@
+Breaks: through a ref, a cut's metadata file that no longer matches its SHA-256 gives no facts without raising the integrity alert (backlog 168, security review finding 2).
+Module: catalog-server
+Test: NamespaceTablesRoutesTest#throughARefACutsFileThatNoLongerMatchesRaisesTheIntegrityAlert
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+index a24e1019..41f03700 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+@@ -557,7 +557,6 @@ class NamespaceTablesRoutes {
+         }
+         TableFiles.Read read = files.read(catalog.id(), cut.metadataLocation(), cut.sha256());
+         if (!read.intact()) {
+-            alerts.metadataIntegrity(table.id(), cut.metadataLocation(), cut.sha256(), read.sha256());
+             return Optional.empty();
+         }
+         JsonNode file = Management.JSON.readTree(read.json());
