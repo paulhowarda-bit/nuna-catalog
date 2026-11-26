@@ -91,7 +91,7 @@ export function cref(r, o = {}) {
   const name = typeof r === 'string' ? r : r.name;
   const kind = typeof r === 'string' ? (isMain(r) ? 'main' : 'branch') : r.kind;
   return h('span', {class: 'cref ' + (kind === 'tag' ? 't' : kind === 'main' ? 'm' : 'b') + (o.big ? ' big' : '') + (o.warn ? ' warn' : '')},
-    icon(kind === 'tag' ? 'tag' : 'branch'), kind === 'main' ? null : h('span', {class: 'at'}, '@'), name);
+    icon(kind === 'tag' ? 'tag' : 'branch'), kind === 'main' ? null : h('span', {class: 'at'}, '@'), h('span', {class: 'nm'}, name));
 }
 
 /**
@@ -121,7 +121,7 @@ function refPick(where, list) {
     'aria-expanded': 'false', 'aria-controls': 'ref-menu', 'data-ref-pick': '',
     'aria-label': dead ? `Reading ${where.r}, which is not live. Choose a branch or tag`
       : `Reading ${cur ? kindWord(cur) + ' ' + cur.name : 'main'}. Choose a branch or tag`},
-  h('span', {class: 'lbl'}, 'Reading'), dead ? h('span', {class: 'cref gone'}, icon('branch'), h('span', {class: 'at'}, '@'), where.r)
+  h('span', {class: 'lbl'}, 'Reading'), dead ? h('span', {class: 'cref gone'}, icon('branch'), h('span', {class: 'at'}, '@'), h('span', {class: 'nm'}, where.r))
     : cur ? cref(cur) : cref('main'), icon('chev'));
   const item = r => {
     const on = !dead && (cur ? cur.name : null) === (r ? r.name : null);

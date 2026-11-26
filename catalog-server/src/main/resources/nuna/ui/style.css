@@ -156,7 +156,7 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 /* ===================================================================================== console shell (direction A) */
 .nc-app { display: grid; grid-template-columns: 212px minmax(0, 1fr); grid-template-rows: 52px minmax(0, 1fr); min-height: 640px; background: var(--bg); }
 .nc-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
-.nc-brand { display: flex; align-items: center; gap: 8px; font: 600 17px/1 var(--f-ui); letter-spacing: -0.02em; min-width: 180px; }
+.nc-brand { display: flex; align-items: center; gap: 8px; font: 600 17px/1 var(--f-ui); letter-spacing: -0.02em; }
 .nc-brand .peak { width: 24px; height: 18px; }
 .peak .rock { fill: none; stroke: var(--text); stroke-width: 1.8; stroke-linejoin: round; }
 .peak .ice { stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; filter: var(--glow); }
@@ -310,6 +310,8 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .facts dt { color: var(--text-2); }
 .facts dd { min-width: 0; overflow-wrap: anywhere; }
 .facts dd code { color: var(--text); }
+/* A pill in a fact can carry free text, a hold's or a freeze's reason: it wraps in its column, never past it (backlog 232). */
+.facts dd .pill { white-space: normal; height: auto; min-height: 22px; padding: 4px 8px; line-height: 1.3; max-width: 100%; overflow-wrap: anywhere; }
 
 /* refusal, empty, loading */
 .refusal { position: relative; border: 1px solid var(--bad-ink); border-left-width: 4px; border-radius: var(--r-md); background: var(--bad-wash); padding: 14px 16px; display: grid; gap: 8px; }
@@ -660,7 +662,6 @@ pre.raw { overflow: visible; }
 .ph.hero .side { grid-column: 1; grid-row: auto; justify-content: flex-start; }
 /* v11: the console between a phone and a wide screen */
 @container frame (min-width: 761px) and (max-width: 1240px) {
-  .nc-who .who-text { display: none; }
   .feed-row { grid-template-columns: 118px minmax(0, 1fr) auto; }
   .feed-row > .t { grid-column: 1; grid-row: 1; }
   .feed-row > .w { grid-column: 1; grid-row: 2; }
@@ -697,7 +698,6 @@ code, kbd, .mono { font-size: max(12px, 0.93em); }
   .kpis:has(.kpi-list) .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
 }
 @container frame (min-width: 761px) and (max-width: 1100px) {
-  .nc-go > span { display: none; }
   .tbl.contents th:last-child, .tbl.contents td:last-child { display: none; }
 }
 /* an edge that fades says there is more to scroll to */
@@ -1292,6 +1292,38 @@ details.tech[open] > summary { margin-bottom: 4px; }
 .ref-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; }
 .ref-menu .ref-go { display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; color: var(--accent); font-size: var(--t-12); white-space: nowrap; }
 @container frame (max-width: 760px) { .nc-top .ref-pick .lbl { display: none; } }
+
+/* The header between a phone and a wide screen (backlog 231; Atelier, 2026-11-26). Every control keeps its place; what
+   gives way as the window narrows, first to last: the brand's room (it lines the catalog picker up with the rail while
+   there is space), the session's end, the who-text, Go to a path's words, the Catalog and Reading labels, then Sign
+   out's words and the / hint. The theme switch shows its icons at every width. Hidden words stay in each control's
+   accessible name; a long name ends in an ellipsis, and its menu and accessible name give it in full. */
+.seg .ic-auto { display: none; }
+@container frame (min-width: 761px) {
+  .nc-brand { flex: 0 1 180px; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm, .nc-who .who-text b { display: inline-block; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .reading-slot { flex: none; }
+  .reading-slot .main-only { max-width: 8.5em; white-space: normal; line-height: 1.25; }
+  .nc-top .seg .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nc-top .seg .ic-auto { display: inline; }
+  .nc-top .seg button { padding: 0 7px; }
+}
+@container frame (min-width: 761px) and (max-width: 1400px) { .nc-who .who-until { display: none; } }
+@container frame (min-width: 761px) and (max-width: 1320px) { .nc-who .who-text { display: none; } }
+@container frame (min-width: 761px) and (max-width: 1240px) {
+  .nc-go > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@container frame (min-width: 761px) and (max-width: 1100px) {
+  .nc-top { gap: 10px; }
+  .nc-top .nc-pick .lbl, .nc-top .ref-pick .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 10ch; }
+}
+@container frame (min-width: 761px) and (max-width: 900px) {
+  .nc-top { gap: 8px; }
+  .nc-go kbd { display: none; }
+  .nc-top .signout .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 8ch; }
+}
 
 /* Row filters and column masks (backlog 243): five figures on the Governance page, and the rule dialog's fields. */
 .kpis.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }

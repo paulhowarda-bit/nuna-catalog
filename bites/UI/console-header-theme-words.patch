@@ -1,0 +1,17 @@
+Breaks: The theme switch shows its words again between a phone and a wide screen, so the header runs past the window.
+Module: catalog-server
+Test: ConsoleBrowserTest#betweenAPhoneAndAWideScreenTheHeaderFitsAtEveryWidth
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index 22e396a7..fb1f0b1f 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1304,8 +1304,6 @@ details.tech[open] > summary { margin-bottom: 4px; }
+   .nc-pick b, .nc-top .ref-pick .cref .nm, .nc-who .who-text b { display: inline-block; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+   .reading-slot { flex: none; }
+   .reading-slot .main-only { max-width: 8.5em; white-space: normal; line-height: 1.25; }
+-  .nc-top .seg .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+-  .nc-top .seg .ic-auto { display: inline; }
+   .nc-top .seg button { padding: 0 7px; }
+ }
+ @container frame (min-width: 761px) and (max-width: 1400px) { .nc-who .who-until { display: none; } }

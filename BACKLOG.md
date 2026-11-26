@@ -33,12 +33,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
-| [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
-| [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
+| [296](backlog/296.md) | S | Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind | one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down | 2026-11-26 |
+| [297](backlog/297.md) | S | Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides) | a few header rules below 761 px once Atelier says how the note shows on a phone; a browser test | 2026-11-26 |
 
 ## Open items in full
 
@@ -1585,44 +1585,6 @@ were written and compiled, not run here. Open until the overnight run passes the
   run) now covers the note's words, the status line, Up to keeping the start, the button and `from=any`, the Record
   tab's link and a link's other time. Bite recorded, not run: `bites/UI/console-ref-start-dropped-with-up-to`.
 
-### 231. Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides)
-
-- Added: 2026-11-24 by Paul
-- Touches: catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, a few header rules at two container widths once Atelier says what gives way; a browser test
-
-Found while fixing item 229 (the header naming every group). With the groups counted, the header fits at 1440 px and
-on a phone (390 and 760 px), but the header's parts have fixed widths (brand 180 px, catalog picker 164, Reading
-control 156, theme switch 184, Sign out 90), so the page scrolls sideways at two ranges of window width. Measured on
-the demo on 2026-11-24 as presenter, `document.documentElement.scrollWidth` against `innerWidth`:
-
-| Window | Page | Why |
-|---|---|---|
-| 1,260 px | 1,297 px | the who-text ("presenter · 5 groups · until 09:50", 226 px) shows above 1,240 px |
-| 1,000 px | 1,016 px | the who-text is hidden, but the rest is 1,016 px wide |
-| 800 px | 1,016 px | the same |
-
-Atelier's prototype (`docs/design/console/prototype.html?user=presenter`) does the same with its own parts (1,275 px
-at 1,260; 1,001 px at 1,000 and 800), so what gives way at those widths (the theme switch's words, Go to a path as
-its icon, the brand's width, the who-text's breakpoint) is her design call.
-
-Done when, at every window width from 761 to 1,440 px, the page is no wider than the window, as Atelier decides, and
-a browser test checks it at widths in both ranges.
-
-### 232. Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge)
-
-- Added: 2026-11-24 by Paul
-- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, find which head or panel holds the pill and let it wrap; a browser test
-
-Found while testing item 229 (the header). In `ConsoleBrowserTest`, a Chrome window of 1440 px (client width 1,417
-px) on the page of `trades`, a table in a frozen namespace held by a namespace above, scrolls sideways: the page is
-1,473 px wide while the body and the header are 1,417 px. The one element past the edge is a `span.pill.frozen`, its
-right edge at 1,473 px. It shows only once the page's governance has loaded, so a check made too early passes.
-
-Done when a frozen (and held) table's page is no wider than the window at 1440 px, and a browser test checks it after
-the page has loaded its governance.
-
 ### 238. The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off
 
 - Added: 2026-11-24 by local_0484717c-9adc-4b18-af93-2db236201f4a
@@ -1853,6 +1815,42 @@ Left: the overnight heavy build has to pass the two `CommitSuite` cases on all f
 have to bite. The CockroachDB select-only bite assumes `SELECT … FOR UPDATE` on a missing key locks nothing under
 READ COMMITTED; if it reports NO BITE, record that store's bite another way. Then `./backlog.sh done 278`.
 
+### 296. Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind
+
+- Added: 2026-11-26 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/test/java/nuna/catalog/server/ConsoleBrowser.java
+- Effort: S, one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down
+
+`ConsoleBrowser.refuseBesideTheDemo()` (backlog 209, 218) stops the console's browser tests from starting while the
+nuna-demo stack runs. It counts Docker containers labelled `io.kubernetes.pod.namespace=nuna-demo`, which Docker
+Desktop's Kubernetes made. Since backlog 287 the demo runs in kind cluster `nuna` inside Podman: its pods run inside the
+kind node container, so Testcontainers' Docker client lists none of them and the check always passes.
+
+Evidence: on 2026-11-26, while working on items 231 and 232, `ConsoleBrowserTest` ran (and its bites ran) with the demo's
+pods up (`kubectl --context kind-nuna -n nuna-demo get pods` listed 10 to 13) and never refused. The runs passed, but
+the guard is there because beside the demo they have run past half an hour with their waits running out, and a wait
+that runs out in a bite is a failure the bite counts as BITES.
+
+Done when the guard refuses while the demo's pods run in kind (for example by asking `kubectl --context kind-nuna -n
+nuna-demo get pods`, or by the kind node container being up with the demo's namespace in it), still lets
+`-Pnuna.demo-beside` through, and still starts the tests when the demo is down or kind is absent (a machine at work).
+
+### 297. Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides)
+
+- Added: 2026-11-26 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, docs/design/console/prototype.html
+- Effort: S, a few header rules below 761 px once Atelier says how the note shows on a phone; a browser test
+
+Found by Atelier while designing item 231 (the header from 761 to 1,440 px), outside that item's range. In her harness
+of today's header, at a 390 px window with a branch carried onto a page that shows main only (Governance with
+`&r=<branch>`), the header is 630 px wide: the note "This page shows main only" shows on one line beside the Reading
+chip. Item 231 lets the note wrap from 761 px up only. Also at 390 px the brand shrinks to nothing and leaves a sliver
+of the peak beside the catalog picker. Her prototype `docs/design/console/prototype.html` overflows the same way, and
+from 761 to 1,440 px it needs item 231's rules too.
+
+Done when, at 390 and 760 px with a branch carried onto a page that shows main only, the page is no wider than the
+window, the brand shows whole or not at all, as Atelier decides, and a browser test checks it.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -2063,6 +2061,8 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [228](backlog/228.md) | Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only | done | 2026-11-25 |
 | [229](backlog/229.md) | The console header lists every group by name and runs off the screen | done | 2026-11-24 |
 | [230](backlog/230.md) | The demo runs no maintenance worker, so Overview and Maintenance are empty | done | 2026-11-24 |
+| [231](backlog/231.md) | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | done | 2026-11-26 |
+| [232](backlog/232.md) | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | done | 2026-11-26 |
 | [233](backlog/233.md) | The demo's metrics switch: an OTel collector, Prometheus, Tempo and Grafana with nuna's dashboards | done | 2026-11-25 |
 | [234](backlog/234.md) | Demo SingleStore refuses order writes once its pipelines' extractors fill the table-memory cap | done | 2026-11-24 |
 | [236](backlog/236.md) | Presenter, who holds every duty, lands on Overview | done | 2026-11-24 |
