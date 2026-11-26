@@ -1,0 +1,16 @@
+Breaks: a hold of no pointer passes when a pointer is there (backlog 278).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest#heldAbsenceIsComparedNotWritten
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+index 74ce9a5f..a5621b88 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+@@ -177,7 +177,7 @@ final class Pointers {
+                         + " ON CONFLICT (object_id, branch) DO NOTHING",
+                 key.objectId(), key.branch(), batch.commitId(), batch.committedAt());
+         if (inserted == 0) {
+-            return false;
++            return true;
+         }
+         update(connection, "DELETE FROM pointer WHERE object_id = ? AND branch = ?", key.objectId(), key.branch());
+         return true;
