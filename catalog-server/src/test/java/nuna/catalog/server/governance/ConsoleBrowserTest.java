@@ -753,6 +753,30 @@ class ConsoleBrowserTest {
                 + "/tables/trades?snapshots=all", null, AUTH, api.grantAdmin(), "X-Iceberg-Access-Delegation", "none"));
     }
 
+    /**
+     * With no group named, the Grants page lists the catalog's groups, each with its duties, to a grant admin, whose own
+     * groups hold no grant (D18), and each opens its grants (Atelier's walk of backlog 248, 2026-11-24; backlog 260).
+     */
+    @Test
+    void aGrantAdminSeesTheCatalogsGroupsWithTheirDutiesAndOpensOnesGrants() {
+        signIn(gary());
+        browser.open("/ui/#p=grants&c=trading");
+        WebElement stewards = browser.await(By.cssSelector("#governance-grants table.grants-groups tr[data-group='"
+                + GovernanceServer.STEWARDS + "']"));
+        assertThat(textContent(browser.await(By.cssSelector("#grants-list h2")))).isEqualTo("Groups in trading");
+        assertThat(cell(stewards, 2)).contains("Tags");
+        assertThat(cell(stewards, 3)).contains("manage-tags");
+        assertThat(textContent(browser.await(By.cssSelector("#governance-grants .grants-configured"))))
+                .contains(GovernanceServer.GRANT_ADMINS);
+
+        stewards.findElement(By.tagName("a")).click();
+        browser.await(grantRow(GovernanceServer.STEWARDS, "manage-tags"));
+        browser.await("the link did not name the group",
+                d -> d.getCurrentUrl().endsWith("&g=" + GovernanceServer.STEWARDS));
+        assertThat(browser.await(By.cssSelector("#governance-grants input[aria-label='Group']")).getDomProperty("value"))
+                .isEqualTo(GovernanceServer.STEWARDS);
+    }
+
     @Test
     void grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownBeforeGrant() {
         String group = "console-readers-" + Api.suffix();
@@ -1500,6 +1524,15 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector(".tree[data-ref='" + branch + "'] [data-node='table:" + ns + ".orders'] [data-changed]"));
         browser.await(By.cssSelector(".tree[data-ref='" + branch + "'] [data-node='namespace:" + ns + "'] [data-changed]"));
 
+        // Its Export is the branch's: the branch's metadata file and journal, in a file named for the branch (item 172).
+        browser.await(By.cssSelector("#table-page button[data-act='export-meta']")).click();
+        WebElement export = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(textContent(export.findElement(By.id("dlg-h")))).isEqualTo("Export orders@" + branch);
+        WebElement download = browser.await(By.cssSelector("dialog.dlg a[download]"));
+        assertThat(download.getDomAttribute("download")).isEqualTo("trading." + ns + ".orders@" + branch + ".export.json");
+        assertThat(textContent(export.findElement(By.cssSelector("pre")))).contains(".branch-", "\"name\": \"" + branch + "\"");
+        export.findElement(By.cssSelector("button.dlg-x")).click();
+
         // A page that reads main only, Overview, keeps the control: it reads main, and a ref opens the catalog
         // through it.
         browser.open("/ui/#p=overview&c=trading");
@@ -1582,6 +1615,42 @@ class ConsoleBrowserTest {
 
         assertThat(properties(ns)).containsEntry("k", "on-branch");
         expect(api.manage("GET", "/refs/" + branch, null), 404);
+    }
+
+    /**
+     * Export through a branch (item 172) of a table main has dropped since the branch was made, and made again under
+     * the same name: the export is the table the branch reads, by its own id and the cut's file, not main's new table.
+     * (A table cannot be made on a branch alone: creates happen on main only, D33.)
+     */
+    @Test
+    void aTableMainHasDroppedAndMadeAgainIsExportedAsTheBranchReadsIt() {
+        String ns = "exported_" + Api.suffix();
+        String branch = "kept_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
+        HttpResponse<String> made = expect(api.rest("POST", "/namespaces/" + ns + "/tables",
+                Api.TABLE.formatted("orders")), 200);
+        String kept = JsonPath.read(made.body(), "$.metadata.table-uuid");
+        String cutFile = JsonPath.read(made.body(), "$.metadata-location");
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + branch + "\",\"kind\":\"branch\"}"), 201);
+        try {
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/orders", null), 204);
+            HttpResponse<String> again = expect(api.rest("POST", "/namespaces/" + ns + "/tables",
+                    Api.TABLE.formatted("orders")), 200);
+            assertThat(JsonPath.<String>read(again.body(), "$.metadata.table-uuid")).isNotEqualTo(kept);
+
+            signIn(tester());
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + branch);
+            browser.awaitText(By.cssSelector("#table-page h1"), "orders");
+            browser.await(By.cssSelector("#table-page button[data-act='export-meta']")).click();
+            WebElement export = browser.await(By.cssSelector("dialog.dlg"));
+            assertThat(textContent(export.findElement(By.id("dlg-h")))).isEqualTo("Export orders@" + branch);
+            assertThat(browser.await(By.cssSelector("dialog.dlg a[download]")).getDomAttribute("download"))
+                    .isEqualTo("trading." + ns + ".orders@" + branch + ".export.json");
+            assertThat(textContent(export.findElement(By.cssSelector("pre")))).contains(kept, cutFile, "\"dropped\"");
+            export.findElement(By.cssSelector("button.dlg-x")).click();
+        } finally {
+            api.manage("DELETE", "/refs/" + branch, null);
+        }
     }
 
     /**

@@ -46,6 +46,10 @@ class TwoIssuersTest {
 
     /** The directory id both realms carry for the same person, in different claims. */
     private static final String DIRECTORY_ID = "d1001";
+    /** Keycloak's admin's and the directory user's passwords, made per run; the realms take the user's as
+     * NUNA_TEST_PASSWORD. */
+    private static final String ADMIN_PASSWORD = "pw-" + UUID.randomUUID();
+    private static final String PASSWORD = "pw-" + UUID.randomUUID();
 
     /** Starts Keycloak for the context, imports the realms, and trusts two of them; it stops with the context. */
     static final class Realms implements ApplicationContextInitializer<ConfigurableApplicationContext> {
@@ -53,7 +57,8 @@ class TwoIssuersTest {
         static final GenericContainer<?> KEYCLOAK = new GenericContainer<>(
                 DockerImageName.parse(System.getProperty("keycloak.image")))
                 .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
-                .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+                .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", ADMIN_PASSWORD)
+                .withEnv("NUNA_TEST_PASSWORD", PASSWORD)
                 .withEnv("JAVA_OPTS_KC_HEAP", "-Xms64m -Xmx512m")
                 .withCopyFileToContainer(MountableFile.forClasspathResource("keycloak/entra-realm.json"),
                         "/opt/keycloak/data/import/entra-realm.json")
@@ -162,7 +167,7 @@ class TwoIssuersTest {
     /** A token from the realm's token endpoint, by the password grant for the shared directory user. */
     private String token(String realm, String client) throws Exception {
         String form = "grant_type=password&scope=openid&client_id=" + client + "&username=" + DIRECTORY_ID
-                + "&password=" + URLEncoder.encode("pw-" + DIRECTORY_ID, StandardCharsets.UTF_8);
+                + "&password=" + URLEncoder.encode(PASSWORD, StandardCharsets.UTF_8);
         HttpResponse<String> response = http.send(HttpRequest.newBuilder(
                         URI.create(Realms.issuer(realm) + "/protocol/openid-connect/token"))
                 .header("Content-Type", "application/x-www-form-urlencoded")
