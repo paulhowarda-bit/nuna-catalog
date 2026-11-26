@@ -168,4 +168,12 @@ goes stale. A page of 200 rows can read up to 200 files the first time; a totals
   totals read, and a top namespace's row on the catalog's Contents.
 - Bites in `bites/D45/`: `namespace-tables-lists-undescribable` (every table listed, describable or not),
   `namespace-tables-page-unbounded` (a page without its 200-row bound) and `namespace-totals-count-undescribable`
-  (every table beneath a child counted, describable or not).
+  (every table beneath a child counted, describable or not); the two that filter bite through a ref too.
+- Through a ref (backlog 168), `NamespaceTablesRoutesTest` checks a tag's tables at the cut (a file read for the one
+  main moved past, main's projection for the rest, a table dropped on main since still listed), a branch's own
+  pointer on its own line, a tag made from a branch on that branch's line after it ended, rights and refusals as on
+  main, and totals as the ref has each table; `RefRoutesTest#aRefsCutWasTakenWhenTheRefAtTheFootOfItsLineWasMadeFromMain`
+  checks `cut-at`, `branch-changes` and `cut-from-ended`. `ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged`
+  (heavy) checks the Contents columns through a branch. Bites in `bites/D33/`: `namespace-tables-ref-reads-main`,
+  `namespace-tables-ref-own-ignored`, `namespace-tables-ref-line-main-only`, `ref-cut-at-own-making`,
+  `ref-cut-at-past-ended` and `ref-branch-changes-unsaid`.
