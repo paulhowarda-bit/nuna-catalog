@@ -8,3 +8,12 @@
 - Checked: `bash -n demo/demo.sh`; `tls_curl` and `connect_api` cut from `demo.sh` and run against a stub server (the
   cases and counts in item 267); the fast build.
 - Not covered: a live 502 on the demo, which cannot be made on purpose.
+
+# 2026-11-25, a kubectl timeout no longer reads as a deployment gone (backlog 286)
+
+- `demo/demo.sh` `running`: only kubectl's NotFound says a deployment is not there; any other failure is asked again,
+  10 s a try, 12 tries 5 s apart, then the script stops naming kubectl's answer. `cdc_running` uses it. That day's first
+  `gen stop`, with Windows paging the Docker VM out, took the generator for gone and stopped Kafka under it.
+- Checked: `bash -n demo/demo.sh`; `running` and `cdc_running` cut from `demo.sh` and run against a stub `k` (the cases
+  and counts in item 286); the fast build.
+- Not covered: a live API-server timeout on the demo, which is down and cannot be made to time out on purpose.
