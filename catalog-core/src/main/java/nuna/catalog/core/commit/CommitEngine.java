@@ -938,7 +938,9 @@ public final class CommitEngine {
      * pointers in one batch, holding the unchanged tables' pointers as read, and retries a lost swap or hold
      * as {@link #update} retries a lost swap (D15). Each table is resolved by name once, before the first
      * attempt, as {@link #update} resolves its one table. On a branch a table it has no own pointer for yet is read
-     * as its cut took it, and cannot be held: only its own pointers can.
+     * as its cut took it, and a table it only checks is held by the branch's own pointer, or by its absence when the
+     * branch has none, so a first commit to it on the branch landing meanwhile fails the attempt, and the next reads
+     * the branch's own pointer (backlog 278).
      */
     private CommitReply transaction(Request request) {
         List<CatalogObject> objects = new ArrayList<>();
@@ -981,7 +983,7 @@ public final class CommitEngine {
                         planned.add(new Planned(object, base, changed, json, regulated));
                     }
                     case Outcome.NoChange noChange ->
-                            base.expected().ifPresent(read -> held.add(new PointerHold(base.key(), read)));
+                            held.add(new PointerHold(base.key(), base.expected()));
                     case Outcome.RequirementFailed failed -> {
                         return new Failure(409, COMMIT_FAILED, table + ": " + failed.message(),
                                 failed.requirement());

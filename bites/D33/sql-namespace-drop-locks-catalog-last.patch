@@ -1,0 +1,22 @@
+Breaks: a namespace drop on PostgreSQL and CockroachDB locks the namespace before the catalog's row, against the lock order every other write keeps (catalog first), so it can deadlock with a conditional grant on the namespace (backlog 158).
+Module: catalog-store-sql
+Test: SqlLockOrderTest#aNamespaceDropLocksTheCatalogForShareBeforeTheNamespaceAndReadsRefsAfterBoth
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java
+index 05521892..a103f1db 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java
+@@ -136,12 +136,12 @@ final class SqlNamespaces {
+             if (catalog.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.NAMESPACE);
+             }
+-            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
+             Optional<Locked> locked = first(connection, "SELECT catalog_id, ancestors FROM namespace WHERE id = ? FOR UPDATE",
+                     row -> new Locked(Jdbc.uuid(row, "catalog_id"), Jdbc.uuids(row, "ancestors")), namespaceId);
+             if (locked.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.NAMESPACE);
+             }
++            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
+             if (exists(connection, "SELECT 1 FROM namespace WHERE parent_id = ?", namespaceId)
+                     || exists(connection, "SELECT 1 FROM catalog_object WHERE namespace_id = ? AND state = 'ACTIVE'",
+                     namespaceId)) {

@@ -28,7 +28,9 @@ import java.util.UUID;
 
 /**
  * Catalogs and their boundary (D28), storage profiles (D21), attributes (D20, D24, D27), holds (D24), the holds
- * released and DR freezes lifted (backlog 133), engines (D17).
+ * released and DR freezes lifted (backlog 133), engines (D17). A hold or a DR freeze locks its target for update, any
+ * other attribute for share: a purge claim and a removal from refs share-lock every level whose holds and freezes they
+ * read, so a placement and either take turns (backlog 171).
  */
 final class SqlGovernance {
 
@@ -85,7 +87,9 @@ final class SqlGovernance {
 
     WriteResult putAttribute(GovernanceAttribute attribute, Change change) {
         return transactions.change(change, "attribute put", connection -> {
-            Optional<WriteResult> missing = Guards.missing(connection, attribute.target(), Optional.empty());
+            Optional<WriteResult> missing = attribute.kind() == GovernanceAttribute.Kind.DR_FREEZE
+                    ? Guards.missingForUpdate(connection, attribute.target())
+                    : Guards.missing(connection, attribute.target(), Optional.empty());
             if (missing.isPresent()) {
                 return missing.get();
             }
@@ -147,7 +151,7 @@ final class SqlGovernance {
 
     WriteResult placeHold(LegalHold hold, Change change) {
         return transactions.change(change, "hold place", connection -> {
-            Optional<WriteResult> missing = Guards.missing(connection, hold.target(), Optional.empty());
+            Optional<WriteResult> missing = Guards.missingForUpdate(connection, hold.target());
             if (missing.isPresent()) {
                 return missing.get();
             }

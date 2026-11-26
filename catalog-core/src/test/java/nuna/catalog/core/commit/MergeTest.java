@@ -899,7 +899,7 @@ class MergeTest {
         }
         for (PointerHold hold : batch.holds()) {
             Optional<Pointer> actual = Optional.ofNullable(pointers.get(hold.key()));
-            if (!same(actual, Optional.of(hold.expected()))) {
+            if (!same(actual, hold.expected())) {
                 return new CommitResult.Conflict(hold.key(), actual);
             }
         }

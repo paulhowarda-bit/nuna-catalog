@@ -116,7 +116,7 @@ final class Pointers {
      * Swapped and held pointers are locked together in key order. A create inserts its row here: the
      * primary key is its lock, and a concurrent creator waits on it; a failed insert rolls back only
      * itself. An update or a hold locks the row alone, then reads the whole pointer only to report a
-     * conflict.
+     * conflict. A hold of no pointer takes the key as a create does ({@link #absent}).
      */
     private static Optional<CommitResult.Conflict> lockAndCompare(Connection connection, CommitBatch batch)
             throws SQLException {
@@ -124,7 +124,8 @@ final class Pointers {
             boolean matched = switch (lock) {
                 case PointerSwap swap when swap.expected().isEmpty() -> created(connection, swap, batch);
                 case PointerSwap swap -> lockedAt(connection, swap.key(), swap.expected().get());
-                case PointerHold hold -> lockedAt(connection, hold.key(), hold.expected());
+                case PointerHold hold when hold.expected().isEmpty() -> absent(connection, hold.key(), batch);
+                case PointerHold hold -> lockedAt(connection, hold.key(), hold.expected().get());
             };
             if (!matched) {
                 return Optional.of(new CommitResult.Conflict(lock.key(), read(connection, lock.key())));
@@ -144,6 +145,28 @@ final class Pointers {
             }
             return false;
         }
+    }
+
+    /**
+     * Takes the key of a pointer the batch holds absent, as a create takes it, and says whether it is absent (backlog
+     * 278). A missing row cannot be locked {@code FOR UPDATE}, so a placeholder is inserted under the primary key and
+     * deleted at once: the insert waits for an open create of the key and fails if one committed, and the key stays
+     * this transaction's until it ends, so a create that comes later waits for this batch and then finds the key free.
+     * No row is left, and no reader sees the placeholder.
+     */
+    private static boolean absent(Connection connection, PointerKey key, CommitBatch batch) throws SQLException {
+        try {
+            update(connection, "INSERT INTO pointer (object_id, branch, metadata_location, version, sha256, projection,"
+                    + " last_commit_id, updated_at) VALUES (?, ?, 'placeholder', 1, 'placeholder', EMPTY_BLOB(), ?, ?)",
+                    key.objectId(), key.branch(), batch.commitId(), batch.committedAt());
+        } catch (SQLIntegrityConstraintViolationException exists) {
+            if (!Jdbc.violates(exists, "POINTER_PK")) {
+                throw exists;
+            }
+            return false;
+        }
+        update(connection, "DELETE FROM pointer WHERE object_id = ? AND branch = ?", key.objectId(), key.branch());
+        return true;
     }
 
     /**
