@@ -94,7 +94,12 @@ public final class AuditRows {
     public static CatalogEvent event(AuditRow row) {
         EventType type = EventType.fromTypeName(row.type());
         try {
-            EventData data = EventCodec.MAPPER.readValue(row.data(), type.dataClass());
+            // A row of the type's previous version lacks the fields the current one added (EventCodec#current).
+            tools.jackson.databind.JsonNode payload = EventCodec.MAPPER.readTree(row.data());
+            if (!(payload instanceof tools.jackson.databind.node.ObjectNode object)) {
+                throw new IllegalArgumentException("the row of " + row.eventId() + " holds no JSON object payload");
+            }
+            EventData data = EventCodec.MAPPER.treeToValue(EventCodec.current(type, object), type.dataClass());
             return new CatalogEvent(java.util.UUID.fromString(row.eventId()), java.net.URI.create(row.source()),
                     row.time(), data);
         } catch (tools.jackson.core.JacksonException e) {

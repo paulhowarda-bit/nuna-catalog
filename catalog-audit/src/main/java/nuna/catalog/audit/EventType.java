@@ -1,6 +1,8 @@
 package nuna.catalog.audit;
 
 import java.net.URI;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * The event types of D23, each with its current payload schema version. Changes (commits, grants,
@@ -33,18 +35,29 @@ public enum EventType {
     PURGE_CLAIM("purge-claim", 1, PurgeClaim.class),
     FILE_DELETION("file-deletion", 1, FileDeletion.class),
     MAINTENANCE_EXEMPTION("maintenance-exemption", 1, MaintenanceExemption.class),
-    REF("ref", 1, RefChange.class),
+    /** Version 2 adds {@code description}, the purpose a ref was made with (backlog 167). */
+    REF("ref", 2, RefChange.class, "description"),
     ROW_COLUMN_RULE_CHANGE("row-column-rule", 1, RowColumnRuleChange.class),
     RUN_END("run-end", 1, RunEnd.class);
 
     private final String typeName;
     private final URI dataSchema;
+    private final URI previousSchema;
     private final Class<? extends EventData> dataClass;
+    private final List<String> added;
 
-    EventType(String name, int version, Class<? extends EventData> dataClass) {
+    /**
+     * @param added the nullable fields the current version added to the one before it; when there are some, the
+     *              previous version is still read, those fields being null in it (records already logged, archived or
+     *              kept in the audit table stay readable)
+     */
+    EventType(String name, int version, Class<? extends EventData> dataClass, String... added) {
         this.typeName = "nuna.catalog." + name;
         this.dataSchema = URI.create("urn:nuna:catalog:event:" + name + ":" + version);
+        this.previousSchema = added.length == 0 ? null
+                : URI.create("urn:nuna:catalog:event:" + name + ":" + (version - 1));
         this.dataClass = dataClass;
+        this.added = List.of(added);
     }
 
     /** The CloudEvents {@code type} attribute. */
@@ -59,6 +72,16 @@ public enum EventType {
 
     Class<? extends EventData> dataClass() {
         return dataClass;
+    }
+
+    /** The {@code dataschema} of the version before the current one, when the codec still reads it. */
+    Optional<URI> previousSchema() {
+        return Optional.ofNullable(previousSchema);
+    }
+
+    /** The nullable fields the current version added to the previous one. */
+    List<String> added() {
+        return added;
     }
 
     static EventType fromTypeName(String typeName) {

@@ -46,7 +46,7 @@ import java.util.stream.Stream;
 final class SqlRefs {
 
     private static final String COLUMNS = "id, catalog_id, name_norm, name, kind, created_at, created_by, from_ref,"
-            + " from_name, expires_at";
+            + " from_name, expires_at, description";
     private static final String ENTRY_COLUMNS = "ref_id, object_id, kind, parent_id, name_norm, name, version,"
             + " metadata_location, sha256";
     private static final WriteResult MISSING = new WriteResult.Missing(WriteResult.Subject.REF);
@@ -81,10 +81,11 @@ final class SqlRefs {
                     + " AND (expires_at IS NULL OR expires_at > ?)", row -> row.getLong(1), ref.catalogId(),
                     ref.kind().name(), change.at()).orElseThrow();
             int inserted = update(connection, "INSERT INTO ref (catalog_id, name_norm, name, kind, expires_at, id,"
-                            + " created_at, created_by, from_ref, from_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                            + " created_at, created_by, from_ref, from_name, description)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                             + " ON CONFLICT (catalog_id, name_norm) DO NOTHING", ref.catalogId(), ref.name().normalized(),
                     ref.name().display(), ref.kind().name(), ref.expiresAt().orElse(null), ref.id(), ref.createdAt(),
-                    ref.createdBy(), ref.fromRef().orElse(null), ref.fromName());
+                    ref.createdBy(), ref.fromRef().orElse(null), ref.fromName(), ref.description().orElse(null));
             if (inserted == 0) {
                 return Guards.nameTaken(connection, "SELECT id FROM ref WHERE catalog_id = ? AND name_norm = ?",
                         ref.catalogId(), ref.name().normalized());
@@ -130,7 +131,7 @@ final class SqlRefs {
     List<RefPointers> listPointers(UUID objectId) {
         return transactions.autocommit("ref pointers of an object", connection -> query(connection,
                 "SELECT r.id, r.catalog_id, r.name_norm, r.name, r.kind, r.created_at, r.created_by, r.from_ref,"
-                        + " r.from_name, r.expires_at, e.version, e.metadata_location, e.sha256,"
+                        + " r.from_name, r.expires_at, r.description, e.version, e.metadata_location, e.sha256,"
                         + " p.version AS head_version, p.metadata_location AS head_location, p.sha256 AS head_sha256"
                         + " FROM ref_entry e JOIN ref r ON r.id = e.ref_id"
                         + " LEFT JOIN pointer p ON p.object_id = e.object_id AND p.branch = CAST(e.ref_id AS TEXT)"
@@ -386,7 +387,8 @@ final class SqlRefs {
         return new Ref(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "id"),
                 new Name(row.getString("name_norm"), row.getString("name")), Ref.Kind.valueOf(row.getString("kind")),
                 instant(row, "created_at"), row.getString("created_by"), Optional.ofNullable(Jdbc.uuid(row, "from_ref")),
-                row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")));
+                row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")),
+                Optional.ofNullable(row.getString("description")));
     }
 
     /**

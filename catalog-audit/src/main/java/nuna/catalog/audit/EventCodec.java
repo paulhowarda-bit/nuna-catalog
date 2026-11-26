@@ -19,7 +19,9 @@ import tools.jackson.databind.node.ObjectNode;
  * bytes go to the outbox, to Kafka and to the archive.
  *
  * <p>Reading is strict: a payload must carry every field of its schema version and nothing else,
- * and the envelope must agree with it. The envelope may carry more attributes than these; the log's records carry
+ * and the envelope must agree with it. A type whose current version only added nullable fields is also read in its
+ * previous version, those fields null ({@link EventType#added}), so records already logged and archived stay readable;
+ * it is written in the current version only. The envelope may carry more attributes than these; the log's records carry
  * their {@link LogStamp} as two of them, {@value #RUN} and {@value #SEQUENCE}, which {@link #decode} leaves aside.
  */
 public final class EventCodec {
@@ -123,9 +125,10 @@ public final class EventCodec {
                 throw new IllegalArgumentException("specversion must be " + SPEC_VERSION);
             }
             EventType type = EventType.fromTypeName(text(envelope, "type"));
-            if (!type.dataSchema().toString().equals(text(envelope, "dataschema"))) {
-                throw new IllegalArgumentException("unsupported data schema " + text(envelope, "dataschema")
-                        + " for " + type.typeName());
+            String schema = text(envelope, "dataschema");
+            boolean previous = type.previousSchema().map(URI::toString).filter(schema::equals).isPresent();
+            if (!type.dataSchema().toString().equals(schema) && !previous) {
+                throw new IllegalArgumentException("unsupported data schema " + schema + " for " + type.typeName());
             }
             if (!DATA_CONTENT_TYPE.equals(text(envelope, "datacontenttype"))) {
                 throw new IllegalArgumentException("datacontenttype must be " + DATA_CONTENT_TYPE);
@@ -133,6 +136,9 @@ public final class EventCodec {
             JsonNode data = envelope.get("data");
             if (data == null || !data.isObject()) {
                 throw new IllegalArgumentException("data must be a JSON object");
+            }
+            if (previous) {
+                data = fromPrevious(type, (ObjectNode) data.deepCopy());
             }
             CatalogEvent event = new CatalogEvent(UUID.fromString(text(envelope, "id")),
                     URI.create(text(envelope, "source")), Instant.parse(text(envelope, "time")),
@@ -143,6 +149,34 @@ public final class EventCodec {
         } catch (JacksonException | DateTimeParseException e) {
             throw new IllegalArgumentException("not a catalog event: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * A payload of the type's previous version, read as the current one: each field the current version added is null.
+     * A previous payload that carries one of them is not of that version, and is refused.
+     */
+    private static ObjectNode fromPrevious(EventType type, ObjectNode data) {
+        for (String field : type.added()) {
+            if (data.has(field)) {
+                throw new IllegalArgumentException("a payload of " + type.previousSchema().orElseThrow()
+                        + " carries no " + field);
+            }
+            data.putNull(field);
+        }
+        return data;
+    }
+
+    /**
+     * A payload kept without its {@code dataschema}, as an audit table row keeps it, read as the current version: a
+     * field the current version added that it lacks is null, as in a record of the previous version.
+     */
+    static ObjectNode current(EventType type, ObjectNode data) {
+        for (String field : type.added()) {
+            if (!data.has(field)) {
+                data.putNull(field);
+            }
+        }
+        return data;
     }
 
     private static String text(JsonNode envelope, String attribute) {

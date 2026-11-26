@@ -403,7 +403,7 @@ class RefMergeRoutesTest {
         onBranch(dev, orders, append(2, 1L, 2, 2));
         onBranch(dev, staff, append(2, 1L, 2, 2));
         Ref tag = new Ref(catalog.id(), UUID.randomUUID(), name("v1"), Ref.Kind.TAG, NOW, "bea", Optional.empty(),
-                Ref.MAIN, Optional.empty());
+                Ref.MAIN, Optional.empty(), Optional.empty());
         refs.put(tag.id(), tag);
 
         assertThat(answer(() -> routes.merge("gate", "v1", false, null, http)))
@@ -531,7 +531,7 @@ class RefMergeRoutesTest {
     /** A branch made now, whose cut takes every namespace and main's pointer of each object, expiring in 30 days. */
     private Ref branch(String display, CatalogObject... cut) {
         Ref ref = new Ref(catalog.id(), UUID.randomUUID(), name(display), Ref.Kind.BRANCH, NOW, "bea",
-                Optional.empty(), Ref.MAIN, Optional.of(NOW.plus(DAY.multipliedBy(30))));
+                Optional.empty(), Ref.MAIN, Optional.of(NOW.plus(DAY.multipliedBy(30))), Optional.empty());
         refs.put(ref.id(), ref);
         List<RefEntry> entries = new ArrayList<>();
         namespaces.values().forEach(ns -> entries.add(new RefEntry(ref.id(), ns.id(), RefEntry.Kind.NAMESPACE,

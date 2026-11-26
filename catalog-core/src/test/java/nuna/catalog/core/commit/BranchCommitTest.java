@@ -426,7 +426,7 @@ class BranchCommitTest {
     /** A branch made now, whose cut takes main's pointer of each object, expiring in 30 days. */
     private Ref branch(String display, CatalogObject... cut) {
         Ref ref = new Ref(catalogId, UUID.randomUUID(), name(display), Ref.Kind.BRANCH, START, "alice",
-                Optional.empty(), Ref.MAIN, Optional.of(START.plus(DAY.multipliedBy(30))));
+                Optional.empty(), Ref.MAIN, Optional.of(START.plus(DAY.multipliedBy(30))), Optional.empty());
         refs.put(ref.id(), ref);
         Map<ObjectName, RefEntry> entries = new HashMap<>();
         for (CatalogObject object : cut) {

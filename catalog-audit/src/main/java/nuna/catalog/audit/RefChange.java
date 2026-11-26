@@ -18,12 +18,15 @@ import java.util.UUID;
  * @param catalog   the catalog the ref belongs to
  * @param from      what the ref was made from: {@code main}, or another ref's name then
  * @param expiresAt a branch's expiry after the change; null for a tag, which never expires
+ * @param description the purpose its maker gave the ref, in the record of its creation; null when it was made without
+ *                    one, and for every other action (schema version 2, backlog 167)
  * @param tables    the tables and views a merge moved onto main, or the one taken out of the ref; empty for every
  *                  other action
  * @param actor     who made the change: the caller, or for an expiry the maintenance principal
  */
 public record RefChange(Action action, UUID ref, String name, Kind kind, Securable catalog, String from,
-                        Instant expiresAt, List<Securable> tables, Actor actor) implements EventData {
+                        Instant expiresAt, String description, List<Securable> tables, Actor actor)
+        implements EventData {
 
     public enum Action { CREATED, RENEWED, DELETED, MERGED, EXPIRING, EXPIRED, OBJECT_REMOVED }
 

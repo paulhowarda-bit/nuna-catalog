@@ -78,7 +78,7 @@ class EventCodecTest {
             Map.entry(EventType.PURGE_CLAIM, List.of()),
             Map.entry(EventType.FILE_DELETION, List.of("notBefore")),
             Map.entry(EventType.MAINTENANCE_EXEMPTION, List.of()),
-            Map.entry(EventType.REF, List.of("expiresAt")),
+            Map.entry(EventType.REF, List.of("expiresAt", "description")),
             Map.entry(EventType.ROW_COLUMN_RULE_CHANGE, List.of("rowFilter")),
             Map.entry(EventType.RUN_END, List.of()));
     /** The shared records, as they appear inside a commit: actor, securable and pointer state. */
@@ -210,6 +210,62 @@ class EventCodecTest {
     void unknownDataFieldIsRejected() {
         byte[] mutated = mutateData(SampleEvents.events().get(0), data -> data.put("approvedBy", "mallory"));
         assertThatThrownBy(() -> EventCodec.decode(mutated)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** The ref record as schema version 1 wrote it, before version 2 added {@code description} (backlog 167). */
+    private static final String REF_V1 = "{\"specversion\":\"1.0\",\"id\":\"00000000-e0e0-e0e0-0000-000000000017\","
+            + "\"source\":\"urn:nuna:deployment:test\",\"type\":\"nuna.catalog.ref\",\"datacontenttype\":"
+            + "\"application/json\",\"dataschema\":\"urn:nuna:catalog:event:ref:1\",\"subject\":"
+            + "\"f0000000-0000-0000-0000-000000000001\",\"time\":\"2026-11-07T10:15:30.123Z\",\"partitionkey\":"
+            + "\"f0000000-0000-0000-0000-000000000001\",\"data\":{\"action\":\"MERGED\",\"ref\":"
+            + "\"f0000000-0000-0000-0000-000000000001\",\"name\":\"dév\",\"kind\":\"BRANCH\",\"catalog\":{\"kind\":"
+            + "\"CATALOG\",\"id\":\"00000000-0000-0000-0000-00000000000c\",\"catalog\":\"Trading\",\"path\":[]},"
+            + "\"from\":\"main\",\"expiresAt\":\"2026-12-07T10:15:30.123Z\",\"tables\":[{\"kind\":\"TABLE\",\"id\":"
+            + "\"7f0c2a52-9d0e-4a8b-9c61-2b1e6f0d4a11\",\"catalog\":\"Trading\",\"path\":[\"Équités\",\"Orders\"]}],"
+            + "\"actor\":{\"principal\":\"svc-trino\",\"endUser\":\"alice@example.com\",\"engine\":\"trino-shared\","
+            + "\"requestId\":\"req-0001\"}}}";
+
+    @Test
+    void aRefRecordOfThePreviousVersionIsReadWithNoDescription() {
+        CatalogEvent sample = SampleEvents.events().stream().filter(e -> e.type() == EventType.REF).findFirst()
+                .orElseThrow();
+
+        CatalogEvent decoded = EventCodec.decode(REF_V1.getBytes(UTF_8));
+
+        assertThat(decoded).isEqualTo(sample);
+        assertThat(((RefChange) decoded.data()).description()).isNull();
+        assertThat(EventCodec.MAPPER.readTree(EventCodec.encode(decoded)).get("dataschema").asString())
+                .as("written again in the current version").isEqualTo("urn:nuna:catalog:event:ref:2");
+    }
+
+    @Test
+    void aRefRecordOfThePreviousVersionCarryingADescriptionIsRejected() {
+        ObjectNode envelope = (ObjectNode) EventCodec.MAPPER.readTree(REF_V1);
+        ((ObjectNode) envelope.get("data")).put("description", "before the restatement");
+        byte[] mutated = EventCodec.MAPPER.writeValueAsBytes(envelope);
+        assertThatThrownBy(() -> EventCodec.decode(mutated)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aRefRecordOfTheCurrentVersionWithoutItsDescriptionIsRejected() {
+        ObjectNode envelope = (ObjectNode) EventCodec.MAPPER.readTree(REF_V1);
+        envelope.put("dataschema", "urn:nuna:catalog:event:ref:2");
+        byte[] mutated = EventCodec.MAPPER.writeValueAsBytes(envelope);
+        assertThatThrownBy(() -> EventCodec.decode(mutated)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void anAuditRowOfTheRefRecordsPreviousVersionIsReadWithNoDescription() {
+        CatalogEvent decoded = EventCodec.decode(REF_V1.getBytes(UTF_8));
+        AuditRow row = AuditRows.of(decoded, 0, 0);
+        ObjectNode previous = (ObjectNode) EventCodec.MAPPER.readTree(row.data());
+        previous.remove("description");
+        AuditRow v1Row = new AuditRow(row.eventId(), row.time(), row.type(), row.source(), row.principal(),
+                row.endUser(), row.engine(), row.requestId(), row.catalog(), row.objectKind(), row.objectId(),
+                row.objectPath(), row.operation(), row.privilege(), row.reason(), previous.toString(),
+                row.topicPartition(), row.topicOffset(), row.logRun(), row.logSequence());
+
+        assertThat(AuditRows.event(v1Row)).isEqualTo(decoded);
     }
 
     @Test

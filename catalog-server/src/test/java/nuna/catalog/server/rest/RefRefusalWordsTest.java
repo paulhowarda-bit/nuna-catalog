@@ -51,7 +51,8 @@ class RefRefusalWordsTest {
     private static OnRef on(Ref.Kind kind) {
         Ref ref = new Ref(CATALOG.id(), UUID.randomUUID(), new Name("refx", "refx"), kind, Instant.EPOCH, "bea",
                 Optional.empty(), Ref.MAIN,
-                kind == Ref.Kind.BRANCH ? Optional.of(Instant.EPOCH.plusSeconds(86_400)) : Optional.empty());
+                kind == Ref.Kind.BRANCH ? Optional.of(Instant.EPOCH.plusSeconds(86_400)) : Optional.empty(),
+                Optional.empty());
         return new OnRef(CATALOG, Optional.of(ref));
     }
 

@@ -899,7 +899,7 @@ class RefReadsTest {
 
     private Ref ref(String name, Ref.Kind kind, Optional<Instant> expiresAt) {
         Ref ref = new Ref(catalog.id(), UUID.randomUUID(), name(name), kind, NOW.minus(Duration.ofDays(2)), "mo",
-                Optional.empty(), Ref.MAIN, expiresAt);
+                Optional.empty(), Ref.MAIN, expiresAt, Optional.empty());
         refs.put(ref.name().normalized(), ref);
         return ref;
     }
