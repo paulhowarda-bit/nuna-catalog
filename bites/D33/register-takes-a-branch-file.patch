@@ -3,10 +3,10 @@ Module: catalog-core
 Test: BranchCommitTest#aRegisterRefusesABranchsFile+aReviveRefusesABranchsFile
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-index 4aeb17ef..6cf6cf0f 100644
+index 9f3f1578..bb0d5a32 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-@@ -549,12 +549,6 @@ public final class CommitEngine {
+@@ -550,12 +550,6 @@ public final class CommitEngine {
                  ? RestRequest.register(request.json()).metadataLocation()
                  : RestRequest.registerView(request.json()).metadataLocation();
          String kind = table ? "Table" : "View";
