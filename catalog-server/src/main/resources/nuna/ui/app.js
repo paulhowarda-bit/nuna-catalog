@@ -233,15 +233,19 @@ function showWho() {
   const initials = String(name).split(/[^A-Za-z0-9]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
   for (const n of $$('[data-initials]')) n.textContent = initials;
   const who = $('#who');
-  who.title = (until ? 'Signed in until ' + at(until) + '. ' : '')
-    + 'The catalog checks what you may do on every request.';
+  // The avatar carries the who-text's facts, since that text gives way from 761 to 1,320 px (backlog 231).
+  const signedIn = `Signed in as ${name}${groups.length ? ', ' + plural(groups.length, 'group') : ''}${until ? ', until ' + at(until) : ''}`;
+  who.title = signedIn + '. The catalog checks what you may do on every request.';
+  const av = $('.avatar', who);
+  av.setAttribute('role', 'img');
+  av.setAttribute('aria-label', signedIn);
   // As the prototype has it, "presenter · 5 groups · until 18:42": the groups counted, their names on hover and on
   // focus (backlog 229). Named in full, five groups pushed Sign out off a 1440 px screen.
   const names = groups.join(', ');
   fill($('.who-text', who), h('b', null, h('strong', null, name)),
     groups.length ? [' · ', h('span', {class: 'who-groups', tabindex: '0', title: names, 'data-groups': names},
       plural(groups.length, 'group'), h('span', {class: 'vh'}, ': ' + names))] : null,
-    until ? ' · until ' + at(until) : null);
+    until ? h('span', {class: 'who-until'}, ' · until ' + at(until)) : null);
   for (const p of $$('p[data-who]', navEl)) {
     p.textContent = `Signed in as ${name}${groups.length ? ' · ' + groups.join(', ') : ''}${until ? ' · until ' + at(until) : ''}`;
   }
@@ -249,6 +253,7 @@ function showWho() {
 
 function clearWho() {
   for (const n of $$('[data-initials], [data-who]')) n.replaceChildren();
+  $('#who .avatar')?.removeAttribute('aria-label');
 }
 
 // ---- sign-in ----

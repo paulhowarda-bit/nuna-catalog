@@ -1583,6 +1583,140 @@ class ConsoleBrowserTest {
         assertThat(sideways()).isFalse();
     }
 
+    /**
+     * A frozen and held table's page fits a 1440 px window once its governance has loaded: the freeze's reason, in a pill
+     * in Overview's governance facts, wraps in its column instead of running past the window (backlog 232).
+     */
+    @Test
+    void aFrozenAndHeldTablesPageFitsTheWindowOnceItsGovernanceLoads() {
+        signIn(tester());
+        driver.manage().window().setSize(new Dimension(1440, 900));
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.awaitText(By.cssSelector("#table-page h1"), "trades");
+        WebElement reason = browser.await(By.cssSelector("#table-page dd .pill.frozen"));
+        assertThat(textContent(reason)).contains(FREEZE_REASON);
+        browser.await(By.cssSelector("#table-page .title-row .pill.frozen"));
+        assertThat(sideways()).isFalse();
+    }
+
+    /**
+     * Between a phone and a wide screen the header fits the window at every width, its parts side by side without
+     * overlapping: what gives way as the window narrows is Atelier's order (backlog 231; Atelier, 2026-11-26), and every
+     * control keeps a name that says what it does once its words are hidden. Before, the header ran past the window from
+     * 761 to 1,016 px and from 1,241 to 1,297 px. It is checked on a catalog page reading main and on Governance carried
+     * through a branch, which adds the branch chip and the note that the page shows main only. As in Atelier's harness,
+     * the names are long, so each ends in an ellipsis: the name signed in, shown from {@code preferred_username} while the
+     * catalog goes by the subject, and the branch's.
+     */
+    @Test
+    void betweenAPhoneAndAWideScreenTheHeaderFitsAtEveryWidth() {
+        List<String> groups = List.of(IssuerForTests.GROUP, "demo-analysts", "demo-auditors", "demo-grant-admins",
+                "demo-operators", "demo-stewards");
+        Instant now = clock.instant();
+        signIn(IssuerForTests.sign(IssuerForTests.claims("tester", "nuna-console", groups.toArray(String[]::new))
+                .claim("preferred_username", "tester-at-the-desk")
+                .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plus(Duration.ofHours(1))))
+                .build()));
+        int[] frames = {761, 800, 850, 900, 901, 1000, 1100, 1101, 1240, 1241, 1260, 1320, 1321, 1400, 1401, 1440};
+        // The item's own window widths, whatever frame they give.
+        int[] windows = {800, 1000, 1260};
+
+        driver.manage().window().setSize(new Dimension(1440, 900));
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#catalog-page table.contents tr[data-kind='namespace'][data-name='" + top + "']"));
+        browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]"));
+        for (int frame : frames) {
+            assertTheHeaderFits(frame, true);
+        }
+        for (int window : windows) {
+            assertTheHeaderFits(window, false);
+        }
+
+        // With the header's words hidden, each control keeps its name.
+        assertTheHeaderFits(850, true);
+        assertThat(driver.findElement(By.cssSelector("#top .nc-go")).getAccessibleName()).isEqualTo("Go to a path");
+        assertThat(driver.findElement(By.id("sign-out")).getAccessibleName()).isEqualTo("Sign out");
+        assertThat(driver.findElement(By.id("catalog-pick")).getAccessibleName()).isEqualTo("Catalog trading");
+        assertThat(driver.findElements(By.cssSelector("#top .seg button")).stream().map(WebElement::getAccessibleName))
+                .containsExactly("Light", "Dark", "Auto");
+        assertThat(driver.findElement(By.cssSelector("#who .avatar")).getAccessibleName())
+                .startsWith("Signed in as tester-at-the-desk, 6 groups, until ");
+
+        String branch = "wide_branch_" + Api.suffix();
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + branch + "\",\"kind\":\"branch\"}"), 201);
+        try {
+            driver.manage().window().setSize(new Dimension(1440, 900));
+            browser.open("/ui/#p=governance&c=trading&r=" + branch);
+            browser.awaitText(By.cssSelector("#top #reading-slot [data-main-only]"), "This page shows main only");
+            for (int frame : frames) {
+                assertTheHeaderFits(frame, true);
+            }
+            for (int window : windows) {
+                assertTheHeaderFits(window, false);
+            }
+        } finally {
+            api.manage("DELETE", "/refs/" + branch, null);
+        }
+    }
+
+    /**
+     * Sizes the window so the console's frame is {@code width} wide (or the window itself, if not {@code frame}), then
+     * asserts the header fits: no wider than the window, Sign out within it, and no part of it over another.
+     */
+    private void assertTheHeaderFits(int width, boolean frame) {
+        driver.manage().window().setSize(new Dimension(width, 900));
+        if (frame) {
+            for (int i = 0; i < 3; i++) {
+                int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
+                if (now == width) {
+                    break;
+                }
+                Dimension size = driver.manage().window().getSize();
+                driver.manage().window().setSize(new Dimension(size.width + width - now, 900));
+            }
+            assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
+                    .as("the console's frame").isEqualTo(width);
+        }
+        assertThat(headerFits()).as("the header fits at %d px", width).isTrue();
+        assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
+        assertThat((String) driver.executeScript(HEADER_OVERLAPS)).as("the header's parts at %d px", width).isEmpty();
+    }
+
+    /**
+     * Returns the first overlap in the header, or an empty string: two shown parts of {@code #top} side by side that
+     * overlap, or a part whose shown content runs past its own box (the note that the page shows main only ran under Go
+     * to a path while the page was still no wider than the window, in Atelier's harness). Content clipped by an element
+     * that hides its overflow, and visually hidden words, are left out.
+     */
+    private static final String HEADER_OVERLAPS = """
+            const shown = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+            const parts = [...document.getElementById('top').children].filter(shown)
+                .map(e => ({e, r: e.getBoundingClientRect()})).filter(p => p.r.width > 1)
+                .sort((a, b) => a.r.left - b.r.left);
+            const name = e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.className && e.className.baseVal === undefined ? '.' + String(e.className).trim().split(/\\s+/).join('.') : '');
+            for (let i = 1; i < parts.length; i++) {
+              const a = parts[i - 1], b = parts[i];
+              if (a.r.right > b.r.left + 0.5 && a.r.top < b.r.bottom && b.r.top < a.r.bottom)
+                return name(a.e) + ' overlaps ' + name(b.e) + ' by ' + (a.r.right - b.r.left).toFixed(1) + ' px';
+            }
+            const clipped = (e, part) => {
+              for (let x = e.parentElement; x && x !== part; x = x.parentElement)
+                if (getComputedStyle(x).overflowX !== 'visible') return true;
+              return false;
+            };
+            for (const {e: part, r} of parts) {
+              for (const d of part.querySelectorAll('*')) {
+                if (!shown(d) || clipped(d, part)) continue;
+                const q = d.getBoundingClientRect();
+                if (q.width <= 1 || q.height <= 1) continue;
+                if (q.right > r.right + 0.5 || q.left < r.left - 0.5)
+                  return name(d) + ' runs past ' + name(part) + ' (' + q.left.toFixed(1) + '-' + q.right.toFixed(1)
+                      + ' against ' + r.left.toFixed(1) + '-' + r.right.toFixed(1) + ')';
+              }
+            }
+            return '';
+            """;
+
     /** Whether the header and its last control, Sign out, end within the window. */
     private boolean headerFits() {
         return (Boolean) driver.executeScript("const w = document.documentElement.clientWidth;"
