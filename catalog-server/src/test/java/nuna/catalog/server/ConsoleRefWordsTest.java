@@ -181,7 +181,11 @@ class ConsoleRefWordsTest {
                 "if ((g.holds || []).length) return 'held';",
                 "if ((g.effective || {})['dr-freeze']) return 'frozen';");
         // Drawn from item 170's read alone, never the table's load.
-        assertThat(kept).contains("(await api.objectRefs(target)).objects").doesNotContain("api.table(", "loadTable");
+        assertThat(kept).contains("answer = await api.objectRefs(target);").doesNotContain("api.table(", "loadTable");
+        // A walk cut short (item 170): none found says so; only dropped ones shown says one may be missing.
+        assertThat(kept).contains("const cut = !!answer['cut-short'];",
+                "'The catalog reads only part of a namespace\\'s dropped tables and found none '",
+                "cut && shown.every(dropped) ? h('p', {class: 'fine', 'data-kept-cut': ''}");
         // After governance on the Access tab, for a table or a view.
         assertThat(resource("panels.js")).contains("gov, kept, rulesPanel(target), grants);",
                 "const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;");

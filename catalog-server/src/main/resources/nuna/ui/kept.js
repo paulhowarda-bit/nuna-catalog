@@ -94,15 +94,26 @@ async function objectPanel(target, o) {
  * read's refusal as the catalog answered it.
  */
 export async function keptPanel(target) {
-  let objects;
+  let answer;
   try {
-    objects = (await api.objectRefs(target)).objects || [];
+    answer = await api.objectRefs(target);
   } catch (error) {
     return h('div', {class: 'stack', id: 'kept-by-refs'}, h('div', {class: 'panel kept-panel'},
       h('h2', null, 'Kept by branches and tags'), failure(error, {compact: true})));
   }
-  const shown = shownObjects(objects, target);
-  return h('div', {class: 'stack', id: 'kept-by-refs'}, await Promise.all(shown.map(o => objectPanel(target, o))));
+  const shown = shownObjects(answer.objects || [], target);
+  // The catalog reads only part of a namespace's dropped tables (item 170): with none found, or only dropped ones
+  // shown, an earlier one may be missing. Item 170's words, as on its "Dropped on main" state.
+  const cut = !!answer['cut-short'];
+  if (!shown.length) {
+    return h('div', {class: 'stack', id: 'kept-by-refs'}, h('div', {class: 'panel kept-panel'}, h('h2', null, 'Kept by branches and tags'),
+      cut ? h('p', {class: 'muted', 'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped tables and found none '
+        + 'at this path among them; one dropped earlier may still be kept by a branch or tag.') : null));
+  }
+  return h('div', {class: 'stack', id: 'kept-by-refs'}, await Promise.all(shown.map(o => objectPanel(target, o))),
+    cut && shown.every(dropped) ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped '
+      + 'tables and stopped before the end, so an earlier table at this path, and the branches and tags that keep it, may be '
+      + 'missing here.') : null);
 }
 
 /**
