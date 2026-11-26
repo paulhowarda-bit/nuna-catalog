@@ -1308,6 +1308,46 @@ class ConsoleBrowserTest {
                 .allMatch(r -> "denial".equals(r.getDomAttribute("data-type"))));
     }
 
+    /** An object's Audit tab as a server with the audit tables answers it: from the table, not Kafka (backlog 197). */
+    private static final String AUDIT_TAB_FROM_THE_TABLE = """
+            const real = window.fetch;
+            const now = Date.now();
+            const rec = (i, type) => ({specversion: '1.0', id: 'e0000000-0000-4000-8000-00000000019' + i, source: 'nuna',
+              type: 'nuna.catalog.' + type, time: new Date(now - i * 60000).toISOString(),
+              subject: 'a0000000-0000-4000-8000-000000000197', data: {actor: {principal: 'gina', requestId: 'r' + i}}});
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/tables/trades/audit')) {
+                return json({target: {kind: 'table', name: 'trades'}, source: 'table', records: [rec(1, 'commit'), rec(2, 'read')],
+                  complete: false, table: {name: 'nuna_audit.audit.events', 'committed-at': new Date(now - 60000).toISOString()}});
+              }
+              return real(url, init);
+            };
+            location.hash = arguments[0];
+            """;
+
+    /**
+     * Where the audit tables are configured, an object's Audit tab reads its records from the audit table, which holds
+     * every record the log does, Kafka or not, and says so (backlog 197, in Atelier's words).
+     */
+    @Test
+    void anObjectsAuditTabSaysItsRecordsCameFromTheAuditTable() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(AUDIT_TAB_FROM_THE_TABLE, "#" + at("table", eu, "trades", "audit"));
+        browser.await(By.cssSelector("#audit .feed-row[data-type='read']"));
+
+        assertThat(driver.findElements(By.cssSelector("#audit .feed-row")).stream()
+                .map(row -> row.getDomAttribute("data-type")).toList()).containsExactly("commit", "read");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit p.window")))).isEqualTo(
+                "Read from nuna_audit.audit.events as of its last commit: its writer commits about once a minute.");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit .stack")))).contains(
+                "No. Only the newest part of the audit table was searched: search the SIEM for the full trail.")
+                .doesNotContain("Kafka", "partition", "offset");
+    }
+
     @Test
     void theThemeIsPickedAndKeptInThisBrowser() {
         signIn(tester());

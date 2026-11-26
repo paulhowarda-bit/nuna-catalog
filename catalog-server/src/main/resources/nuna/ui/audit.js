@@ -261,8 +261,10 @@ function feedPanel(catalog, summary, own) {
     feed.append(...records.map(r => feedRow(catalog, r)));
     shown += records.length;
     const committed = (answer.table || {})['committed-at'];
-    status.textContent = `${plural(shown, 'record')} shown, newest first, up to `
-      + `${committed ? at(committed) : 'the last commit'}. Records arrive here about a minute after they happen.`
+    // "As of" the last commit, not "up to" it: a writer catching up commits later than the newest record it holds.
+    status.textContent = (committed ? `${plural(shown, 'record')} shown, newest first, as of the last commit at ${at(committed)}.`
+      : `${plural(shown, 'record')} shown: nothing has been committed to the audit tables.`)
+      + ' Records arrive here about a minute after they happen.'
       + (answer['searched-to'] ? ` Searched back to ${at(answer['searched-to'])}.` : '');
     if (!shown && !answer['next-page-token']) feed.replaceChildren(h('p', {class: 'muted feed-none'}, 'No record matches. Try another kind, anyone, or an earlier time.'));
     more.replaceChildren();

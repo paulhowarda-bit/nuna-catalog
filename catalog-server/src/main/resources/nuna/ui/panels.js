@@ -709,7 +709,8 @@ export function auditTab(target, {title} = {}) {
     status.textContent = `${plural(shown, 'record')} shown, newest first. Reading the trail is itself audited.`;
   };
   const run = () => load(feed, async () => {
-    const body = await api.recentAudit(target, limit.value);
+    const asked = Number(limit.value);
+    const body = await api.recentAudit(target, asked);
     const records = body.records || [];
     const fromTable = body.source === 'table';
     const w = body.window || {};
@@ -728,12 +729,17 @@ export function auditTab(target, {title} = {}) {
     const people = [...new Set(records.map(r => ((r.data || {}).actor || {}).principal).filter(Boolean))].sort();
     fill(who, h('option', {value: ''}, 'Anyone'), people.map(p => h('option', {value: p}, p)));
     fill(windowBox, fromTable ? panel('How far back this goes', null, facts([
-      ['Complete', body.complete ? 'Yes: every record about it in the audit table is shown.'
-        : [h('b', null, 'No.'), ' The audit table holds older records: show more, or search the SIEM for the full trail.']],
+      // Not complete: a full page may have older records behind it; a shorter one means the reader's scan budget ran
+      // out, which a larger page would not help.
+      ['Complete', body.complete ? 'Yes: every record about it is shown, up to about a minute ago.'
+        : [h('b', null, 'No.'), records.length < asked
+          ? ' Only the newest part of the audit table was searched: search the SIEM for the full trail.'
+          : asked < 200 ? ' There may be older records about it: show the latest 200, or search the SIEM for the full trail.'
+            : ' There may be older records about it: search the SIEM for the full trail.']],
     ]), techDetails(facts([
       ['Table', code(t.name || '')],
-      ['Written up to', t['committed-at'] ? at(t['committed-at']) : 'nothing written yet'],
-    ]), h('p', {class: 'fine window'}, `Read from the audit table ${t.name}, as its writer last committed it, about a minute behind.`)))
+      ['Last commit', t['committed-at'] ? at(t['committed-at']) : 'none yet'],
+    ]), h('p', {class: 'fine window'}, `Read from ${t.name} as of its last commit: its writer commits about once a minute.`)))
     : panel('How far back this goes', null, facts([
       ['Complete', w.complete ? 'Yes: every record still kept is shown.'
         : [h('b', null, 'No.'), ' Older records may exist beyond the scanned window: search the SIEM for the full trail.']],
@@ -744,8 +750,9 @@ export function auditTab(target, {title} = {}) {
     ]), h('p', {class: 'fine window'}, `Read from ${w.topic}, partition ${w.partition}, offsets ${w['from-offset']} to ${w['to-offset']}.`))));
     setTimeout(apply);
     return records.length ? records.map(feedRow)
-      : h('p', {class: 'muted feed-none'}, fromTable ? `No audit record about this ${target.kind} in the audit table.`
-        : `No audit record about this ${target.kind} in the scanned window.`);
+      : h('p', {class: 'muted feed-none'}, !fromTable ? `No audit record about this ${target.kind} in the scanned window.`
+        : body.complete ? `No audit record about this ${target.kind}, up to about a minute ago.`
+          : `No audit record about this ${target.kind} in the newest part of the audit table.`);
   });
   who.addEventListener('change', apply);
   limit.addEventListener('change', run);
