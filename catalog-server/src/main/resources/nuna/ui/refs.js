@@ -66,8 +66,23 @@ const resultKey = (c, name) => c + '|' + String(name).toLowerCase();
  */
 const cutOf = r => r['cut-at'] || null;
 
-/** The branches' changes a ref holds besides main at its point, as each was taken: ", with @dev's changes as at …". */
-const heldWords = r => (r['branch-changes'] || []).map(b => `, with @${b.branch}'s changes as at ${refAt(b['as-of'])}`).join('');
+/**
+ * The branches' changes a ref holds besides main at its point, as each was taken, nearest first as the catalog lists
+ * them: ", with @a's changes as at {time}", then " and @b's as at {time}" for each after it (Atelier, 2026-11-25).
+ */
+const heldWords = r => (r['branch-changes'] || []).map((b, i) => i === 0
+  ? `, with @${b.branch}'s changes as at ${refAt(b['as-of'])}` : ` and @${b.branch}'s as at ${refAt(b['as-of'])}`).join('');
+
+/**
+ * The point a ref reads main at, for the band (Atelier, 2026-11-25): its time, or "@x's point" where a ref in its line
+ * has ended, then the branches' changes it holds; and the sentence the band adds after its own when one has ended.
+ */
+function pointWords(r) {
+  const cut = cutOf(r);
+  const x = r['cut-from-ended'] || r.from;
+  return {at: (cut ? refAt(cut) : `@${x}'s point`) + heldWords(r),
+    ended: cut ? '' : ` @${x} has ended, so the catalog no longer knows when its point was.`};
+}
 
 // ---- the chip, the selector, the band and the notes ----
 
@@ -180,12 +195,11 @@ export function readingControl(where, mainOnly = false) {
 function refBand(r, where, list) {
   const back = h('a', {class: 'btn sm', href: href(Object.assign({}, where, {r: null}))}, 'Read main instead');
   const more = h('a', {class: 'btn sm ghost', href: refHref(where.c, r.name)}, `About @${r.name}`);
-  const cut = cutOf(r);
-  const cutWords = (cut ? refAt(cut) : `the point @${r['cut-from-ended'] || r.from} was made from`) + heldWords(r);
+  const point = pointWords(r);
   if (r.kind === 'tag') {
     return h('div', {class: 'ref-band t', role: 'note', 'data-ref-band': r.name}, h('span', {class: 'rb-ic'}, icon('lock')),
-      h('div', {class: 'rb-txt'}, h('p', null, h('b', null, 'Reading the tag ', cref(r), `: ${where.c} as it was at ${cutWords}.`),
-        ' Read-only: no engine and no console page can change anything through it.'),
+      h('div', {class: 'rb-txt'}, h('p', null, h('b', null, 'Reading the tag ', cref(r), `: ${where.c} as it was at ${point.at}.`),
+        point.ended, ' Read-only: no engine and no console page can change anything through it.'),
       h('p', {class: 'fine'}, madeFrom(r, list), '. It never expires.')),
       h('div', {class: 'rb-acts'}, more, back));
   }
@@ -194,7 +208,7 @@ function refBand(r, where, list) {
   return h('div', {class: 'ref-band b' + (expiring(r) ? ' warn' : ''), role: 'note', 'data-ref-band': r.name},
     h('span', {class: 'rb-ic'}, icon(expiring(r) ? 'clock' : 'branch')),
     h('div', {class: 'rb-txt'}, h('p', null, h('b', null, 'Reading the branch ', cref(r), '.'),
-      ` ${plural(n, 'table')} changed on it; every other table reads as main had it at ${cutWords}.`),
+      ` ${plural(n, 'table')} changed on it; every other table reads as main had it at ${point.at}.${point.ended}`),
     h('p', {class: 'fine'}, madeFrom(r, list), '. ', expiring(r)
       ? h('b', {class: 'warn-ink'}, `Expires ${untilWords(r['expires-at'])}, ${refAt(r['expires-at'])}.`)
       : `Expires ${refAt(r['expires-at'])} unless a commit or a renewal moves it.`)),
@@ -420,7 +434,7 @@ async function refsTab(c, list) {
       ' A new branch is refused until one is merged, deleted or expires. Tags are counted apart.')));
   }
   out.push(h('div', {class: 'panel refline-panel'}, h('h2', null, 'Every ref on one line ',
-    h('span', {class: 'meta'}, 'main is the waterline; branches run beneath it to their expiry')), refLine(c, refs, list),
+    h('span', {class: 'meta'}, 'main is the waterline; branches run beneath it to their expiry')), refLine(c, refs),
   h('p', {class: 'fine only-sm'}, 'Opens at today; earlier refs are to the left.')));
   const rows = refs.slice().sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'branch' ? -1 : 1)
     || (a.kind === 'branch' ? ms(a['expires-at']) - ms(b['expires-at']) : ms(b['created-at']) - ms(a['created-at'])))
@@ -509,7 +523,7 @@ function refsExplain(c, lim) {
 }
 
 /** The ref line: main as the waterline, tags as flags, each branch beneath it from its point to its expiry. */
-function refLine(c, refs, list) {
+function refLine(c, refs) {
   const now = Date.now();
   const brs = refs.filter(r => r.kind === 'branch').sort((a, b) => ms(a['created-at']) - ms(b['created-at']));
   const tags = refs.filter(r => r.kind === 'tag');

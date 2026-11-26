@@ -5,6 +5,7 @@ import static nuna.catalog.server.governance.Management.NAMESPACE;
 
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
+import nuna.catalog.core.commit.Alerts;
 import nuna.catalog.core.commit.GovernanceChain;
 import nuna.catalog.core.commit.MetadataCache;
 import nuna.catalog.core.commit.TableFiles;
@@ -14,6 +15,7 @@ import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Authorizer.Decision;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.server.governance.Management.Request;
+import nuna.catalog.server.rest.ServerAlerts;
 import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.storage.CatalogStorage;
 import nuna.catalog.store.CatalogObject;
@@ -92,10 +94,13 @@ class NamespaceTablesRoutes {
     private static final Authorizer.Operation DESCRIBE_COUNTED = new Authorizer.Operation(TOTALS,
             Privilege.DESCRIBE, false);
 
-    /** The catalog's own read of a metadata file: its JSON, or empty when the file no longer matches its SHA-256. */
+    /**
+     * The catalog's own read of a metadata file, from the metadata cache, which holds only files that matched their
+     * SHA-256, or from the object store, with whether it still matches.
+     */
     @FunctionalInterface
     interface MetadataFiles {
-        Optional<String> read(UUID catalogId, String location, String sha256);
+        TableFiles.Read read(UUID catalogId, String location, String sha256);
     }
 
     private final CatalogStore store;
@@ -104,33 +109,35 @@ class NamespaceTablesRoutes {
     private final Holdings holdings;
     private final Authorizer authorizer;
     private final MetadataFiles files;
+    private final Alerts alerts;
     private final Clock clock;
 
     @Autowired
     NamespaceTablesRoutes(CatalogStore store, Management management, ManagementGuard guard, Holdings holdings,
-                          Authorizer authorizer, CatalogStorage storage, MetadataCache cache, Clock clock) {
+                          Authorizer authorizer, CatalogStorage storage, MetadataCache cache, ServerAlerts alerts,
+                          Clock clock) {
         this(store, management, guard, holdings, authorizer, (catalogId, location, sha256) -> {
             String cached = cache.get(location);
             if (cached != null) {
-                return Optional.of(cached);
+                return new TableFiles.Read(cached, sha256, true);
             }
             TableFiles.Read read = storage.forCatalog(catalogId).files().read(location, sha256);
-            if (!read.intact()) {
-                return Optional.empty();
+            if (read.intact()) {
+                cache.put(location, read.json());
             }
-            cache.put(location, read.json());
-            return Optional.of(read.json());
-        }, clock);
+            return read;
+        }, alerts, clock);
     }
 
     NamespaceTablesRoutes(CatalogStore store, Management management, ManagementGuard guard, Holdings holdings,
-                          Authorizer authorizer, MetadataFiles files, Clock clock) {
+                          Authorizer authorizer, MetadataFiles files, Alerts alerts, Clock clock) {
         this.store = store;
         this.management = management;
         this.guard = guard;
         this.holdings = holdings;
         this.authorizer = authorizer;
         this.files = files;
+        this.alerts = alerts;
         this.clock = clock;
     }
 
@@ -391,7 +398,12 @@ class NamespaceTablesRoutes {
                 }
                 Page<Child> page = namespaces(scope, level.namespace().id(), new PageRequest(token, budget - examined));
                 examined += page.items().size();
-                page.items().forEach(ns -> under.add(new Level(ns, below(level.path(), ns.name()))));
+                // Through a ref a namespace of the cut may hold a table main has since moved where the caller may
+                // describe it; its newest commit would then name the namespace, which the caller may not list. So a
+                // walk through a ref goes down only into a namespace the caller holds something on, above or in.
+                page.items().stream().filter(ns -> scope.ref().isEmpty()
+                                || holdings.onAboveOrIn(caller, scope.target().catalog().id(), ns.id()))
+                        .forEach(ns -> under.add(new Level(ns, below(level.path(), ns.name()))));
                 token = page.nextToken();
             } while (token.isPresent());
             for (int i = under.size() - 1; i >= 0; i--) {
@@ -535,20 +547,24 @@ class NamespaceTablesRoutes {
 
     /**
      * The format version and snapshot count of the file a cut took: main's projection while main's pointer is that
-     * file; else the file's own, read and checked against its SHA-256; empty when it no longer matches.
+     * file; else the file's own, read and checked against its SHA-256. A file that no longer matches raises the
+     * metadata integrity alert, as every load of one does (D26), and gives no facts.
      */
     private Optional<JsonNode> facts(CatalogRecord catalog, CatalogObject table, RefEntry.At cut) {
         Optional<Pointer> main = store.readPointer(table.mainKey());
         if (main.isPresent() && main.get().metadataLocation().equals(cut.metadataLocation())) {
             return Optional.of(Management.JSON.readTree(main.get().projection()));
         }
-        return files.read(catalog.id(), cut.metadataLocation(), cut.sha256()).map(json -> {
-            JsonNode file = Management.JSON.readTree(json);
-            ObjectNode facts = Management.JSON.createObjectNode();
-            facts.put("format-version", file.path("format-version").asInt(1));
-            facts.put("snapshots", file.path("snapshots").size());
-            return facts;
-        });
+        TableFiles.Read read = files.read(catalog.id(), cut.metadataLocation(), cut.sha256());
+        if (!read.intact()) {
+            alerts.metadataIntegrity(table.id(), cut.metadataLocation(), cut.sha256(), read.sha256());
+            return Optional.empty();
+        }
+        JsonNode file = Management.JSON.readTree(read.json());
+        ObjectNode facts = Management.JSON.createObjectNode();
+        facts.put("format-version", file.path("format-version").asInt(1));
+        facts.put("snapshots", file.path("snapshots").size());
+        return Optional.of(facts);
     }
 
     /** The journal's entry of {@code key} at {@code version}, and when {@code location} is given, that wrote it. */

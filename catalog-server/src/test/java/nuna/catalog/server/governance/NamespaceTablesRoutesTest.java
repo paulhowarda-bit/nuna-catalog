@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Denial;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
+import nuna.catalog.core.commit.TableFiles;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
 import nuna.catalog.security.Authorizer;
@@ -29,6 +31,8 @@ import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
 import nuna.catalog.server.rest.AuditPublisher;
 import nuna.catalog.server.rest.RestSettings;
+import nuna.catalog.server.rest.ServerAlerts;
+import nuna.catalog.server.rest.ServerAlertsForTests;
 import nuna.catalog.server.security.Denials;
 import nuna.catalog.server.security.DenialsForTests;
 import nuna.catalog.server.security.Holdings;
@@ -51,6 +55,7 @@ import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.Securable;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -90,6 +95,9 @@ class NamespaceTablesRoutesTest {
     /** The object store's metadata files, by location, which only a read through a ref may open. */
     private final Map<String, String> files = new LinkedHashMap<>();
     private final List<String> filesRead = new ArrayList<>();
+    /** Files whose bytes no longer hash to what the cut recorded. */
+    private final Set<String> tampered = new HashSet<>();
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
 
     private final NamespaceRecord desk = namespace(null, "desk");
     private final NamespaceRecord lobby = namespace(null, "lobby");
@@ -143,7 +151,8 @@ class NamespaceTablesRoutesTest {
         // No security settings: they name only the maintenance principals, whom this route never asks for.
         ManagementGuard guard = new ManagementGuard(authorizer, separation, null, denials, holdings);
         routes = new NamespaceTablesRoutes(store, management, guard, holdings, authorizer,
-                (catalogId, location, sha256) -> readFile(location), clock);
+                (catalogId, location, sha256) -> readFile(location, sha256), ServerAlertsForTests.alerts(meters),
+                clock);
     }
 
     @Test
@@ -562,6 +571,66 @@ class NamespaceTablesRoutesTest {
         assertThat(newest.get("version").asLong()).isEqualTo(1);
     }
 
+    /**
+     * The Nuna Security Expert's review of 168, finding 1: the cut has annex.back.ledger, and main has moved ledger
+     * to cellar since. Mia may describe it there and holds select on annex.notes, but nothing on back. Through the tag,
+     * annex's totals leave back out: counting ledger would name back in the newest commit, yet a listing of back
+     * through the tag answers her 404, as it never could on main.
+     */
+    @Test
+    void throughARefTotalsNeverGoDownIntoANamespaceTheCallerHoldsNothingOn() {
+        NamespaceRecord annex = namespace(null, "annex");
+        NamespaceRecord back = namespace(annex, "back");
+        NamespaceRecord cellar = namespace(null, "cellar");
+        CatalogObject notes = table(annex, "notes");
+        CatalogObject ledger = object(back, "ledger", Kind.TABLE);
+        commits(ledger, 2, 4, List.of(new JournalEntry("etl", null, "spark", "[]", "[]")), Duration.ofSeconds(1));
+        refFromMain("eod", Ref.Kind.TAG);
+        objects.put(ledger.id(), new CatalogObject(catalog.id(), ledger.id(), cellar.id(), ledger.name(), Kind.TABLE,
+                CatalogObject.State.ACTIVE, Optional.empty(), Optional.empty(), ledger.locationRoot(),
+                Optional.empty()));
+        grant(new Securable(Securable.Kind.NAMESPACE, cellar.id()), "movers", Privilege.DESCRIBE);
+        grant(notes.securable(), "movers", Privilege.SELECT);
+        caller = person("mia", "movers");
+
+        JsonNode annexRow = totals(null, null, null, "eod").get("namespaces").valueStream()
+                .filter(row -> row.get("name").asString().equals("annex")).findFirst().orElseThrow();
+
+        assertThat(annexRow.get("tables").asInt()).as("notes alone; ledger is beneath back").isEqualTo(1);
+        assertThat(annexRow.get("newest-commit").get("table").valueStream().map(JsonNode::asString))
+                .containsExactly("notes");
+        assertThat(catchThrowable(() -> routes.tables("gate", "annex\u001fback", null, null, "eod", http)))
+                .as("back itself is refused her through the tag").isInstanceOfSatisfying(CatalogError.class,
+                        error -> assertThat(error.type()).isEqualTo("NoSuchNamespaceException"));
+    }
+
+    /**
+     * The Nuna Security Expert's review of 168, finding 2: a cut's metadata file that no longer hashes to what the cut
+     * recorded raises the metadata integrity alert, as every load of one does (D26); the listing still answers, with
+     * no format or snapshots for that table, and records no read.
+     */
+    @Test
+    void throughARefACutsFileThatNoLongerMatchesRaisesTheIntegrityAlert() {
+        refFromMain("eod", Ref.Kind.TAG);
+        files.put(location(trades, 4), "{\"format-version\":2,\"snapshots\":[{},{},{}]}");
+        tampered.add(location(trades, 4));
+        commits(trades, 2, 7, List.of(
+                new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("trino", "ana", "trino", "[]", "[]"),
+                new JournalEntry("late", null, "spark", "[]", "[]")));
+
+        JsonNode row = tables("desk", null, null, "eod").get("tables").get(1);
+
+        assertThat(row.get("name").asString()).isEqualTo("trades");
+        assertThat(row.has("format-version")).isFalse();
+        assertThat(row.has("snapshots")).isFalse();
+        assertThat(row.get("ref").get("version").asLong()).isEqualTo(4);
+        assertThat(meters.counter(ServerAlerts.INTEGRITY).count()).isEqualTo(1.0);
+        assertThat(audit).as("no read is recorded, and nothing refused").isEmpty();
+    }
+
     // ---- helpers ----
 
     private JsonNode tables(String namespace, String token, Integer size, String ref) {
@@ -632,9 +701,15 @@ class NamespaceTablesRoutesTest {
                 table.locationRoot(), Optional.empty());
     }
 
-    private Optional<String> readFile(String location) {
+    /** The object store's file at {@code location}: intact, or, once {@link #tampered} names it, not. */
+    private TableFiles.Read readFile(String location, String sha256) {
         filesRead.add(location);
-        return Optional.ofNullable(files.get(location));
+        String json = files.get(location);
+        if (json == null) {
+            throw new IllegalStateException("no metadata file at " + location);
+        }
+        return tampered.contains(location) ? new TableFiles.Read(json, "f".repeat(64), false)
+                : new TableFiles.Read(json, sha256, true);
     }
 
     private List<RefEntry> entries(UUID refId, UUID parentId, RefEntry.Kind kind) {

@@ -125,7 +125,9 @@ async function contents(catalog, levels, ref) {
 
 /**
  * The On @ref cell: changed here at its version, or as at the point with the version the ref reads (backlog 168), on
- * main's line or, when the point took a branch's version, that branch's; a namespace counts what changed beneath it.
+ * main's line or, when the point took a branch's version, that branch's ("@dev's v3", as the merge says "@dev's
+ * version 3"). With no line the version's numbering is unknown, so no version (Atelier, 2026-11-25). A namespace
+ * counts what changed beneath it.
  */
 function onRefCell(x, path, isNamespace, kept) {
   const key = path.join('.');
@@ -134,11 +136,14 @@ function onRefCell(x, path, isNamespace, kept) {
     return n ? h('span', {class: 'on-ref'}, `${plural(n, 'table')} changed here`) : muted('—');
   }
   const t = x.changed.find(c => [...c.namespace, c.name].join('.') === key);
-  return t ? h('span', {class: 'on-ref'}, pill('ok', 'changed here'), ' ', badge('v' + fmt(t.version), 'strong'))
-    : kept && kept.ref ? h('span', {class: 'on-ref muted'}, `as at the point, v${fmt(kept.ref.version)}`
-      + (kept.ref.line && kept.ref.line !== 'main' ? ` of @${kept.ref.line}` : ''))
-      : h('span', {class: 'on-ref muted'}, 'as at the point');
+  if (t) return h('span', {class: 'on-ref'}, pill('ok', 'changed here'), ' ', badge('v' + fmt(t.version), 'strong'));
+  const line = kept && kept.ref && kept.ref.line;
+  return h('span', {class: 'on-ref muted'}, 'as at the point' + (!line ? ''
+    : line === 'main' ? ` · v${fmt(kept.ref.version)}` : ` · @${line}'s v${fmt(kept.ref.version)}`));
 }
+
+/** Whether a row read through a ref has no last commit because the line that wrote its version is unknown. */
+const lineUnknown = x => [...x.kept.values()].some(t => t.ref && !t.ref.line);
 
 /** A table's last commit: when, then by whom; an engine acting for someone names them both (12:49 by lake). */
 function lastCommit(c) {
@@ -204,7 +209,8 @@ function contentsTable(catalog, levels, x) {
   for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
     h('p', {class: 'fine'}, 'Only what your groups may see is listed. ', x.ref
-      ? `Each table as @${x.ref} has it; open one to read it there.`
+      ? `Format, snapshots and last commit are as @${x.ref} has each table. Open one to read it through @${x.ref}.`
+        + (lineUnknown(x) ? ' A dash under Last commit means a ref this one came from has ended, so the catalog no longer knows which line wrote that version.' : '')
       : 'Open a table for its maintenance, access and history.'));
 }
 

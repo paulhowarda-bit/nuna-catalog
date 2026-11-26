@@ -1508,10 +1508,12 @@ class ConsoleBrowserTest {
         assertThat(textContent(ordersHere.findElement(By.cssSelector(".on-ref")))).contains("changed here");
         WebElement fillsHere = contentsRow("fills");
         assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
-        assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point, v1");
+        assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point · v1");
         assertThat(textContent(fillsHere.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
         assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
-                .contains("Each table as @" + branch + " has it");
+                .contains("Format, snapshots and last commit are as @" + branch + " has each table. Open one to read"
+                        + " it through @" + branch + ".")
+                .doesNotContain("A dash under Last commit");
         assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
         assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
                 .isEqualTo("trading@" + branch);
