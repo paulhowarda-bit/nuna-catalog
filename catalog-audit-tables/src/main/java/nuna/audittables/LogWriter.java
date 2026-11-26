@@ -208,7 +208,13 @@ final class LogWriter {
         if (stale) {
             reload();
         }
-        dropLateCopies();
+        try {
+            dropLateCopies();
+        } catch (RuntimeException e) {
+            // As a failed append: the next commit reads the table again (and makes it again if it is gone).
+            stale = true;
+            throw e;
+        }
         List<AuditRow> batch;
         long next;
         synchronized (this) {
