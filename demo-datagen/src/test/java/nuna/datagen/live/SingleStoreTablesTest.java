@@ -25,18 +25,24 @@ class SingleStoreTablesTest {
     }
 
     @Test
-    void everyFeedButTheOrdersHasATableKeyedOnSeqAndAnAppendOnlyChangeFeed() {
+    void everyFeedButTheOrdersHasATableKeyedOnSeqAndAnAppendOnlyChangeFeedInOnePipeline() {
         String tables = SingleStoreTables.tables(KIT);
         String pipelines = SingleStoreTables.pipelines();
+        java.util.List<String> fed = new java.util.ArrayList<>();
         for (Feed f : Feed.values()) {
             if (f == Feed.ORDERS) {
                 assertThat(tables).doesNotContain("CREATE TABLE IF NOT EXISTS orders ");
                 continue;
             }
             assertThat(tables).contains("CREATE TABLE IF NOT EXISTS " + f.table + " (\n  seq BIGINT NOT NULL,");
-            assertThat(pipelines).contains("CREATE OR REPLACE PIPELINE brokerage_" + f.table + "_to_lake ")
-                .contains("\"singlestore.table\": \"" + f.table + "\", \"singlestore.append-only\": \"true\"");
+            fed.add(f.table);
         }
+        assertThat(fed).hasSize(11);
+        assertThat(pipelines.split("CREATE OR REPLACE PIPELINE ", -1)).hasSize(2);
+        assertThat(pipelines).contains("CREATE OR REPLACE PIPELINE brokerage_world_to_lake AS LOAD DATA CONNECTOR 'ChangeFeedConnector'")
+            .contains("\"singlestore.append-only\": \"true\"")
+            .contains("\"singlestore.tables\": \"" + String.join(",", fed) + "\"")
+            .doesNotContain("\"singlestore.table\":").doesNotContain("\"iceberg.table\":");
         assertThat(tables).contains("  lots JSON,").contains("  event_time DATETIME(6),")
             .contains("  locate_id TEXT,\n  PRIMARY KEY (seq)");
         assertThat(SingleStoreTables.columns(KIT).get(Feed.FINANCIAL_TRANSACTIONS)).last().isEqualTo("locate_id");

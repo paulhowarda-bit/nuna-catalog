@@ -9,7 +9,9 @@ import org.apache.kafka.connect.source.SourceConnector;
 /**
  * A SingleStore connector pipeline that copies one table's changes into an Iceberg table through the catalog:
  * {@code CREATE PIPELINE ... AS LOAD DATA CONNECTOR 'ChangeFeedConnector' CONFIG '{...}' ... INTO TABLE <receipts>}.
- * The configuration is described on {@code nuna.changefeed.engine.FeedConfig}.
+ * The configuration is described on {@code nuna.changefeed.engine.FeedConfig}. With {@code singlestore.tables} in
+ * place of {@code singlestore.table} it copies each table listed into an Iceberg table of the same name, in one
+ * extractor ({@link ChangeFeedTask}).
  */
 public final class ChangeFeedConnector extends SourceConnector {
 
@@ -32,7 +34,10 @@ public final class ChangeFeedConnector extends SourceConnector {
         return ChangeFeedTask.class;
     }
 
-    /** One task, whatever tasks.max says: a table's change feed is one ordered stream with one Iceberg writer. */
+    /**
+     * One task, whatever tasks.max says: a table's change feed is one ordered stream with one Iceberg writer, and
+     * the tables of {@code singlestore.tables} share the task so they share one extractor's memory.
+     */
     @Override
     public List<Map<String, String>> taskConfigs(int maxTasks) {
         return List.of(props);

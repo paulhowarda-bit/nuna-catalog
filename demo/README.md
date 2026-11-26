@@ -432,14 +432,15 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   |---|---|---|---|
   | on | on | SingleStore, to `brokerage.trading.orders` | Kafka, to its table above |
   | off | on | topic `brokerage.trading.order-events`, through the sink to `brokerage.trading.order_events` | Kafka |
-  | on | off | SingleStore | a SingleStore table of its own in database `brokerage` (`demo/singlestore/brokerage-feeds.sql`), keyed by `seq`, whose change feed `brokerage_<table>_to_lake` copies it to `brokerage.singlestore.<table>` |
+  | on | off | SingleStore | a SingleStore table of its own in database `brokerage` (`demo/singlestore/brokerage-feeds.sql`), keyed by `seq`, whose change feed copies it to `brokerage.singlestore.<table>`; the eleven feeds run in one pipeline, `brokerage_world_to_lake` |
 
   The tables are made from `demo-datagen` (`Main sql demo/singlestore`; a test checks the committed files match).
   Before a way goes off, demo.sh stops the generator and runs the bootstrap job again as `drain kafka` or
   `drain singlestore`, which waits (up to three minutes) until what went that way is all in the lake; if it is not,
   the way stays on. The generator then starts on its new route and counts what each way carried, so a restart
-  still sends nothing twice. Each of the eleven change feeds is a Java extractor of its own in SingleStore's memory,
-  which is why they run only while Kafka is off. `brokerage.singlestore` is `restricted` and regulated, as it holds
+  still sends nothing twice. The eleven change feeds share one pipeline (`singlestore.tables` lists them), so one
+  Java extractor in SingleStore's memory: a pipeline each would reserve 384 MB apiece, 4.2 GB against SingleStore's
+  2,764 MB. They run only while Kafka is off. `brokerage.singlestore` is `restricted` and regulated, as it holds
   copies of the party and ledger tables.
 - `gen stop` stops the generator, waits 20 seconds for the sink's last commit, then stops Kafka Connect, Kafka
   and kafbat unless the CDC leg runs. Kafka's topics stay on its volume, so the next `gen` carries on from them:
@@ -590,7 +591,8 @@ pooled. An Iceberg pipeline's data workers default to 500 MB each, so two loads 
 all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 (`pipelines_iceberg_data_workers_heap_size`). Each change feed's extractor gets 384 MB
 (`pipelines_cdc_java_heap_size`), so the brokerage world's feed, beside `ops.orders_to_lake`, reserves another
-384 MB; how close that brings the pod to its limit has not been measured yet.
+384 MB, and `brokerage_world_to_lake`, while Kafka is off, a third: it runs the eleven feeds of the Kafka-off route
+in one extractor for that reason (backlog 238).
 
 ## Trino and CloudBeaver
 
