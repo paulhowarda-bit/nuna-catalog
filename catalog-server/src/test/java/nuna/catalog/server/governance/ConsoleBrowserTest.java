@@ -1483,6 +1483,15 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector(".tree[data-ref='" + branch + "'] [data-node='table:" + ns + ".orders'] [data-changed]"));
         browser.await(By.cssSelector(".tree[data-ref='" + branch + "'] [data-node='namespace:" + ns + "'] [data-changed]"));
 
+        // Its Export is the branch's: the branch's metadata file and journal, in a file named for the branch (item 172).
+        browser.await(By.cssSelector("#table-page button[data-act='export-meta']")).click();
+        WebElement export = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(textContent(export.findElement(By.id("dlg-h")))).isEqualTo("Export orders@" + branch);
+        WebElement download = browser.await(By.cssSelector("dialog.dlg a[download]"));
+        assertThat(download.getDomAttribute("download")).isEqualTo("trading." + ns + ".orders@" + branch + ".export.json");
+        assertThat(textContent(export.findElement(By.cssSelector("pre")))).contains(".branch-", "\"name\": \"" + branch + "\"");
+        export.findElement(By.cssSelector("button.dlg-x")).click();
+
         // A page that reads main only, Overview, keeps the control: it reads main, and a ref opens the catalog
         // through it.
         browser.open("/ui/#p=overview&c=trading");

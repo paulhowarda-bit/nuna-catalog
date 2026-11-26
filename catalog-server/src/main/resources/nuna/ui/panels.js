@@ -397,22 +397,27 @@ export function drFreeze(target, frozen, reload) {
 
 // ---- export ----
 
-/** Export: the object's pointer, its metadata and the commit journal, as one JSON file; needs select. */
+/**
+ * Export: the object's pointer, its metadata and the commit journal, as one JSON file; needs select. Read through a catalog
+ * ref, it is the ref's: its metadata and the journal as it reads it, in a file named {path}@{ref} (item 172).
+ */
 export async function exportDialog(target) {
   const out = h('div', {class: 'dlg-out'});
-  const dlg = openDialog(`Export ${lastWord(target)}`, h('div', null,
-    h('p', null, 'The current metadata, every snapshot and ref, and the catalog\'s commit journal for this ' + target.kind
-      + ', as one JSON file. The data files stay where they are; a restore registers it again from this file.'), out), {wide: true});
+  const at = target.ref ? '@' + target.ref : '';
+  const dlg = openDialog(`Export ${lastWord(target)}${at}`, h('div', null,
+    h('p', null, (target.ref ? `The metadata, every snapshot and ref, and the commit journal of this ${target.kind} as ${at} reads it,`
+      : 'The current metadata, every snapshot and ref, and the catalog\'s commit journal for this ' + target.kind + ',')
+      + ' as one JSON file. The data files stay where they are; a restore registers it again from this file.'), out), {wide: true});
   await load(out, async () => {
     const {g} = await governanceOf(target);
-    const x = await api.exportObject(target.catalog, g.target.id);
+    const x = await api.exportObject(target.catalog, g.target.id, target.ref);
     const json = api.toJson(x, 2);
     const url = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
     dlg.addEventListener('close', () => URL.revokeObjectURL(url));
     const preview = Object.assign({}, x, {metadata: x.metadata ? '… the table\'s metadata, in the file' : x.metadata,
       journal: Array.isArray(x.journal) && x.journal.length > 3 ? [...x.journal.slice(0, 3), `… ${x.journal.length - 3} more in the file`] : x.journal});
     return [jsonPre(preview), h('div', {class: 'dlg-acts'},
-      h('a', {class: 'btn sm primary', href: url, download: `${target.catalog}.${dotted(target)}.export.json`}, icon('down'), 'Download the file'),
+      h('a', {class: 'btn sm primary', href: url, download: `${target.catalog}.${dotted(target)}${at}.export.json`}, icon('down'), 'Download the file'),
       copyButton(json, 'Copy the JSON'))];
   });
 }

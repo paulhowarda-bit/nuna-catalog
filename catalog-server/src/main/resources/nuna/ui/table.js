@@ -111,10 +111,10 @@ export function tablePage(target, tab, route) {
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('table')), h('h1', {tabindex: '-1'}, target.name));
   const tabs = tabsNav('Table', TABLE_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key === 'settings' ? '' : key,
     tabHref(target));
-  // The export is main's metadata and journal, so a page read through a ref offers none (item 109; item 172).
+  // Through a ref, the export is the ref's metadata and journal (item 172).
   const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(),
-    h('a', {class: 'btn sm', href: objectHref(target, 'settings'), 'data-act': 'settings'}, 'Settings'), target.ref ? null
-      : h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
+    h('a', {class: 'btn sm', href: objectHref(target, 'settings'), 'data-act': 'settings'}, 'Settings'),
+    h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, acts);
   main.append(head, tabs);
   const body = tabBody(main);
