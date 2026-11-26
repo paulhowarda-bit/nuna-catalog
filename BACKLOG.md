@@ -2120,3 +2120,4 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [292](backlog/292.md) | GitHub's push protection refuses the openssl pkcs8 command's argument order | done | 2026-11-26 |
 | [293](backlog/293.md) | The CDC leg and CloudBeaver keep their data on volumes: cdc stop and down pause the leg, the next cdc carries on, cdc reset starts it anew | done | 2026-11-26 |
 | [294](backlog/294.md) | kind's node caps every container at 307 tasks: SingleStore's pipelines, and the JVMs, run out of threads | done | 2026-11-26 |
+| [295](backlog/295.md) | AuditTablesTest's ForbiddenException for updateTable: confirm the cause and guard the fix with a bite | done | 2026-11-26 |
