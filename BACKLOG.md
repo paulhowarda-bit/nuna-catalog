@@ -12,7 +12,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
-| [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
+| [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes once a night's heavy build and Ceph leg are green and every bite has bitten in its latest run (D42, amended 2026-11-25) | 2026-11-14 |
 | [17](backlog/17.md) | S | Console sign-in against Entra ID and Ping, with an automated test | signing in and out against Entra ID and Ping at work (waits on work) | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
@@ -67,9 +67,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 
 ### 1. Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks)
 
-- Decided: 2026-11-19, D42
+- Decided: 2026-11-19, D42; 2026-11-25, D42 (amended)
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42)
+- Effort: S, closes once a night's heavy build and Ceph leg are green and every bite has bitten in its latest run (D42, amended 2026-11-25)
 
 Paul's plan (2026-11-13, CLAUDE.md): after the install at work he runs `./heavy.sh` in a worktree of its own:
 `-Pheavy` on all four backends, the Ceph leg, then every bite. Don't start it unless he asks.
@@ -87,6 +87,17 @@ Done when `./heavy.sh` is green, every bite bites on its assertion (read the log
 recorded in `build-plan.md`'s Status. Anything that fails gets an item of its own.
 
 **Decided 2026-11-19 (D42):** the overnight run covers this pass ("Overnight run covers it"): it runs the heavy build, the Ceph leg and the bites every night that code changed. This item closes the first night all three are green; there is no pass of its own.
+
+**Rescoped 2026-11-25 (D42, amended):** no night can run every bite: the run stops them at 06:30 and the next night
+starts where it stopped, so a night runs about 560 of the 724 and every bite comes round in two nights. Paul: "Yes,
+rescope it". This item closes once both hold:
+
+- one night's heavy build and Ceph leg are both green;
+- every recorded bite has bitten in its most recent run, over the nights the bites take to come round (each night's
+  `bites.log` in `.overnight/runs/<date>/`), with no bite left NO BITE or SETUP.
+
+Where it stood on 2026-11-25: no night since D42 had a green heavy build (2026-11-19 to 2026-11-25); the failures of
+2026-11-25 were fixed that day (items 268 to 271), so 2026-11-26 is the first night that may.
 
 ### 17. Console sign-in against Entra ID and Ping, with an automated test
 
