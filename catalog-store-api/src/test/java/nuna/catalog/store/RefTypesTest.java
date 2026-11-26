@@ -19,7 +19,8 @@ class RefTypesTest {
 
     private static Ref ref(String display, Ref.Kind kind, Optional<UUID> fromRef, String fromName,
                            Optional<Instant> expiresAt) {
-        return new Ref(CATALOG, UUID.randomUUID(), name(display), kind, NOW, "svc", fromRef, fromName, expiresAt);
+        return new Ref(CATALOG, UUID.randomUUID(), name(display), kind, NOW, "svc", fromRef, fromName, expiresAt,
+                Optional.empty());
     }
 
     @Test
@@ -79,10 +80,10 @@ class RefTypesTest {
     @Test
     void everyFieldIsRequired() {
         assertThatThrownBy(() -> new Ref(CATALOG, UUID.randomUUID(), name("a"), Ref.Kind.TAG, NOW, null,
-                Optional.empty(), Ref.MAIN, Optional.empty())).isInstanceOf(NullPointerException.class)
+                Optional.empty(), Ref.MAIN, Optional.empty(), Optional.empty())).isInstanceOf(NullPointerException.class)
                 .hasMessage("createdBy");
         assertThatThrownBy(() -> new Ref(null, UUID.randomUUID(), name("a"), Ref.Kind.TAG, NOW, "svc",
-                Optional.empty(), Ref.MAIN, Optional.empty())).isInstanceOf(NullPointerException.class)
+                Optional.empty(), Ref.MAIN, Optional.empty(), Optional.empty())).isInstanceOf(NullPointerException.class)
                 .hasMessage("catalogId");
     }
 

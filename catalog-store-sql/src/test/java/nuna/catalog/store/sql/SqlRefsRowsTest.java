@@ -48,6 +48,7 @@ class SqlRefsRowsTest {
 
         assertThat(read.ref().kind()).isEqualTo(Ref.Kind.TAG);
         assertThat(read.ref().expiresAt()).isEmpty();
+        assertThat(read.ref().description()).contains("the November close");
         assertThat(read.head()).isEmpty();
     }
 
@@ -64,6 +65,7 @@ class SqlRefsRowsTest {
         columns.put("from_ref", null);
         columns.put("from_name", Ref.MAIN);
         columns.put("expires_at", expiresAt);
+        columns.put("description", kind.equals("TAG") ? "the November close" : null);
         columns.put("version", 3L);
         columns.put("metadata_location", "s3://w/t/metadata/3.json");
         columns.put("sha256", "c3");

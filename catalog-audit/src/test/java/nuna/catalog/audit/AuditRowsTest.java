@@ -189,7 +189,38 @@ class AuditRowsTest {
                 new Denial("listCatalogs", null, null, "no", SampleEvents.ACTOR)), 0, 0);
         assertThatThrownBy(() -> new AuditRow(row.eventId(), row.time(), row.type(), row.source(), null, null, null,
                 null, null, null, null, null, null, null, null, row.data(), 0, 0, "a0000000-0000-4000-8000-000000000272",
-                null)).isInstanceOf(IllegalArgumentException.class);
+                null, null, null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void commitsReadsAndRefRecordsNameTheRefAndARefRecordListsItsRefAndTables() throws IOException {
+        // Backlog 169: the feed filters by branch and by subject without reading payloads.
+        Set<EventType> through = EnumSet.of(EventType.COMMIT, EventType.OBJECT_READ, EventType.REF);
+        byType().forEach((type, row) -> {
+            if (!through.contains(type)) {
+                assertThat(row.branch()).as(type.typeName()).isNull();
+            }
+            if (type != EventType.REF) {
+                assertThat(row.subjectIds()).as(type.typeName()).isNull();
+            }
+        });
+        Map<EventType, AuditRow> rows = byType();
+        assertThat(rows.get(EventType.COMMIT).branch()).isEqualTo("main");
+        assertThat(rows.get(EventType.OBJECT_READ).branch()).isEqualTo("main");
+        assertThat(rows.get(EventType.REF).branch()).as("the ref's name as given").isEqualTo("dév");
+        assertThat(rows.get(EventType.REF).subjectIds()).as("the ref, then the tables it names")
+                .containsExactly("f0000000-0000-0000-0000-000000000001", "7f0c2a52-9d0e-4a8b-9c61-2b1e6f0d4a11");
+
+        UUID ref = UUID.randomUUID();
+        AuditRow removed = AuditRows.of(CatalogEvent.create(SampleEvents.SOURCE, SampleEvents.TIME,
+                new RefChange(RefChange.Action.OBJECT_REMOVED, ref, "q3", RefChange.Kind.TAG, SampleEvents.CATALOG,
+                        "main", null, null, List.of(SampleEvents.TABLE), SampleEvents.ACTOR)), 0, 0);
+        assertThat(removed.objectId()).as("a ref record's object is its catalog").isEqualTo(SampleEvents.CATALOG.id()
+                .toString());
+        assertThat(removed.subjectIds()).containsExactly(ref.toString(), SampleEvents.TABLE.id().toString());
+        AuditRow branchRead = AuditRows.of(CatalogEvent.create(SampleEvents.SOURCE, SampleEvents.TIME,
+                new ObjectRead(SampleEvents.TABLE, "Dev-1", SampleEvents.V2, SampleEvents.ACTOR)), 0, 0);
+        assertThat(branchRead.branch()).isEqualTo("Dev-1");
     }
 
     @Test

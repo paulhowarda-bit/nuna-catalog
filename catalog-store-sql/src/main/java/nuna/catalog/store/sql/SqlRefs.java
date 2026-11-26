@@ -46,7 +46,7 @@ import java.util.stream.Stream;
 final class SqlRefs {
 
     private static final String COLUMNS = "id, catalog_id, name_norm, name, kind, created_at, created_by, from_ref,"
-            + " from_name, expires_at";
+            + " from_name, expires_at, description";
     private static final String ENTRY_COLUMNS = "ref_id, object_id, kind, parent_id, name_norm, name, version,"
             + " metadata_location, sha256";
     private static final WriteResult MISSING = new WriteResult.Missing(WriteResult.Subject.REF);
@@ -81,10 +81,11 @@ final class SqlRefs {
                     + " AND (expires_at IS NULL OR expires_at > ?)", row -> row.getLong(1), ref.catalogId(),
                     ref.kind().name(), change.at()).orElseThrow();
             int inserted = update(connection, "INSERT INTO ref (catalog_id, name_norm, name, kind, expires_at, id,"
-                            + " created_at, created_by, from_ref, from_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                            + " created_at, created_by, from_ref, from_name, description)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                             + " ON CONFLICT (catalog_id, name_norm) DO NOTHING", ref.catalogId(), ref.name().normalized(),
                     ref.name().display(), ref.kind().name(), ref.expiresAt().orElse(null), ref.id(), ref.createdAt(),
-                    ref.createdBy(), ref.fromRef().orElse(null), ref.fromName());
+                    ref.createdBy(), ref.fromRef().orElse(null), ref.fromName(), ref.description().orElse(null));
             if (inserted == 0) {
                 return Guards.nameTaken(connection, "SELECT id FROM ref WHERE catalog_id = ? AND name_norm = ?",
                         ref.catalogId(), ref.name().normalized());
@@ -130,7 +131,7 @@ final class SqlRefs {
     List<RefPointers> listPointers(UUID objectId) {
         return transactions.autocommit("ref pointers of an object", connection -> query(connection,
                 "SELECT r.id, r.catalog_id, r.name_norm, r.name, r.kind, r.created_at, r.created_by, r.from_ref,"
-                        + " r.from_name, r.expires_at, e.version, e.metadata_location, e.sha256,"
+                        + " r.from_name, r.expires_at, r.description, e.version, e.metadata_location, e.sha256,"
                         + " p.version AS head_version, p.metadata_location AS head_location, p.sha256 AS head_sha256"
                         + " FROM ref_entry e JOIN ref r ON r.id = e.ref_id"
                         + " LEFT JOIN pointer p ON p.object_id = e.object_id AND p.branch = CAST(e.ref_id AS TEXT)"
@@ -204,9 +205,13 @@ final class SqlRefs {
     /**
      * Takes an object out of refs (backlog 156). Locks the catalog's record for share, which a create locks for
      * update, so no ref is made meanwhile; then each ref for update, in id order, as a deletion locks it, so a commit on
-     * the branch in flight lands first and a later one finds the object outside the cut; then the object for update,
-     * as a purge claim locks it, before its holds and freezes are read. Then deletes each branch's own pointer for the
-     * object with its pieces, and the object's entry in each ref's cut.
+     * the branch in flight lands first and a later one finds the object outside the cut; then every pointer of the
+     * object, by branch, as unregister and a commit lock them before the object (backlog 171's review: unregister locks
+     * the pointers and then the object, so the other order deadlocked with it); then the object for update, as a purge
+     * claim locks it; then the namespaces above it for share (backlog 171), before its holds and freezes are
+     * read: a hold or freeze placed on the catalog or one of those namespaces locks it for update, so the two take
+     * turns. Then deletes each branch's own pointer for the object with its pieces, and the object's entry in each
+     * ref's cut.
      */
     WriteResult remove(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
         return transactions.change(change, "ref removal", connection -> {
@@ -225,11 +230,13 @@ final class SqlRefs {
                     locked++;
                 }
             }
+            Pointers.lockObject(connection, objectId);
             Optional<List<UUID>> path = first(connection, "SELECT namespace_path FROM catalog_object WHERE id = ?"
                     + " AND state <> 'PURGED' FOR UPDATE", row -> Jdbc.uuids(row, "namespace_path"), objectId);
             if (path.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
+            Guards.lockLevels(connection, path.get());
             if (Guards.held(connection, objectId, catalog.get(), path.get())) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }
@@ -383,7 +390,8 @@ final class SqlRefs {
         return new Ref(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "id"),
                 new Name(row.getString("name_norm"), row.getString("name")), Ref.Kind.valueOf(row.getString("kind")),
                 instant(row, "created_at"), row.getString("created_by"), Optional.ofNullable(Jdbc.uuid(row, "from_ref")),
-                row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")));
+                row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")),
+                Optional.ofNullable(row.getString("description")));
     }
 
     /**

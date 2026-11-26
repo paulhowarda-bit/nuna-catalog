@@ -91,9 +91,11 @@ final class MongoRefs {
     }
 
     /**
-     * Reads the cut, writes it, then inserts the ref. A removal from refs (backlog 156) committed after the snapshot
-     * read the cut sets the catalog's {@code trimmed}, so the insert sees it and the create cuts again: a cut read
-     * before a removal could still name the object it took out of the ref the cut was copied from, or out of every ref.
+     * Reads the cut, writes it, then inserts the ref. A removal from refs (backlog 156) or a namespace drop (backlog
+     * 158) committed after the snapshot read the cut sets the catalog's {@code trimmed}, so the insert sees it and the
+     * create cuts again: a cut read before a removal could still name the object it took out of the ref the cut was
+     * copied from, or out of every ref, and one read before a namespace drop could name a dropped table of the
+     * namespace, which the drop found no ref naming. One open when the insert runs conflicts with it on the catalog.
      */
     WriteResult create(Ref ref, RefLimits limits, Change change) {
         while (true) {
@@ -130,7 +132,7 @@ final class MongoRefs {
         }
     }
 
-    /** The stamp of the last removal from a catalog's refs, on its document; 0 when none was made. */
+    /** The stamp of the last removal from a catalog's refs or drop of one of its namespaces; 0 when none was made. */
     private static long trimmed(BsonDocument catalog) {
         BsonValue trimmed = catalog.get("trimmed");
         return trimmed == null ? 0 : trimmed.asNumber().longValue();
@@ -281,6 +283,7 @@ final class MongoRefs {
                 .append("createdBy", new BsonString(ref.createdBy()))
                 .append("fromRef", ref.fromRef().<BsonValue>map(Docs::uuid).orElse(BsonNull.VALUE))
                 .append("fromName", new BsonString(ref.fromName()))
+                .append("description", ref.description().<BsonValue>map(BsonString::new).orElse(BsonNull.VALUE))
                 .append("clock", tx.clock()));
         return WriteResult.APPLIED;
     }
@@ -449,10 +452,11 @@ final class MongoRefs {
 
     /**
      * Takes an object out of refs (backlog 156). MongoDB has no locks, so the transaction writes what the SQL stores
-     * lock: it marks the object, as a hold placed on it or a drop writes it; marks each ref, as a commit on the branch,
-     * a merge, a renewal and a deletion write it; and sets the catalog's {@code trimmed} to its stamp, which conflicts
-     * with a create's transaction (it marks the catalog) and tells a create whose cut was read before this one to cut
-     * again ({@link #create}). Then it deletes each branch's own pointer for the object with its pieces, and the
+     * lock: it marks the object, as a hold placed on it or a drop writes it; marks the namespaces above the object, as
+     * a hold or freeze placed on one writes it (backlog 171); marks each ref, as a commit on the branch, a merge, a
+     * renewal and a deletion write it; and sets the catalog's {@code trimmed} to its stamp, which conflicts with a
+     * create's transaction (it marks the catalog) and with a hold or freeze placed on the catalog, and tells a create
+     * whose cut was read before this one to cut again ({@link #create}). Then it deletes each branch's own pointer for the object with its pieces, and the
      * object's entry in each ref's cut. An entry counts only while its ref exists, so a ref outside {@code refIds} is
      * one whose document exists.
      */
@@ -492,6 +496,7 @@ final class MongoRefs {
                 }
             }
             BsonDocument catalog = tx.find(CATALOG, byId(uuid(catalogId))).orElseThrow();
+            List<BsonDocument> namespaces = Guards.seeNamespaces(tx, path);
             BsonDocument own = new BsonDocument("objectId", uuid(objectId)).append("branch", Docs.in(ids.stream()
                     .<BsonValue>map(id -> new BsonString(uuid(id).toString())).toList()));
             tx.see(object.get());
@@ -500,6 +505,7 @@ final class MongoRefs {
             tx.collection(POINTER).find(tx.session, own).projection(new BsonDocument("clock", new BsonInt32(1)))
                     .forEach(tx::see);
             tx.mark(OBJECT, object.get());
+            namespaces.forEach(namespace -> tx.mark(NAMESPACE, namespace));
             refs.forEach(ref -> tx.mark(REF, ref));
             tx.collection(CATALOG).updateOne(tx.session, byId(uuid(catalogId)), new BsonDocument("$set",
                     new BsonDocument("clock", tx.clock()).append("trimmed", tx.clock())));
@@ -638,7 +644,14 @@ final class MongoRefs {
                 Ref.Kind.valueOf(doc.getString("kind").getValue()), instant(doc.get("createdAt")),
                 doc.getString("createdBy").getValue(),
                 fromRef == null || fromRef.isNull() ? Optional.empty() : Optional.of(uuid(fromRef)),
-                doc.getString("fromName").getValue(), optionalInstant(doc, "expiresAt"));
+                doc.getString("fromName").getValue(), optionalInstant(doc, "expiresAt"), description(doc));
+    }
+
+    /** The ref's description (backlog 167): none when the field is null, or absent from a ref made before it. */
+    private static Optional<String> description(BsonDocument doc) {
+        BsonValue description = doc.get("description");
+        return description == null || description.isNull() ? Optional.empty()
+                : Optional.of(description.asString().getValue());
     }
 
     /** The version, metadata file and SHA-256 of a pointer, or of a table's or view's cut entry. */

@@ -1,0 +1,17 @@
+Breaks: a ref record without a description is written as version 2 with the field null, which a server of the previous release cannot read (backlog 167).
+Module: catalog-audit
+Test: EventCodecTest#aRefRecordWithNoDescriptionIsWrittenAndReadAsVersion1
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+index a91548a2..2629b2ae 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+@@ -171,7 +171,7 @@ public final class EventCodec {
+     private static ObjectNode payloadTree(EventType type, EventData payload) {
+         ObjectNode data = MAPPER.valueToTree(payload);
+         if (!type.added().isEmpty() && type.added().stream().allMatch(field -> data.get(field).isNull())) {
+-            type.added().forEach(data::remove);
++            // the added fields are kept, null
+         }
+         return data;
+     }

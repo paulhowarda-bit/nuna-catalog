@@ -1,0 +1,19 @@
+Breaks: a feed read filtered by ref or subject skips the audit reader's check, so anyone signed in reads those records (backlog 169).
+Module: catalog-server
+Test: AuditFeedRoutesTest#theRefAndSubjectFiltersAreRefusedToWhoeverMayNotReadTheFeed
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index 1203d398..9b4232b4 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -172,7 +172,9 @@ class AuditReadRoutes {
+                                 @RequestParam(name = "pageToken", required = false) String pageToken,
+                                 HttpServletRequest http) {
+         Request request = management.request(http);
+-        requireAuditReader(request, "readAuditFeed");
++        if (branch == null && subject == null) {
++            requireAuditReader(request, "readAuditFeed");
++        }
+         CatalogRecord catalog = catalog(prefix);
+         Instant since = instant("from", from);
+         Instant until = instant("to", to);

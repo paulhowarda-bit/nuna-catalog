@@ -48,7 +48,7 @@ import java.util.stream.Collectors;
 final class OracleRefs {
 
     private static final String COLUMNS = "id, catalog_id, name_norm, name, kind, created_at, created_by, from_ref,"
-            + " from_name, expires_at";
+            + " from_name, expires_at, description";
     private static final String ENTRY_COLUMNS = "ref_id, object_id, kind, parent_id, name_norm, name, version,"
             + " metadata_location, sha256";
     private static final WriteResult MISSING = new WriteResult.Missing(WriteResult.Subject.REF);
@@ -86,9 +86,11 @@ final class OracleRefs {
                     ref.kind().name(), change.at()).orElseThrow();
             try {
                 update(connection, "INSERT INTO ref (catalog_id, name_norm, name, kind, expires_at, id, created_at,"
-                                + " created_by, from_ref, from_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ref.catalogId(),
+                                + " created_by, from_ref, from_name, description)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ref.catalogId(),
                         ref.name().normalized(), ref.name().display(), ref.kind().name(), ref.expiresAt().orElse(null),
-                        ref.id(), ref.createdAt(), ref.createdBy(), ref.fromRef().orElse(null), ref.fromName());
+                        ref.id(), ref.createdAt(), ref.createdBy(), ref.fromRef().orElse(null), ref.fromName(),
+                        ref.description().orElse(null));
             } catch (SQLIntegrityConstraintViolationException e) {
                 if (!Jdbc.violates(e, "REF_PK")) {
                     throw e;
@@ -138,7 +140,7 @@ final class OracleRefs {
     List<RefPointers> listPointers(UUID objectId) {
         return transactions.snapshot("ref pointers of an object", connection -> {
             List<RefPointers> cuts = query(connection, "SELECT r.id, r.catalog_id, r.name_norm, r.name, r.kind,"
-                    + " r.created_at, r.created_by, r.from_ref, r.from_name, r.expires_at, e.version,"
+                    + " r.created_at, r.created_by, r.from_ref, r.from_name, r.expires_at, r.description, e.version,"
                     + " e.metadata_location, e.sha256 FROM ref_entry e JOIN ref r ON r.id = e.ref_id"
                     + " WHERE e.object_id = ? ORDER BY r.name_norm", row -> new RefPointers(ref(row),
                     new RefEntry.At(row.getLong("version"), Jdbc.text(row, "metadata_location"),
@@ -216,9 +218,12 @@ final class OracleRefs {
     /**
      * Takes an object out of refs (backlog 156). Locks the catalog's record for update, as a create does, so no ref is
      * made meanwhile; then each ref for update, in id order, as a deletion locks it, so a commit on the branch in flight
-     * lands first and a later one finds the object outside the cut; then the object for update, as a purge claim locks
-     * it, before its holds and freezes are read. Then deletes each branch's own pointer for the object with its pieces,
-     * and the object's entry in each ref's cut.
+     * lands first and a later one finds the object outside the cut; then every pointer of the object, by branch, as
+     * unregister and a commit lock them before the object (backlog 171's review: unregister locks the pointers and then
+     * the object, so the other order deadlocked with it, and Oracle does not retry ORA-00060); then the object for
+     * update, as a purge claim locks it; then the namespaces above it (backlog 171), before its holds and freezes are read: a hold or freeze placed on
+     * the catalog or one of those namespaces locks it, so the two take turns. Then deletes each branch's own pointer
+     * for the object with its pieces, and the object's entry in each ref's cut.
      */
     WriteResult remove(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
         return transactions.change(change, "ref removal", connection -> {
@@ -237,12 +242,14 @@ final class OracleRefs {
                     locked++;
                 }
             }
+            Pointers.lockObject(connection, objectId);
             if (!exists(connection, "SELECT 1 FROM catalog_object WHERE id = ? AND state <> 'PURGED' FOR UPDATE",
                     objectId)) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
             List<UUID> path = query(connection, "SELECT namespace_id FROM object_path WHERE object_id = ?",
                     row -> Jdbc.uuid(row, "namespace_id"), objectId);
+            Guards.lockLevels(connection, path);
             if (Guards.held(connection, objectId, catalog.get(), path)) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }
@@ -388,7 +395,8 @@ final class OracleRefs {
         return new Ref(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "id"),
                 new Name(Jdbc.text(row, "name_norm"), Jdbc.text(row, "name")), Ref.Kind.valueOf(Jdbc.text(row, "kind")),
                 instant(row, "created_at"), Jdbc.text(row, "created_by"), Optional.ofNullable(Jdbc.uuid(row, "from_ref")),
-                Jdbc.text(row, "from_name"), Optional.ofNullable(instant(row, "expires_at")));
+                Jdbc.text(row, "from_name"), Optional.ofNullable(instant(row, "expires_at")),
+                Optional.ofNullable(Jdbc.text(row, "description")));
     }
 
     private static RefEntry entry(ResultSet row) throws SQLException {

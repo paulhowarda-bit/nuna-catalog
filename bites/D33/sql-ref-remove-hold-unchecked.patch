@@ -3,13 +3,13 @@ Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$Refs#removalOutcomesComeInOrder
 
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
-index 185d2a5e..7a44ffc7 100644
+index 50024ae8..0d620e5c 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
-@@ -230,9 +230,6 @@ final class SqlRefs {
-             if (path.isEmpty()) {
+@@ -233,9 +233,6 @@ final class SqlRefs {
                  return new WriteResult.Missing(WriteResult.Subject.OBJECT);
              }
+             Guards.lockLevels(connection, path.get());
 -            if (Guards.held(connection, objectId, catalog.get(), path.get())) {
 -                return new WriteResult.Refused(WriteResult.Reason.HELD);
 -            }

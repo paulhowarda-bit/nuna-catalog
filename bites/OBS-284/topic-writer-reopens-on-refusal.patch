@@ -1,0 +1,16 @@
+Breaks: The topic writer opens its table again on any failure to read it, a refusal (403) included, which would hide a revoked grant (backlog 284).
+Module: catalog-audit-tables
+Test: TableWriterTest#aRefusalIsThrownAndNeverMakesTheTableAgain
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+index 9302297f..94e0c1ea 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+@@ -173,7 +173,7 @@ final class TableWriter implements AutoCloseable {
+         }
+         try {
+             committed = table.reload();
+-        } catch (NoSuchTableException e) {
++        } catch (RuntimeException e) {
+             // Only this answer makes the table again: a refusal is thrown, so a revoked grant shows (backlog 284).
+             table = null;
+             LOG.warn("The audit table is gone ({}); making it again and writing {} into it from the earliest record"

@@ -1,0 +1,17 @@
+Breaks: a hold placed on PostgreSQL and CockroachDB share-locks its target again, which a purge claim's share lock on the same level does not wait for, so the claim goes through while the hold is open (backlog 171).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#aPurgeClaimWaitsForAnOpenHoldAboveTheObject
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java
+index e6689d93..08d7f8ed 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlGovernance.java
+@@ -151,7 +151,7 @@ final class SqlGovernance {
+ 
+     WriteResult placeHold(LegalHold hold, Change change) {
+         return transactions.change(change, "hold place", connection -> {
+-            Optional<WriteResult> missing = Guards.missingForUpdate(connection, hold.target());
++            Optional<WriteResult> missing = Guards.missing(connection, hold.target(), Optional.empty());
+             if (missing.isPresent()) {
+                 return missing.get();
+             }

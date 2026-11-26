@@ -1,0 +1,42 @@
+Breaks: the commit availability page counts 4xx answers, 409 conflicts among them, as failures.
+Module: catalog-server
+Test: AlertRulesTest#theCatalogRulesPassTheirUnitTests
+
+diff --git a/deploy/grafana/rules/nuna-catalog.rules.yaml b/deploy/grafana/rules/nuna-catalog.rules.yaml
+index 75511dba..ee6e3624 100644
+--- a/deploy/grafana/rules/nuna-catalog.rules.yaml
++++ b/deploy/grafana/rules/nuna-catalog.rules.yaml
+@@ -242,25 +242,25 @@ groups:
+         expr: |
+           (
+             (
+-              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[1h]))
+-              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[1h]))
++              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"4xx|5xx"}[1h]))
++              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|4xx|5xx"}[1h]))
+             ) > 14.4 * 0.001
+             and
+             (
+-              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[5m]))
+-              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[5m]))
++              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"4xx|5xx"}[5m]))
++              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|4xx|5xx"}[5m]))
+             ) > 14.4 * 0.001
+           )
+           or
+           (
+             (
+-              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[6h]))
+-              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[6h]))
++              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"4xx|5xx"}[6h]))
++              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|4xx|5xx"}[6h]))
+             ) > 6 * 0.001
+             and
+             (
+-              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="5xx"}[30m]))
+-              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|5xx"}[30m]))
++              sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"4xx|5xx"}[30m]))
++              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome=~"2xx|3xx|4xx|5xx"}[30m]))
+             ) > 6 * 0.001
+           )
+         keep_firing_for: 10m

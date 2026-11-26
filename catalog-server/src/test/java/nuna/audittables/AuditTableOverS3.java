@@ -77,7 +77,7 @@ public final class AuditTableOverS3 {
         String id = UUID.randomUUID().toString();
         return new AuditRow(id, time, type, "urn:nuna:deployment:test", "ana", null, "spark", "request-" + id,
                 "lake", "TABLE", UUID.randomUUID().toString(), List.of("sales", "orders"), null, null, null,
-                "{\"n\":\"" + id + "\"}", partition, offset, null, null);
+                "{\"n\":\"" + id + "\"}", partition, offset, null, null, null, null);
     }
 
     /**

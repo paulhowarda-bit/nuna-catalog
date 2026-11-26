@@ -1,0 +1,17 @@
+Breaks: a ref made on the SQL stores loses the description it was made with (backlog 167).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Refs#aRefKeepsItsDescription
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index 8a9cb60c..27941052 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -85,7 +85,7 @@ final class SqlRefs {
+                             + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                             + " ON CONFLICT (catalog_id, name_norm) DO NOTHING", ref.catalogId(), ref.name().normalized(),
+                     ref.name().display(), ref.kind().name(), ref.expiresAt().orElse(null), ref.id(), ref.createdAt(),
+-                    ref.createdBy(), ref.fromRef().orElse(null), ref.fromName(), ref.description().orElse(null));
++                    ref.createdBy(), ref.fromRef().orElse(null), ref.fromName(), null);
+             if (inserted == 0) {
+                 return Guards.nameTaken(connection, "SELECT id FROM ref WHERE catalog_id = ? AND name_norm = ?",
+                         ref.catalogId(), ref.name().normalized());

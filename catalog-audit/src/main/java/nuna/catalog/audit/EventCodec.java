@@ -19,7 +19,9 @@ import tools.jackson.databind.node.ObjectNode;
  * bytes go to the outbox, to Kafka and to the archive.
  *
  * <p>Reading is strict: a payload must carry every field of its schema version and nothing else,
- * and the envelope must agree with it. The envelope may carry more attributes than these; the log's records carry
+ * and the envelope must agree with it. A type whose current version added fields ({@link EventType#added}) is written
+ * in the version before whenever all of them are null, without them, and read in either version, so records any
+ * earlier server wrote or reads stay as they were. The envelope may carry more attributes than these; the log's records carry
  * their {@link LogStamp} as two of them, {@value #RUN} and {@value #SEQUENCE}, which {@link #decode} leaves aside.
  */
 public final class EventCodec {
@@ -62,7 +64,8 @@ public final class EventCodec {
         envelope.put("source", event.source().toString());
         envelope.put("type", event.type().typeName());
         envelope.put("datacontenttype", DATA_CONTENT_TYPE);
-        envelope.put("dataschema", event.type().dataSchema().toString());
+        ObjectNode data = payloadTree(event.type(), event.data());
+        envelope.put("dataschema", event.type().dataSchema(versionOf(event.type(), data)).toString());
         if (event.subject() != null) {
             envelope.put("subject", event.subject());
         }
@@ -74,7 +77,7 @@ public final class EventCodec {
             envelope.put(RUN, stamp.run().toString());
             envelope.put(SEQUENCE, Long.toString(stamp.sequence()));
         }
-        envelope.set("data", MAPPER.valueToTree(event.data()));
+        envelope.set("data", data);
         return envelope;
     }
 
@@ -123,9 +126,10 @@ public final class EventCodec {
                 throw new IllegalArgumentException("specversion must be " + SPEC_VERSION);
             }
             EventType type = EventType.fromTypeName(text(envelope, "type"));
-            if (!type.dataSchema().toString().equals(text(envelope, "dataschema"))) {
-                throw new IllegalArgumentException("unsupported data schema " + text(envelope, "dataschema")
-                        + " for " + type.typeName());
+            String schema = text(envelope, "dataschema");
+            boolean earlier = !type.added().isEmpty() && type.dataSchema(type.version() - 1).toString().equals(schema);
+            if (!earlier && !type.dataSchema().toString().equals(schema)) {
+                throw new IllegalArgumentException("unsupported data schema " + schema + " for " + type.typeName());
             }
             if (!DATA_CONTENT_TYPE.equals(text(envelope, "datacontenttype"))) {
                 throw new IllegalArgumentException("datacontenttype must be " + DATA_CONTENT_TYPE);
@@ -136,13 +140,66 @@ public final class EventCodec {
             }
             CatalogEvent event = new CatalogEvent(UUID.fromString(text(envelope, "id")),
                     URI.create(text(envelope, "source")), Instant.parse(text(envelope, "time")),
-                    MAPPER.treeToValue(data, type.dataClass()));
+                    readPayload(type, (ObjectNode) data, earlier ? type.version() - 1 : type.version()));
             requireAgrees(envelope, "subject", event.subject());
             requireAgrees(envelope, "partitionkey", event.subject());
             return event;
         } catch (JacksonException | DateTimeParseException e) {
             throw new IllegalArgumentException("not a catalog event: " + e.getMessage(), e);
         }
+    }
+
+    /** A payload as {@link #encode} writes it under {@code data}; an audit table row keeps it so. */
+    static String payload(CatalogEvent event) {
+        return MAPPER.writeValueAsString(payloadTree(event.type(), event.data()));
+    }
+
+    /**
+     * A payload {@link #payload} wrote, which keeps no {@code dataschema}: one without the fields the type's current
+     * version added is of the version before.
+     *
+     * @throws JacksonException if it is not that type's payload
+     */
+    static EventData payload(EventType type, String json) {
+        if (!(MAPPER.readTree(json) instanceof ObjectNode data)) {
+            throw new IllegalArgumentException("a payload is a JSON object");
+        }
+        return readPayload(type, data, versionOf(type, data));
+    }
+
+    /** The payload, less the fields the type's current version added when every one of them is null. */
+    private static ObjectNode payloadTree(EventType type, EventData payload) {
+        ObjectNode data = MAPPER.valueToTree(payload);
+        if (!type.added().isEmpty() && type.added().stream().allMatch(field -> data.get(field).isNull())) {
+            type.added().forEach(data::remove);
+        }
+        return data;
+    }
+
+    /** The version of a payload {@link #payloadTree} made: the one before when it holds none of the added fields. */
+    private static int versionOf(EventType type, ObjectNode data) {
+        return !type.added().isEmpty() && type.added().stream().noneMatch(data::has) ? type.version() - 1
+                : type.version();
+    }
+
+    /**
+     * A payload of one version. The version before holds none of the added fields, which read as null; the current
+     * one holds them, not every one null (that payload is written as the version before).
+     */
+    private static EventData readPayload(EventType type, ObjectNode data, int version) {
+        if (version < type.version()) {
+            for (String field : type.added()) {
+                if (data.has(field)) {
+                    throw new IllegalArgumentException(type.dataSchema(version) + " has no " + field);
+                }
+                data.putNull(field);
+            }
+        } else if (!type.added().isEmpty()
+                && type.added().stream().allMatch(field -> data.has(field) && data.get(field).isNull())) {
+            throw new IllegalArgumentException(type.dataSchema() + " names " + String.join(" or ", type.added())
+                    + "; without them it is version " + (type.version() - 1));
+        }
+        return MAPPER.treeToValue(data, type.dataClass());
     }
 
     private static String text(JsonNode envelope, String attribute) {

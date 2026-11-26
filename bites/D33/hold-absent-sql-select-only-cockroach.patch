@@ -1,0 +1,25 @@
+Breaks: a hold of no pointer only reads that no row is there, which locks nothing, so a create of the key lands before the hold's COMMIT (CockroachDB, backlog 278).
+Module: catalog-store-sql-raft
+Test: CockroachStoreSuiteTest#heldAbsenceAndACreateTakeTurns
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+index 74ce9a5f..2d0a35b6 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+@@ -172,15 +172,8 @@ final class Pointers {
+      * the key free. No row is left, and no reader sees the placeholder.
+      */
+     private static boolean absent(Connection connection, PointerKey key, CommitBatch batch) throws SQLException {
+-        int inserted = update(connection, "INSERT INTO pointer (object_id, branch, metadata_location, version, sha256,"
+-                        + " projection, last_commit_id, updated_at) VALUES (?, ?, '', 1, '', '', ?, ?)"
+-                        + " ON CONFLICT (object_id, branch) DO NOTHING",
+-                key.objectId(), key.branch(), batch.commitId(), batch.committedAt());
+-        if (inserted == 0) {
+-            return false;
+-        }
+-        update(connection, "DELETE FROM pointer WHERE object_id = ? AND branch = ?", key.objectId(), key.branch());
+-        return true;
++        return !Jdbc.exists(connection, "SELECT 1 FROM pointer WHERE object_id = ? AND branch = ? FOR UPDATE",
++                key.objectId(), key.branch());
+     }
+ 
+     /** A locked pointer's version and location. */

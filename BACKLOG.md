@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**44 open:** 11 S, 16 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**38 open:** 8 S, 13 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,19 +33,14 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
-| [158](backlog/158.md) | M | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build | 2026-11-23 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [168](backlog/168.md) | M | Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9) | a `cut-at` on the ref's answer, and the namespace listing and its totals read through a ref (each table's pointer on the ref, or at the cut, for its format, snapshots and last commit), with fast route tests and bites, then the console's columns | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
-| [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
-| [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
-| [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
-| [261](backlog/261.md) | M | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's) | 2026-11-24 |
 | [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
@@ -54,7 +49,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [281](backlog/281.md) | L | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | a chart value, a database CA and two certificates in demo.sh, PostgreSQL's TLS and pg_hba, a demo rebuild on a kept and a wiped volume, and the engine matrix's harness made to issue the same certificates | 2026-11-25 |
 | [282](backlog/282.md) | L | The demo's and the laptop runner's fixed passwords made once per machine, people's included | about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first | 2026-11-25 |
 | [283](backlog/283.md) | S | Kafka Connect's REST API is published on 8186 with no sign-in | oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check | 2026-11-25 |
-| [284](backlog/284.md) | S | The audit table writer stops for good when its table is dropped under it | one reopen path in LogWriter and TableWriter and a test that drops the table between commits | 2026-11-25 |
 | [285](backlog/285.md) | ? | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on | 2026-11-25 |
 
 ## Open items in full
@@ -1432,50 +1426,6 @@ a brokerage person.
 What done looks like: for each template, a lifecycle on a cash and a margin account runs through the engine in the
 fast build with every self-check passing, and the generator produces those events.
 
-### 158. A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java docs/storage-design.md bites/D33/
-- Effort: M, a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build
-
-Found while building item 157 (security finding 7). Item 157 refuses a namespace drop while a ref's cut names a
-table or view of it, read in the drop's transaction as its emptiness check is. That read sees only refs that have
-committed, and nothing makes a namespace drop wait for a ref create in flight:
-
-- PostgreSQL and CockroachDB (`SqlRefs.create`): the create locks the catalog's row `FOR UPDATE`, reads its cut in
-  one `INSERT ... SELECT`, then commits. The namespace drop locks only the namespace. So: the cut's statement
-  snapshot sees table T active in namespace N; T's drop commits; N's drop commits, seeing no active object and no
-  committed entry naming T; the ref commits, naming T, whose namespace main no longer has. The window is the cut
-  statement and the commit, longer on a large catalog. Oracle (`OracleRefs.create`) is the same at one SCN.
-- MongoDB (`MongoRefs.create`): the cut is read in a snapshot session, its entries are written in batches outside
-  any transaction, then one transaction inserts the ref, so the window also holds every batch. The drop marks its
-  parent (the catalog, for a top-level namespace), which the ref's transaction marks too, so only drops that overlap
-  that last transaction conflict with it.
-
-The result is the state finding 7 describes (a read through the ref loses the namespace's `regulated` flag), reached
-by a race instead of in sequence. It needs a ref create from main in flight across both drops.
-
-Done looks like:
-- SQL stores: the namespace drop locks the catalog's row before the namespace, `FOR SHARE` on PostgreSQL and
-  CockroachDB, for update on Oracle (no shared lock), the order `putGrantIf` takes (catalog, then securable), so a
-  drop waits for a ref create in flight and then reads its entries, and a create waits for a drop in flight and then
-  cuts without the namespace. Check every write that locks a namespace and then the catalog first: none did when this
-  item was written.
-- MongoDB: the ref's insert transaction refuses or retries the create when a table or view of its cut no longer has
-  its namespace on main, or another way to the same end that does not read the whole cut in one transaction.
-- A `RefSuite` case on all four stores (heavy): a ref create held open before its COMMIT (the commit hook, as
-  `NamespaceSuite`'s `duringAnOpenDrop` holds a drop) while a table of the cut and then its namespace are dropped; the
-  namespace drop answers `Refused(REFERENCED)` or the ref's cut leaves the table out, never both applied. Bites in
-  `bites/D33/`.
-
-**From the security review (Nuna Security Expert session, 2026-11-23):** item 158 may follow item 157; it is no
-go-to-work condition. The race needs a ref create in flight across two drops, by a caller already holding drop rights
-on the namespace, and its harm is finding 7's low one (the namespace's `regulated` flag and the D17 switch stop
-applying to reads through that ref); it grants no new access. A second way to close it, the builder's choice:
-`GovernanceChain.of` now stops when the object's namespace is gone; refusing a ref read whose object's namespace is
-missing (fail closed, audited as a denial) closes this race and any other path to the same state, without the lock
-order change on three stores or MongoDB's check. Item 157's check stays either way, so reads do not start failing.
-
 ### 167. Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -1500,6 +1450,104 @@ Done looks like:
   back. A `RefRoutesTest` case (fast) for the route, with a bite in `bites/D33/`.
 - The console: the make dialog's Description field, the purpose line in the refs list's Ref cell and on the ref's
   page, as the design words them.
+
+## Atelier's design, 2026-11-25
+
+Relayed word for word by the Catalog UI Expert session.
+
+**167 (a description on a branch or tag): no change to the design.** The purpose line, its two places and its sentence stand. The design never worded the make dialog's field; these are its words:
+- Label: `Purpose (optional)`
+- Placeholder: `why it exists, such as: before the November restatement`
+- Hint: `One line, at most {max} characters. Everyone who can see {catalog}'s branches and tags reads it, and the audit keeps it.`
+- When there is no description, there is no line and no filler. For a caller without `create`, who gets no `created-by` (item 106), the page's sub-line reads `{purpose}. Made from {from} on {created}.`
+
+### Atelier's changes, 2026-11-25 (relayed by the coordinator)
+
+1. In refs.js `purpose`, change `/[.!?…]$/u` to `/[.!?…]["'”’)\]]*$/u`, so a purpose ending in a quote or bracket
+   after its stop gets no second period.
+2. Keep `overflow-wrap: anywhere` on `.refs-tbl td.name .why` and on `.purpose`. If the audit feed row's text has no
+   such rule, add one.
+3. In refs.js `refWords`, `case 'CREATED'`: when `d.description` is present, add `. Its purpose: “{description}”` to
+   the end of either form. Use typographic quotes, no period after them, and text only. With no description, the line
+   is unchanged. Renewed, merged and ended lines leave the purpose out.
+
+## Built, 2026-11-25 (branch `worktree-agent-a18b4d6ea289528fc`)
+
+Built on the branch of items 158 and 171 (`worktree-agent-ac5aa9e6de1840a97`), which changes the same refs store
+files; the two land together.
+
+- **The record.** `Ref` gains `Optional<String> description` (`catalog-store-api/.../Ref.java`), never blank; every
+  caller passes it (tests pass `Optional.empty()`).
+- **The four stores.** A nullable column `description`: PostgreSQL `V18__ref_description.sql` (TEXT), CockroachDB
+  `V17__ref_description.sql` (TEXT), Oracle `V19__ref_description.sql` (VARCHAR2(1000 CHAR), through the text
+  codec). Existing refs read as none. MongoDB writes a `description` field, null without one, and reads a missing
+  field as none. `SqlRefs`, `OracleRefs` and `MongoRefs` write it on create and read it on every read
+  (`readRef`, `findRef`, `listRefs`, `listRefPointers`).
+- **The route** (`RefRoutes.java`): `POST …/refs` takes an optional `description` (`description(JsonNode)`,
+  ~line 1045). Absent, null or blank is none. The server bounds it so:
+  - its ends are stripped of white space, no-break spaces included (`stripped`, ~line 1074);
+  - at most `MAX_DESCRIPTION` = 200 characters, counted in code points, else 400 `Field description is longer than
+    200 characters (n)`; the list's `limits` carries `max-description`;
+  - one line of plain text (`notInALine`, ~line 1090): no control character (C0, DEL, C1, so no line break or tab), no
+    line or paragraph separator, no lone surrogate, no bidirectional embedding, override or isolate
+    (U+202A to U+202E, U+2066 to U+2069); else 400 naming the character's position and code point;
+  - a non-string is 400.
+  Every ref answer (list, read, create, renew) carries `description` to any caller who may list or read the refs
+  (item 106's rule), unlike `created-by`. A renewal keeps it. The `CREATED` `nuna.catalog.ref` record carries it.
+- **The audit record.** `RefChange` gains a nullable `description`. A record with one is written as
+  `urn:nuna:catalog:event:ref:2`; every other ref record leaves the field out and is written as `ref:1`, exactly as
+  before (the golden line is unchanged), so a server of the previous release reads every record it could read before
+  (Nuna Security Expert, 2026-11-25). `EventType.REF` names the field version 2 added (`added`); `EventCodec` drops it
+  when null (`payloadTree`), writes the version that matches (`versionOf`), and reads either, refusing a `ref:1` that
+  carries a description and a `ref:2` without one (`readPayload`). An audit table row, which keeps no schema version,
+  is read by the same rule (`EventCodec.payload`, used by `AuditRows`). The shape follows item 113's
+  `payloadTree`/`versionOf` without sharing its code.
+- **The console** (`ui/refs.js`, `ui/api.js`, `style.css`): the make dialog's `Purpose (optional)` field with Atelier's
+  placeholder and hint (`{max}` from `limits.max-description`), sent only when not empty; the refs list's Ref cell
+  shows the purpose under the chip (`fine why`, as the prototype draws it); the ref's page sub-line reads
+  `{purpose}. Made from main by {created-by} on {created}.`, or without `by` for a caller without `create`. No
+  description, no line. The text goes in through `h()` text nodes only. A refusal shows as the catalog answered.
+  A `created` record's words, in the audit feed and on the ref's page, end `. Its purpose: “{description}”` when it
+  has one (Atelier's change 3). The feed's text already wraps anywhere (`.feed-row > div`), so no rule was added.
+- `docs/refs.md`: the field, its bounds and who reads it.
+
+Tests:
+- Fast, run and passing: `RefRoutesTest` (30, two new:
+  `aDescriptionIsKeptOnTheRefShownToEveryReaderAndRecordedOnItsCreation`,
+  `aDescriptionPastTheLimitOrNotOneLineOfTextIsRefused`); `EventCodecTest` (245, four new on the version-1 record and
+  row) and `AuditRowsTest`; the ref tests that build a `Ref` in `catalog-core`, `catalog-store-api` and
+  `catalog-server`.
+- Heavy, written and compiled, not run: `RefSuite#aRefKeepsItsDescription` (four stores: 200 characters, one outside
+  the BMP, with HTML's characters; read, find, list, the pointers' list, a renewal; not inherited by a ref made from
+  it); `ConsoleBrowserTest#aRefMadeWithAPurposeShowsItAsText` (the dialog's words, the list and the page, markup shown
+  as text).
+
+Bites, recorded in `bites/D33/` and checked with `git apply --check`, not run: `ref-description-not-one-line`,
+`ref-description-unbounded`, `ref-description-unaudited`, `ref-description-hidden-from-readers`,
+`ref-description-lost-on-renewal`, `audit-ref-previous-version-unread`, `audit-row-previous-version-unread`,
+`audit-ref-written-as-version-2` (fast);
+`sql-ref-description-unstored`, `oracle-ref-description-unstored`, `mongo-ref-description-unstored` (heavy).
+
+Choices made (Paul may overrule):
+1. The limit is 200 characters, counted in code points: enough for one line of purpose, short enough for the list's
+   cell. The console's `maxlength` counts UTF-16 units, so it never lets more through than the server takes.
+2. Ends stripped and blank taken as none, rather than refused: the dialog sends an empty field as nothing anyway.
+3. Bidirectional controls are refused besides control characters, so a purpose cannot render as other text; other
+   format characters (zero-width joiners in emoji) are kept.
+4. The audit carries the description only in the `CREATED` record, as the item asks; the ref's id ties the rest to it.
+5. The ref record's payload has a version 2 rather than a field quietly added to version 1: the codec reads strictly,
+   so a field added to version 1 would have made every stored ref record unreadable. Only a record with a description
+   is version 2; the rest stay version 1, so a rolling upgrade's older servers keep reading them (security's change).
+6. The migrations take the next free numbers on main (PostgreSQL V18, CockroachDB V17, Oracle V19), at the
+   coordinator's word, 2026-11-25.
+7. On the page's sub-line a purpose already ending in `.`, `!`, `?` or `…`, closing quotes or brackets after it
+   included, gets no second period.
+
+Left:
+- The heavy cases and store bites run in the overnight run.
+- Item 113's branch (`branch-grants-113`) takes the same numbers for `ref_grant` (PostgreSQL V18, CockroachDB V17,
+  Oracle V19). If 167 lands first, 113 renumbers above these, as whoever lands second settles: a lower number
+  landing after a higher one is out of order for a database already migrated, such as the demo's.
 
 ### 168. Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9)
 
@@ -1554,6 +1602,142 @@ Done looks like:
 - The console's feed search reads `@name` as the branch filter, and a ref's Record tab uses the subject filter and
   links "Every record through @{name} in the last day".
 
+## Atelier's design, 2026-11-25
+
+Relayed word for word by the Catalog UI Expert session, from her answer to "Items 167, 169 and 170: has my view
+changed since 2026-11-22?":
+
+**169 (audit records filtered by branch): two changes.**
+1. **A reused name mixes refs.** The `branch` field of commit and read records holds the ref's name, not its id. A name used again after a ref ends would mix the two refs' records.
+   - The Record tab's button becomes `Every record through @{name} since it was made`, with `from` set to the ref's `created-at`.
+   - The feed's `@name` search sets `from` to the live ref's `created-at` when the reader has set no time.
+   - With no live ref of that name, it shows `No live ref is named @{name}: these are records through every ref that had the name.`
+2. **The subject filter must reach item 156's records.** Item 156's `OBJECT_REMOVED` records carry the table in their `tables` payload, not as their subject. So `subject=<object id>` must also return `ref` records whose `tables` name that object. Without that, no table's Audit and no state of 170 can say who took it out of a ref, or when.
+
+## Atelier's ruling, 2026-11-25
+
+**1. The status line** (`feed-status`). When a start applies, insert `from {time} ` before `up to`:
+`{n} records shown, newest first, from {d Mon HH:MM} up to {committed}. Records arrive here about a minute after they happen.`
+`{time}` is the start used: `st.from`, or the live ref's `created-at`. It uses `at()`, as `up to` does. Without a start, the line stays as it is.
+
+**2. The note line** (the existing `refNote`, above the status line). It says why the feed starts there and offers the way out.
+- `@name` searched, live ref found, its making used: `From @{name}'s making, {d Mon HH:MM}: records through an earlier ref of the same name are left out.` Button: `Include earlier refs named @{name}`
+- `from` came in a link and equals the live ref's `created-at`, with `@name` searched (the Record tab's link): the same words and button as above.
+- `from` came in a link, any other case: `From {d Mon HH:MM}, as the link asked.` Button: `Show earlier records too`
+- No live ref of that name: keep the built words, `No live ref is named @{name}: these are records through every ref that had the name.` No button.
+
+How the buttons work:
+- Both are `btn sm ghost`, after the words, on the same line.
+- Each removes the lower bound and keeps the search, Who, Up to and the kind.
+- Each writes `from=any` to the hash, so the ref's making is not applied again on reload or on the next restart. `readFilters` must accept `any`.
+- After a button is pressed, the note line reads: `Records through every ref that has had the name @{name}.`
+- Editing the search box still clears a linked `from`, as built.
+
+**3. One code fix.** The branch skips the ref's making whenever Up to is set (`if (r && !st.from && !st.upTo)`). Up to sets only the end (`to`), and the start exists to keep a reused name's earlier ref out, which matters just as much then. Apply the ref's making unless `st.from` is set or is `any`.
+
+**4. Item 220's "· N records hidden".** She agrees: drop it while a ref is searched (`&& !refName()`). Keep the checkbox.
+
+## Atelier's changes after review, 2026-11-25
+
+1. The status line with a start is exactly `{n} records shown, newest first, from {at(since)}, as of the last commit
+   at {at(committed)}.` The line without a start stays as built; the sentences after it are unchanged.
+2. When the start falls after Up to's end, no request is sent and the status line stays empty; the feed says
+   (`muted feed-none`), for the ref's making: `No record went through @{name} by {at(to)}: it was made on
+   {at(since)}. Set Up to later, or include earlier refs named @{name}.`; for a link's start: `No record can match:
+   the link's start, {at(since)}, is after the end Up to sets, {at(to)}. Set Up to later, or show earlier records
+   too.` The note line above keeps its button.
+3. A linked `from` with no `@name` leaves the note blank, as built.
+
+Built in `audit.js` (`page` and `restart`); the heavy `ConsoleBrowserTest` ref-search test asserts the new status
+line, the making case's words and the empty status line. No fast console rules test asserts these words.
+
+## Built, 2026-11-25 (worktree-agent-a1a2f439df6ecefe1)
+
+Everything above is built; the audit-table writer's end-to-end test and the console's browser test are heavy, so they
+were written and compiled, not run here. Open until the overnight run passes them and bites them.
+
+- **Two columns** on `events` (`EventsTable.java:100`): `branch` (string, id 22) and `subject_ids` (list of string, id
+  23, element 24). `EventsTable.open` gives a table made without them both, in one schema change, as it gave
+  `log_run` and `log_seq` (backlog 272): no file is rewritten, no snapshot made, and older rows read null. The writer
+  fills them (`EventsTable.java:273`) from `AuditRow`'s two new fields, which `AuditRows.of` maps
+  (`AuditRows.java:82`): `branch` is a commit's and a read's `branch` (`main` or the ref's name as given) and a ref
+  record's ref name; `subject_ids` is a ref record's ref id, then the ids in its `tables` (a merge's tables, or the
+  object item 156 took out of the ref). Every other type leaves both null.
+- **The reader** (`EventsReader.Query`, `EventsReader.java:134`) takes `branch` (compared normalized, as the catalog
+  compares names; files with no branch at all are passed over by a `notNull` filter, `:287`) and `subject` (the row's
+  `object_id`, or any of its `subject_ids`, `:375`). Both are matched in the scan, inside the catalog filter and the
+  page budget, so a narrow filter comes back short with `searched-to` as the others do.
+- **The feed** (`AuditReadRoutes.java:182`) takes `branch=<name>` (no `@`; 400 for one with `@` or blank) and
+  `subject=<id>` (a UUID, else 400). Who may read is unchanged: the route still requires `select` on the audit
+  catalog first (`requireAuditReader`), and the filters only narrow the one catalog's records the caller could
+  already read whole. Each row now carries `branch` (`:452`).
+- **How 170 and 279 ask who took a table out of a ref, and when:**
+  `GET /management/v1/catalogs/{catalog}/audit/feed?subject=<table id>&type=nuna.catalog.ref`. Each row whose
+  `event.data.action` is `OBJECT_REMOVED` is one ref the table left: who is `principal` (and `event.data.actor`), when
+  is `time`, which ref is `branch` (its name) with `event.data.ref` (its id) and `event.data.kind` (`BRANCH`/`TAG`).
+  A `MERGED` row names the table too (a merge moved it onto main). Follow `next-page-token` while a page stops short
+  with `searched-to`. The caller needs `select` on the audit catalog; the console asks only when `auditOpen` says so.
+- **Console.** The feed's search field (placeholder `Table, namespace or @ref`, 6.8) reads `@name` as `branch=`
+  (`audit.js:206`, `:263`). When the reader set no time (no `from` in the link, Up to at "Up to now"), it asks from
+  the live ref's `created-at` (`:301`); with no live ref of that name it says `No live ref is named @{name}: these are
+  records through every ref that had the name.` (`:305`); the chips show no counts beside a ref's records (6.8). The
+  link keeps `from` (a time the Record tab's link set), dropped when the search changes. A ref's Record tab asks
+  `subject=<ref id>` (`refs.js:751`) instead of scanning four pages of every ref's records, and links `Every record
+  through @{name} since it was made` (`refs.js:762`), to the feed with `path=@name&from=<created-at>`.
+- **A bug found and fixed:** the Record tab, "Ended lately" and the ended-ref note read `x.data` and `x.subject` on
+  feed rows, which carry the record as `event`; they found nothing. They now read each row's `event`
+  (`refs.js:339`, `:752`).
+- **Tests.** Fast and passing: `AuditRowsTest#commitsReadsAndRefRecordsNameTheRefAndARefRecordListsItsRefAndTables`;
+  `EventsReaderTest#filtersByTheRefARecordWentThroughOrIsAbout`, `#filtersByTheObjectOrRefARecordIsAbout`,
+  `#aTableMadeBeforeTheRefColumnsIsGivenThemAndItsEarlierRowsMatchNoRefOrSubject` and the 272 table test extended
+  (all four columns, no snapshot made); `TableWriterTest` (the columns, a commit's `branch`);
+  `AuditFeedRoutesTest#theRefAndSubjectFiltersReachTheTableWithinTheCatalog`,
+  `#theRefAndSubjectFiltersAreRefusedToWhoeverMayNotReadTheFeed` and four more 400 cases. Heavy, written and
+  compiled: `AuditTablesTest#aRowForEachKindOfRequestAboutTwoIntervalsBehind` (a commit's row names `main`, a drop's
+  none) and `ConsoleBrowserTest#theFeedsRefSearchReadsFromTheLiveRefsMakingAndTheRecordTabAsksByItsId`.
+- **Bites, recorded, not run:** `bites/D23/` `commit-row-drops-branch`, `ref-row-drops-tables`, `table-drops-branch`,
+  `old-table-not-given-ref-columns`, `feed-any-ref-for-a-ref`, `feed-subject-misses-ref-tables`,
+  `feed-branch-not-asked`, `feed-subject-not-asked`, `feed-filtered-read-unguarded`; `bites/UI/`
+  `console-ref-search-mixes-refs`, `console-record-tab-every-ref`. Recorded again against this code, same breaks:
+  `bites/OBS-272/reader-drops-log-run`, `row-drops-stamp`, `table-drops-log-seq`.
+
+**Choices made (Paul may overrule):**
+1. A ref record's own `branch` is its ref's name, so `branch=q3` gives the commits and reads through `@q3` and `@q3`'s
+   own records (6.8: "records through or about that ref") with one filter.
+2. `subject_ids` is one list column (the ref, then its tables) rather than a column for the ref and another for the
+   tables: one filter, `object_id` or any of the list, answers "about this object or ref".
+3. (Overruled by Atelier's ruling, item 3: the making now applies with Up to set too.) When the ref was made after
+   Up to's end, the feed asks nothing and shows "No record matches": the route refuses a `from` after `to`.
+4. When the refs list cannot be read, the search asks with no `from` and shows no note: saying "no live ref" would be
+   a guess.
+
+**Left:**
+- Records written before this change carry neither column, so `branch=` and `subject=` miss them (the item's "old rows
+  read as null"); 156's `OBJECT_REMOVED` records made before it landed are not found by a table's subject.
+- The overnight run: the two heavy tests and the bites above and below.
+- Item 113 (branch grants, branch `branch-grants-113`): once it lands, `AuditRows` should fill `branch` for a grant
+  naming a branch (`case GrantChange e -> e.branch()`), and perhaps put the branch id in `subject_ids`. Whichever of
+  169 and 113 lands second adds it. Both edit the `new AuditRow(...)` call at the end of `AuditRows.of`: 113 changes
+  the payload argument to `EventCodec.payload(event)`. The second to land keeps both changes (Security Expert,
+  2026-11-25).
+
+## After review, 2026-11-25
+
+- Merged `main` (items 220 and 197): `EventsReader.Query` keeps 197's `objectId` beside `branch` and `subject`, and
+  both pushdowns; the feed label keeps 220's hidden count, which is now dropped while a ref is searched (Catalog UI
+  Expert; Atelier's item 4).
+- Atelier's ruling, items 1 to 3, in `audit.js`: the status line says `from {time} up to {committed}` when a start
+  applies; the note line gives the four cases with their `btn sm ghost` buttons (`data-act="any-time"`), which set
+  `from=any` in the link (`readFilters` keeps `any`); the ref's making applies with Up to set. A start not before the
+  end asks nothing and shows "No record matches", as the route would refuse it.
+- Security Expert: `branch=` is normalized in the route, and a name it cannot normalize, or one with a lone
+  surrogate, answers 400 (`AuditReadRoutes.branch`; new 400 case `q\uD800` in
+  `AuditFeedRoutesTest#aBadlyAskedReadIs400AndReadsNothing`). Field ids checked: both old-table tests assert
+  `branch` 22, `subject_ids` 23, its element 24.
+- `ConsoleBrowserTest#theFeedsRefSearchReadsFromTheLiveRefsMakingAndTheRecordTabAsksByItsId` (heavy, compiled, not
+  run) now covers the note's words, the status line, Up to keeping the start, the button and `from=any`, the Record
+  tab's link and a link's other time. Bite recorded, not run: `bites/UI/console-ref-start-dropped-with-up-to`.
+
 ### 170. Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -1579,71 +1763,6 @@ run already gives a dropped table's `dropped-at` (item 107), but not who dropped
 Done looks like: a route (or a field on an existing answer, the builder's choice) that names the live refs holding an
 object by id or path, and the drop's actor and time; fast tests with bites in `bites/D33/`; the three states on the
 table page with the design's words.
-
-### 171. A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-store-api/src/test/java/nuna/catalog/store/suite/ bites/
-- Effort: S, one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build
-
-Low, from the security review of item 156 (Nuna Security Expert session, 2026-11-23). Not a go-to-work condition.
-
-What is wrong: a purge claim and a removal from refs (item 156) read the holds and freezes on the object, its
-namespaces and the catalog inside their transaction, but lock only the object's row. A legal hold placed on a
-namespace above the object, or on the catalog, while one of them runs can commit after its read. The result is the
-same as the operation finishing first and the hold arriving a moment later (placing a hold reads nothing either
-writes, and the hold then stands, so `Rules.retentionHold` keeps main's snapshots and later purge claims are
-refused), so nothing is lost; only the audit trail can show the hold's record a little earlier than the operation's.
-
-Done when the purge claim and the removal lock the held levels (or the catalog row) before reading holds, on all four
-stores; a store suite case holds a namespace hold's write open while each runs and sees them serialized; bites
-recorded.
-
-### 197. After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's
-
-- Added: 2026-11-23 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RecentAudit.java, catalog-server/src/main/resources/nuna/ui/audit.js, catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/test/java/nuna/catalog/server/governance/RecentAudit, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, docs/observability/
-- Effort: M, one route's source and three console pages' words, with their tests; waits on nothing
-
-What is wrong: item 195 (D23, amended 2026-11-23) made the log `nuna.audit` the record of audit and Kafka optional,
-and the demo runs without Kafka unless `gen` or `cdc` is on (D50). Item 195's agent left the console alone, since its
-files were claimed, and reported:
-- `RecentAudit` (`GET .../audit`, a table's or namespace's Audit tab) reads the audit topic, so without Kafka it
-  answers 503 ("needs Kafka"). In the demo, with `gen` and `cdc` off, every object's Audit tab fails.
-- Rows the audit table writer takes over OTLP have `topic_partition` -1 and no hash chain; with an archive configured
-  the console shows them as "unverified", and a chain lookup for partition -1 answers 400.
-- `audit.js` says "event as Kafka holds it", and `app.js` describes the archive as Kafka's.
-- The Health page's "Publishes failed" and the acknowledgement p99 (`ObservedPublisher`'s timer) now measure only
-  the best-effort Kafka copy, and are empty without Kafka.
-
-Done looks like:
-- A table's or namespace's Audit tab answers from the audit table (`nuna_audit.audit.events`, as the catalog-wide feed
-  does, D45) when there is no Kafka, under the same rules as today (audit readers, D45), with a test without Kafka.
-- Log rows show "from the log, no hash chain" rather than "unverified", and no chain lookup is offered for them.
-- The console's words say what is true without Kafka; Health labels the publish figures as the Kafka copy's and hides
-  or explains them when Kafka is not configured.
-- The console checked in the demo with every switch off, signed in as gary.
-
-### 220. Console: findings from Atelier's re-walk after items 212 to 217
-
-- Added: 2026-11-23 by local_6867d144-54ac-41a5-b94a-192a4c66770b
-- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: S, three small console fixes: one column's wrapping, one count's words, one button's label
-
-Atelier's re-walk after items 212 to 217 (2026-11-23, `status/2026-11-23-console-rewalk-fixes.md`), live in the demo
-at 1440 × 900 with that branch's console. Her two other findings were fixed on that branch (the regulated table's
-width, the merge verdict's one sentence). Left:
-- Audit's "Most recorded" side table clips its Records column (gary on lakehouse's Audit): the header reads "Reco" and
-  the numbers are hidden behind the long paths. Let the paths wrap or truncate with a title, so the number columns stay
-  in view.
-- Audit's headline and "Records in lakehouse" say 1,140 while the All chip and By kind's All say 1,124. Her guess, not
-  checked: the 16 are the audit's own reads, hidden while "Show audit reads" is off. Count the same records in both,
-  or say so ("1,140 records · 16 audit reads hidden").
-- The catalog page read through @sample has a "Copy name" button that does not say what it copies. Name it as 217 did
-  the ref page's ("Copy lakehouse@sample", aria-label "Copy the warehouse name lakehouse@sample").
-
-Done looks like: each as above, checked in the demo at 1440 × 900 (no column clipped: each table's scrollWidth within
-its card); the heavy browser cases that read the headline or the button updated.
 
 ### 231. Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides)
 
@@ -1734,64 +1853,6 @@ overnight run has no AWS leg.
   limited to the generated prefixes) and the test with it; if it is let in outside the prefix, the delete policy is
   wrong and that is a new item.
 - The run is recorded in `status/`.
-
-### 261. Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone
-
-- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
-- Touches: deploy/grafana/rules/nuna-catalog.rules.yaml deploy/grafana/dashboards/nuna-catalog.json docs/observability/dashboards-and-alerts.md
-- Effort: M, about a dozen rules and three panels in one rule file and one dashboard, the doc's alert table, and promtool unit tests for the all-500 and silent cases; waits on nothing (the series names stay D43's drafts, renamed at work with item 44's)
-
-**What is wrong.** The catalog's alert rules (item 44, drafted at home under D43) have two blind spots.
-
-- **Errors.** Every SLI in `deploy/grafana/rules/nuna-catalog.rules.yaml` filters `outcome="2xx"` (or `"3xx"`) in its
-  numerator and its denominator (lines 18 and 19, and every pair after). A catalog answering every call 500 gives
-  0/0, no ratio, and fires nothing; a partial error rate is invisible; and requests that slow until they fail as 5xx
-  leave the latency SLI looking better. `docs/observability/dashboards-and-alerts.md` says so under "Not covered"
-  ("No alert on errors", line 142). D43 decided the drafting and the 500-commits panel, nothing about errors, so
-  adding error alerts needs no ruling.
-- **Absence.** A burn-rate expression returns nothing once its input series stop, so a catalog that dies or stops
-  pushing fires nothing, and a page already firing resolves itself when its short window empties. Pushed OTLP series
-  have no `up` and no staleness marker (Prometheus' OTLP converter writes one only for a point flagged
-  NoRecordedValue), so nothing else notices. The worker's rules already use `absent_over_time`
-  (`deploy/grafana/rules/nuna-maintenance.rules.yaml`, line 27); the catalog's have none. If work's Prometheus or
-  collector turns on native-histogram conversion (`convert_histograms_to_nhcb`), every `_bucket` selector goes empty
-  in the same silent way.
-
-**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
-`research/reports/Nuna observability and audit grounding.md`), "Burn-rate windows match the Workbook, but an all-500
-catalog pages no one". The windows themselves are the SRE Workbook's Table 5-8 exactly. Its worked example counts
-5xx against availability (https://sre.google/workbook/implementing-slos/); Sloth and Pyrra pair each latency SLO with
-an availability SLO, and Pyrra generates an `SLOMetricAbsent` alert by default, on the threshold bucket too
-(https://github.com/pyrra-dev/pyrra/blob/main/slo/rules.go); Prometheus' `keep_firing_for` exists for resolutions
-caused by lost data (https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/).
-
-**What to build.**
-
-- **Availability SLOs**, in a group of their own, with the latency SLOs' windows, factors and severities (14.4 and 6
-  page, 1 warns): loads (`loadTable`), commits (`updateTable` and `commitTransaction`), and every route the request
-  timer times, each per `job`. A `5xx` answer is bad; `2xx` and `3xx` are good (a 304 is a good answer); `4xx` is
-  left out of both, 409 commit conflicts included, since a client's mistake or a lost race is not the catalog
-  failing. nuna's own 503s are outages, not load shedding (the store unreachable, `ErrorResponses.java:54`; a record
-  that had to be audited first and was not, `AuditUnavailableResponses.java`), so they count bad. Its one 429 is the
-  audit read routes' per-caller limit (`AuditReadRoutes.java:504`), a 4xx and left out. `outcome` carries the status
-  class (`docs/observability/catalog-metrics.md`, `nuna.catalog.requests`), so none of this needs `error.type`.
-  Target 99.9 %, a draft to set at work as D43's names are. The R7 latency SLOs stay as written.
-- **Absence alerts**, severity `page`: `absent_over_time` per `job` over about 10 minutes on
-  `nuna_catalog_requests_milliseconds_count`, and on each SLO's `_bucket{le=...}` series, so a renamed or converted
-  bucket pages instead of going quiet. An idle catalog still pushes its unchanged cumulative counts, so this tells a
-  dead process from a quiet one (inferred). `absent_over_time` per `job` cannot see a job that never reported: say in
-  the doc how a deployment names the jobs it expects, or alert on the number of jobs reporting.
-- **`keep_firing_for: 10m`** on every page rule, so a page does not resolve because its data stopped.
-- **The page rules' `for: 2m`.** The Workbook advises against `for` on burn-rate alerts. Drop it, or keep it and write
-  the detection time in the doc: at a total latency failure the 1 h window crosses 14.4 % after about 8.6 minutes, so
-  with `for: 2m`, a push and an evaluation the page comes 11 to 12 minutes after the onset (the report's arithmetic).
-- **A panel for each availability SLO** on the catalog dashboard's "SLOs" row, beside the latency ones.
-
-**Done when** the rules are in the rule file and the doc's alert table, "No alert on errors" is gone from "Not
-covered", and `promtool test rules` unit tests (the `prom/prometheus` image carries promtool) show that: every call
-answered 500 for 15 minutes pages; 409s alone do not; no series for 10 minutes pages; and a firing page whose series
-stop keeps firing for `keep_firing_for`. Item 233's demo is where the rules first meet live series; item 44 renames
-them at work with the rest.
 
 ### 263. Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer
 
@@ -1952,6 +2013,78 @@ only checks by the branch's own pointer, or by its absence when the branch has n
 store suite case (heavy) where a first commit to the held table lands between the read and the COMMIT, and the
 transaction answers 409 `CommitFailedException`; a bite recorded (`git apply --check`, not run).
 
+## Built 2026-11-25 (branch worktree-agent-a200bccb56369329a)
+
+What changed:
+- `PointerHold` takes `Optional<Pointer> expected` (`catalog-store-api/.../PointerHold.java:16`); empty holds the
+  key's absence. A second constructor keeps `new PointerHold(key, pointer)` for a pointer that exists, so the
+  existing callers (Merge, the suites) are unchanged.
+- Each store takes the absent key as a create takes it, in `lockAndCompare`'s key order (after the ref, as every
+  pointer lock), then deletes the placeholder at once in the same transaction:
+  - PostgreSQL and CockroachDB, `catalog-store-sql/.../sql/Pointers.java:129` and `absent` at `:174`:
+    `INSERT … ON CONFLICT (object_id, branch) DO NOTHING`, then `DELETE`; nothing inserted is a `Conflict`.
+  - Oracle, `catalog-store-oracle/.../oracle/Pointers.java:127` and `absent` at `:157`: `INSERT`, ORA-00001 on
+    `POINTER_PK` is a `Conflict`, then `DELETE`.
+  - MongoDB, `catalog-store-mongo/.../mongo/Pointers.java:132` and `holdAbsent` at `:189`: an upsert with
+    `$setOnInsert`, then `deleteOne`; matching a document is a `Conflict`.
+- `CommitEngine.transaction` holds every table it only checks by `base.expected()`, the branch's own pointer or its
+  absence (`catalog-core/.../CommitEngine.java:986`); on main `expected` is always the pointer read, so main is
+  unchanged.
+- `docs/storage-design.md` section 3 (`PointerHold`) and section 4 step 2 say how a hold of no pointer is taken.
+- The fake stores of `BranchCommitTest`, `MergeTest` and `RefMergeRoutesTest` compare `hold.expected()` as given.
+
+Why the placeholder cannot miss a racing create, by store:
+- PostgreSQL (READ COMMITTED): a missing row cannot be locked `FOR UPDATE`, and `SELECT … FOR UPDATE` skips an
+  uncommitted insert. The placeholder goes through the unique index, as a first commit's insert does: an open insert
+  of the key makes it wait on that transaction, and a committed one makes it insert nothing (the dirty-snapshot check
+  of `ON CONFLICT` sees both, whatever the statement snapshot). The deleted placeholder keeps the key's index entry,
+  with this transaction as its inserter, until COMMIT, so a later create's `ON CONFLICT` check waits on this
+  transaction and only then finds the row dead and inserts.
+- CockroachDB (READ COMMITTED): the insert and the delete both leave write intents on the key. A create meeting the
+  intent waits for this transaction and then reads the tombstone; this insert meeting a create's intent waits, then
+  sees the row and inserts nothing. A write committed after the statement's read timestamp is caught by the
+  statement's own write-too-old retry, which reads again.
+- Oracle (READ COMMITTED): an insert under `POINTER_PK` waits for any uncommitted change to that key by another
+  transaction (insert or delete), then fails with ORA-00001 if the row is there; the delete leaves the key's index
+  entry locked by this transaction until COMMIT, so a later create waits for it.
+- MongoDB (snapshot transactions): reads take no lock, so the hold writes the key. An upsert meets an open insert of
+  the key, or one committed after this snapshot, with `WriteConflict` (storage-design, M1 MongoDB deviation 1 and M2c
+  deviation 8), and the transaction runs again from a new snapshot, where it matches the pointer. A create after the
+  hold meets the hold's write to the same unique-index key the same way and runs again after it. On a branch the
+  ref's mark already makes two commits on one branch conflict, but the hold does not lean on it.
+- It is the means two racing first commits to one key already serialize by on every store
+  (`BranchCommitTest#twoFirstCommitsRace`, and the M1 placeholder insert of findCommit).
+
+Tests:
+- Fast, run and passing: `BranchCommitTest#aTransactionHoldsWhatItOnlyChecks` (the batch holds the checked table's
+  own pointer and the absence of the one with none, and creates no pointer) and
+  `BranchCommitTest#aFirstCommitToAHeldTableLandsMeanwhile` (Bob's first commit to `fills` on the branch adds a
+  column between the transaction's read and its swap; the transaction asserts schema 0 on `fills`: the hold fails the
+  batch, the retry reads the branch's own pointer and answers 409 `CommitFailedException`, and nothing of it lands).
+  `MergeTest`, `TransactionTest` and `catalog-store-api`'s tests pass too.
+- Heavy, written and compiled, not run (the overnight heavy build runs them on all four stores):
+  `CommitSuite#heldAbsenceIsComparedNotWritten` (a hold of no pointer commits and leaves none and no journal row; a
+  create afterwards gets version 1; the same hold once a pointer is there is `Conflict` with it and writes nothing)
+  and `CommitSuite#heldAbsenceAndACreateTakeTurns` (a create held open before COMMIT keeps the hold waiting, which
+  then answers `Conflict` with the created pointer; a hold held open keeps the create waiting, which then lands).
+
+Bites recorded (`bites/D33/`, `git apply --check` only, not run): `engine-holds-no-absent-pointer` (catalog-core),
+`hold-absent-sql-select-only-postgres`, `hold-absent-sql-select-only-cockroach`, `hold-absent-sql-placeholder-left`,
+`hold-absent-sql-pointer-there-passes`, `hold-absent-oracle-select-only`, `hold-absent-mongo-find-only`.
+
+Choices made (Paul may overrule):
+- A placeholder insert and delete, not the ref locked for update when a batch holds an absent key. The ref lock would
+  serialize every commit on the branch with the transaction, and would leave a hold of no pointer on main, or on keys
+  no ref guards, unprotected; the placeholder guards exactly one key in any batch, by the means creates already use.
+- The placeholder is deleted at once, not at the end of the batch: the key stays the transaction's either way, and no
+  later statement of the batch can meet it.
+- On MongoDB the hold marks nothing for the outbox clock (9 b): it leaves no document, and the transaction's events
+  are about the tables it swaps, not the held one.
+
+Left: the overnight heavy build has to pass the two `CommitSuite` cases on all four stores, and the six store bites
+have to bite. The CockroachDB select-only bite assumes `SELECT … FOR UPDATE` on a missing key locks nothing under
+READ COMMITTED; if it reports NO BITE, record that store's bite another way. Then `./backlog.sh done 278`.
+
 ### 279. Console: take a table out of refs, item 156's route, from the table page (item 156's Left)
 
 - Added: 2026-11-25 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -2039,25 +2172,6 @@ tried). Item 281 closes the database part; the API itself stays open.
 
 Done when an unauthenticated request to 8186 is refused (or nothing listens there) and a signed-in operator can still
 see the connectors.
-
-### 284. The audit table writer stops for good when its table is dropped under it
-
-- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
-- Touches: catalog-audit-tables/src/
-- Effort: S, one reopen path in LogWriter and TableWriter and a test that drops the table between commits
-
-From `docs/from-work/005-github-secret-scanning.md`, item 4: the writer makes `nuna_audit.audit.events` only as it
-starts. When the catalog's PostgreSQL is new but the writer's pod is not (a Helm upgrade that changes nothing leaves
-it running), the Audit page answers 503 "the audit table nuna_audit.audit.events does not exist yet" for good, and
-the writer logs `NoSuchTableException: Table does not exist: audit.events` every 10 seconds while holding its
-records. Work's stopgap restarts the writer from `demo.sh`; work says the better fix is the writer making its table
-again. catalog-security (2026-11-25): `LogWriter.reload()` reopens only when `table == null` (LogWriter.java:229-232),
-so once the table is gone every reload fails; TableWriter has the same shape.
-
-Done when, on `NoSuchTableException` only (never on a 403, which would hide a revoked grant), the writer drops its
-cached table and opens it again through the opener that creates it, logs a WARN that a dropped audit table should be
-undropped rather than replaced, and writes the records it held; a test drops the table between two commits and sees
-both commits' records in the new table.
 
 ### 285. Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub
 
@@ -2219,6 +2333,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [156](backlog/156.md) | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | done | 2026-11-25 |
 | [157](backlog/157.md) | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | done | 2026-11-25 |
+| [158](backlog/158.md) | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | done | 2026-11-25 |
 | [159](backlog/159.md) | Demo: the seed's sample grant goes to a group the grant admin is not in | done | 2026-11-23 |
 | [160](backlog/160.md) | Heavy build: the audit gate and HealthRoutesTest miss item 114's maintenance requests | done | 2026-11-23 |
 | [161](backlog/161.md) | Console: the Metadata log tab fails on a create's, register's or revive's journal entry | done | 2026-11-23 |
@@ -2227,6 +2342,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
 | [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
 | [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
+| [171](backlog/171.md) | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | done | 2026-11-25 |
 | [172](backlog/172.md) | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | done | 2026-11-25 |
 | [173](backlog/173.md) | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | done | 2026-11-23 |
 | [174](backlog/174.md) | Demo: every UI signs in through Keycloak, Silo's console and Keycloak's admin console included | done | 2026-11-23 |
@@ -2250,6 +2366,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [194](backlog/194.md) | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | done | 2026-11-23 |
 | [195](backlog/195.md) | Audit goes to logs: the catalog serves and vends without Kafka, and the audit table writer takes the audit records over OTLP (D23) | done | 2026-11-23 |
 | [196](backlog/196.md) | Demo switches: demo.sh gen and ss turn the brokerage generator and SingleStore on and off, as cdc does its leg; Kafka runs only while cdc or gen is on | done | 2026-11-23 |
+| [197](backlog/197.md) | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | done | 2026-11-25 |
 | [198](backlog/198.md) | Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1) | done | 2026-11-23 |
 | [199](backlog/199.md) | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | done | 2026-11-23 |
 | [200](backlog/200.md) | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | done | 2026-11-23 |
@@ -2271,6 +2388,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [217](backlog/217.md) | Console: smaller findings from Atelier's re-walk after phase 2 | done | 2026-11-23 |
 | [218](backlog/218.md) | Console browser tests beside the demo: the agent takes the demo down, runs them and brings it back up (D49) | done | 2026-11-23 |
 | [219](backlog/219.md) | Console: eight browser tests disagree with the pages S2, S3 and S5 made | done | 2026-11-23 |
+| [220](backlog/220.md) | Console: findings from Atelier's re-walk after items 212 to 217 | done | 2026-11-25 |
 | [221](backlog/221.md) | Console: branches and tags have a place in the rail, and making a branch is found there (Paul, 2026-11-23) | done | 2026-11-24 |
 | [222](backlog/222.md) | Console: Compact a table now offers the catalog's tables in a dropdown, tonight's queue first (Paul, 2026-11-23) | done | 2026-11-24 |
 | [223](backlog/223.md) | KafkaDownTest still expects a scan to fail while Kafka is down, which 195 changed: a Kafka outage blocks nothing | done | 2026-11-24 |
@@ -2306,6 +2424,7 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
 | [258](backlog/258.md) | Grants: refuse write on a view, which gives only select there yet counts as a data duty | done | 2026-11-25 |
 | [260](backlog/260.md) | Console: the Grants page lists the catalog's groups with their duties when no group is named | done | 2026-11-25 |
+| [261](backlog/261.md) | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | done | 2026-11-25 |
 | [262](backlog/262.md) | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | done | 2026-11-25 |
 | [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
 | [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |
@@ -2320,3 +2439,4 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |
 | [277](backlog/277.md) | The console says no worker has reported when its newest scan reported no storage | done | 2026-11-25 |
 | [280](backlog/280.md) | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | done | 2026-11-25 |
+| [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |

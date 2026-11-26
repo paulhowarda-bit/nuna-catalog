@@ -1,0 +1,17 @@
+Breaks: an object's Audit tab asks the audit table for every object's records, not its own.
+Module: catalog-server
+Test: AuditFeedRoutesTest#withoutKafkaAnObjectsAuditTabReadsItsRecordsFromTheAuditTable
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index 7f8aeb58..7f84dad6 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -169,7 +169,7 @@ class AuditReadRoutes {
+      */
+     private ResponseEntity<String> fromTable(Request request, Target target, int wanted) {
+         EventsReader.Query query = new EventsReader.Query(target.catalog().name(), Set.of(), null, List.of(), null, null,
+-                Optional.empty(), wanted, target.securable().id().toString());
++                Optional.empty(), wanted, null);
+         AuditFeed.Read read = readTable(() -> feed.page(query));
+         trail.record(new AuditRead(target.audit(), read.page().rows().size(), request.actor()));
+         ObjectNode body = Management.JSON.createObjectNode();

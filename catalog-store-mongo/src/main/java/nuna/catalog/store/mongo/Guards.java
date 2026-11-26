@@ -63,6 +63,19 @@ final class Guards {
         });
     }
 
+    /**
+     * The namespaces of {@code path} that exist, each seen: the levels above a record that a purge claim and a removal
+     * from refs mark, with the catalog, after reading the holds and DR freezes on them (backlog 171). A hold or freeze
+     * placed on one marks it too, so the two conflict and the one that retries reads the other's write. Call before the
+     * change's stamp is fixed.
+     */
+    static List<BsonDocument> seeNamespaces(Tx tx, List<UUID> path) {
+        List<BsonValue> ids = new ArrayList<>();
+        path.forEach(namespace -> ids.add(uuid(namespace)));
+        return tx.collection(NAMESPACE).find(tx.session, new BsonDocument("_id", in(ids))).map(tx::see)
+                .into(new ArrayList<>());
+    }
+
     /** Whether a DR freeze is set on the record, on any namespace above it, or on its catalog. */
     static boolean frozen(Tx tx, UUID id, UUID catalogId, List<UUID> path) {
         List<BsonValue> targets = new ArrayList<>();

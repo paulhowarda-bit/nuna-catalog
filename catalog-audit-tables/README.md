@@ -14,8 +14,8 @@ hash-chained Object Lock archive, the seven-year record (D23, amended 2026-11-25
 
 `<catalog>.<namespace>.events`, by default `nuna_audit.audit.events`: format v2, partitioned by `day(time)`, one row
 per record of the topic. The writer creates the namespace and the table, and refuses to write to a table of that
-name with other columns. A table made before `log_run` and `log_seq` is given them when the writer opens it; its
-earlier rows read null there.
+name with other columns. A table made before `log_run` and `log_seq`, or before `branch` and `subject_ids`, is given
+them when the writer opens it, a schema change that rewrites no file; its earlier rows read null there.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -28,6 +28,8 @@ earlier rows read null there.
 | `data` | string | the whole payload as the topic carries it, JSON, so a new payload version needs no new column |
 | `topic_partition`, `topic_offset` | int, long | the record's place in the topic; for a row from the log, `-1` and the writer's number for it ("From the log", below) |
 | `log_run`, `log_seq` | string, long | the server run that logged the record and its number there (its `nunarun` and `nunaseq`), which place it in the run's archive chain, for a row from the log or the topic alike, since the topic's copy is the log's line (backlog 276); null for a record from a server older than the stamp, or a topic copy from one older than backlog 276 (backlog 272) |
+| `branch` | string | the catalog ref a commit or a read went through, `main` or the ref's name as given, and a ref record's ref name; null for every other type (backlog 169) |
+| `subject_ids` | list of string | a ref record's ref id, then the ids of the tables and views in its `tables`: those a merge moved onto main, or the one taken out of the ref (backlog 156); null for every other type (backlog 169) |
 
 The mapping from each event type lives in `catalog-audit` (`AuditRows`), without Iceberg. The relay is at least once
 (D23), so an `event_id` can repeat, at another offset; an offset is never written twice.
@@ -57,6 +59,13 @@ again. The consumer group's own offsets are committed after each commit only so 
   written and nothing is skipped. A catalog newer than the writer can do this; upgrade the writer first.
 - **Outages** of the catalog, the store or Kafka delay rows; no request waits for the writer. It logs the failure and
   retries every 10 seconds.
+- **A table gone under it** (dropped, or the catalog's database new while the writer runs; backlog 284). When the
+  catalog answers `NoSuchTableException` as the writer reads its table again, it makes the table again, logs a WARN,
+  and, the new table holding no offsets, writes the topic into it from the earliest record Kafka keeps; records older
+  than that are only in the dropped table. Undrop a dropped audit table rather than keep the new one (undrop needs the
+  name free). Only that answer does this: a refusal (403) is thrown and retried, so a revoked grant shows. Nuna
+  answers a table the writer may no longer see with the same 404 (D18); the writer then fails to make it (409, the
+  name is taken, or a refusal) and logs that every round, so nothing is replaced.
 - **Snapshot expiry.** The offsets live in the writer's snapshots. Compaction and manifest rewrites add snapshots
   without them, which the writer looks past. If expiry removed every snapshot that records offsets (the writer down
   longer than the audit catalog's `max-snapshot-age`, and only newer snapshots kept), the writer refuses to start
@@ -94,6 +103,8 @@ With `source: otlp` the writer listens for OTLP/HTTP log exports, `POST /v1/logs
 - **Waiting rows.** Records wait in memory and are committed as from the topic, every `commit-interval` or at
   `max-rows`. A commit that fails keeps them for the next. A writer that dies before its commit loses them (they are
   still on the catalog's stdout); a shutdown stops the receiver and commits them first.
+- **A table gone under it**, as from the topic, is made again with a WARN, and the records waiting are written to it;
+  rows committed before are only in the dropped table (and the catalog's log). A refusal never makes it again.
 - A table the topic filled before can be written from the log: the two sources' offsets are kept apart.
 
 ### The archive
@@ -217,15 +228,27 @@ only"). That rules out grant admins, platform operators and holders of `select` 
   - `principal`;
   - `path`: namespace levels, and a table or view name, joined by 0x1F; it matches the object and everything in a
     namespace, compared as the catalog compares names;
+  - `branch`: a branch's or tag's name without its `@`, or `main`: the commits and reads through it and the ref records
+    of refs of that name, compared as the catalog compares names (backlog 169). A name is not an id: records of a
+    deleted ref whose name a later ref took match too, so ask with `from` at the live ref's `created-at` for that
+    ref's alone;
+  - `subject`: an id, as a UUID: the records about that table, view, namespace or catalog (`object.id`), and the
+    `nuna.catalog.ref` records whose ref is that id or whose `tables` name it (backlog 169). With
+    `type=nuna.catalog.ref` and a table's id it gives every ref record that names the table: a merge that moved it
+    onto main, and each time it was taken out of a ref (`event.data.action` `OBJECT_REMOVED`, backlog 156), with
+    who (`principal`, and `event.data.actor`), when (`time`), and which ref (`branch`, and `event.data.ref`,
+    `.name` and `.kind`). Records written before backlog 169 carry neither column and match neither filter;
   - `from` (inclusive) and `to` (exclusive), as instants;
   - `limit`: 1 to 200, 50 by default;
   - `pageToken`.
 - Answer: `{"catalog", "records": [...], "next-page-token"?, "searched-to"?, "table": {"name", "snapshot-id",
   "committed-at"}}`.
-- Each record: `{"event-id", "time", "type", "principal", "end-user", "engine", "request-id", "object": {"kind",
-  "id", "catalog", "path"} | null, "operation", "privilege", "reason", "partition", "offset", "log-run", "log-seq",
-  "chain": {"status", "checked-at"?, "missing"?}, "event"}`.
-  - `event` is the record as the topic and the log carry it.
+- Each record: `{"event-id", "time", "type", "principal", "end-user", "engine", "request-id", "branch", "object":
+  {"kind", "id", "catalog", "path"} | null, "operation", "privilege", "reason", "partition", "offset", "log-run",
+  "log-seq", "chain": {"status", "checked-at"?, "missing"?}, "event"}`.
+  - `event` is the record as the topic and the log carry it: its `data` is the payload, its `subject` a ref
+    record's ref id.
+  - `branch` is the table's `branch` column (above), null where the record names no ref.
   - `log-run` and `log-seq`: the server run that logged the record and its number there, whether the row came from
     the log or the topic (backlog 276); null for a record from a server older than the stamp (backlog 272), or a
     topic copy from one older than backlog 276.
@@ -271,6 +294,19 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - 400 for a run that is not a UUID, a number that is not a whole number from 1, or an event id that is not a UUID;
   503 where no archive is configured or it cannot be read. It takes one of the caller's audit reads.
 
+`GET /management/v1/catalogs/{catalog}[/namespaces/{namespace}[/tables/{table} | /views/{view}]]/audit?limit=`
+
+- An object's Audit tab (backlog 197): the object's own records, newest first, up to `limit` (1 to 200, 50 by
+  default). Where `nuna.audit.tables.catalog` is set it reads them from this table, the rows whose `object_id` is the
+  object's id, so a record from before a rename is found and another object later given the name is not; otherwise
+  from the audit topic, as before. 503 where neither is configured.
+- Unlike the routes above it needs `manage-grants` on the object, not `select` on the audit catalog: who may read an
+  object's trail did not change when its source did (D19: the access review's evidence).
+- From the table: `{"target", "source": "table", "records": [...], "complete", "table"}`, each record the CloudEvent
+  as the log holds it, `complete` false when the table holds older records about it than `limit` shows. From the
+  topic: `{"target", "source": "topic", "records", "window"}`, as before. Audited as an `AuditRead` of the object; it
+  takes one of the caller's audit reads.
+
 `GET /management/v1/audit/archive`
 
 - The archive check's status: `{"configured", "bucket", "prefix", "check": {...} | null}`; only `configured` where no
@@ -301,17 +337,20 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an event type with
   no mapping.
 - `TableWriterTest` runs the writer against Kafka's fake consumer and Iceberg's in-memory catalog, which can lose a
-  commit or its answer: every record written once with its place in the topic and the run and number it was logged
+  commit or its answer, refuse as a 403 would, and answers a dropped table's refresh with `NoSuchTableException` as the
+  REST catalog does: every record written once with its place in the topic and the run and number it was logged
   with, resuming after the last committed
   offset, no gap and no repeat after a lost commit, a second writer, a revoked partition or a record it cannot map,
-  its own records left out. `AuditTablesSettingsTest` checks the settings and the clients made of them.
+  its own records left out, a table dropped between commits made again with both commits' records, and a refusal
+  never making it again. `AuditTablesSettingsTest` checks the settings and the clients made of them.
 - `ArchiveSinkTest` (`catalog-audit`) runs the archive writer on an in-memory bucket that can fail or lose an answer:
   segments by count, age and run end, refused bodies, the unstamped chain, a busy writer, an unreachable store, a
   lost answer, a second writer, checkpoints linked across a restart and written when idle, and repeats left out.
   `LockedArchiveTest` (tagged `heavy`) writes and checks on the run's S3 store, with real Object Lock.
 - `LogWriterTest` runs the source `otlp`'s writer against the same catalog: each record once across repeats, a commit
   whose answer was lost and a restart; rows in partition -1 with rising numbers; a failed commit keeps its rows; its
-  own records left out; a table the topic filled before. `OtlpLogsReceiverTest` posts OTLP requests: protobuf and
+  own records left out; a table the topic filled before; a table dropped between commits made again with the records
+  held, and a refusal never making it again. `OtlpLogsReceiverTest` posts OTLP requests: protobuf and
   JSON, gzip, only the `nuna.audit` scope kept, a request without the token refused and unread, rejected records
   counted, every audit record archived before the table's filters, and a request the archive cannot take turned away
   whole. `catalog-server`'s `AuditLogToWriterTest` sends a record from the server's own log wiring to the receiver.
@@ -327,8 +366,9 @@ only"). That rules out grant admins, platform operators and holders of `select` 
   readers' group.
 - The feed:
   - `EventsReaderTest` pages a real table on local files: newest first, every row once whatever the page size, a
-    short page with `searched-to` when the budget runs out, the filters, the counts, no file read outside the
-    table's location, each row's run and number, and a table made before those columns given them.
+    short page with `searched-to` when the budget runs out, the filters (the ref and subject filters too, backlog
+    169), one object's records by its id, the counts, no file read outside the table's location, each row's run and
+    number, and a table made before the log columns, or before the ref columns, given them without a file rewritten.
   - `PlacementTest` (`catalog-audit`) places records in chains the archive writer made: by number and id, across
     segments, late or far from their number, another record's id not taken, and a changed record's hash not matching.
   - `ArchiveCheckTest` (`catalog-audit`) checks an in-memory bucket the writer filled: each chain verified to the
@@ -336,5 +376,6 @@ only"). That rules out grant admins, platform operators and holders of `select` 
     grace, late arrivals, repeats, unended runs, late and broken checkpoints, stray versions, and a changed record.
   - `AuditFeedRoutesTest` (`catalog-server`) runs the routes with the real guard over a store double: a test for
     each refusal, the answers, the 400s and 503s, and the shared read limit; each row's chain status, a record's place
-    and the logged and archived gauges.
-- Bites: `bites/D23/`, `bites/OBS-262/` and `bites/OBS-272/`.
+    and the logged and archived gauges; and an object's Audit tab read from the table without Kafka, still for
+    `manage-grants` only (backlog 197).
+- Bites: `bites/D23/`, `bites/OBS-262/`, `bites/OBS-272/`, `bites/OBS-276/` and `bites/OBS-197/`.

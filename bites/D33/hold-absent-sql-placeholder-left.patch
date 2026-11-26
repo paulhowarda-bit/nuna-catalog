@@ -1,0 +1,15 @@
+Breaks: a hold of no pointer leaves its placeholder pointer behind (backlog 278).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest#heldAbsenceIsComparedNotWritten
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+index 74ce9a5f..4401d616 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+@@ -179,7 +179,6 @@ final class Pointers {
+         if (inserted == 0) {
+             return false;
+         }
+-        update(connection, "DELETE FROM pointer WHERE object_id = ? AND branch = ?", key.objectId(), key.branch());
+         return true;
+     }
+ 
