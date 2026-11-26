@@ -196,7 +196,7 @@ public final class ObjectLockArchive {
                 END_SEQUENCE, Long.toString(end.sequence()), END_HASH, end.hash());
         Instant now = clock.instant();
         String version = locked(key, "application/x-ndjson", metadata, records, now);
-        return new Segment(key, version, start, end, now);
+        return new Segment(key, version, start, end, takenAt(key, version));
     }
 
     /** The segment whose first record is {@code firstSequence}, if one is stored. */
@@ -268,8 +268,21 @@ public final class ObjectLockArchive {
      */
     public Stored writeCheckpoint(Instant at, byte[] json) {
         String key = prefix + "/" + CHECKPOINTS + "/" + CHECKPOINT_TIME.format(at) + ".json";
-        Instant now = clock.instant();
-        return new Stored(key, locked(key, "application/json", Map.of(), json, now), now);
+        String version = locked(key, "application/json", Map.of(), json, clock.instant());
+        return new Stored(key, version, takenAt(key, version));
+    }
+
+    /**
+     * When the store took {@code version} of {@code key}, as a listing of versions gives it, so what a write returns
+     * equals what a later listing finds: this process's clock is not the store's, and a HEAD answers to the second.
+     */
+    private Instant takenAt(String key, String version) {
+        for (ObjectVersion v : s3.listObjectVersionsPaginator(b -> b.bucket(bucket).prefix(key)).versions()) {
+            if (v.key().equals(key) && v.versionId().equals(version)) {
+                return v.lastModified();
+            }
+        }
+        throw new IllegalStateException("the store lists no version " + version + " of " + key + " just written");
     }
 
     /** The checkpoints after the one keyed {@code afterKey}, oldest first; every checkpoint when it is null. */

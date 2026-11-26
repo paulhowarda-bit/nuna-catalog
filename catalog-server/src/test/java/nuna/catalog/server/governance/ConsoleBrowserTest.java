@@ -1155,7 +1155,8 @@ class ConsoleBrowserTest {
 
     /**
      * The audit feed in the page's own answers, each request's parameters kept in {@code window.feedAsked}: every page
-     * is one ref record of the tag {@code window.refName}, whose id is {@code window.refId} (backlog 169).
+     * is one ref record of the tag {@code window.refName}, whose id is {@code window.refId} (backlog 169), made with
+     * the purpose {@code window.refPurpose} when the case sets one (backlog 167).
      */
     private static final String REF_RECORDS_IN_THE_PAGE = """
             const real = window.fetch;
@@ -1171,10 +1172,13 @@ class ConsoleBrowserTest {
               if (u.pathname.endsWith('/audit/archive')) return json({chains: [], configured: false});
               if (u.pathname.endsWith('/audit/feed')) {
                 window.feedAsked.push(Object.fromEntries(u.searchParams));
-                return json({records: [{time: now, type: 'nuna.catalog.ref', principal: 'tester', 'event-id': 'e1', partition: 0,
+                // As the server answers: the audit table's last commit with the records (AuditReadRoutes#table).
+                return json({table: {name: 'audit', 'committed-at': now},
+                  records: [{time: now, type: 'nuna.catalog.ref', principal: 'tester', 'event-id': 'e1', partition: 0,
                   offset: 1, 'request-id': 'r1', branch: window.refName, object: null, chain: {status: 'no-archive'},
                   event: {type: 'nuna.catalog.ref', time: now, subject: window.refId, data: {action: 'CREATED', ref: window.refId,
-                    name: window.refName, kind: 'TAG', from: 'main', tables: [], actor: {principal: 'tester'}}}}]});
+                    name: window.refName, kind: 'TAG', from: 'main', description: window.refPurpose, tables: [],
+                    actor: {principal: 'tester'}}}}]});
               }
               return real(url, init);
             };
@@ -1681,23 +1685,6 @@ class ConsoleBrowserTest {
                 .contains("1 table changed on it");
         assertThat(JsonPath.<String>read(expect(api.manage("GET", "/refs/" + branch, null), 200).body(), "$.cut-at"))
                 .isEqualTo(JsonPath.<String>read(made.body(), "$.created-at"));
-
-        // The namespace's Contents through the branch fills its columns as the branch has each table (backlog 168):
-        // orders changed here at the branch's own version 1, fills as at the point at main's version 1, both with
-        // their format and snapshots.
-        browser.open("/ui/#" + at("namespace", List.of(ns), null, null) + "&r=" + branch);
-        WebElement ordersHere = contentsRow("orders");
-        assertThat(contentsCell(ordersHere, "fmt")).startsWith("v");
-        assertThat(contentsCell(ordersHere, "snaps")).isEqualTo("0");
-        assertThat(textContent(ordersHere.findElement(By.cssSelector(".on-ref")))).contains("changed here");
-        WebElement fillsHere = contentsRow("fills");
-        assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
-        assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point · v1");
-        assertThat(textContent(fillsHere.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
-        assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
-                .contains("Format, snapshots and last commit are as @" + branch + " has each table. Open one to read"
-                        + " it through @" + branch + ".")
-                .doesNotContain("A dash under Last commit");
         assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
         assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
                 .isEqualTo("trading@" + branch);
@@ -1719,6 +1706,23 @@ class ConsoleBrowserTest {
         assertThat(download.getDomAttribute("download")).isEqualTo("trading." + ns + ".orders@" + branch + ".export.json");
         assertThat(textContent(export.findElement(By.cssSelector("pre")))).contains(".branch-", "\"name\": \"" + branch + "\"");
         export.findElement(By.cssSelector("button.dlg-x")).click();
+
+        // The namespace's Contents through the branch fills its columns as the branch has each table (backlog 168):
+        // orders changed here at the branch's own version 1, fills as at the point at main's version 1, both with
+        // their format and snapshots.
+        browser.open("/ui/#" + at("namespace", List.of(ns), null, null) + "&r=" + branch);
+        WebElement ordersHere = contentsRow("orders");
+        assertThat(contentsCell(ordersHere, "fmt")).startsWith("v");
+        assertThat(contentsCell(ordersHere, "snaps")).isEqualTo("0");
+        assertThat(textContent(ordersHere.findElement(By.cssSelector(".on-ref")))).contains("changed here");
+        WebElement fillsHere = contentsRow("fills");
+        assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
+        assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point · v1");
+        assertThat(textContent(fillsHere.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
+        assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
+                .contains("Format, snapshots and last commit are as @" + branch + " has each table. Open one to read"
+                        + " it through @" + branch + ".")
+                .doesNotContain("A dash under Last commit");
 
         // A page that reads main only, Overview, keeps the control: it reads main, and a ref opens the catalog
         // through it.
@@ -1928,10 +1932,11 @@ class ConsoleBrowserTest {
                     AUTH, api.steward()), 200);
 
             signIn(tester());
-            // Dropped on main, read on main: the 404, who dropped it and when, and the tag that still keeps it.
+            // Dropped on main, read on main: the 404, when it was dropped, and the tag that still keeps it. Who dropped
+            // it comes from the audit, which the tester may not read (auditOpen; D23): the words without an actor.
             browser.open("/ui/#" + at("table", List.of(ns), "orders", null));
             WebElement dropped = browser.await(By.id("dropped-on-main"));
-            assertThat(textContent(dropped)).contains("dropped it on", "Main has no such table.",
+            assertThat(textContent(dropped)).startsWith("It was dropped on ").contains("Main has no such table.",
                     "Still kept by @" + tag + ".");
             dropped.findElement(By.cssSelector("[data-kept-ref='" + tag + "']"));
             dropped.findElement(By.cssSelector("[data-kept-acts]"));
@@ -1946,7 +1951,7 @@ class ConsoleBrowserTest {
             // Dropped on main, read through the tag, which keeps it.
             browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + tag);
             WebElement kept = browser.await(By.id("dropped-through-ref"));
-            assertThat(textContent(kept)).contains(" dropped " + ns + ".orders on main on ",
+            assertThat(textContent(kept)).startsWith(ns + ".orders was dropped on main on ").contains(
                     "@" + tag + " still keeps it, so it reads the table as it was; main answers 404 for it."
                             + " It stays readable here, and its files stay, until it is taken out of every branch and"
                             + " tag that keeps it.");
@@ -1976,9 +1981,9 @@ class ConsoleBrowserTest {
             browser.await("the second dropped table is not drawn",
                     d -> twice.findElements(By.cssSelector("[data-kept-object]")).size() == 2);
             List<WebElement> generations = twice.findElements(By.cssSelector("[data-kept-object]"));
-            assertThat(textContent(generations.get(0))).contains("dropped it on", "Main has no such table.",
+            assertThat(textContent(generations.get(0))).startsWith("It was dropped on ").contains("Main has no such table.",
                     "No branch or tag keeps it. Cleanup can purge it and delete its files.");
-            assertThat(textContent(generations.get(1))).contains("dropped an earlier table at this path on",
+            assertThat(textContent(generations.get(1))).startsWith("An earlier table at this path was dropped on ").contains(
                     "Still kept by @" + tag + ".");
             assertThat(generations.get(1).findElements(By.cssSelector("[data-kept-acts]"))).hasSize(1);
 
@@ -1986,7 +1991,7 @@ class ConsoleBrowserTest {
             expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
             browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + tag);
             WebElement replaced = browser.await(By.id("replaced-on-main"));
-            assertThat(textContent(replaced)).contains(" dropped " + ns + ".orders on main on ",
+            assertThat(textContent(replaced)).startsWith(ns + ".orders was dropped on main on ").contains(
                     ", and main made a new table by that name on ",
                     "@" + tag + " still keeps the old one, so this page reads the table as it was. Main's " + ns
                             + ".orders is a different table. It stays readable here, and its files stay, until it is"
@@ -2066,8 +2071,11 @@ class ConsoleBrowserTest {
             assertThat(dialog.findElement(By.cssSelector("input[name='which'][value='some']")).isSelected()).isTrue();
             assertThat(textContent(submit)).isEqualTo("Take it out of @" + tag);
             submit.click();
-            WebElement took = browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Took " + ns + ".orders out of @" + tag);
-            assertThat(textContent(took)).contains("No branch or tag keeps it now. Cleanup can purge it and delete its files.");
+            // The tag is a chip (cref), whose @ and name the browser's rendered text puts on lines of their own: the
+            // wait reads up to the chip, and the words are checked as the page holds them.
+            WebElement took = browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Took " + ns + ".orders out of");
+            assertThat(textContent(took)).contains("Took " + ns + ".orders out of @" + tag,
+                    "No branch or tag keeps it now. Cleanup can purge it and delete its files.");
             assertThat(submit.isDisplayed()).isFalse();
 
             // On close the panel reads again.
@@ -2122,13 +2130,23 @@ class ConsoleBrowserTest {
             WebElement sub = browser.awaitText(By.cssSelector(".ph .sub"), "Made from main");
             assertThat(textContent(sub)).startsWith(purpose + ". Made from main by ");
             assertThat(sub.findElements(By.cssSelector("img"))).isEmpty();
-            // Its record's words end with the purpose in typographic quotes, as text (Atelier, 2026-11-25).
-            WebElement record = browser.awaitText(By.cssSelector("#ref-record .what"), "Its purpose");
-            assertThat(textContent(record)).endsWith("; it never expires. Its purpose: “" + purpose + "”");
-            assertThat(record.findElements(By.cssSelector("img, b"))).isEmpty();
             browser.open("/ui/#c=trading&k=ref&n=" + plain);
             assertThat(textContent(browser.awaitText(By.cssSelector(".ph .sub"), "Made from main")))
                     .startsWith("Made from main by ");
+
+            // Its record's words end with the purpose in typographic quotes, as text (Atelier, 2026-11-25). The Record
+            // tab is an audit reader's, and the tester reads no audit: a grant admin opens it. This server has no audit
+            // tables, so the record of the tag's making, with its purpose as made, is answered in the page.
+            String id = JsonPath.read(made.body(), "$.id");
+            signIn(api.grantAdmin());
+            browser.open("/ui/");
+            browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+            driver.executeScript("window.refName = arguments[0]; window.refId = arguments[1]; window.refPurpose = arguments[2];"
+                    + REF_RECORDS_IN_THE_PAGE + "location.hash = '#c=trading&k=ref&n=' + arguments[0] + '&tab=record';",
+                    tag, id, purpose);
+            WebElement record = browser.awaitText(By.cssSelector("#ref-record .what"), "Its purpose");
+            assertThat(textContent(record)).endsWith("; it never expires. Its purpose: “" + purpose + "”");
+            assertThat(record.findElements(By.cssSelector("img, b"))).isEmpty();
         } finally {
             api.manage("DELETE", "/refs/" + tag, null);
             api.manage("DELETE", "/refs/" + plain, null);

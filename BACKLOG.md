@@ -2254,3 +2254,5 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |
 | [285](backlog/285.md) | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | done | 2026-11-26 |
 | [286](backlog/286.md) | demo.sh takes a deployment for gone only when kubectl says NotFound, so gen stop never stops Kafka under a running generator | done | 2026-11-25 |
+| [288](backlog/288.md) | Oracle reads every branch grant's ref as "?": V20's any_grant view lost its regex back-references | done | 2026-11-26 |
+| [289](backlog/289.md) | Gate heavy failures: the audit table writer needs modify, the archive's written times, SecurityGateTest's poisoned outbox | done | 2026-11-26 |

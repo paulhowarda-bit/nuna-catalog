@@ -26,6 +26,7 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.Transaction;
 import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
@@ -142,17 +143,15 @@ final class EventsTable {
                     // Made since we looked.
                 }
             }
-            table = catalog.buildTable(id, FIRST).withPartitionSpec(SPEC)
-                    .withProperty(TableProperties.FORMAT_VERSION, "2").create();
+            // One staged create that already holds the added columns: the catalog judges its commit as a create,
+            // which the writer's group may do, where a schema change on a table that exists needs modify.
+            Transaction create = catalog.buildTable(id, FIRST).withPartitionSpec(SPEC)
+                    .withProperty(TableProperties.FORMAT_VERSION, "2").createTransaction();
+            addAbsent(create.table(), create.updateSchema());
+            create.commitTransaction();
+            table = catalog.loadTable(id);
         }
-        Table opened = table;
-        List<Types.NestedField> absent = ADDED.stream().filter(c -> opened.schema().findField(c.name()) == null)
-                .toList();
-        if (!absent.isEmpty()) {
-            UpdateSchema update = table.updateSchema();
-            absent.forEach(c -> update.addColumn(c.name(), c.type(), c.doc()));
-            update.commit();
-        }
+        addAbsent(table, table.updateSchema());
         for (Types.NestedField expected : SCHEMA.columns()) {
             Types.NestedField column = table.schema().findField(expected.name());
             if (column == null || column.fieldId() != expected.fieldId()
@@ -163,6 +162,19 @@ final class EventsTable {
             }
         }
         return new EventsTable(table, topic);
+    }
+
+    /**
+     * Gives {@code table} the {@link #ADDED} columns it lacks, in their order, through {@code update}; commits nothing
+     * when it has them all. A table made before them needs a caller with {@code modify} to be given them.
+     */
+    private static void addAbsent(Table table, UpdateSchema update) {
+        List<Types.NestedField> absent = ADDED.stream().filter(c -> table.schema().findField(c.name()) == null)
+                .toList();
+        if (!absent.isEmpty()) {
+            absent.forEach(c -> update.addColumn(c.name(), c.type(), c.doc()));
+            update.commit();
+        }
     }
 
     /**
