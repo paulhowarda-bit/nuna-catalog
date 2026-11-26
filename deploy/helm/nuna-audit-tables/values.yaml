@@ -33,7 +33,11 @@ config:
       # The OTLP/HTTP logs receiver, for the source otlp: POST /v1/logs on port, protobuf or JSON. It keeps the
       # records of the log nuna.audit and ignores the rest. Every request must carry the token,
       # nuna.audit-tables.otlp.token in `secrets` (at least 32 letters, digits, '-', '_', '.' or '~'), in
-      # X-Nuna-Audit-Token. A record whose id was seen in the last dedup-window is not written again.
+      # X-Nuna-Audit-Token. A record is written once however late a copy of it comes: an id seen in the last
+      # dedup-window is left out as it arrives, and a copy whose record time is older than that is looked up among
+      # the table's rows of its day before the commit (backlog 263). Records are answered when taken, before their
+      # commit: a writer that dies loses what waits for it (commit-interval at most) from the table, not from the
+      # catalog's stdout (docs/observability/audit-log.md, "The audit table writer's source otlp").
       otlp:
         port: 4318
         dedup-window: 15m

@@ -1,0 +1,16 @@
+Breaks: The table lookup of a late copy reads none of its record's day, so it finds nothing and the copy is written again.
+Module: catalog-audit-tables
+Test: LogWriterTest#aCopyArrivingAnHourAfterTheFirstIsLeftOutAndALateFirstCopyIsWritten+aLateCopyArrivingAfterARestartIsLeftOut
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+index 4aaea03d..e762daeb 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+@@ -229,7 +229,7 @@ final class EventsTable {
+         for (LocalDate day : days) {
+             onThoseDays = Expressions.or(onThoseDays, Expressions.and(
+                     Expressions.greaterThanOrEqual("time", micros(day.atStartOfDay(ZoneOffset.UTC).toInstant())),
+-                    Expressions.lessThan("time", micros(day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()))));
++                    Expressions.lessThan("time", micros(day.atStartOfDay(ZoneOffset.UTC).toInstant()))));
+         }
+         Set<String> found = new HashSet<>();
+         try (CloseableIterable<Record> rows = IcebergGenerics.read(table).select("event_id", "time")

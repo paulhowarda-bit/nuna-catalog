@@ -1,0 +1,17 @@
+Breaks: Overview ignores the catalog's readiness and says the worker has not reported while steps are left.
+Module: catalog-server
+Test: ConsoleOverviewReadinessBrowserTest#aReaderOfReadinessIsToldTheStepsLeftOnceAWorkerReports
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/overview.js b/catalog-server/src/main/resources/nuna/ui/overview.js
+index ad675df2..f8843a52 100644
+--- a/catalog-server/src/main/resources/nuna/ui/overview.js
++++ b/catalog-server/src/main/resources/nuna/ui/overview.js
+@@ -32,7 +32,7 @@ export function overviewPage(catalog) {
+       readinessOf(catalog)]) : [null, null];
+     const ready = readiness && readiness.ready;
+     const reported = !!ready && !!(ready['reported-at'] || ready['scanned-at']);
+-    const left = stepsWords(catalog, ready);
++    const left = null;
+     const now = new Date();
+     const out = [pageHead({
+       hero: true,
