@@ -125,8 +125,10 @@ demo/demo.sh up
   next `up` carries on from them: it writes the sample data only into a lake that lacks it. `wipe` deletes them
   (Stop, below). Deleting the cluster (`kind delete cluster --name nuna`) deletes them too. Keycloak keeps no volume: it imports
   its realm, people and clients from `keycloak-realm.json` at every start, so a change made in its admin console
-  lasts until its pod goes; the catalog names people by their user names, which the realm file fixes. The CDC
-  leg's databases keep none either: `cdc stop` and `down` delete the leg, its topics and its offsets.
+  lasts until its pod goes; the catalog names people by their user names, which the realm file fixes.
+  CloudBeaver keeps its workspace on claim `cloudbeaver-workspace`, and the CDC leg's databases theirs on
+  `backoffice-data`, `oracle-data` and `cockroach-data` (backlog 293): `cdc stop` and `down` pause the leg and the
+  next `cdc` carries on.
 
 At the end it prints the console URL, <https://localhost:8181/ui/>, where the passwords are, and the tokens.
 
@@ -888,8 +890,14 @@ ORDER BY "_cdc"."offset";
 - Oracle's upper-case column names are renamed to lower case in the sink (`oracle-history.json`), column by
   column, the key's too: a column added later arrives in upper case.
 - The history tables are written as `cdc`, group `demo-loaders`: `ana` reads them like any other table.
-- Each `cdc` drops the history tables of the run before and starts the databases empty. `demo.sh cdc` while
-  the leg runs only brings it up to date (a changed connector config, image or manifest).
+- The first `cdc` starts the databases from their SQL files on new volumes, and writes configmap `cdc-begun` once
+  its changes reach Iceberg. Every later `cdc` starts the databases from their volumes, and the connectors carry
+  on from their offsets into the same history tables, without snapshotting again. `demo.sh cdc` while the leg runs
+  only brings it up to date (a changed connector config, image or manifest). A changed SQL file reaches the
+  databases only after `cdc reset`.
+- Oracle keeps its archived logs in a 4 GB recovery area on its volume, and its connector carries on only from logs
+  still there; if they are gone, or a connector cannot carry on for another reason, `demo/demo.sh cdc reset`
+  deletes the leg and the next `cdc` starts it anew.
 - The first `cdc` pulls Oracle's image (about 5 GB); `up` builds Kafka Connect's image from Maven Central.
 - kafbat shows the connectors under Kafka Connect, cluster `connect`: each one's status, tasks and config, with
   restart, pause and resume for `oscar`.
@@ -903,10 +911,18 @@ ORDER BY "_cdc"."offset";
 demo/demo.sh cdc stop
 ```
 
-deletes the leg: its connectors, with their offsets (so the next `cdc` snapshots its new databases), its
-databases, Kafka topics and consumer groups; and starts Trino, the audit table writer, the maintenance worker and
-the brokerage world's generator again. Kafka Connect keeps running, with the brokerage world's sink. The history tables stay, for
-Trino to read.
+pauses the leg: its connectors stop, keeping their offsets, and its databases' pods go, keeping their volumes;
+its Kafka topics, consumer groups and history tables stay. It starts Trino, the audit table writer, the
+maintenance worker and the brokerage world's generator again. Kafka Connect keeps running, with the brokerage
+world's sink. The next `cdc` carries on from where the leg stopped.
+
+```bash
+demo/demo.sh cdc reset
+```
+
+deletes the leg, running or paused: its connectors with their offsets, its databases with their volumes, its
+Kafka topics and consumer groups, and configmap `cdc-begun`, so the next `cdc` starts it anew from the SQL files
+(and drops the history tables of the run before).
 
 ## The engines
 
@@ -983,8 +999,9 @@ demo/demo.sh down
 ```
 
 This stops and deletes everything in the namespace but the data: the volume claims of PostgreSQL, Silo, Kafka,
-SingleStore and the metrics stack stay, with configmap `demo-seeded`, and so does the namespace that holds them. The compaction Jobs'
-namespace `nuna-demo-compaction` goes. A running CDC leg is deleted as `cdc stop` deletes it. The next `up` carries
+SingleStore, CloudBeaver, the CDC leg and the metrics stack stay, with configmaps `demo-seeded` and `cdc-begun`,
+and so does the namespace that holds them. The compaction Jobs' namespace `nuna-demo-compaction` goes. A running
+CDC leg pauses as `cdc stop` pauses it; `up` leaves it paused, and the next `cdc` carries on. The next `up` carries
 on from the data: the lake, its branch and tag, the governance, the audit table, SingleStore's databases and the
 brokerage world as they were.
 

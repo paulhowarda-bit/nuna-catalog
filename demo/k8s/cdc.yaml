@@ -1,8 +1,8 @@
-# The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop deletes it): three source databases, whose changes
+# The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop pauses it): three source databases, whose changes
 # Debezium and the Apache Iceberg sink, in the demo's Kafka Connect (connect.yaml, in every up), write into Iceberg
-# history tables through the catalog. Only demo.sh applies this. Every object carries label nuna-demo/cdc, by which
-# demo.sh cdc stop deletes them; demo.sh adds the connectors in demo/cdc/connectors to the running worker, and cdc
-# stop deletes them, with their offsets.
+# history tables through the catalog. Only demo.sh applies this. Every Deployment and Service carries label
+# nuna-demo/cdc, by which demo.sh cdc stop deletes them; demo.sh adds the connectors in demo/cdc/connectors to the
+# running worker, and cdc stop stops them, keeping their offsets.
 #
 #   backoffice  PostgreSQL 18 (logical WAL), database backoffice, table settlement.instructions
 #               (demo/cdc/backoffice.sql, Secret backoffice-initdb)
@@ -13,14 +13,49 @@
 #
 # Memory: 1.75 GiB of requests in all, more than the cluster's 8 GB node has free beside the rest of the demo, so
 # demo.sh cdc stops Trino, the audit table writer and the brokerage world's generator while the leg runs.
-# CloudBeaver stays, to query the databases. No volumes: the databases last as long as the pods.
+# CloudBeaver stays, to query the databases.
+#
+# Each database keeps its data on a volume claim (label nuna-demo/cdc-data; D52, amended 2026-11-26, backlog 293), so
+# cdc stop and down keep it, and the next cdc starts the databases from it and the connectors carry on from their
+# offsets. Each database runs its SQL file once, as its volume is first filled: a changed file reaches a kept database
+# only through demo.sh cdc reset, which deletes the claims with the rest of the leg. demo.sh wipe deletes them too.
 #
 # No password is in this file or the SQL (backlog 282): the databases' own and Debezium's are in Secret demo-secrets,
 # and the people's are their Keycloak ones (~/.nuna-demo/people), all made once per machine; demo.sh puts them into
 # the SQL files as it publishes them as Secrets, and the connectors name theirs as ${env:...} (connect.yaml).
 #
 # Each Deployment stops its old pod before starting the new one (Recreate): a changed SQL file or image
-# replaces the pod, and there is no room for two Oracles at once.
+# replaces the pod, there is no room for two Oracles at once, and a volume claim has one writer.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backoffice-data
+  labels: {nuna-demo/cdc-data: "true"}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 2Gi}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: oracle-data
+  labels: {nuna-demo/cdc-data: "true"}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 12Gi}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cockroach-data
+  labels: {nuna-demo/cdc-data: "true"}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 2Gi}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -49,6 +84,7 @@ spec:
           ports:
             - containerPort: 5432
           volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql}
             - {name: initdb, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
           readinessProbe:
             # Over TCP: the image's first-start server, which runs the initdb scripts, listens on a socket only.
@@ -60,6 +96,8 @@ spec:
             requests: {memory: 128Mi}
             limits: {memory: 256Mi}
       volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: backoffice-data}
         - name: initdb
           secret: {secretName: backoffice-initdb}
 ---
@@ -85,16 +123,40 @@ spec:
   template:
     metadata:
       labels: {app: oracle}
-      annotations: {nuna-demo/startdb: "${ORACLE_SQL_HASH}"}
+      annotations: {nuna-demo/initdb: "${ORACLE_SQL_HASH}"}
     spec:
       enableServiceLinks: false
+      initContainers:
+        # The image keeps its ready-made database (faststart) in /opt/oracle/oradata, which the volume hides; so it
+        # is copied onto the volume while the volume is empty, as Docker does for a new named volume. The file
+        # copied last says the copy finished; a copy cut short starts again.
+        - name: oradata
+          image: ${ORACLE_IMAGE}
+          imagePullPolicy: Never
+          command:
+            - sh
+            - -ec
+            - |
+              [ -f /mnt/oradata/.nuna-copied ] && exit 0
+              rm -rf /mnt/oradata/* /mnt/oradata/.[!.]*
+              cp -a /opt/oracle/oradata/. /mnt/oradata/
+              touch /mnt/oradata/.nuna-copied
+          volumeMounts:
+            - {name: data, mountPath: /mnt/oradata}
+          resources:
+            requests: {memory: 32Mi}
+            limits: {memory: 256Mi}
       containers:
         - name: oracle
           image: ${ORACLE_IMAGE}
           imagePullPolicy: Never
           # The image's database opens with a 1.5 GB SGA, which thrashes against this pod's memory limit
           # before oracle.sql runs. So the spfile is cut first, from an idle instance (nothing started yet): an
-          # SGA of 768 MB, a PGA target of 192 MB, and without the sizes the image's last run remembered.
+          # SGA of 768 MB, a PGA target of 192 MB, and without the sizes the image's last run remembered. At the
+          # first start the image's entrypoint moves the cut spfile onto the volume (oradata/dbconfig), where
+          # oracle.sql's settings go too; every later start uses that one, and the cut made here again is thrown
+          # away. The startup script written here makes /tmp/cdc-ready, for the readiness probe, at every start,
+          # after oracle.sql at the first.
           command:
             - sh
             - -ec
@@ -109,6 +171,7 @@ spec:
               WHENEVER SQLERROR EXIT 1
               CREATE SPFILE FROM PFILE = '/tmp/init.ora';
               SQL
+              echo 'touch /tmp/cdc-ready' > /container-entrypoint-startdb.d/ready.sh
               exec container-entrypoint.sh
           env:
             - name: ORACLE_PASSWORD
@@ -119,10 +182,13 @@ spec:
           ports:
             - containerPort: 1521
           volumeMounts:
-            - {name: startdb, mountPath: /container-entrypoint-startdb.d, readOnly: true}
+            - {name: data, mountPath: /opt/oracle/oradata}
+            - {name: initdb, mountPath: /container-entrypoint-initdb.d, readOnly: true}
+            - {name: startdb, mountPath: /container-entrypoint-startdb.d}
           readinessProbe:
-            # oracle.sql restarts the database into archive log mode, adds the people, and writes /tmp/cdc-ready
-            # last, so the file alone says the database is open and set up. Not the image's healthcheck.sh: under
+            # The image runs the startup script that writes /tmp/cdc-ready once the database is open, and at the
+            # first start only after oracle.sql (archive log mode, the people), so the file alone says the database
+            # is open and set up. Not the image's healthcheck.sh: under
             # load its sqlplus outlives the probe's timeout, kubelet starts another every period, and the
             # leftovers fill the memory limit until Oracle stops answering. A pod that is not ready leaves
             # Service oracle: Debezium then finds no listener and fails for good.
@@ -134,8 +200,12 @@ spec:
             requests: {memory: 1280Mi}
             limits: {memory: 1792Mi}
       volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: oracle-data}
+        - name: initdb
+          secret: {secretName: oracle-initdb}
         - name: startdb
-          secret: {secretName: oracle-startdb}
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -152,7 +222,8 @@ spec:
 # backoffice. The caches are cut from their defaults (128 MiB, and a quarter of the memory limit for SQL); about
 # 450 MiB in use with Debezium's changefeed running. COCKROACH_SKIP_ENABLING_DIAGNOSTIC_REPORTING keeps the node
 # from sending usage reports to Cockroach Labs. A single node for development needs no licence key and is not
-# throttled (Cockroach Labs' licensing FAQ).
+# throttled (Cockroach Labs' licensing FAQ). Its data and the certificates its entrypoint made at the first start are
+# on the volume; the entrypoint runs cockroach.sql only while the data folder is empty.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -172,23 +243,39 @@ spec:
         - name: cockroach
           image: ${COCKROACH_IMAGE}
           imagePullPolicy: Never
-          args: ["start-single-node", "--accept-sql-without-tls", "--cache=64MiB", "--max-sql-memory=128MiB"]
+          # /tmp/kept says the node started from kept data, which the readiness probe needs: the entrypoint writes
+          # /cockroach/init_success only at the first start, after cockroach.sql.
+          command:
+            - bash
+            - -ec
+            - |
+              [ -z "$(ls -A /cockroach/cockroach-data)" ] || touch /tmp/kept
+              exec /cockroach/cockroach.sh start-single-node --accept-sql-without-tls --cache=64MiB \
+                --max-sql-memory=128MiB
           env:
             - {name: COCKROACH_SKIP_ENABLING_DIAGNOSTIC_REPORTING, value: "true"}
           ports:
             - containerPort: 26257
           volumeMounts:
+            - {name: data, mountPath: /cockroach/cockroach-data, subPath: data}
+            - {name: data, mountPath: /cockroach/certs, subPath: certs}
             - {name: initdb, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
           readinessProbe:
-            # The entrypoint writes init_success once cockroach.sql has run.
+            # The first start: the entrypoint writes init_success once cockroach.sql has run. A later one: the node
+            # takes connections.
             exec:
-              command: ["test", "-f", "/cockroach/init_success"]
+              command:
+                - bash
+                - -c
+                - test -f /cockroach/init_success || { test -f /tmp/kept && exec 3<>/dev/tcp/127.0.0.1/26257; }
             periodSeconds: 2
             timeoutSeconds: 10
           resources:
             requests: {memory: 384Mi}
             limits: {memory: 768Mi}
       volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: cockroach-data}
         - name: initdb
           secret: {secretName: cockroach-initdb}
 ---

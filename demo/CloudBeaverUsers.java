@@ -1,7 +1,7 @@
 /*
  * The demo's people in CloudBeaver, each with connections that sign in as them. The pod's postStart hook
- * (demo/k8s/cloudbeaver.yaml) runs this as the server starts, because CloudBeaver keeps its users and connections
- * inside the pod and every new pod starts without them. CloudBeaver takes its users only from Keycloak, through
+ * (demo/k8s/cloudbeaver.yaml) runs this as the server starts: on a new workspace it adds them, and on a kept one
+ * (its volume claim) it brings them up to date. CloudBeaver takes its users only from Keycloak, through
  * the sign-in proxy beside it, which names the user and their CloudBeaver teams in two headers
  * (cloudbeaver.Dockerfile). This runs inside the pod, the one place besides the proxy that reaches CloudBeaver, and
  * names the administrator (CB_ADMIN_NAME) in those headers itself. It adds each user in DEMO_USERS
@@ -86,17 +86,22 @@ static String login(String authModel, String user, String password) {
         + (password == null ? "" : ", \"userPassword\": " + json(password)) + "}";
 }
 
-/** Adds the shared connection unless one of that name exists, and grants it to the person alone. */
+/**
+ * Adds the shared connection, or brings the one of that name up to date (its settings, the person's token and
+ * password, which change when a kept workspace outlives them: backlog 293), and grants it to the person alone.
+ */
 void connection(String connections, String user, String name, String settings) throws Exception {
     Matcher named = Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\",\\s*\"name\"\\s*:\\s*" + Pattern.quote(json(name)))
         .matcher(connections);
     String id;
+    String config = "\"name\": " + json(name) + ", \"connectionType\": \"dev\", \"saveCredentials\": true, " + settings;
     if (named.find()) {
         id = named.group(1);
+        call("mutation($c: ConnectionConfig!) { updateConnection(projectId: \"" + SHARED + "\", config: $c) { id } }",
+            "{\"c\": {\"connectionId\": " + json(id) + ", " + config + "}}");
     } else {
         String created = call("mutation($c: ConnectionConfig!) { createConnection(projectId: \"" + SHARED
-            + "\", config: $c) { id } }", "{\"c\": {\"name\": " + json(name) + ", \"connectionType\": \"dev\", "
-            + "\"saveCredentials\": true, " + settings + "}}");
+            + "\", config: $c) { id } }", "{\"c\": {" + config + "}}");
         id = values(created, "id").getFirst();
     }
     String ids = "\"p\": \"" + SHARED + "\", \"c\": " + json(id);

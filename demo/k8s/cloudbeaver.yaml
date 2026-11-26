@@ -27,7 +27,18 @@
 # CB_ADMIN_* configure the server at its first start, so no setup wizard shows; the postStart hook adds
 # DEMO_USERS and everyone's connections (demo/CloudBeaverUsers.java), and the pod is not ready until it has. The
 # passwords there are the people's database passwords, for their CDC connections; CloudBeaver itself checks none.
-# Everything lives in the pod, so a new pod starts from this file again.
+# CloudBeaver keeps its workspace (its users, connections and what people save) on volume claim cloudbeaver-workspace
+# (D52, amended 2026-11-26, backlog 293), which down keeps and wipe deletes; the hook brings the kept users and
+# connections up to date at each start (new tokens, passwords).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cloudbeaver-workspace
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 1Gi}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,7 +46,7 @@ metadata:
 spec:
   replicas: 1
   # The old pod goes before the new one starts: beside the CDC leg, with Oracle and CockroachDB, Kubernetes has
-  # no room for a second CloudBeaver, and a new pod starts from this file anyway.
+  # no room for a second CloudBeaver, and the workspace's volume claim has one writer.
   strategy: {type: Recreate}
   selector:
     matchLabels: {app: cloudbeaver}
@@ -73,6 +84,7 @@ spec:
               exec:
                 command: ["java", "-Xmx64m", "-cp", "/opt/nuna-demo", "CloudBeaverUsers"]
           volumeMounts:
+            - {name: workspace, mountPath: /opt/cloudbeaver/workspace}
             - {name: tokens, mountPath: /opt/nuna-demo/tokens, readOnly: true}
           # No readiness probe: CloudBeaver answers on 127.0.0.1 only, which the kubelet cannot reach, and the
           # postStart hook holds the container back until CloudBeaver answers and has its users.
@@ -112,6 +124,8 @@ spec:
             requests: {memory: 16Mi}
             limits: {memory: 64Mi}
       volumes:
+        - name: workspace
+          persistentVolumeClaim: {claimName: cloudbeaver-workspace}
         - name: tokens
           secret: {secretName: demo-people-tokens}
         - name: signin
