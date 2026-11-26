@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 10 S, 14 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**40 open:** 9 S, 14 M, 11 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -51,7 +51,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [281](backlog/281.md) | L | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | a chart value, a database CA and two certificates in demo.sh, PostgreSQL's TLS and pg_hba, a demo rebuild on a kept and a wiped volume, and the engine matrix's harness made to issue the same certificates | 2026-11-25 |
 | [282](backlog/282.md) | L | The demo's and the laptop runner's fixed passwords made once per machine, people's included | about twenty files across the demo and its CDC leg, kept volumes that hold the old passwords, the README's sign-in tables, and a laptop-runner run; waits on 281, which changes demo.sh and the values files first | 2026-11-25 |
 | [283](backlog/283.md) | S | Kafka Connect's REST API is published on 8186 with no sign-in | oauth2-proxy in front of 8186 as CloudBeaver has, or the port left unpublished; one CDC-leg run to check | 2026-11-25 |
-| [284](backlog/284.md) | S | The audit table writer stops for good when its table is dropped under it | one reopen path in LogWriter and TableWriter and a test that drops the table between commits | 2026-11-25 |
 | [285](backlog/285.md) | ? | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on | 2026-11-25 |
 
 ## Open items in full
@@ -1933,25 +1932,6 @@ tried). Item 281 closes the database part; the API itself stays open.
 Done when an unauthenticated request to 8186 is refused (or nothing listens there) and a signed-in operator can still
 see the connectors.
 
-### 284. The audit table writer stops for good when its table is dropped under it
-
-- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
-- Touches: catalog-audit-tables/src/
-- Effort: S, one reopen path in LogWriter and TableWriter and a test that drops the table between commits
-
-From `docs/from-work/005-github-secret-scanning.md`, item 4: the writer makes `nuna_audit.audit.events` only as it
-starts. When the catalog's PostgreSQL is new but the writer's pod is not (a Helm upgrade that changes nothing leaves
-it running), the Audit page answers 503 "the audit table nuna_audit.audit.events does not exist yet" for good, and
-the writer logs `NoSuchTableException: Table does not exist: audit.events` every 10 seconds while holding its
-records. Work's stopgap restarts the writer from `demo.sh`; work says the better fix is the writer making its table
-again. catalog-security (2026-11-25): `LogWriter.reload()` reopens only when `table == null` (LogWriter.java:229-232),
-so once the table is gone every reload fails; TableWriter has the same shape.
-
-Done when, on `NoSuchTableException` only (never on a 403, which would hide a revoked grant), the writer drops its
-cached table and opens it again through the opener that creates it, logs a WARN that a dropped audit table should be
-undropped rather than replaced, and writes the records it held; a test drops the table between two commits and sees
-both commits' records in the new table.
-
 ### 285. Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub
 
 - Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
@@ -2216,3 +2196,4 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |
 | [277](backlog/277.md) | The console says no worker has reported when its newest scan reported no storage | done | 2026-11-25 |
 | [280](backlog/280.md) | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | done | 2026-11-25 |
+| [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |
