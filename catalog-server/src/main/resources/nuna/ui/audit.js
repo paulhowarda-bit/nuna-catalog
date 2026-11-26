@@ -280,7 +280,7 @@ function feedPanel(catalog, summary, own) {
     shown += records.length;
     const committed = (answer.table || {})['committed-at'];
     // "As of" the last commit, not "up to" it: a writer catching up commits later than the newest record it holds.
-    status.textContent = (committed && since ? `${plural(shown, 'record')} shown, newest first, from ${at(since)} up to ${at(committed)}.`
+    status.textContent = (committed && since ? `${plural(shown, 'record')} shown, newest first, from ${at(since)}, as of the last commit at ${at(committed)}.`
       : committed ? `${plural(shown, 'record')} shown, newest first, as of the last commit at ${at(committed)}.`
       : `${plural(shown, 'record')} shown: nothing has been committed to the audit tables.`)
       + ' Records arrive here about a minute after they happen.'
@@ -319,7 +319,8 @@ function feedPanel(catalog, summary, own) {
         st.from = 'any';
         restart();
       }}, label);
-      if (since && name && r && (!linked || linked === r['created-at'])) {
+      const making = Boolean(since && name && r && (!linked || linked === r['created-at']));
+      if (making) {
         refNote.append(`From @${name}'s making, ${at(since)}: records through an earlier ref of the same name are left out. `,
           anyTime(`Include earlier refs named @${name}`));
       } else if (linked) {
@@ -333,7 +334,9 @@ function feedPanel(catalog, summary, own) {
       const {from, to} = query(null);
       if (from && to && new Date(from) >= new Date(to)) {
         status.textContent = '';
-        feed.replaceChildren(none());
+        feed.replaceChildren(h('p', {class: 'muted feed-none'}, making
+          ? `No record went through @${name} by ${at(to)}: it was made on ${at(since)}. Set Up to later, or include earlier refs named @${name}.`
+          : `No record can match: the link's start, ${at(since)}, is after the end Up to sets, ${at(to)}. Set Up to later, or show earlier records too.`));
         return;
       }
       return page(null, my);

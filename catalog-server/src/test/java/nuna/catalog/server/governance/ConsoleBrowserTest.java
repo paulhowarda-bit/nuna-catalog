@@ -1212,13 +1212,16 @@ class ConsoleBrowserTest {
                     .endsWith(": records through an earlier ref of the same name are left out. Include earlier refs named @"
                             + tag);
             browser.await("the status did not say where the feed starts", d -> textContent(d.findElement(
-                    By.cssSelector("#audit-feed .feed-status"))).matches(".* shown, newest first, from .+ up to .+"));
+                    By.cssSelector("#audit-feed .feed-status"))).matches(".* shown, newest first, from .+, as of the last commit at .+"));
 
             // Up to sets only the end: the tag's making still starts the feed, and the tag made since an hour ago has
             // nothing through it before then, so the feed asks nothing.
             int asked = feedsAsked();
             new Select(driver.findElement(By.cssSelector("#audit-feed select[name='to']"))).selectByValue("1");
-            browser.await(By.cssSelector("#audit-feed .feed-none"));
+            assertThat(textContent(browser.await(By.cssSelector("#audit-feed .feed-none"))))
+                    .startsWith("No record went through @" + tag + " by ")
+                    .endsWith(". Set Up to later, or include earlier refs named @" + tag + ".");
+            assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-status")))).isEmpty();
             assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed [data-ref-note]"))))
                     .as("Up to keeps the start").startsWith("From @" + tag + "'s making, ");
             assertThat(feedsAsked()).isEqualTo(asked);
