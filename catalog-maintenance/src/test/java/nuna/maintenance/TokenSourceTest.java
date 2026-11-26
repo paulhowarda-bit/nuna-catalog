@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.sun.net.httpserver.HttpServer;
 import nuna.catalog.objectstore.StoreKind;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,16 +18,20 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.IntUnaryOperator;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The worker's own sign-in (D30): the client-credentials grant, its token kept until a minute before it expires; or a
- * token file another process keeps fresh, read again when it changes. A compaction Job signs in with the grant itself,
+ * The worker's own sign-in (D30): the client-credentials grant, its token kept until a minute before it expires, asked
+ * again for up to 30 s when the identity provider cannot be reached or answers 5xx, and not again when it answers 4xx
+ * (item 275); or a token file another process keeps fresh, read again when it changes. A compaction Job signs in with the grant itself,
  * asking for the worker's scope, so compaction is refused with a token file or without a scope, and outside a
  * namespace of its own.
  */
@@ -34,6 +39,8 @@ class TokenSourceTest {
 
     @TempDir
     Path folder;
+
+    private final List<HttpServer> idps = new ArrayList<>();
 
     @Test
     void theClientCredentialsGrantIsAskedAgainOnlyNearExpiry() throws IOException {
@@ -70,6 +77,84 @@ class TokenSourceTest {
         } finally {
             idp.stop(0);
         }
+    }
+
+    @Test
+    void anIdentityProviderThatCannotBeReachedOrAnswers5xxIsAskedAgainUntilItAnswers() throws IOException {
+        // The first request finds no answer (the connection is closed on it), the second a 503, the third a token.
+        Asked asked = ask(n -> n == 1 ? 0 : n == 2 ? 503 : 200);
+
+        assertThat(asked.tokens().token()).isEqualTo("t3");
+        assertThat(asked.requests()).hasValue(3);
+        assertThat(asked.pauses()).as("1 s, then twice as long").containsExactly(Duration.ofSeconds(1),
+                Duration.ofSeconds(2));
+    }
+
+    @Test
+    void a4xxFailsAtOnce() throws IOException {
+        Asked asked = ask(n -> 401);
+
+        assertThatThrownBy(asked.tokens()::token).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("answered 401");
+        assertThat(asked.requests()).as("a wrong client or secret is not asked again").hasValue(1);
+        assertThat(asked.pauses()).isEmpty();
+    }
+
+    @Test
+    void anIdentityProviderThatNeverAnswersIsGivenUpWithin30Seconds() throws IOException {
+        Asked unreachable = ask(n -> 0);
+
+        assertThatThrownBy(unreachable.tokens()::token).isInstanceOf(UncheckedIOException.class)
+                .hasMessageContaining("cannot reach the token endpoint");
+        assertThat(unreachable.pauses()).as("up to 8 s each, 30 s in all").containsExactly(Duration.ofSeconds(1),
+                Duration.ofSeconds(2), Duration.ofSeconds(4), Duration.ofSeconds(8), Duration.ofSeconds(8));
+        assertThat(unreachable.requests()).hasValue(6);
+
+        Asked failing = ask(n -> 502);
+
+        assertThatThrownBy(failing.tokens()::token).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("answered 502");
+        assertThat(failing.requests()).hasValue(6);
+    }
+
+    /** A token source on an identity provider that answers its nth request with {@code status}, 0 for no answer. */
+    private Asked ask(IntUnaryOperator status) throws IOException {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer idp = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        idp.createContext("/token", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            int n = requests.incrementAndGet();
+            int answer = status.applyAsInt(n);
+            if (answer == 0) {
+                exchange.close();
+                return;
+            }
+            byte[] body = (answer == 200 ? "{\"access_token\":\"t" + n + "\",\"expires_in\":600}"
+                    : "{\"error\":\"no\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(answer, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        idp.start();
+        idps.add(idp);
+        FakeClock clock = new FakeClock();
+        List<Duration> pauses = new CopyOnWriteArrayList<>();
+        WorkerSettings.Token settings = new WorkerSettings.Token(null,
+                URI.create("http://127.0.0.1:" + idp.getAddress().getPort() + "/token"), "nuna-maintenance", "s3cret",
+                "catalog-access", null);
+        TokenSource tokens = new TokenSource.ClientCredentials(settings, HttpClient.newHttpClient(), clock, time -> {
+            pauses.add(time);
+            clock.advance(time);
+        });
+        return new Asked(tokens, requests, pauses);
+    }
+
+    private record Asked(TokenSource tokens, AtomicInteger requests, List<Duration> pauses) {
+    }
+
+    @AfterEach
+    void stopIdps() {
+        idps.forEach(idp -> idp.stop(0));
     }
 
     @Test

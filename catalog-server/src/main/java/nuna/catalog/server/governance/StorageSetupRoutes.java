@@ -30,7 +30,7 @@ import tools.jackson.databind.node.ObjectNode;
  * catalogs (backlog 253), for the console's "What to set up" (backlog 254): for each profile, its catalogs and
  * prefixes, what the worker last reported reaching on its store (backlog 250), the worker's settings for the store when
  * that report shows no identity of the worker's there (since item 256 a new bucket on a store the worker reaches needs
- * none), and the profile's delete policies with the commands that apply them, or the catalog setting that a profile
+ * none; and none while the newest scan reported no storage, item 275), and the profile's delete policies with the commands that apply them, or the catalog setting that a profile
  * naming no maintenance principal lacks. The catalog writes all of it and applies none of it (D21, D30), and it never
  * holds or gives a key of the worker's: the settings mark where the worker's key goes. Platform operators only, as the
  * delete policies are; a refusal is audited, the read is not. Catalogs are named, never a namespace, table or view
@@ -64,15 +64,19 @@ class StorageSetupRoutes {
     /**
      * {@code {"reported-at"?, "profiles": [{"name", "catalogs", "kind", "endpoint", "prefixes",
      * "maintenance-principal"?, "worker", "worker-settings"?, "store"}, ...]}}, by profile name. The worker's reach is
-     * judged as readiness judges it ({@link ReadinessRoutes}): the listing from the newest scan that reported storage,
-     * the deletes from the newest such scan that has ended.
+     * judged as readiness judges it ({@link ReadinessRoutes.Reported}): the listing from the newest scan when it
+     * reported storage, the deletes from the newest such scan that has ended.
      */
     @GetMapping(path = STORAGE_SETUP, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> storageSetup(HttpServletRequest http) {
         guard.requireOperator(management.request(http), null, "getMaintenanceStorageSetup");
-        List<MaintenanceScan> reached = store.listScans().stream().filter(scan -> scan.storage().isPresent()).toList();
-        Optional<MaintenanceScan> last = reached.stream().findFirst();
-        Optional<MaintenanceScan> ended = reached.stream().filter(scan -> scan.endedAt().isPresent()).findFirst();
+        List<MaintenanceScan> scans = store.listScans();
+        ReadinessRoutes.Reported reported = ReadinessRoutes.Reported.of(scans);
+        Optional<MaintenanceScan> last = reported.last();
+        Optional<MaintenanceScan> ended = reported.ended();
+        // The newest scan reported no storage, as when it could not read its storage prefixes (item 275): whether the
+        // worker holds an identity on a store is not known, so it is told to add none.
+        boolean unknown = !scans.isEmpty() && last.isEmpty();
         List<DeletePolicyRoutes.Protected> named = new ArrayList<>();
         settings.profiles().forEach((name, profile) -> {
             if (profile.maintenancePrincipal() != null) {
@@ -100,8 +104,8 @@ class StorageSetupRoutes {
                 item.put("maintenance-principal", profile.maintenancePrincipal());
             }
             Optional<WorkerStorage> listing = last.flatMap(scan -> identity(scan, profile));
-            item.set("worker", worker(prefixes, listing, ended.flatMap(scan -> identity(scan, profile))));
-            if (listing.isEmpty()) {
+            item.set("worker", worker(prefixes, listing, ended.flatMap(scan -> identity(scan, profile)), unknown));
+            if (listing.isEmpty() && !unknown) {
                 item.set("worker-settings", workerSettings(name, profile));
             }
             item.set("store", profile.maintenancePrincipal() == null ? unprotected(name)
@@ -153,12 +157,13 @@ class StorageSetupRoutes {
 
     /**
      * {@code reported} with what the store answered beneath each of the profile's prefixes, when the worker's report
-     * shows an identity on its store; {@code not-reported} when it shows none, or no worker has reported.
+     * shows an identity on its store; {@code unknown} when the newest scan reported no storage; {@code not-reported}
+     * when it shows none, or no worker has reported.
      */
     private static ObjectNode worker(List<String> prefixes, Optional<WorkerStorage> listing,
-                                     Optional<WorkerStorage> deleting) {
+                                     Optional<WorkerStorage> deleting, boolean unknown) {
         ObjectNode node = Management.JSON.createObjectNode().put("state", listing.isPresent() ? "reported"
-                : "not-reported");
+                : unknown ? "unknown" : "not-reported");
         if (listing.isPresent()) {
             ArrayNode each = node.putArray("prefixes");
             prefixes.forEach(prefix -> each.add(ReadinessRoutes.reach(prefix, beneath(listing, prefix),
