@@ -107,6 +107,8 @@ val secretShapes = tasks.register("secretShapes") {
             "a literal password beside its name" to """(?i)"[\w.-]*$pw[\w.-]*"\s*,\s*"[^"$\n]+"(?!\s*:)""",
             "a client secret in a form" to """client_secret=[A-Za-z0-9._~-]{4,}""",
             "a password in JSON" to """(?i)"[\w.-]*$pw[\w.-]*"\s*:\s*"[^"$<\n][^"\n]*"""",
+            "an openssl pkcs8 command in the order work's scanner refused (backlog 292)" to
+                """openssl pkcs8\b[^\n]*\s-in\s+\S+\s+-outform\b""",
             "a person's password in a realm" to """"type"\s*:\s*"password"\s*,\s*"value"\s*:\s*"[^"$\n]+"""",
         ).mapValues { Regex(it.value) }
         val inConfig = anywhere + mapOf(

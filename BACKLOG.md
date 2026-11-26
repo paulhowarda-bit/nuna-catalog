@@ -2257,3 +2257,4 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [287](backlog/287.md) | Move from Docker Desktop to Podman: kind cluster nuna for the demo, the local install and the compaction and engine tests | done | 2026-11-26 |
 | [288](backlog/288.md) | Oracle reads every branch grant's ref as "?": V20's any_grant view lost its regex back-references | done | 2026-11-26 |
 | [289](backlog/289.md) | Gate heavy failures: the audit table writer needs modify, the archive's written times, SecurityGateTest's poisoned outbox | done | 2026-11-26 |
+| [292](backlog/292.md) | GitHub's push protection refuses the openssl pkcs8 command's argument order | done | 2026-11-26 |
