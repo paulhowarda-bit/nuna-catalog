@@ -33,6 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.bson.BsonBinary;
+import org.bson.BsonBoolean;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
 import org.bson.BsonInt64;
@@ -128,6 +129,7 @@ final class Pointers {
         for (PointerLock lock : batch.locks()) {
             boolean matched = switch (lock) {
                 case PointerSwap swap -> swapOne(tx, batch, swap, pieceBytes);
+                case PointerHold hold when hold.expected().isEmpty() -> holdAbsent(tx, hold.key());
                 case PointerHold hold -> holdOne(tx, hold);
             };
             if (!matched) {
@@ -167,13 +169,32 @@ final class Pointers {
      * write of the clock alone, is what conflicts with a concurrent swap of it (section 9, Writes).
      */
     private static boolean holdOne(Tx tx, PointerHold hold) {
-        BsonDocument held = tx.collection(POINTER).find(tx.session, expectedFilter(hold.key(), hold.expected()))
+        BsonDocument held = tx.collection(POINTER).find(tx.session, expectedFilter(hold.key(), hold.expected().get()))
                 .projection(new BsonDocument("clock", new BsonInt32(1))).first();
         if (held == null) {
             return false;
         }
         tx.mark(POINTER, held);
         return true;
+    }
+
+    /**
+     * Takes the key of a pointer the batch holds absent, as a create takes it, and says whether it is absent (backlog
+     * 278). A read takes no lock and a plain write matches nothing, so the hold upserts a placeholder and deletes it at
+     * once: the upsert meets an open create of the key, or one committed after this snapshot, with
+     * {@code WriteConflict}, and the transaction runs again and finds the pointer; once this transaction has written
+     * the key, a create that comes later conflicts with it the same way and runs again after it, finding the key free.
+     * No document is left, and no reader sees the placeholder.
+     */
+    private static boolean holdAbsent(Tx tx, PointerKey key) {
+        MongoCollection<BsonDocument> pointers = tx.collection(POINTER);
+        boolean absent = pointers.updateOne(tx.session, keyFilter(key),
+                new BsonDocument("$setOnInsert", new BsonDocument("placeholder", BsonBoolean.TRUE)),
+                new UpdateOptions().upsert(true)).getUpsertedId() != null;
+        if (absent) {
+            pointers.deleteOne(tx.session, keyFilter(key));
+        }
+        return absent;
     }
 
     private static BsonDocument expectedFilter(PointerKey key, Pointer expected) {

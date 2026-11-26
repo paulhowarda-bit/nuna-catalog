@@ -230,6 +230,55 @@ class BranchCommitTest {
                 .containsOnly("dev");
     }
 
+    @Test
+    @DisplayName("a transaction on a branch holds a table it only checks by the branch's own pointer, or by its"
+            + " absence when the branch has not committed to it (backlog 278)")
+    void aTransactionHoldsWhatItOnlyChecks() {
+        CatalogObject orders = table("orders");
+        CatalogObject fills = table("fills");
+        CatalogObject quotes = table("quotes");
+        Ref dev = branch("dev", orders, fills, quotes);
+        success(on(dev).commitTable(name(quotes), update(Map.of("q", "1")), ALICE, Optional.empty()));
+        Pointer ownQuotes = pointers.get(dev.key(quotes.id()));
+
+        CommitReply reply = on(dev).commitTransaction(List.of(
+                new CommitEngine.TableChange(name(orders), update(Map.of("t", "1"))),
+                new CommitEngine.TableChange(name(fills), Requests.update(Requests.assertSchema(0))),
+                new CommitEngine.TableChange(name(quotes), Requests.update(Requests.assertSchema(0)))), "{}", ALICE,
+                Optional.empty());
+
+        assertThat(reply).isEqualTo(new Applied(How.COMMITTED));
+        assertThat(landed.getLast().holds()).containsExactlyInAnyOrder(
+                new PointerHold(dev.key(fills.id()), Optional.empty()), new PointerHold(dev.key(quotes.id()), ownQuotes));
+        assertThat(pointers).as("a hold creates no pointer").doesNotContainKey(dev.key(fills.id()));
+    }
+
+    @Test
+    @DisplayName("a first commit on the branch to a table a transaction only checks, landing between the transaction's"
+            + " read and its swap, fails the transaction's requirement: 409, and nothing of it lands (backlog 278)")
+    void aFirstCommitToAHeldTableLandsMeanwhile() {
+        CatalogObject orders = table("orders");
+        CatalogObject fills = table("fills");
+        Ref dev = branch("dev", orders, fills);
+        beforeNextCommit.set(() -> success(on(dev).commitTable(name(fills),
+                Requests.update("", Requests.addColumn(1, "venue")), BOB, Optional.empty())));
+
+        CommitReply reply = on(dev).commitTransaction(List.of(
+                new CommitEngine.TableChange(name(orders), update(Map.of("t", "1"))),
+                new CommitEngine.TableChange(name(fills), Requests.update(Requests.assertSchema(0)))), "{}", ALICE,
+                Optional.empty());
+
+        assertThat(reply).isInstanceOfSatisfying(Failure.class, failure -> {
+            assertThat(failure.status()).isEqualTo(409);
+            assertThat(failure.type()).isEqualTo("CommitFailedException");
+            assertThat(failure.message()).startsWith(name(fills).qualified() + ": ");
+        });
+        assertThat(pointers.get(dev.key(fills.id())).version()).as("Bob's first commit").isEqualTo(1);
+        assertThat(pointers).as("nothing of the transaction lands").doesNotContainKey(dev.key(orders.id()));
+        assertThat(landed).singleElement().satisfies(batch -> assertThat(batch.swaps()).extracting(PointerSwap::key)
+                .containsExactly(dev.key(fills.id())));
+    }
+
     // ---- the cap ----
 
     @Test
@@ -574,7 +623,7 @@ class BranchCommitTest {
             }
             for (PointerHold hold : batch.holds()) {
                 Optional<Pointer> actual = Optional.ofNullable(pointers.get(hold.key()));
-                if (!same(actual, Optional.of(hold.expected()))) {
+                if (!same(actual, hold.expected())) {
                     return new CommitResult.Conflict(hold.key(), actual);
                 }
             }
