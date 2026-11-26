@@ -57,6 +57,13 @@ again. The consumer group's own offsets are committed after each commit only so 
   written and nothing is skipped. A catalog newer than the writer can do this; upgrade the writer first.
 - **Outages** of the catalog, the store or Kafka delay rows; no request waits for the writer. It logs the failure and
   retries every 10 seconds.
+- **A table gone under it** (dropped, or the catalog's database new while the writer runs; backlog 284). When the
+  catalog answers `NoSuchTableException` as the writer reads its table again, it makes the table again, logs a WARN,
+  and, the new table holding no offsets, writes the topic into it from the earliest record Kafka keeps; records older
+  than that are only in the dropped table. Undrop a dropped audit table rather than keep the new one (undrop needs the
+  name free). Only that answer does this: a refusal (403) is thrown and retried, so a revoked grant shows. Nuna
+  answers a table the writer may no longer see with the same 404 (D18); the writer then fails to make it (409, the
+  name is taken, or a refusal) and logs that every round, so nothing is replaced.
 - **Snapshot expiry.** The offsets live in the writer's snapshots. Compaction and manifest rewrites add snapshots
   without them, which the writer looks past. If expiry removed every snapshot that records offsets (the writer down
   longer than the audit catalog's `max-snapshot-age`, and only newer snapshots kept), the writer refuses to start
@@ -94,6 +101,8 @@ With `source: otlp` the writer listens for OTLP/HTTP log exports, `POST /v1/logs
 - **Waiting rows.** Records wait in memory and are committed as from the topic, every `commit-interval` or at
   `max-rows`. A commit that fails keeps them for the next. A writer that dies before its commit loses them (they are
   still on the catalog's stdout); a shutdown stops the receiver and commits them first.
+- **A table gone under it**, as from the topic, is made again with a WARN, and the records waiting are written to it;
+  rows committed before are only in the dropped table (and the catalog's log). A refusal never makes it again.
 - A table the topic filled before can be written from the log: the two sources' offsets are kept apart.
 
 ### The archive
@@ -301,17 +310,20 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an event type with
   no mapping.
 - `TableWriterTest` runs the writer against Kafka's fake consumer and Iceberg's in-memory catalog, which can lose a
-  commit or its answer: every record written once with its place in the topic and the run and number it was logged
+  commit or its answer, refuse as a 403 would, and answers a dropped table's refresh with `NoSuchTableException` as the
+  REST catalog does: every record written once with its place in the topic and the run and number it was logged
   with, resuming after the last committed
   offset, no gap and no repeat after a lost commit, a second writer, a revoked partition or a record it cannot map,
-  its own records left out. `AuditTablesSettingsTest` checks the settings and the clients made of them.
+  its own records left out, a table dropped between commits made again with both commits' records, and a refusal
+  never making it again. `AuditTablesSettingsTest` checks the settings and the clients made of them.
 - `ArchiveSinkTest` (`catalog-audit`) runs the archive writer on an in-memory bucket that can fail or lose an answer:
   segments by count, age and run end, refused bodies, the unstamped chain, a busy writer, an unreachable store, a
   lost answer, a second writer, checkpoints linked across a restart and written when idle, and repeats left out.
   `LockedArchiveTest` (tagged `heavy`) writes and checks on the run's S3 store, with real Object Lock.
 - `LogWriterTest` runs the source `otlp`'s writer against the same catalog: each record once across repeats, a commit
   whose answer was lost and a restart; rows in partition -1 with rising numbers; a failed commit keeps its rows; its
-  own records left out; a table the topic filled before. `OtlpLogsReceiverTest` posts OTLP requests: protobuf and
+  own records left out; a table the topic filled before; a table dropped between commits made again with the records
+  held, and a refusal never making it again. `OtlpLogsReceiverTest` posts OTLP requests: protobuf and
   JSON, gzip, only the `nuna.audit` scope kept, a request without the token refused and unread, rejected records
   counted, every audit record archived before the table's filters, and a request the archive cannot take turned away
   whole. `catalog-server`'s `AuditLogToWriterTest` sends a record from the server's own log wiring to the receiver.
