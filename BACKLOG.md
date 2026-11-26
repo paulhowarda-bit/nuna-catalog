@@ -1451,6 +1451,104 @@ Done looks like:
 - The console: the make dialog's Description field, the purpose line in the refs list's Ref cell and on the ref's
   page, as the design words them.
 
+## Atelier's design, 2026-11-25
+
+Relayed word for word by the Catalog UI Expert session.
+
+**167 (a description on a branch or tag): no change to the design.** The purpose line, its two places and its sentence stand. The design never worded the make dialog's field; these are its words:
+- Label: `Purpose (optional)`
+- Placeholder: `why it exists, such as: before the November restatement`
+- Hint: `One line, at most {max} characters. Everyone who can see {catalog}'s branches and tags reads it, and the audit keeps it.`
+- When there is no description, there is no line and no filler. For a caller without `create`, who gets no `created-by` (item 106), the page's sub-line reads `{purpose}. Made from {from} on {created}.`
+
+### Atelier's changes, 2026-11-25 (relayed by the coordinator)
+
+1. In refs.js `purpose`, change `/[.!?…]$/u` to `/[.!?…]["'”’)\]]*$/u`, so a purpose ending in a quote or bracket
+   after its stop gets no second period.
+2. Keep `overflow-wrap: anywhere` on `.refs-tbl td.name .why` and on `.purpose`. If the audit feed row's text has no
+   such rule, add one.
+3. In refs.js `refWords`, `case 'CREATED'`: when `d.description` is present, add `. Its purpose: “{description}”` to
+   the end of either form. Use typographic quotes, no period after them, and text only. With no description, the line
+   is unchanged. Renewed, merged and ended lines leave the purpose out.
+
+## Built, 2026-11-25 (branch `worktree-agent-a18b4d6ea289528fc`)
+
+Built on the branch of items 158 and 171 (`worktree-agent-ac5aa9e6de1840a97`), which changes the same refs store
+files; the two land together.
+
+- **The record.** `Ref` gains `Optional<String> description` (`catalog-store-api/.../Ref.java`), never blank; every
+  caller passes it (tests pass `Optional.empty()`).
+- **The four stores.** A nullable column `description`: PostgreSQL `V18__ref_description.sql` (TEXT), CockroachDB
+  `V17__ref_description.sql` (TEXT), Oracle `V19__ref_description.sql` (VARCHAR2(1000 CHAR), through the text
+  codec). Existing refs read as none. MongoDB writes a `description` field, null without one, and reads a missing
+  field as none. `SqlRefs`, `OracleRefs` and `MongoRefs` write it on create and read it on every read
+  (`readRef`, `findRef`, `listRefs`, `listRefPointers`).
+- **The route** (`RefRoutes.java`): `POST …/refs` takes an optional `description` (`description(JsonNode)`,
+  ~line 1045). Absent, null or blank is none. The server bounds it so:
+  - its ends are stripped of white space, no-break spaces included (`stripped`, ~line 1074);
+  - at most `MAX_DESCRIPTION` = 200 characters, counted in code points, else 400 `Field description is longer than
+    200 characters (n)`; the list's `limits` carries `max-description`;
+  - one line of plain text (`notInALine`, ~line 1090): no control character (C0, DEL, C1, so no line break or tab), no
+    line or paragraph separator, no lone surrogate, no bidirectional embedding, override or isolate
+    (U+202A to U+202E, U+2066 to U+2069); else 400 naming the character's position and code point;
+  - a non-string is 400.
+  Every ref answer (list, read, create, renew) carries `description` to any caller who may list or read the refs
+  (item 106's rule), unlike `created-by`. A renewal keeps it. The `CREATED` `nuna.catalog.ref` record carries it.
+- **The audit record.** `RefChange` gains a nullable `description`. A record with one is written as
+  `urn:nuna:catalog:event:ref:2`; every other ref record leaves the field out and is written as `ref:1`, exactly as
+  before (the golden line is unchanged), so a server of the previous release reads every record it could read before
+  (Nuna Security Expert, 2026-11-25). `EventType.REF` names the field version 2 added (`added`); `EventCodec` drops it
+  when null (`payloadTree`), writes the version that matches (`versionOf`), and reads either, refusing a `ref:1` that
+  carries a description and a `ref:2` without one (`readPayload`). An audit table row, which keeps no schema version,
+  is read by the same rule (`EventCodec.payload`, used by `AuditRows`). The shape follows item 113's
+  `payloadTree`/`versionOf` without sharing its code.
+- **The console** (`ui/refs.js`, `ui/api.js`, `style.css`): the make dialog's `Purpose (optional)` field with Atelier's
+  placeholder and hint (`{max}` from `limits.max-description`), sent only when not empty; the refs list's Ref cell
+  shows the purpose under the chip (`fine why`, as the prototype draws it); the ref's page sub-line reads
+  `{purpose}. Made from main by {created-by} on {created}.`, or without `by` for a caller without `create`. No
+  description, no line. The text goes in through `h()` text nodes only. A refusal shows as the catalog answered.
+  A `created` record's words, in the audit feed and on the ref's page, end `. Its purpose: “{description}”` when it
+  has one (Atelier's change 3). The feed's text already wraps anywhere (`.feed-row > div`), so no rule was added.
+- `docs/refs.md`: the field, its bounds and who reads it.
+
+Tests:
+- Fast, run and passing: `RefRoutesTest` (30, two new:
+  `aDescriptionIsKeptOnTheRefShownToEveryReaderAndRecordedOnItsCreation`,
+  `aDescriptionPastTheLimitOrNotOneLineOfTextIsRefused`); `EventCodecTest` (245, four new on the version-1 record and
+  row) and `AuditRowsTest`; the ref tests that build a `Ref` in `catalog-core`, `catalog-store-api` and
+  `catalog-server`.
+- Heavy, written and compiled, not run: `RefSuite#aRefKeepsItsDescription` (four stores: 200 characters, one outside
+  the BMP, with HTML's characters; read, find, list, the pointers' list, a renewal; not inherited by a ref made from
+  it); `ConsoleBrowserTest#aRefMadeWithAPurposeShowsItAsText` (the dialog's words, the list and the page, markup shown
+  as text).
+
+Bites, recorded in `bites/D33/` and checked with `git apply --check`, not run: `ref-description-not-one-line`,
+`ref-description-unbounded`, `ref-description-unaudited`, `ref-description-hidden-from-readers`,
+`ref-description-lost-on-renewal`, `audit-ref-previous-version-unread`, `audit-row-previous-version-unread`,
+`audit-ref-written-as-version-2` (fast);
+`sql-ref-description-unstored`, `oracle-ref-description-unstored`, `mongo-ref-description-unstored` (heavy).
+
+Choices made (Paul may overrule):
+1. The limit is 200 characters, counted in code points: enough for one line of purpose, short enough for the list's
+   cell. The console's `maxlength` counts UTF-16 units, so it never lets more through than the server takes.
+2. Ends stripped and blank taken as none, rather than refused: the dialog sends an empty field as nothing anyway.
+3. Bidirectional controls are refused besides control characters, so a purpose cannot render as other text; other
+   format characters (zero-width joiners in emoji) are kept.
+4. The audit carries the description only in the `CREATED` record, as the item asks; the ref's id ties the rest to it.
+5. The ref record's payload has a version 2 rather than a field quietly added to version 1: the codec reads strictly,
+   so a field added to version 1 would have made every stored ref record unreadable. Only a record with a description
+   is version 2; the rest stay version 1, so a rolling upgrade's older servers keep reading them (security's change).
+6. The migrations take the next free numbers on main (PostgreSQL V18, CockroachDB V17, Oracle V19), at the
+   coordinator's word, 2026-11-25.
+7. On the page's sub-line a purpose already ending in `.`, `!`, `?` or `…`, closing quotes or brackets after it
+   included, gets no second period.
+
+Left:
+- The heavy cases and store bites run in the overnight run.
+- Item 113's branch (`branch-grants-113`) takes the same numbers for `ref_grant` (PostgreSQL V18, CockroachDB V17,
+  Oracle V19). If 167 lands first, 113 renumbers above these, as whoever lands second settles: a lower number
+  landing after a higher one is out of order for a database already migrated, such as the demo's.
+
 ### 168. Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78

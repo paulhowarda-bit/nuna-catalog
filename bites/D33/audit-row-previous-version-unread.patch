@@ -1,0 +1,17 @@
+Breaks: an audit table row holding a ref record without a description is read as version 2 and refused, so the audit read routes fail on it (backlog 167).
+Module: catalog-audit
+Test: EventCodecTest#anAuditRowOfARefRecordReadsInEitherVersion
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+index a91548a2..4a911f7b 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+@@ -164,7 +164,7 @@ public final class EventCodec {
+         if (!(MAPPER.readTree(json) instanceof ObjectNode data)) {
+             throw new IllegalArgumentException("a payload is a JSON object");
+         }
+-        return readPayload(type, data, versionOf(type, data));
++        return readPayload(type, data, type.version());
+     }
+ 
+     /** The payload, less the fields the type's current version added when every one of them is null. */

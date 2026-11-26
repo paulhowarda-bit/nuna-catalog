@@ -219,7 +219,8 @@ class ReconcileRefsTest {
 
     private Ref ref(String name, Ref.Kind kind, Optional<Instant> expiresAt) {
         Ref ref = new Ref(CATALOG, UUID.randomUUID(), new Name(name, name), kind,
-                CLOCK.instant().minus(Duration.ofDays(1)), "tester", Optional.empty(), Ref.MAIN, expiresAt);
+                CLOCK.instant().minus(Duration.ofDays(1)), "tester", Optional.empty(), Ref.MAIN, expiresAt,
+                Optional.empty());
         refs.add(ref);
         refs.sort(Comparator.comparing(r -> r.name().normalized()));
         return ref;

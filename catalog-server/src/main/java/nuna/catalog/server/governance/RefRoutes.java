@@ -120,6 +120,8 @@ class RefRoutes {
      */
     static final int DROPPERS_READ = 5;
     private static final int MAX_NAME = 1000;
+    /** The longest description a ref takes, in characters (Unicode code points); the list states it (backlog 167). */
+    static final int MAX_DESCRIPTION = 200;
     private static final Duration WARNING_LEASE = Duration.ofMinutes(1);
     /** What a merge is authorized and audited as. */
     private static final String MERGE_OP = "mergeRef";
@@ -223,6 +225,7 @@ class RefRoutes {
         limits.put("branch-idle-expiry", settings.branchIdleExpiry().toString());
         limits.put("branch-max-life", settings.branchMaxLife().toString());
         limits.put("expiry-warning", settings.expiryWarning().toString());
+        limits.put("max-description", MAX_DESCRIPTION);
         return limits;
     }
 
@@ -247,9 +250,11 @@ class RefRoutes {
     }
 
     /**
-     * Makes a ref: {@code {"name": ..., "kind": "branch" | "tag", "from": "main" | a ref's name}}, {@code from}
-     * defaulting to main. Answers 201 with the ref; 404 when {@code from} names no ref; 409 when the name is taken or
-     * the catalog holds as many refs of the kind as P11 allows, naming the setting.
+     * Makes a ref: {@code {"name": ..., "kind": "branch" | "tag", "from": "main" | a ref's name, "description": ...}},
+     * {@code from} defaulting to main. {@code description}, optional, is the purpose the ref is made for, kept on it and
+     * in its {@code CREATED} record ({@link #description}). Answers 201 with the ref; 400 for a description past
+     * {@link #MAX_DESCRIPTION} characters or not one line of text; 404 when {@code from} names no ref; 409 when the name
+     * is taken or the catalog holds as many refs of the kind as P11 allows, naming the setting.
      */
     @PostMapping(path = REFS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> create(@PathVariable("catalog") String prefix,
@@ -277,13 +282,14 @@ class RefRoutes {
             default -> throw CatalogError.badRequest("Field kind must be branch or tag");
         };
         String fromGiven = json.has("from") ? Management.text(json, "from", MAX_NAME) : Ref.MAIN;
+        Optional<String> description = description(json);
         CatalogRecord catalog = target.catalog();
         Instant now = now();
         Optional<Ref> from = Names.normalize(fromGiven).equals(Ref.MAIN) ? Optional.empty()
                 : Optional.of(live(catalog, fromGiven, now));
         Ref ref = new Ref(catalog.id(), UUID.randomUUID(), name, kind, now, request.actor().principal(),
                 from.map(Ref::id), from.map(r -> r.name().display()).orElse(Ref.MAIN),
-                kind == Ref.Kind.BRANCH ? Optional.of(settings.expiryAfter(now, now)) : Optional.empty());
+                kind == Ref.Kind.BRANCH ? Optional.of(settings.expiryAfter(now, now)) : Optional.empty(), description);
         String answer = Management.JSON.writeValueAsString(ref(ref, now));
         RefChange event = event(RefChange.Action.CREATED, ref, ref.expiresAt(), target.audit(), request);
         WriteResult result = Management.write("Creating ref " + given, () -> store.createRef(ref, settings.limits(),
@@ -329,7 +335,7 @@ class RefRoutes {
             return Reply.of(200, Management.JSON.writeValueAsString(ref(ref, now)));
         }
         Ref renewed = new Ref(ref.catalogId(), ref.id(), ref.name(), ref.kind(), ref.createdAt(), ref.createdBy(),
-                ref.fromRef(), ref.fromName(), Optional.of(expiry));
+                ref.fromRef(), ref.fromName(), Optional.of(expiry), ref.description());
         String answer = Management.JSON.writeValueAsString(ref(renewed, now));
         RefChange event = event(RefChange.Action.RENEWED, ref, Optional.of(expiry), target.audit(), request);
         WriteResult result = Management.write("Renewing ref " + name, () -> store.renewRef(ref.id(), expiry,
@@ -1260,9 +1266,70 @@ class RefRoutes {
     private static RefChange event(RefChange.Action action, Ref ref, Optional<Instant> expiresAt,
                                    nuna.catalog.audit.Securable catalog, Request request,
                                    List<nuna.catalog.audit.Securable> tables) {
+        // The record of its creation keeps the ref's description (backlog 167); the ref's id ties the others to it.
         return new RefChange(action, ref.id(), ref.name().display(), ref.kind() == Ref.Kind.BRANCH
                 ? RefChange.Kind.BRANCH : RefChange.Kind.TAG, catalog, ref.fromName(), expiresAt.orElse(null),
-                tables, request.actor());
+                action == RefChange.Action.CREATED ? ref.description().orElse(null) : null, tables, request.actor());
+    }
+
+    /**
+     * The optional {@code description} of a create (backlog 167): absent, null or blank is none. Otherwise it is free
+     * text from the caller, which every holder in the catalog reads and the audit keeps, so it is bounded here: its
+     * ends are stripped of white space, no-break spaces included; it holds at most {@link #MAX_DESCRIPTION} characters (code points); and it is
+     * one line of plain text, holding no control character (C0, C1 and DEL, so no line break or tab), no line or
+     * paragraph separator, no lone surrogate, and none of the bidirectional embeddings, overrides and isolates
+     * (U+202A to U+202E, U+2066 to U+2069) that could make it read as other text. Anything else is refused with 400.
+     */
+    static Optional<String> description(JsonNode json) {
+        JsonNode value = json.get("description");
+        if (value == null || value.isNull()) {
+            return Optional.empty();
+        }
+        if (!value.isString()) {
+            throw CatalogError.badRequest("Field description must be a string");
+        }
+        String description = stripped(value.asString());
+        if (description.isEmpty()) {
+            return Optional.empty();
+        }
+        int length = description.codePointCount(0, description.length());
+        if (length > MAX_DESCRIPTION) {
+            throw CatalogError.badRequest("Field description is longer than " + MAX_DESCRIPTION + " characters ("
+                    + length + ")");
+        }
+        int[] points = description.codePoints().toArray();
+        for (int i = 0; i < points.length; i++) {
+            if (notInALine(points[i])) {
+                throw CatalogError.badRequest(String.format(Locale.ROOT, "Field description must be one line of plain"
+                        + " text: character %d is U+%04X, a control, line-breaking or bidirectional formatting"
+                        + " character", i + 1, points[i]));
+            }
+        }
+        return Optional.of(description);
+    }
+
+    /** {@code text} without the white space at its ends, no-break spaces included, which {@link String#strip} keeps. */
+    private static String stripped(String text) {
+        int start = 0;
+        int end = text.length();
+        while (start < end && blank(text.codePointAt(start))) {
+            start += Character.charCount(text.codePointAt(start));
+        }
+        while (end > start && blank(text.codePointBefore(end))) {
+            end -= Character.charCount(text.codePointBefore(end));
+        }
+        return text.substring(start, end);
+    }
+
+    private static boolean blank(int point) {
+        return Character.isWhitespace(point) || Character.isSpaceChar(point);
+    }
+
+    private static boolean notInALine(int point) {
+        return switch (Character.getType(point)) {
+            case Character.CONTROL, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR, Character.SURROGATE -> true;
+            default -> point >= 0x202A && point <= 0x202E || point >= 0x2066 && point <= 0x2069;
+        };
     }
 
     /** A ref as the create and renew routes answer it, to a caller holding create on the catalog. */
@@ -1284,6 +1351,8 @@ class RefRoutes {
         if (withCreator) {
             node.put("created-by", ref.createdBy());
         }
+        // Read by anyone who may list or read the catalog's refs (item 106's rule), unlike created-by.
+        ref.description().ifPresent(description -> node.put("description", description));
         ref.expiresAt().ifPresent(expiry -> {
             node.put("expires-at", expiry.toString());
             node.put("max-expires-at", settings.lastExpiry(ref.createdAt()).toString());

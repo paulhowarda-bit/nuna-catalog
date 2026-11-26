@@ -35,10 +35,16 @@ public final class Refs {
         return ref(source.catalogId(), display, kind, Optional.of(source), at);
     }
 
+    /** {@code ref} with {@code description} as the purpose its maker gave it (backlog 167). */
+    public static Ref described(Ref ref, String description) {
+        return new Ref(ref.catalogId(), ref.id(), ref.name(), ref.kind(), ref.createdAt(), ref.createdBy(),
+                ref.fromRef(), ref.fromName(), ref.expiresAt(), Optional.of(description));
+    }
+
     private static Ref ref(UUID catalogId, String display, Ref.Kind kind, Optional<Ref> source, Instant at) {
         return new Ref(catalogId, UUID.randomUUID(), name(display), kind, at, "svc-suite", source.map(Ref::id),
                 source.map(ref -> ref.name().display()).orElse(Ref.MAIN),
-                kind == Ref.Kind.BRANCH ? Optional.of(at.plus(LIFETIME)) : Optional.empty());
+                kind == Ref.Kind.BRANCH ? Optional.of(at.plus(LIFETIME)) : Optional.empty(), Optional.empty());
     }
 
     /** A change at {@code at}, which may be ahead of the clock: what the store compares a branch's expiry with. */

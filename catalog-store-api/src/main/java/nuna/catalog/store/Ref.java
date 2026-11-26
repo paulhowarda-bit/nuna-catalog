@@ -16,9 +16,13 @@ import java.util.UUID;
  * {@code @} and no {@code /}, so the prefix {@code catalog@ref} parses one way, and {@code main} is reserved: it is
  * always there and is not a ref record (choice 4). A branch expires at {@code expiresAt} and is gone from then on;
  * a tag never expires (P11).
+ *
+ * <p>{@code description} is the purpose its maker gave it, if any (backlog 167): one line of plain text, kept as given
+ * and never changed. The route bounds it ({@code RefRoutes}); the record checks only that it is not blank.
  */
 public record Ref(UUID catalogId, UUID id, Name name, Kind kind, Instant createdAt, String createdBy,
-                  Optional<UUID> fromRef, String fromName, Optional<Instant> expiresAt) {
+                  Optional<UUID> fromRef, String fromName, Optional<Instant> expiresAt,
+                  Optional<String> description) {
 
     public enum Kind { BRANCH, TAG }
 
@@ -35,7 +39,11 @@ public record Ref(UUID catalogId, UUID id, Name name, Kind kind, Instant created
         Objects.requireNonNull(fromRef, "fromRef");
         Objects.requireNonNull(fromName, "fromName");
         Objects.requireNonNull(expiresAt, "expiresAt");
+        Objects.requireNonNull(description, "description");
         checkName(name);
+        if (description.isPresent() && description.get().isBlank()) {
+            throw new IllegalArgumentException("a ref's description, when it has one, is not blank");
+        }
         if (expiresAt.isPresent() != (kind == Kind.BRANCH)) {
             throw new IllegalArgumentException("a branch expires and a tag never does");
         }

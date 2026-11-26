@@ -675,7 +675,7 @@ class NamespaceTablesRoutesTest {
     private Ref ref(String name, Ref.Kind kind, Optional<Ref> from) {
         Ref ref = new Ref(catalog.id(), UUID.randomUUID(), new Name(Names.normalize(name), name), kind, NOW, "bea",
                 from.map(Ref::id), from.map(r -> r.name().display()).orElse(Ref.MAIN),
-                kind == Ref.Kind.BRANCH ? Optional.of(NOW.plus(Duration.ofDays(30))) : Optional.empty());
+                kind == Ref.Kind.BRANCH ? Optional.of(NOW.plus(Duration.ofDays(30))) : Optional.empty(), Optional.empty());
         refs.put(ref.id(), ref);
         return ref;
     }
