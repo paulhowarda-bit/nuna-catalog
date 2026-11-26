@@ -1112,7 +1112,7 @@ tr.is-warn > td:first-child { box-shadow: inset 3px 0 0 var(--warn-mark); }
 /* A figure that is a date (a ref's Point and Expires) reads in the UI font, its digits tabular (backlog 215). */
 .kpi-v.date { font-family: var(--f-ui); font-variant-numeric: tabular-nums; }
 .row-acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; align-items: center; }
-.refs-tbl td.name .why { font-family: var(--f-ui); white-space: normal; display: inline-block; max-width: 46ch; margin-top: 3px; }
+.refs-tbl td.name .why { font-family: var(--f-ui); white-space: normal; display: inline-block; max-width: 46ch; margin-top: 3px; overflow-wrap: anywhere; }
 .refs-explain { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5, 20px); margin-top: var(--s5, 20px); align-items: start; }
 .refs-explain > .panel { margin: 0; }
 .panel-h > h2 { font: inherit; margin: 0; display: flex; align-items: baseline; gap: 10px; flex: 1 1 auto; }
@@ -1228,6 +1228,8 @@ td.acts { width: 1%; white-space: nowrap; }
 .merge-act .refusal-acts { align-items: center; }
 .settle { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
 .refs-empty { text-align: left; }
+/* A ref's purpose on its page's sub-line (backlog 167): a long word breaks, never the page. */
+.purpose { overflow-wrap: anywhere; }
 .ref-hint { padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); }
 .ref-hint p { margin: 0; }
 .ref-hint p + p { margin-top: 4px; }

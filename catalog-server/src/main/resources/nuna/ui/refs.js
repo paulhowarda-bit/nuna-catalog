@@ -85,6 +85,15 @@ export function cref(r, o = {}) {
     icon(kind === 'tag' ? 'tag' : 'branch'), kind === 'main' ? null : h('span', {class: 'at'}, '@'), name);
 }
 
+/**
+ * A ref's purpose line (backlog 167; Atelier, 2026-11-22 and 11-25): its description, ending as a sentence, before
+ * "Made from …". Free text from whoever made it, so it goes in as a text node only. No description, no line.
+ */
+function purpose(r) {
+  const d = r.description;
+  return d ? [h('span', {class: 'purpose'}, d), /[.!?…]$/u.test(d) ? ' ' : '. '] : null;
+}
+
 function madeFrom(r, list) {
   const from = isMain(r.from) ? 'main' : cref(live(list).find(x => x.name === r.from) || {name: r.from, kind: 'branch'});
   return ['Made from ', from, r['created-by'] ? [' by ', h('b', null, r['created-by'])] : null, ` on ${refAt(r['created-at'])}`];
@@ -455,7 +464,8 @@ function refRow(c, r, list, may) {
       onclick: () => deleteDialog(c, r, list)}, icon('x')) : null);
   const fromBranch = r.kind === 'tag' && !isMain(r.from);
   return h('tr', {'data-kind': r.kind, 'data-ref': r.name, class: expiring(r) ? 'is-warn' : null},
-    h('td', {class: 'name'}, h('a', {href: refHref(c, r.name)}, cref(r))),
+    h('td', {class: 'name'}, h('a', {href: refHref(c, r.name)}, cref(r)),
+      r.description ? [h('br'), h('span', {class: 'fine why'}, r.description)] : null),
     h('td', null, h('span', {class: 'tnum'}, refAt(r['created-at'])), h('br'), h('span', {class: 'fine'},
       r['created-by'] ? ['by ', h('b', null, r['created-by']), ' '] : null, 'from ', isMain(r.from) ? 'main' : '@' + r.from)),
     h('td', null, r.kind === 'tag' ? muted('never') : [expiring(r) ? pill('warn', icon('clock'), `Expires ${untilWords(r['expires-at'])}`)
@@ -612,7 +622,7 @@ export function refPage(c, name, tab) {
     const cut = cutOf(r, list);
     const title = h('div', {class: 'title-row'}, h('h1', {tabindex: '-1', 'aria-label': `${kindWord(r)} @${r.name}`}, cref(r, {big: true})),
       badge(kindWord(r), 'strong'), expiring(r) ? pill('warn', icon('clock'), `Expires ${untilWords(r['expires-at'])}`) : null);
-    const sub = h('p', {class: 'sub'}, madeFrom(r, list), '.');
+    const sub = h('p', {class: 'sub'}, purpose(r), madeFrom(r, list), '.');
     const side = h('div', {class: 'side'}, h('a', {class: 'btn sm primary', href: href({c, r: r.name})}, icon('catalog'), `Read ${c} on @${r.name}`),
       copyWarehouse(`${c}@${r.name}`),
       may && r.kind === 'branch' ? h('button', {class: 'btn sm', type: 'button', onclick: () => renewDialog(c, r)}, 'Renew') : null,
@@ -968,6 +978,10 @@ export function makeDialog(c, list, preset = {}) {
     value: preset.name || null});
   const from = select('from', [['main', 'main, as it is now'], ...live(list).map(r => [r.name, `@${r.name} (${r.kind})`])],
     preset.from || 'main');
+  // Its purpose (backlog 167; Atelier, 2026-11-25). maxlength counts UTF-16 units, never more than the server's characters.
+  const maxPurpose = lim['max-description'] || 200;
+  const why = h('input', {name: 'description', type: 'text', placeholder: 'why it exists, such as: before the November restatement',
+    autocomplete: 'off', maxlength: String(maxPurpose)});
   const hint = h('div', {class: 'ref-hint'});
   const draw = () => {
     for (const b of $$('button', seg)) b.setAttribute('aria-pressed', String(b.dataset.k === kind));
@@ -995,13 +1009,15 @@ export function makeDialog(c, list, preset = {}) {
   const kindField = h('div', {class: 'dlg-f'}, h('span', {id: 'make-kind'}, 'Kind'), seg);
   const body = h('div', null, dialogForm([kindField, field('Name', h('span', {class: 'field mono'}, name),
     'Letters, digits, dot, dash, underscore; no @ and no /. Names compare without case.'),
-  field('From', from, 'A ref made from a branch takes that branch as it is now.'), hint], 'Make it', async (form, out) => {
+  field('From', from, 'A ref made from a branch takes that branch as it is now.'),
+  field('Purpose (optional)', h('span', {class: 'field'}, why), `One line, at most ${fmt(maxPurpose)} characters. `
+    + `Everyone who can see ${c}'s branches and tags reads it, and the audit keeps it.`), hint], 'Make it', async (form, out) => {
     const nm = name.value.trim();
     if (!nm) { fill(out, h('p', {class: 'fine grant-hint'}, 'Name the ref.')); return; }
     const source = form.elements.from.value;
     let answer;
     try {
-      answer = await api.makeRef(c, nm, kind, source);
+      answer = await api.makeRef(c, nm, kind, source, why.value.trim());
     } catch (error) {
       const taken = findRef(list, nm);
       const kept = heldRef(list, nm);

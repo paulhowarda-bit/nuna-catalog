@@ -1,0 +1,17 @@
+Breaks: a ref's description is kept at any length, past the 200 characters the list states (backlog 167).
+Module: catalog-server
+Test: RefRoutesTest#aDescriptionPastTheLimitOrNotOneLineOfTextIsRefused
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index d4db2b85..585df114 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1055,7 +1055,7 @@ class RefRoutes {
+             return Optional.empty();
+         }
+         int length = description.codePointCount(0, description.length());
+-        if (length > MAX_DESCRIPTION) {
++        if (false && length > MAX_DESCRIPTION) {
+             throw CatalogError.badRequest("Field description is longer than " + MAX_DESCRIPTION + " characters ("
+                     + length + ")");
+         }

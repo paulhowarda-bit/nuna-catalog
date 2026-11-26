@@ -1,0 +1,17 @@
+Breaks: a ref made on Oracle loses the description it was made with (backlog 167).
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Refs#aRefKeepsItsDescription
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
+index 57643506..f11a8a1d 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
+@@ -90,7 +90,7 @@ final class OracleRefs {
+                                 + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ref.catalogId(),
+                         ref.name().normalized(), ref.name().display(), ref.kind().name(), ref.expiresAt().orElse(null),
+                         ref.id(), ref.createdAt(), ref.createdBy(), ref.fromRef().orElse(null), ref.fromName(),
+-                        ref.description().orElse(null));
++                        null);
+             } catch (SQLIntegrityConstraintViolationException e) {
+                 if (!Jdbc.violates(e, "REF_PK")) {
+                     throw e;

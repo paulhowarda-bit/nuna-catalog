@@ -1,0 +1,17 @@
+Breaks: a ref record of schema version 1, as the log, the outbox and the archive already hold them, is refused once version 2 adds the description (backlog 167).
+Module: catalog-audit
+Test: EventCodecTest#aRefRecordOfThePreviousVersionIsReadWithNoDescription
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+index 45ea7b06..da391057 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/EventCodec.java
+@@ -126,7 +126,7 @@ public final class EventCodec {
+             }
+             EventType type = EventType.fromTypeName(text(envelope, "type"));
+             String schema = text(envelope, "dataschema");
+-            boolean previous = type.previousSchema().map(URI::toString).filter(schema::equals).isPresent();
++            boolean previous = false;
+             if (!type.dataSchema().toString().equals(schema) && !previous) {
+                 throw new IllegalArgumentException("unsupported data schema " + schema + " for " + type.typeName());
+             }
