@@ -17,7 +17,7 @@ import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceS
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
-import {readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
+import {droppedThroughRef, missingWords, readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
 import {closedNote, openingTab, trailOpen, trailWords} from './access.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
@@ -53,6 +53,16 @@ function refusedLoad(error, others, ref) {
   return [failure(error, {big: true}), error.status === 403 ? h('div', {class: 'notice'}, icon('info'),
     h('span', null, h('b', null, `You may still open ${others}:`), ' each tab is checked on its own.'))
     : null];
+}
+
+/**
+ * The catalog's 404 for a table, then what the catalog knows of the path (item 170): dropped on main and which refs
+ * keep it, made after the point of the ref read, or taken out of it. Null for any other refusal, or when it knows none.
+ */
+async function missingLoad(error, target, title) {
+  if (error.status !== 404 || error.type !== 'NoSuchTableException') return null;
+  const words = await missingWords(target, title);
+  return words ? [failure(error, {big: true}), words] : null;
 }
 
 /**
@@ -124,6 +134,8 @@ export function tablePage(target, tab, route) {
     const m = t.metadata;
     title.insertBefore(badge(`iceberg v${m['format-version']}`, 'strong'), title.children[2] || null);
     addCount(tabs, 'schema', (m.schemas || []).length);
+    // A table a ref still reads after main dropped it says so under the band, on every tab (item 170).
+    if (target.ref) droppedThroughRef(target, title).then(note => note && tabs.before(note), () => {});
   }, () => {});
   const reload = () => show();
   const afterChange = () => {
@@ -154,7 +166,8 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
-          return await flaggedLoad(error, target) || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
+          return await flaggedLoad(error, target) || await missingLoad(error, target, title)
+            || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
         const shown = {'': overviewTab, schema: (x, y) => h('div', {class: 'stack'}, schemaTab(x, y), partitionTab(x, y)),

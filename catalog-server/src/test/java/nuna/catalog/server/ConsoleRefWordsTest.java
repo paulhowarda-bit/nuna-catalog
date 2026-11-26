@@ -52,6 +52,56 @@ class ConsoleRefWordsTest {
         assertThat(browse).doesNotContain("Each table as @");
     }
 
+    /** Item 170, Atelier's design of 2026-11-25: dropped on main, read on main, in the verb "keeps". */
+    @Test
+    void aTableDroppedOnMainSaysWhoAndWhichRefsKeepIt() throws IOException {
+        String refs = resource("refs.js");
+
+        assertThat(refs).contains("droppedPill(title, 'Dropped on main');",
+                "who ? `${who} dropped it on ${refAt(o['dropped-at'])}.` : `It was dropped on ${refAt(o['dropped-at'])}.`",
+                "' Main has no such table.', kept ? [' A ref made before then still keeps it: ', ...keptChips(c, o), '.']",
+                "' No branch or tag keeps it. Cleanup can purge it and delete its files.'",
+                // Item 279's control goes here.
+                "'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)");
+        assertThat(refs).doesNotContain("No ref holds it.", "still reads it: @");
+    }
+
+    /** Item 170: dropped on main, read through a ref that keeps it. */
+    @Test
+    void aTableDroppedOnMainButKeptByTheRefSaysItStaysReadableUntilTakenOut() throws IOException {
+        String refs = resource("refs.js");
+
+        assertThat(refs).contains("droppedPill(title, `Dropped on main ${dayMon(o['dropped-at'])}`);",
+                "who ? `${who} dropped ${path} on main on ${t}.` : `${path} was dropped on main on ${t}.`",
+                "` @${target.ref} was made before then, so it still reads the table as it was; main answers 404 for it.`",
+                "' It stays readable here, and its files stay, until it is ', h('a', {href: objectHref(target, 'access'),"
+                        + " 'data-kept-link': ''},",
+                "'taken out of'), ' every branch and tag that keeps it.'");
+        assertThat(resource("table.js")).contains(
+                "if (target.ref) droppedThroughRef(target, title).then(note => note && tabs.before(note), () => {});");
+    }
+
+    /** Item 170: through a ref, a table made after its point, and the fourth state, taken out of the ref. */
+    @Test
+    void throughARefATableMadeAfterThePointOrTakenOutOfItSaysWhich() throws IOException {
+        String refs = resource("refs.js");
+
+        assertThat(refs).contains(
+                "`${path} was made on ${refAt(after['made-at'])}, after @${r.name}'s point, ${refAt(cut)}. `",
+                "+ 'A ref holds only what main held then.'",
+                "`@${r.name} no longer keeps ${path}, though main had it at the point: it was taken out of it.`",
+                "if (who) line.append(` ${who} took it out on ${refAt(x.time)}.`);",
+                // Only an audit reader asks the feed, and the match holds with or without item 169's subject filter.
+                "if (!r.id || !auditOpen(c)) return null;",
+                "api.auditFeed(c, {type: 'nuna.catalog.ref', subject: r.id, pageToken})",
+                "x.data.ref === r.id",
+                "=== 'OBJECT_REMOVED' && (x.data.tables || []).some(t => t.id === objectId)");
+        // The fourth state is judged before "made after the point", so a table taken out never reads as made after.
+        assertThat(refs.indexOf("it was taken out of it.")).isLessThan(refs.indexOf("A ref holds only what main held then."));
+        assertThat(resource("table.js")).contains("if (error.status !== 404 || error.type !== 'NoSuchTableException') return null;",
+                "|| await missingLoad(error, target, title)");
+    }
+
     /** The ref line takes no list since the point comes from {@code cut-at} (Catalog UI Expert's review of 168). */
     @Test
     void theRefLineTakesOnlyTheRefs() throws IOException {

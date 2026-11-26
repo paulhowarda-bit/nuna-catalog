@@ -1669,6 +1669,71 @@ class ConsoleBrowserTest {
         }
     }
 
+    /**
+     * A table's page when main or the ref read has no such table (backlog 170; Atelier, 2026-11-25): dropped on main
+     * and read on main, with the refs that keep it or none; dropped on main and read through a tag that keeps it;
+     * made on main after the tag's point; and taken out of the tag, which is not "made after the point".
+     */
+    @Test
+    void aTableDroppedOnMainMadeAfterThePointOrTakenOutOfARefSaysWhich() {
+        String ns = "kept_" + Api.suffix();
+        String tag = "eod_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("fills")), 200);
+        String fills = api.id(ns, "tables", "fills");
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("late")), 200);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/orders", null), 204);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/fills", null), 204);
+            expect(api.manage("POST", "/objects/" + fills + "/refs/remove", "{\"refs\":[\"" + tag + "\"]}",
+                    AUTH, api.steward()), 200);
+
+            signIn(tester());
+            // Dropped on main, read on main: the 404, who dropped it and when, and the tag that still keeps it.
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null));
+            WebElement dropped = browser.await(By.id("dropped-on-main"));
+            assertThat(textContent(dropped)).contains("dropped it on", "Main has no such table.",
+                    "A ref made before then still keeps it: @" + tag + ".");
+            dropped.findElement(By.cssSelector("[data-kept-ref='" + tag + "']"));
+            dropped.findElement(By.cssSelector("[data-kept-acts]"));
+            assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row [data-dropped-pill]"))))
+                    .isEqualTo("Dropped on main");
+            assertThat(driver.findElements(By.cssSelector("#table-page .refusal"))).isNotEmpty();
+
+            // Dropped on main, and taken out of the tag: no branch or tag keeps it.
+            browser.open("/ui/#" + at("table", List.of(ns), "fills", null));
+            browser.awaitText(By.id("dropped-on-main"), "No branch or tag keeps it. Cleanup can purge it and delete its files.");
+
+            // Dropped on main, read through the tag, which keeps it.
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + tag);
+            WebElement kept = browser.await(By.id("dropped-through-ref"));
+            assertThat(textContent(kept)).contains(" dropped " + ns + ".orders on main on ",
+                    "@" + tag + " was made before then, so it still reads the table as it was; main answers 404 for it."
+                            + " It stays readable here, and its files stay, until it is taken out of every branch and"
+                            + " tag that keeps it.");
+            assertThat(kept.findElement(By.cssSelector("a[data-kept-link]")).getDomAttribute("href"))
+                    .contains("tab=access", "r=" + tag);
+            assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row [data-dropped-pill]"))))
+                    .startsWith("Dropped on main ");
+
+            // Made on main after the tag's point.
+            browser.open("/ui/#" + at("table", List.of(ns), "late", null) + "&r=" + tag);
+            assertThat(textContent(browser.await(By.id("made-after")))).startsWith(ns + ".late was made on ")
+                    .contains(", after @" + tag + "'s point, ")
+                    .endsWith("A ref holds only what main held then.");
+
+            // Main had it at the point, and it was taken out of the tag: the fourth state.
+            browser.open("/ui/#" + at("table", List.of(ns), "fills", null) + "&r=" + tag);
+            assertThat(textContent(browser.await(By.id("taken-out")))).startsWith("@" + tag + " no longer keeps " + ns
+                    + ".fills, though main had it at the point: it was taken out of it.");
+            assertThat(driver.findElements(By.id("made-after"))).isEmpty();
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+        }
+    }
+
     // ---- fixtures ----
 
     /** The v2 table: three schemas, a second partition spec and sort order, three snapshots, a tag and a branch. */

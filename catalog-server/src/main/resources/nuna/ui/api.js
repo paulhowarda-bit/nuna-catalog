@@ -412,6 +412,16 @@ export const auditChain = (run, number, eventId) =>
 const refsPath = catalog => `/management/v1/catalogs/${enc(catalog)}/refs`;
 
 /**
+ * Which refs keep each table or view at a path, live or dropped, newest first (item 170): {objects}, each with its
+ * state, when it was made and dropped, who dropped it (for an audit reader), its refs and `may.remove`.
+ */
+export const objectRefs = target => call(`/management/v1/catalogs/${enc(target.catalog)}/namespaces/${ns(target.namespace)}`
+  + `/objects/${enc(target.name)}/refs`);
+
+/** {@link objectRefs} for the one table or view an id names, until it is purged. */
+export const objectRefsById = (catalog, id) => call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}/refs`);
+
+/**
  * A catalog's refs, every page: {refs, limits, may}. Each branch has its changed-count; `limits` are nuna.refs.*; `may`
  * says whether the caller may make, renew, delete and merge them. With `expired`, a branch past its expiry that still
  * holds its name is listed too, marked expired.

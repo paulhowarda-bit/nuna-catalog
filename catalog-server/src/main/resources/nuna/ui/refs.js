@@ -300,6 +300,125 @@ export async function readingRef(c, name) {
   }
 }
 
+// ---- a table dropped on main, or not in a ref's cut (item 170; Atelier, 2026-11-25) ----
+
+/** The tables and views at a target's path, live or dropped, newest first, with the refs that keep each; null if unread. */
+async function keptAt(target) {
+  try {
+    return (await api.objectRefs(target)).objects || [];
+  } catch {
+    return null;
+  }
+}
+
+const sameRef = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+const keeps = (o, name) => (o.refs || []).some(x => sameRef(x.name, name));
+const pathOf = target => [...target.namespace, target.name].join('.');
+
+/** The pill beside the name, once however often the page draws its body. */
+function droppedPill(title, text) {
+  const old = $('[data-dropped-pill]', title);
+  const mark = pill('bad', text);
+  mark.dataset.droppedPill = '';
+  if (old) old.replaceWith(mark);
+  else title.append(mark);
+}
+
+/** The refs that keep a dropped object, each a link to its page, joined by commas. */
+function keptChips(c, o) {
+  return (o.refs || []).flatMap((x, i) => [i ? ', ' : null, h('a', {href: refHref(c, x.name), 'data-kept-ref': x.name},
+    cref(x, {warn: !!x.expired}))]);
+}
+
+/**
+ * Who took an object out of a ref, from the ref's own `nuna.catalog.ref` records, for a caller who reads the feed: null
+ * otherwise, or when no newest record says so. The feed's subject filter (item 169) narrows the records to the ref's;
+ * a feed without it lists every ref's, which the match below sorts the same, over fewer of them.
+ */
+async function takenOutBy(c, r, objectId) {
+  if (!r.id || !auditOpen(c)) return null;
+  let pageToken = null;
+  try {
+    for (let i = 0; i < 4; i++) {
+      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', subject: r.id, pageToken});
+      const hit = (answer.records || []).find(x => x.data && x.data.ref === r.id
+        && String(x.data.action || '').toUpperCase() === 'OBJECT_REMOVED' && (x.data.tables || []).some(t => t.id === objectId));
+      if (hit) return hit;
+      pageToken = answer['next-page-token'];
+      if (!pageToken) break;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * What the table page says after the catalog's 404 for a table, or null to show the 404 alone. On main, a table
+ * dropped there: who dropped it and when, and which refs still keep it, with a place for item 279's control. Through
+ * a ref: a table main made after the ref's point, or one main had then that has since been taken out of the ref.
+ */
+export async function missingWords(target, title) {
+  const objects = await keptAt(target);
+  if (!objects || !objects.length) return null;
+  const c = target.catalog;
+  const path = pathOf(target);
+  if (!target.ref) {
+    const o = objects.find(x => x.state !== 'active');
+    if (!o) return null;
+    droppedPill(title, 'Dropped on main');
+    const who = o['dropped-by'] && o['dropped-by'].principal;
+    const kept = (o.refs || []).length;
+    return h('div', {class: 'notice kept-note', id: 'dropped-on-main', 'data-kept': 'dropped-main'}, icon('info'), h('div', null,
+      h('p', null, who ? `${who} dropped it on ${refAt(o['dropped-at'])}.` : `It was dropped on ${refAt(o['dropped-at'])}.`,
+        ' Main has no such table.', kept ? [' A ref made before then still keeps it: ', ...keptChips(c, o), '.']
+          : ' No branch or tag keeps it. Cleanup can purge it and delete its files.'),
+      // Item 279 draws here its control to take the table out of these refs (may-remove) or its steward line.
+      kept ? h('div', {class: 'kept-acts', 'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)}) : null));
+  }
+  const r = await readingRef(c, target.ref);
+  const cut = r && cutOf(r);
+  if (!cut) return null;
+  // Main's object at the point: made by then, and live or dropped only after it.
+  const then = objects.find(x => x['made-at'] && ms(x['made-at']) <= ms(cut)
+    && (x.state === 'active' || ms(x['dropped-at']) > ms(cut)));
+  if (then && !keeps(then, r.name)) {
+    const line = h('p', null, `@${r.name} no longer keeps ${path}, though main had it at the point: it was taken out of it.`);
+    const note = h('div', {class: 'notice kept-note', id: 'taken-out', 'data-kept': 'taken-out'}, icon('info'), h('div', null, line));
+    takenOutBy(c, r, then.id).then(x => {
+      const who = x && (x.principal || ((x.data || {}).actor || {}).principal);
+      if (who) line.append(` ${who} took it out on ${refAt(x.time)}.`);
+    });
+    return note;
+  }
+  const after = objects.find(x => x['made-at'] && ms(x['made-at']) > ms(cut));
+  if (!after) return null;
+  return h('div', {class: 'notice kept-note', id: 'made-after', 'data-kept': 'made-after'}, icon('info'),
+    h('span', null, `${path} was made on ${refAt(after['made-at'])}, after @${r.name}'s point, ${refAt(cut)}. `
+      + 'A ref holds only what main held then.'));
+}
+
+/**
+ * A table read through a ref that main has dropped since (item 170): the pill beside its name and what the page says
+ * under the band, or null when main still has it or this ref does not keep it.
+ */
+export async function droppedThroughRef(target, title) {
+  if (!target.ref) return null;
+  const objects = await keptAt(target);
+  if (!objects || objects.some(x => x.state === 'active')) return null;
+  const o = objects.find(x => keeps(x, target.ref));
+  if (!o) return null;
+  droppedPill(title, `Dropped on main ${dayMon(o['dropped-at'])}`);
+  const who = o['dropped-by'] && o['dropped-by'].principal;
+  const path = pathOf(target);
+  const t = refAt(o['dropped-at']);
+  return h('div', {class: 'notice kept-note', id: 'dropped-through-ref', 'data-kept': 'dropped-ref'}, icon('info'), h('span', null,
+    who ? `${who} dropped ${path} on main on ${t}.` : `${path} was dropped on main on ${t}.`,
+    ` @${target.ref} was made before then, so it still reads the table as it was; main answers 404 for it.`,
+    ' It stays readable here, and its files stay, until it is ', h('a', {href: objectHref(target, 'access'), 'data-kept-link': ''},
+      'taken out of'), ' every branch and tag that keeps it.'));
+}
+
 // ---- audit words for a ref's record ----
 
 /** A nuna.catalog.ref record in words (6.5). */
