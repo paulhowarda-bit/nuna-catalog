@@ -19,7 +19,9 @@ together.
   file:line in `backlog/170.md`, "Done, 2026-11-25".
 - Fast tests: `RefRoutesTest` +3, `AuditDropsTest` (3), `ConsoleRefWordsTest` +3. Heavy browser test written and
   compiled, not run. Six bites in `bites/D33/`, recorded and checked with `git apply --check`, not run.
-- Item 169's subject filter is not on `main`; the page asks for it and matches records itself, so it works without it.
+- Who took a table out of a ref comes from item 169's feed filter (`subject=<table id>`, built on its branch at
+  a29aa46f, not landed, not merged here); the page matches each record itself, so without the filter it still shows
+  the actor when the record is among the newest, and leaves the sentence out when the feed refuses.
 
 ## Not checked
 The heavy `ConsoleBrowserTest` cases (the overnight run takes them); the recorded bites against their tests; the
