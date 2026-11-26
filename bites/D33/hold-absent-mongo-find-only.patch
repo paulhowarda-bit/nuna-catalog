@@ -1,0 +1,23 @@
+Breaks: a hold of no pointer only reads that no document is there, which takes no lock and writes nothing, so a create of the key lands before the hold's COMMIT (MongoDB, backlog 278).
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest#heldAbsenceAndACreateTakeTurns
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java
+index d89b0f07..34d86c32 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java
+@@ -187,14 +187,7 @@ final class Pointers {
+      * No document is left, and no reader sees the placeholder.
+      */
+     private static boolean holdAbsent(Tx tx, PointerKey key) {
+-        MongoCollection<BsonDocument> pointers = tx.collection(POINTER);
+-        boolean absent = pointers.updateOne(tx.session, keyFilter(key),
+-                new BsonDocument("$setOnInsert", new BsonDocument("placeholder", BsonBoolean.TRUE)),
+-                new UpdateOptions().upsert(true)).getUpsertedId() != null;
+-        if (absent) {
+-            pointers.deleteOne(tx.session, keyFilter(key));
+-        }
+-        return absent;
++        return tx.collection(POINTER).find(tx.session, keyFilter(key)).first() == null;
+     }
+ 
+     private static BsonDocument expectedFilter(PointerKey key, Pointer expected) {
