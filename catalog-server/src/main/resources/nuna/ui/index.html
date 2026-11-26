@@ -44,6 +44,7 @@
   <symbol id="i-key" viewBox="0 0 16 16"><circle cx="5" cy="8" r="3"/><path d="M8 8h6.5M12.5 8v2.5"/></symbol>
   <symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></symbol>
   <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13 9.5A5.5 5.5 0 1 1 6.5 3a4.5 4.5 0 0 0 6.5 6.5z"/></symbol>
+  <symbol id="i-auto" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></symbol>
 </svg>
 <a class="skip" href="#slot">Skip to the page</a>
 <div class="app" id="app">
@@ -56,12 +57,12 @@
         <div class="menu" id="cat-menu" role="menu" aria-label="Catalogs" hidden></div>
       </div>
       <div class="reading-slot" id="reading-slot"></div>
-      <button class="nc-go" type="button" data-act="goto"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span>Go to a path</span><kbd>/</kbd></button>
+      <button class="nc-go" type="button" data-act="goto" aria-keyshortcuts="/"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span>Go to a path</span><kbd aria-hidden="true">/</kbd></button>
       <span class="nc-spacer"></span>
       <button class="btn ghost sm nc-go-sm" type="button" aria-label="Go to a path" data-act="goto"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></button>
       <span class="nc-who" id="who"><span class="avatar" data-initials></span><span class="who-text" data-who></span></span>
-      <span class="seg" role="group" aria-label="Theme"><button type="button" aria-pressed="false" data-theme-pick="light"><svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg>Light</button><button type="button" aria-pressed="false" data-theme-pick="dark"><svg class="ic" aria-hidden="true"><use href="#i-moon"/></svg>Dark</button><button type="button" aria-pressed="true" data-theme-pick="auto">Auto</button></span>
-      <button class="btn ghost sm signout" id="sign-out" type="button" data-act="signout"><svg class="ic" aria-hidden="true"><use href="#i-ext"/></svg>Sign out</button>
+      <span class="seg" role="group" aria-label="Theme"><button type="button" aria-pressed="false" data-theme-pick="light" title="Light"><svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg><span class="tw">Light</span></button><button type="button" aria-pressed="false" data-theme-pick="dark" title="Dark"><svg class="ic" aria-hidden="true"><use href="#i-moon"/></svg><span class="tw">Dark</span></button><button type="button" aria-pressed="true" data-theme-pick="auto" title="Auto: matches your system setting"><svg class="ic ic-auto" aria-hidden="true"><use href="#i-auto"/></svg><span class="tw">Auto</span></button></span>
+      <button class="btn ghost sm signout" id="sign-out" type="button" data-act="signout"><svg class="ic" aria-hidden="true"><use href="#i-ext"/></svg><span class="tw">Sign out</span></button>
     </header>
     <nav class="nc-nav" id="nav" aria-label="Console">
       <div class="nav-in">
