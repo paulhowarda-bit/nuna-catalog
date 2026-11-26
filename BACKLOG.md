@@ -2190,3 +2190,4 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [291](backlog/291.md) | Heavy tests on Podman: a Docker call made after 10 s without one fails, since Podman's API closes idle connections and Testcontainers reuses them (TwoIssuersTest) | done | 2026-11-26 |
 | [292](backlog/292.md) | GitHub's push protection refuses the openssl pkcs8 command's argument order | done | 2026-11-26 |
 | [293](backlog/293.md) | The CDC leg and CloudBeaver keep their data on volumes: cdc stop and down pause the leg, the next cdc carries on, cdc reset starts it anew | done | 2026-11-26 |
+| [294](backlog/294.md) | kind's node caps every container at 307 tasks: SingleStore's pipelines, and the JVMs, run out of threads | done | 2026-11-26 |
