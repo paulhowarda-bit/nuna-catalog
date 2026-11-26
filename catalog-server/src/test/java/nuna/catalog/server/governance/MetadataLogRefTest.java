@@ -390,7 +390,8 @@ class MetadataLogRefTest {
     private Ref ref(String name, Ref.Kind kind, Ref from) {
         return new Ref(catalog.id(), UUID.randomUUID(), new Name(name, name), kind, NOW.minus(Duration.ofDays(1)),
                 "bea", Optional.ofNullable(from).map(Ref::id), from == null ? Ref.MAIN : from.name().display(),
-                kind == Ref.Kind.BRANCH ? Optional.of(NOW.plus(Duration.ofDays(29))) : Optional.empty());
+                kind == Ref.Kind.BRANCH ? Optional.of(NOW.plus(Duration.ofDays(29))) : Optional.empty(),
+                Optional.empty());
     }
 
     /** Versions {@code from} to {@code to} of one pointer, each at the location {@code <who>-<version>}. */

@@ -284,6 +284,7 @@ final class MongoRefs {
                 .append("createdBy", new BsonString(ref.createdBy()))
                 .append("fromRef", ref.fromRef().<BsonValue>map(Docs::uuid).orElse(BsonNull.VALUE))
                 .append("fromName", new BsonString(ref.fromName()))
+                .append("description", ref.description().<BsonValue>map(BsonString::new).orElse(BsonNull.VALUE))
                 .append("clock", tx.clock()));
         return WriteResult.APPLIED;
     }
@@ -645,7 +646,14 @@ final class MongoRefs {
                 Ref.Kind.valueOf(doc.getString("kind").getValue()), instant(doc.get("createdAt")),
                 doc.getString("createdBy").getValue(),
                 fromRef == null || fromRef.isNull() ? Optional.empty() : Optional.of(uuid(fromRef)),
-                doc.getString("fromName").getValue(), optionalInstant(doc, "expiresAt"));
+                doc.getString("fromName").getValue(), optionalInstant(doc, "expiresAt"), description(doc));
+    }
+
+    /** The ref's description (backlog 167): none when the field is null, or absent from a ref made before it. */
+    private static Optional<String> description(BsonDocument doc) {
+        BsonValue description = doc.get("description");
+        return description == null || description.isNull() ? Optional.empty()
+                : Optional.of(description.asString().getValue());
     }
 
     /** The version, metadata file and SHA-256 of a pointer, or of a table's or view's cut entry. */

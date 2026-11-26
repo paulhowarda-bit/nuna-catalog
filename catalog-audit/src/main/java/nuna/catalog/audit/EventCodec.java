@@ -19,8 +19,9 @@ import tools.jackson.databind.node.ObjectNode;
  * bytes go to the outbox, to Kafka and to the archive.
  *
  * <p>Reading is strict: a payload must carry every field of its schema version and nothing else,
- * and the envelope must agree with it. A type's current version and the one before it are read; a payload of the one
- * before reads as the current one with the fields it lacks null ({@link EventType}). The envelope may carry more attributes than these; the log's records carry
+ * and the envelope must agree with it. A type whose current version added fields ({@link EventType#added}) is written
+ * in the version before whenever all of them are null, without them, and read in either version, so records any
+ * earlier server wrote or reads stay as they were. The envelope may carry more attributes than these; the log's records carry
  * their {@link LogStamp} as two of them, {@value #RUN} and {@value #SEQUENCE}, which {@link #decode} leaves aside.
  */
 public final class EventCodec {
@@ -148,14 +149,14 @@ public final class EventCodec {
         }
     }
 
-    /** A payload as {@link #encode} writes it under {@code data}: the audit tables keep it so (backlog 113). */
+    /** A payload as {@link #encode} writes it under {@code data}; an audit table row keeps it so. */
     static String payload(CatalogEvent event) {
         return MAPPER.writeValueAsString(payloadTree(event.type(), event.data()));
     }
 
     /**
-     * A payload {@link #payload} wrote, of either version a type has: one with none of the fields the current version
-     * added is of the version before.
+     * A payload {@link #payload} wrote, which keeps no {@code dataschema}: one without the fields the type's current
+     * version added is of the version before.
      *
      * @throws JacksonException if it is not that type's payload
      */
@@ -166,22 +167,25 @@ public final class EventCodec {
         return readPayload(type, data, versionOf(type, data));
     }
 
-    /** The payload, without the fields the type's current version added when all of them are null. */
+    /** The payload, less the fields the type's current version added when every one of them is null. */
     private static ObjectNode payloadTree(EventType type, EventData payload) {
         ObjectNode data = MAPPER.valueToTree(payload);
-        if (!type.added().isEmpty() && type.added().stream().allMatch(f -> data.get(f).isNull())) {
+        if (!type.added().isEmpty() && type.added().stream().allMatch(field -> data.get(field).isNull())) {
             type.added().forEach(data::remove);
         }
         return data;
     }
 
-    /** The version a payload {@link #payloadTree} made is of: the one before when it has none of the added fields. */
+    /** The version of a payload {@link #payloadTree} made: the one before when it holds none of the added fields. */
     private static int versionOf(EventType type, ObjectNode data) {
         return !type.added().isEmpty() && type.added().stream().noneMatch(data::has) ? type.version() - 1
                 : type.version();
     }
 
-    /** A payload of one version: the version before carries none of the added fields, the current one carries them. */
+    /**
+     * A payload of one version. The version before holds none of the added fields, which read as null; the current
+     * one holds them, not every one null (that payload is written as the version before).
+     */
     private static EventData readPayload(EventType type, ObjectNode data, int version) {
         if (version < type.version()) {
             for (String field : type.added()) {
@@ -191,7 +195,7 @@ public final class EventCodec {
                 data.putNull(field);
             }
         } else if (!type.added().isEmpty()
-                && type.added().stream().allMatch(f -> data.has(f) && data.get(f).isNull())) {
+                && type.added().stream().allMatch(field -> data.has(field) && data.get(field).isNull())) {
             throw new IllegalArgumentException(type.dataSchema() + " names " + String.join(" or ", type.added())
                     + "; without them it is version " + (type.version() - 1));
         }

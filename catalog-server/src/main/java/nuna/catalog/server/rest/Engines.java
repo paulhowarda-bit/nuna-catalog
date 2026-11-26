@@ -127,7 +127,7 @@ class Engines implements Merge.Factory {
         }
         RefChange renewed = new RefChange(RefChange.Action.RENEWED, ref.id(), ref.name().display(),
                 RefChange.Kind.BRANCH, new Securable(Securable.Kind.CATALOG, on.catalog().id(), on.catalog().name(),
-                List.of()), ref.fromName(), expiry, List.of(), request.actor());
+                List.of()), ref.fromName(), expiry, null, List.of(), request.actor());
         try {
             store.renewRef(ref.id(), expiry, new Change(UUID.randomUUID(), now, List.of(audit.event(now, renewed)),
                     Optional.empty()));

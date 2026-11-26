@@ -1,8 +1,8 @@
 # 2026-11-25, grants that name a branch (backlog 113)
 
 - A grant of write or modify may name one branch and holds on it alone; a commit on a branch is allowed by such a
-  grant or by one on every ref. Branch grants live in `ref_grant` on every store (PostgreSQL V18, CockroachDB V17,
-  Oracle V19, MongoDB step 15), read with the others through `any_grant`; `grant_record` is unchanged, so a server of
+  grant or by one on every ref. Branch grants live in `ref_grant` on every store (PostgreSQL V19, CockroachDB V18,
+  Oracle V20, MongoDB step 15), read with the others through `any_grant`; `grant_record` is unchanged, so a server of
   the release before works beside a new one. Deleting or merging the branch, dropping its namespace or purging its
   object deletes them.
 - Security finding 11 closed for branch-only writers: their vended credentials read the whole table and write only

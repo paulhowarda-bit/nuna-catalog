@@ -1,0 +1,17 @@
+Breaks: a ref's description may hold line breaks, control characters and bidirectional overrides, so one ref's purpose can break the console's lines or read as other text (backlog 167).
+Module: catalog-server
+Test: RefRoutesTest#aDescriptionPastTheLimitOrNotOneLineOfTextIsRefused
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index d4db2b85..e4861353 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1061,7 +1061,7 @@ class RefRoutes {
+         }
+         int[] points = description.codePoints().toArray();
+         for (int i = 0; i < points.length; i++) {
+-            if (notInALine(points[i])) {
++            if (false && notInALine(points[i])) {
+                 throw CatalogError.badRequest(String.format(Locale.ROOT, "Field description must be one line of plain"
+                         + " text: character %d is U+%04X, a control, line-breaking or bidirectional formatting"
+                         + " character", i + 1, points[i]));

@@ -3,13 +3,13 @@ Module: catalog-server
 Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
-index d8a0986c..7f05d3ae 100644
+index 99c4ac9f..a449753e 100644
 --- a/catalog-server/src/main/resources/nuna/ui/audit.js
 +++ b/catalog-server/src/main/resources/nuna/ui/audit.js
-@@ -234,7 +234,7 @@ function feedPanel(catalog, summary, own) {
+@@ -243,7 +243,7 @@ function feedPanel(catalog, summary, own) {
    const drawChips = () => {
      drawKinds();
-     const n = counted && !st.auditReads ? total(counted) - kindTotal(counted, typesOf('all')) : 0;
+     const n = counted && !st.auditReads && !refName() ? total(counted) - kindTotal(counted, typesOf('all')) : 0;
 -    hidden.textContent = n ? ` · ${plural(n, 'record')} hidden` : '';
 +    hidden.textContent = '';
      chipBox.replaceChildren(...KINDS.map(([k, label]) => chip(k, label)));

@@ -1,0 +1,17 @@
+Breaks: the ref record of a create leaves out the description the ref was made with, so the audit does not keep it (backlog 167).
+Module: catalog-server
+Test: RefRoutesTest#aDescriptionIsKeptOnTheRefShownToEveryReaderAndRecordedOnItsCreation
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index d4db2b85..9b734671 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1031,7 +1031,7 @@ class RefRoutes {
+         // The record of its creation keeps the ref's description (backlog 167); the ref's id ties the others to it.
+         return new RefChange(action, ref.id(), ref.name().display(), ref.kind() == Ref.Kind.BRANCH
+                 ? RefChange.Kind.BRANCH : RefChange.Kind.TAG, catalog, ref.fromName(), expiresAt.orElse(null),
+-                action == RefChange.Action.CREATED ? ref.description().orElse(null) : null, tables, request.actor());
++                null, tables, request.actor());
+     }
+ 
+     /**

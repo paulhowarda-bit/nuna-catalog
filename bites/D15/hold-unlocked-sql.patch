@@ -1,17 +1,16 @@
 Breaks: A held pointer is compared by a plain read and not locked, so it can move before COMMIT.
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest#holdLastsUntilCommit
-
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
-index 32fa4a3..28d76d6 100644
+index 74ce9a5f..bdd9bc18 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
-@@ -84,7 +84,7 @@ final class Pointers {
-             boolean matched = switch (lock) {
+@@ -127,7 +127,7 @@ final class Pointers {
                  case PointerSwap swap when swap.expected().isEmpty() -> insert(connection, swap, batch);
                  case PointerSwap swap -> lockedAt(connection, swap.key(), swap.expected().get());
--                case PointerHold hold -> lockedAt(connection, hold.key(), hold.expected());
-+                case PointerHold hold -> read(connection, hold.key()).filter(p -> p.version() == hold.expected().version()).isPresent();
+                 case PointerHold hold when hold.expected().isEmpty() -> absent(connection, hold.key(), batch);
+-                case PointerHold hold -> lockedAt(connection, hold.key(), hold.expected().get());
++                case PointerHold hold -> read(connection, hold.key()).filter(p -> p.version() == hold.expected().get().version()).isPresent();
              };
              if (!matched) {
                  return Optional.of(new CommitResult.Conflict(lock.key(), read(connection, lock.key())));

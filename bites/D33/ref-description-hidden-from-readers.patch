@@ -1,0 +1,19 @@
+Breaks: a ref's description is shown only to callers holding create, not to everyone who may list or read the catalog's refs (backlog 167).
+Module: catalog-server
+Test: RefRoutesTest#aDescriptionIsKeptOnTheRefShownToEveryReaderAndRecordedOnItsCreation
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index d4db2b85..f32dae12 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1114,7 +1114,9 @@ class RefRoutes {
+             node.put("created-by", ref.createdBy());
+         }
+         // Read by anyone who may list or read the catalog's refs (item 106's rule), unlike created-by.
+-        ref.description().ifPresent(description -> node.put("description", description));
++        if (withCreator) {
++            ref.description().ifPresent(description -> node.put("description", description));
++        }
+         ref.expiresAt().ifPresent(expiry -> {
+             node.put("expires-at", expiry.toString());
+             node.put("max-expires-at", settings.lastExpiry(ref.createdAt()).toString());

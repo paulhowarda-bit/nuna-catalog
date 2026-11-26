@@ -212,7 +212,87 @@ class EventCodecTest {
         assertThatThrownBy(() -> EventCodec.decode(mutated)).isInstanceOf(IllegalArgumentException.class);
     }
 
+    /** A ref record with no description: schema version 1, as before version 2 added {@code description}. */
+    private static final String REF_V1 = "{\"specversion\":\"1.0\",\"id\":\"00000000-e0e0-e0e0-0000-000000000017\","
+            + "\"source\":\"urn:nuna:deployment:test\",\"type\":\"nuna.catalog.ref\",\"datacontenttype\":"
+            + "\"application/json\",\"dataschema\":\"urn:nuna:catalog:event:ref:1\",\"subject\":"
+            + "\"f0000000-0000-0000-0000-000000000001\",\"time\":\"2026-11-07T10:15:30.123Z\",\"partitionkey\":"
+            + "\"f0000000-0000-0000-0000-000000000001\",\"data\":{\"action\":\"MERGED\",\"ref\":"
+            + "\"f0000000-0000-0000-0000-000000000001\",\"name\":\"dév\",\"kind\":\"BRANCH\",\"catalog\":{\"kind\":"
+            + "\"CATALOG\",\"id\":\"00000000-0000-0000-0000-00000000000c\",\"catalog\":\"Trading\",\"path\":[]},"
+            + "\"from\":\"main\",\"expiresAt\":\"2026-12-07T10:15:30.123Z\",\"tables\":[{\"kind\":\"TABLE\",\"id\":"
+            + "\"7f0c2a52-9d0e-4a8b-9c61-2b1e6f0d4a11\",\"catalog\":\"Trading\",\"path\":[\"Équités\",\"Orders\"]}],"
+            + "\"actor\":{\"principal\":\"svc-trino\",\"endUser\":\"alice@example.com\",\"engine\":\"trino-shared\","
+            + "\"requestId\":\"req-0001\"}}}";
+
+        /** The sample ref record, made with a description: schema version 2 (backlog 167). */
+    private static CatalogEvent described(String description) {
+        CatalogEvent sample = SampleEvents.events().stream().filter(e -> e.type() == EventType.REF).findFirst()
+                .orElseThrow();
+        RefChange ref = (RefChange) sample.data();
+        return new CatalogEvent(sample.id(), sample.source(), sample.time(), new RefChange(ref.action(), ref.ref(),
+                ref.name(), ref.kind(), ref.catalog(), ref.from(), ref.expiresAt(), description, ref.tables(),
+                ref.actor()));
+    }
+
     @Test
+    void aRefRecordWithNoDescriptionIsWrittenAndReadAsVersion1() {
+        CatalogEvent sample = SampleEvents.events().stream().filter(e -> e.type() == EventType.REF).findFirst()
+                .orElseThrow();
+
+        assertThat(new String(EventCodec.encode(sample), UTF_8)).as("as a server of the previous release wrote it")
+                .isEqualTo(REF_V1);
+        CatalogEvent decoded = EventCodec.decode(REF_V1.getBytes(UTF_8));
+        assertThat(decoded).isEqualTo(sample);
+        assertThat(((RefChange) decoded.data()).description()).isNull();
+    }
+
+    @Test
+    void aRefRecordWithADescriptionIsWrittenAndReadAsVersion2() {
+        CatalogEvent event = described("before the <b>November</b> restatement");
+
+        byte[] encoded = EventCodec.encode(event);
+
+        JsonNode envelope = EventCodec.MAPPER.readTree(encoded);
+        assertThat(envelope.get("dataschema").asString()).isEqualTo("urn:nuna:catalog:event:ref:2");
+        assertThat(envelope.get("data").get("description").asString()).isEqualTo("before the <b>November</b> restatement");
+        assertThat(EventCodec.decode(encoded)).isEqualTo(event);
+    }
+
+    @Test
+    void aRefRecordOfVersion1CarryingADescriptionIsRejected() {
+        ObjectNode envelope = (ObjectNode) EventCodec.MAPPER.readTree(REF_V1);
+        ((ObjectNode) envelope.get("data")).put("description", "before the restatement");
+        byte[] mutated = EventCodec.MAPPER.writeValueAsBytes(envelope);
+        assertThatThrownBy(() -> EventCodec.decode(mutated)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aRefRecordOfVersion2WithoutADescriptionIsRejected() {
+        ObjectNode absent = (ObjectNode) EventCodec.MAPPER.readTree(REF_V1);
+        absent.put("dataschema", "urn:nuna:catalog:event:ref:2");
+        ObjectNode none = absent.deepCopy();
+        ((ObjectNode) none.get("data")).putNull("description");
+        for (ObjectNode envelope : List.of(absent, none)) {
+            byte[] mutated = EventCodec.MAPPER.writeValueAsBytes(envelope);
+            assertThatThrownBy(() -> EventCodec.decode(mutated)).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void anAuditRowOfARefRecordReadsInEitherVersion() {
+        CatalogEvent plain = EventCodec.decode(REF_V1.getBytes(UTF_8));
+        CatalogEvent event = described("before the restatement");
+
+        AuditRow plainRow = AuditRows.of(plain, 0, 0);
+        AuditRow describedRow = AuditRows.of(event, 0, 1);
+
+        assertThat(EventCodec.MAPPER.readTree(plainRow.data()).has("description")).isFalse();
+        assertThat(AuditRows.event(plainRow)).isEqualTo(plain);
+        assertThat(AuditRows.event(describedRow)).isEqualTo(event);
+    }
+
+@Test
     void nullPrimitiveIsRejected() {
         byte[] mutated = mutateData(SampleEvents.events().get(0),
                 data -> ((ObjectNode) data.get("after")).putNull("version"));

@@ -324,6 +324,89 @@ public abstract class CommitSuite {
         assertThat(store.findCommit(batch.commitId(), keys.get(0))).isEqualTo(CommitLookup.NOT_COMMITTED);
     }
 
+    @Test
+    @DisplayName("2 Atomicity: a hold of no pointer is compared and leaves none; once a pointer is there, the same hold is a conflict and writes nothing (backlog 278)")
+    void heldAbsenceIsComparedNotWritten() {
+        List<PointerKey> keys = sortedKeys(3);
+        Pointer first = commitNew(keys.get(0), "first");
+        Pointer third = commitNew(keys.get(2), "third");
+        // The held key sorts between the two swaps.
+        CommitBatch batch = holding(fullBatch(
+                        swap(keys.get(0), Optional.of(first), pointer("first-new", 2)),
+                        swap(keys.get(2), Optional.of(third), pointer("third-new", 2))),
+                new PointerHold(keys.get(1), Optional.empty()));
+
+        assertThat(store.commit(batch)).isEqualTo(new CommitResult.Committed(batch.commitId()));
+
+        assertThat(underTest.writtenRows(batch)).isEqualTo(WrittenRows.allOf(batch));
+        assertThat(store.readPointer(keys.get(1))).as("the hold leaves no pointer").isEmpty();
+        assertThat(underTest.journalVersions(keys.get(1))).isEmpty();
+        Pointer created = commitNew(keys.get(1), "created");
+        assertThat(created.version()).as("a create after the hold finds the key free").isEqualTo(1);
+
+        CommitBatch stale = holding(fullBatch(advance(keys.get(0), Optional.of(batch.swaps().get(0).next()), "first-stale")),
+                new PointerHold(keys.get(1), Optional.empty()));
+        assertThat(store.commit(stale)).isEqualTo(new CommitResult.Conflict(keys.get(1), Optional.of(created)));
+        assertThat(underTest.writtenRows(stale)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.readPointer(keys.get(0))).contains(batch.swaps().get(0).next());
+        assertThat(store.readPointer(keys.get(1))).contains(created);
+    }
+
+    /**
+     * A hold of no pointer takes the key as a create does, so a create of the key and the hold take turns: a create
+     * held open before COMMIT keeps the hold waiting, which then finds the pointer and loses; a hold held open keeps
+     * the create waiting, which then finds the key free (backlog 278).
+     */
+    @Tag("heavy")
+    @Test
+    @DisplayName("2 Atomicity: a hold of no pointer and a create of that key take turns, so a pointer created before the hold's COMMIT fails the hold")
+    void heldAbsenceAndACreateTakeTurns() throws Exception {
+        List<PointerKey> keys = sortedKeys(2);
+        Pointer a = commitNew(keys.get(0), "a");
+        PointerKey absent = keys.get(1);
+
+        CommitBatch create = batch(advance(absent, Optional.empty(), "created-first"));
+        CommitBatch hold = holding(batch(advance(keys.get(0), Optional.of(a), "held-after")),
+                new PointerHold(absent, Optional.empty()));
+        assertThat(heldOpenThenRaced(create, hold)).as("the create, then the hold")
+                .containsExactly(new CommitResult.Committed(create.commitId()),
+                        new CommitResult.Conflict(absent, Optional.of(next(create))));
+        assertThat(store.readPointer(keys.get(0))).contains(a);
+
+        PointerKey stillAbsent = sortedKeys(1).getFirst();
+        CommitBatch holdFirst = holding(batch(advance(keys.get(0), Optional.of(a), "held-first")),
+                new PointerHold(stillAbsent, Optional.empty()));
+        CommitBatch createAfter = batch(advance(stillAbsent, Optional.empty(), "created-after"));
+        assertThat(heldOpenThenRaced(holdFirst, createAfter)).as("the hold, then the create")
+                .containsExactly(new CommitResult.Committed(holdFirst.commitId()),
+                        new CommitResult.Committed(createAfter.commitId()));
+        assertThat(store.readPointer(keys.get(0))).contains(next(holdFirst));
+        assertThat(store.readPointer(stillAbsent)).contains(next(createAfter));
+        assertThat(underTest.journalVersions(stillAbsent)).containsExactly(1L);
+    }
+
+    /**
+     * Commits {@code open} and holds it just before its COMMIT, then commits {@code racing}, which must wait for it;
+     * releases {@code open} and gives both answers, in that order.
+     */
+    private List<CommitResult> heldOpenThenRaced(CommitBatch open, CommitBatch racing) throws Exception {
+        CountDownLatch atCommit = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CommitStore held = underTest.store(before(open, () -> {
+            atCommit.countDown();
+            awaitLatch(release);
+        }));
+        CompletableFuture<CommitResult> openResult = CompletableFuture.supplyAsync(() -> held.commit(open), background);
+        assertThat(atCommit.await(60, TimeUnit.SECONDS)).as("the first batch reached COMMIT").isTrue();
+
+        CompletableFuture<CommitResult> racingResult = CompletableFuture.supplyAsync(() -> store.commit(racing),
+                background);
+        Thread.sleep(1_500);
+        assertThat(racingResult).as("the second batch must wait while the first holds the key").isNotDone();
+        release.countDown();
+        return List.of(openResult.get(60, TimeUnit.SECONDS), racingResult.get(60, TimeUnit.SECONDS));
+    }
+
     /**
      * Write skew: each batch holds the pointer the other swaps, both from the same reads. Held only at the
      * comparison, both would commit. Held to COMMIT, the second waits for the first, then finds the pointer

@@ -2,13 +2,16 @@ package nuna.catalog.audit;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
  * Maps each audit record to its row of the queryable audit table (D23, amended 2026-11-20): every event type says
  * who made the request, what it was about, and the operation, privilege and reason where it has them. Everything
  * else stays in the row's {@code data}, the payload as JSON, so a new payload version needs no new column. A record
  * from the log also carries where it was logged ({@link LogStamp}), in {@code log_run} and {@code log_seq} (backlog
- * 272), which place it in its run's archive chain.
+ * 272), which place it in its run's archive chain. A commit, a read and a ref record name the catalog ref in
+ * {@code branch}, and a ref record lists its ref and its tables in {@code subject_ids} (backlog 169), so the feed
+ * filters by them without reading payloads.
  */
 public final class AuditRows {
 
@@ -75,6 +78,18 @@ public final class AuditRows {
         };
         Actor actor = parts.actor();
         Securable object = parts.object();
+        // The ref a record went through or is about, and what a ref record is about besides its catalog (backlog 169);
+        // a grant's branch, when it names one (backlog 113).
+        String branch = switch (event.data()) {
+            case Commit e -> e.branch();
+            case ObjectRead e -> e.branch();
+            case RefChange e -> e.name();
+            case GrantChange e -> e.branch();
+            default -> null;
+        };
+        List<String> subjectIds = event.data() instanceof RefChange e
+                ? Stream.concat(Stream.of(e.ref().toString()), e.tables().stream().map(t -> t.id().toString())).toList()
+                : null;
         return new AuditRow(event.id().toString(), event.time(), event.type().typeName(), event.source().toString(),
                 actor == null ? null : actor.principal(), actor == null ? null : actor.endUser(),
                 actor == null ? null : actor.engine(), parts.requestId(),
@@ -82,7 +97,7 @@ public final class AuditRows {
                 object == null ? null : object.id().toString(), object == null ? null : object.path(),
                 parts.operation(), parts.privilege(), parts.reason(), EventCodec.payload(event),
                 partition, offset, stamp.map(s -> s.run().toString()).orElse(null),
-                stamp.map(LogStamp::sequence).orElse(null));
+                stamp.map(LogStamp::sequence).orElse(null), branch, subjectIds);
     }
 
     /**

@@ -12,10 +12,10 @@ import java.util.List;
  * run end is the last record it writes to the log (backlog 262).
  *
  * <p>A type whose current version added fields to the one before still writes the one before whenever all of those
- * fields would be null, so a record any earlier server could have written is written as it wrote it, and a reader
- * that knows only the earlier version reads it. A grant on every ref is a version 1 grant; one that names a branch,
- * version 2. A credential that writes its whole table is a version 1 credential issue; one that writes one branch's
- * prefix only, version 2 (backlog 113).
+ * fields would be null, so a reader that knows only the earlier version reads every record it could have read before.
+ * A ref record made with a description is version 2; every other ref record, version 1 (backlog 167). A grant that
+ * names a branch is version 2; a grant on every ref, version 1. A credential that writes one branch's prefix only is
+ * version 2; one that writes its whole table, version 1 (backlog 113).
  */
 public enum EventType {
     COMMIT("commit", 1, Commit.class),
@@ -40,7 +40,8 @@ public enum EventType {
     PURGE_CLAIM("purge-claim", 1, PurgeClaim.class),
     FILE_DELETION("file-deletion", 1, FileDeletion.class),
     MAINTENANCE_EXEMPTION("maintenance-exemption", 1, MaintenanceExemption.class),
-    REF("ref", 1, RefChange.class),
+    /** Version 2 adds {@code description}, the purpose a ref was made with (backlog 167). */
+    REF("ref", 2, RefChange.class, "description"),
     ROW_COLUMN_RULE_CHANGE("row-column-rule", 1, RowColumnRuleChange.class),
     RUN_END("run-end", 1, RunEnd.class);
 

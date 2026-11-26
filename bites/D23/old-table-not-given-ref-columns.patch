@@ -1,0 +1,17 @@
+Breaks: a table made before the branch and subject_ids columns is not given them, so the writer stops on it (backlog 169).
+Module: catalog-audit-tables
+Test: EventsReaderTest#aTableMadeBeforeTheRefColumnsIsGivenThemAndItsEarlierRowsMatchNoRefOrSubject
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+index 33b483d4..06b038d0 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+@@ -146,7 +146,7 @@ final class EventsTable {
+                     .withProperty(TableProperties.FORMAT_VERSION, "2").create();
+         }
+         Table opened = table;
+-        List<Types.NestedField> absent = ADDED.stream().filter(c -> opened.schema().findField(c.name()) == null)
++        List<Types.NestedField> absent = ADDED.stream().limit(2).filter(c -> opened.schema().findField(c.name()) == null)
+                 .toList();
+         if (!absent.isEmpty()) {
+             UpdateSchema update = table.updateSchema();

@@ -39,9 +39,9 @@ class RefSettingsTest {
     @Test
     void aBranchIsExpiringWithinTheWarningOfItsExpiryUntilItExpires() {
         Ref branch = new Ref(UUID.randomUUID(), UUID.randomUUID(), new Name("dev", "dev"), Ref.Kind.BRANCH, MADE,
-                "bea", Optional.empty(), Ref.MAIN, Optional.of(MADE.plus(DAY.multipliedBy(30))));
+                "bea", Optional.empty(), Ref.MAIN, Optional.of(MADE.plus(DAY.multipliedBy(30))), Optional.empty());
         Ref tag = new Ref(UUID.randomUUID(), UUID.randomUUID(), new Name("v1", "v1"), Ref.Kind.TAG, MADE, "bea",
-                Optional.empty(), Ref.MAIN, Optional.empty());
+                Optional.empty(), Ref.MAIN, Optional.empty(), Optional.empty());
 
         assertThat(P11.expiring(branch, MADE.plus(DAY.multipliedBy(23)).minusMillis(1))).isFalse();
         assertThat(P11.expiring(branch, MADE.plus(DAY.multipliedBy(23)))).isTrue();

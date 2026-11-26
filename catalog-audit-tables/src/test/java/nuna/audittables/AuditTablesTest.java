@@ -412,7 +412,13 @@ class AuditTablesTest {
             assertThat(row.getField("catalog")).isEqualTo(LAKE);
         });
         assertThat(rows(rows, "request_id", writing)).filteredOn(r -> r.getField("type").equals("nuna.catalog.commit"))
-                .allSatisfy(row -> assertThat(row.getField("object_path")).isEqualTo(List.of(sales.level(0), "orders")));
+                .allSatisfy(row -> {
+                    assertThat(row.getField("object_path")).isEqualTo(List.of(sales.level(0), "orders"));
+                    // Backlog 169: the ref a commit went through.
+                    assertThat(row.getField("branch")).isEqualTo("main");
+                });
+        assertThat(rows(rows, "request_id", writing)).filteredOn(r -> r.getField("type").equals("nuna.catalog.drop"))
+                .allSatisfy(row -> assertThat(row.getField("branch")).as("a drop names no ref").isNull());
         assertThat(rows(rows, "request_id", reading)).filteredOn(r -> r.getField("type").equals("nuna.catalog.denial"))
                 .singleElement().satisfies(row -> {
                     assertThat(row.getField("principal")).isEqualTo("rory");

@@ -436,7 +436,9 @@ export async function refs(catalog, expired) {
 /** One ref; a branch's answer lists the tables and views it changed that the caller may describe. */
 export const ref = (catalog, name) => call(`${refsPath(catalog)}/${enc(name)}`);
 
-export const makeRef = (catalog, name, kind, from) => send(refsPath(catalog), {method: 'POST', body: {name, kind, from}});
+/** Makes a ref; `description`, its purpose, is left out when empty (backlog 167). */
+export const makeRef = (catalog, name, kind, from, description) => send(refsPath(catalog), {method: 'POST',
+  body: description ? {name, kind, from, description} : {name, kind, from}});
 
 export const renewRef = (catalog, name) => send(`${refsPath(catalog)}/${enc(name)}/renew`, {method: 'POST'});
 

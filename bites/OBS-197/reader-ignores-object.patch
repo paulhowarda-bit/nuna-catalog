@@ -3,12 +3,12 @@ Module: catalog-audit-tables
 Test: EventsReaderTest#anObjectsRecordsAreThoseWithItsIdWhateverItWasCalled
 
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
-index 6eeb5549..f7bf4fcd 100644
+index e714d132..29cd1437 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
-@@ -283,9 +283,6 @@ public final class EventsReader implements AutoCloseable {
-         if (query.principal() != null) {
-             filter = Expressions.and(filter, Expressions.equal("principal", query.principal()));
+@@ -307,9 +307,6 @@ public final class EventsReader implements AutoCloseable {
+             // Names compare normalized, which no file's bounds know: only files without a branch are passed over.
+             filter = Expressions.and(filter, Expressions.notNull("branch"));
          }
 -        if (query.objectId() != null) {
 -            filter = Expressions.and(filter, Expressions.equal("object_id", query.objectId()));
@@ -16,7 +16,7 @@ index 6eeb5549..f7bf4fcd 100644
  
          // The rows kept, the oldest at the head, so a newer row can push it out.
          PriorityQueue<Candidate> kept = new PriorityQueue<>(NEWEST_FIRST.reversed());
-@@ -362,9 +359,6 @@ public final class EventsReader implements AutoCloseable {
+@@ -386,9 +383,6 @@ public final class EventsReader implements AutoCloseable {
          if (query.principal() != null && !query.principal().equals(record.getField("principal"))) {
              return false;
          }

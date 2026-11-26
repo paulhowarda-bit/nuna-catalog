@@ -1,0 +1,16 @@
+Breaks: a transaction on a branch does not hold a table it only checks and the branch has not committed to, so a first commit to it landing meanwhile goes unseen (D15, backlog 278).
+Module: catalog-core
+Test: BranchCommitTest#aFirstCommitToAHeldTableLandsMeanwhile+aTransactionHoldsWhatItOnlyChecks
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index 9e3ff81a..eda0b82b 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -976,7 +976,7 @@ public final class CommitEngine {
+                         planned.add(new Planned(object, base, changed, json, regulated));
+                     }
+                     case Outcome.NoChange noChange ->
+-                            held.add(new PointerHold(base.key(), base.expected()));
++                            base.expected().ifPresent(read -> held.add(new PointerHold(base.key(), read)));
+                     case Outcome.RequirementFailed failed -> {
+                         return new Failure(409, COMMIT_FAILED, table + ": " + failed.message(),
+                                 failed.requirement());

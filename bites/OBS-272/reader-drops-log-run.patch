@@ -3,15 +3,15 @@ Module: catalog-audit-tables
 Test: EventsReaderTest#aRowGivesTheRunThatLoggedItAndItsNumberThere
 
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
-index 101fb475..5a85145f 100644
+index 6f78f9e5..3818a7f0 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
-@@ -414,7 +414,7 @@ public final class EventsReader implements AutoCloseable {
+@@ -436,7 +436,7 @@ public final class EventsReader implements AutoCloseable {
                  (String) record.getField("operation"), (String) record.getField("privilege"),
                  (String) record.getField("reason"), (String) record.getField("data"),
                  (Integer) record.getField("topic_partition"), (Long) record.getField("topic_offset"),
--                (String) record.getField("log_run"), (Long) record.getField("log_seq"));
-+                null, null);
+-                (String) record.getField("log_run"), (Long) record.getField("log_seq"),
++                null, null,
+                 (String) record.getField("branch"), (List<String>) record.getField("subject_ids"));
      }
  
-     // ---- the counts ----

@@ -202,7 +202,7 @@ class MaintenanceRefsTest {
     private RefPointers ref(CatalogObject object, Ref.Kind kind, Instant createdAt, long cut, Long head) {
         Ref ref = new Ref(catalog.id(), UUID.randomUUID(), new Name("r" + named.size(), "r" + named.size()), kind,
                 createdAt, "bea", Optional.empty(), Ref.MAIN, kind == Ref.Kind.BRANCH
-                ? Optional.of(createdAt.plus(Duration.ofDays(30))) : Optional.empty());
+                ? Optional.of(createdAt.plus(Duration.ofDays(30))) : Optional.empty(), Optional.empty());
         RefPointers pointers = new RefPointers(ref, at(object, cut), Optional.ofNullable(head).map(v -> at(object, v)));
         named.computeIfAbsent(object.id(), id -> new ArrayList<>()).add(pointers);
         return pointers;
