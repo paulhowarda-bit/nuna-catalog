@@ -1,0 +1,14 @@
+Breaks: storage setup gives no scanned-at, so after a newest scan that could not read its storage prefixes Service can't say the worker reported, nor when (item 277).
+Module: catalog-server
+Test: ReadinessUnreadPrefixesTest#scannedAtTellsANewestScanWithoutStorageFromNoScanAtAll
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/StorageSetupRoutes.java
+@@ -86,7 +86,6 @@
+         ArrayNode policies = DeletePolicyRoutes.policies(named);
+
+         ObjectNode body = Management.JSON.createObjectNode();
+-        scans.stream().findFirst().ifPresent(scan -> body.put("scanned-at", ReadinessRoutes.reportedAt(scan)));
+         last.ifPresent(scan -> body.put("reported-at", ReadinessRoutes.reportedAt(scan)));
+         ArrayNode profiles = body.putArray("profiles");
+         for (String name : new TreeSet<>(settings.profiles().keySet())) {

@@ -50,8 +50,9 @@ import tools.jackson.databind.JsonNode;
  * A scan that could not read its storage prefixes (item 275), as when the worker could not get a token just after a
  * restart, reports no storage: readiness then gives the storage and store steps {@code unknown}, as before any scan,
  * not {@code missing}, and storage setup calls the worker's identity {@code unknown} and gives no worker settings.
- * A scan that read its prefixes and reached none is still {@code missing}. The routes and guard are the real ones over
- * a stand-in store, so this needs only Java.
+ * A scan that read its prefixes and reached none is still {@code missing}. Both routes give {@code scanned-at}, the
+ * newest scan's time, so the console can tell such a scan from none (item 277). The routes and guard are the real
+ * ones over a stand-in store, so this needs only Java.
  */
 class ReadinessUnreadPrefixesTest {
 
@@ -132,8 +133,7 @@ class ReadinessUnreadPrefixesTest {
 
         assertThat(body.get("storage").get("state").asString()).as("not missing").isEqualTo("unknown");
         assertThat(body.get("store").get("state").asString()).isEqualTo("unknown");
-        assertThat(body.has("reported-at")).as("as before any scan: the console says the worker has not reported")
-                .isFalse();
+        assertThat(body.has("reported-at")).as("as before any scan").isFalse();
         assertThat(body.get("store").has("code")).isFalse();
         assertThat(body.get("store").has("deletes-since")).as("nothing of the scan before").isFalse();
         assertThat(body.get("store").get("prefixes").get(0).propertyNames()).containsExactly("prefix");
@@ -175,6 +175,34 @@ class ReadinessUnreadPrefixesTest {
         assertThat(none.get("worker").get("state").asString()).as("read, and no identity on the store")
                 .isEqualTo("not-reported");
         assertThat(none.has("worker-settings")).isTrue();
+    }
+
+    @Test
+    void scannedAtTellsANewestScanWithoutStorageFromNoScanAtAll() {
+        JsonNode none = readiness();
+        JsonNode noneSetup = setup();
+
+        assertThat(none.has("scanned-at")).as("no scan").isFalse();
+        assertThat(noneSetup.has("scanned-at")).isFalse();
+
+        scans = List.of(unread(LATER), reached(EARLIER));
+
+        JsonNode unread = readiness();
+        JsonNode unreadSetup = setup();
+
+        String newest = LATER.plusSeconds(30).toString();
+        assertThat(unread.has("reported-at")).isFalse();
+        assertThat(unread.has("scanned-at")).as("the console says that scan did not report its access").isTrue();
+        assertThat(unread.get("scanned-at").asString()).isEqualTo(newest);
+        assertThat(unreadSetup.has("reported-at")).isFalse();
+        assertThat(unreadSetup.has("scanned-at")).as("Service says that scan did not report the identity").isTrue();
+        assertThat(unreadSetup.get("scanned-at").asString()).isEqualTo(newest);
+
+        scans = List.of(reached(LATER), unread(EARLIER));
+
+        assertThat(readiness().get("scanned-at").asString()).as("the newest scan reported storage")
+                .isEqualTo(readiness().get("reported-at").asString()).isEqualTo(newest);
+        assertThat(setup().get("scanned-at").asString()).isEqualTo(newest);
     }
 
     private JsonNode readiness() {
