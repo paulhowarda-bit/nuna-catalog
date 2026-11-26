@@ -7,6 +7,7 @@ import nuna.catalog.audit.AuditRow;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -39,6 +41,7 @@ import org.apache.iceberg.data.InternalRecordWrapper;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.FanoutDataWriter;
@@ -223,6 +226,36 @@ final class EventsTable {
             throw new UncheckedIOException(e);
         }
         return ids;
+    }
+
+    /**
+     * Which of these event ids the table holds already, each looked for among the rows of the day of its record time,
+     * the table's partition, so only those days are read (backlog 263).
+     *
+     * @param times each event id's record time
+     */
+    Set<String> eventIdsAmong(Map<String, Instant> times) {
+        Set<LocalDate> days = new TreeSet<>();
+        times.values().forEach(time -> days.add(LocalDate.ofInstant(time, ZoneOffset.UTC)));
+        Expression onThoseDays = Expressions.alwaysFalse();
+        for (LocalDate day : days) {
+            onThoseDays = Expressions.or(onThoseDays, Expressions.and(
+                    Expressions.greaterThanOrEqual("time", micros(day.atStartOfDay(ZoneOffset.UTC).toInstant())),
+                    Expressions.lessThan("time", micros(day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()))));
+        }
+        Set<String> found = new HashSet<>();
+        try (CloseableIterable<Record> rows = IcebergGenerics.read(table).select("event_id", "time")
+                .where(Expressions.and(onThoseDays, Expressions.in("event_id", times.keySet()))).build()) {
+            rows.forEach(row -> found.add((String) row.getField("event_id")));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        found.retainAll(times.keySet());
+        return found;
+    }
+
+    private static long micros(Instant instant) {
+        return ChronoUnit.MICROS.between(Instant.EPOCH, instant);
     }
 
     /**

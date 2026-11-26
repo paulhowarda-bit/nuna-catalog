@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**29 open:** 6 S, 10 M, 8 L, 5 XL.
+**27 open:** 5 S, 9 M, 8 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -37,9 +37,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 | [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
-| [263](backlog/263.md) | M | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
 
 ## Open items in full
@@ -1651,6 +1649,24 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
+**Checked on the demo, 2026-11-26: not finished.** The demo ran Podman's kind cluster (`kind-nuna`), `main` at
+65a1d354.
+- `demo.sh ss` stopped with `ERROR 1933 … Process died unexpectedly or didn't start` at the first Iceberg pipeline in
+  `load.sql`. The cause: every container in the kind node may run at most 307 tasks. Podman gives the node
+  container a PidsLimit of 2,048, and systemd inside the node gives each container scope its DefaultTasksMax, 15% of
+  that. SingleStore runs 284 tasks idle, so the pipeline's extractor JVM cannot make its threads. With SingleStore's
+  scope set to `TasksMax=infinity` (live only; it reverts when the pod restarts), the same pipeline loaded and `ss`
+  finished: the seed and its three pipelines. This route cannot run on kind until `deploy/kind` lifts the cap.
+- Memory with `ss` on and gen not yet started: SingleStore's container held 2,388 MB by its cgroup (578 of 2,764 MB
+  by its own count) and 519 tasks. The VM had 1.6 to 1.8 GB available. Windows had 343 to 1,089 MB free and paged in
+  15,000 to 117,000 pages a second for the seven minutes measured.
+- The eleven change feeds never started: the demo went down (D49, for container tests) while gen's bootstrap ran,
+  so gen was stopped. The arithmetic says they cannot all start as made. Each change feed's extractor reserves
+  `pipelines_cdc_java_heap_size`, 384 MB, from SingleStore's memory: 4,224 MB for the eleven, plus 768 MB for the two
+  orders feeds, against a `maximum_memory` of 2,764 MB.
+- To finish: lift the task cap in `deploy/kind`. Then fit the eleven feeds, either with a smaller extractor heap or
+  more memory for SingleStore and the VM. Then run this check again.
+
 ### 259. Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete?
 
 - Added: 2026-11-24 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
@@ -1677,62 +1693,10 @@ overnight run has no AWS leg.
   wrong and that is a new item.
 - The run is recorded in `status/`.
 
-### 263. Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer
-
-- Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
-- Touches: catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java catalog-audit-tables/src/test/ catalog-audit-tables/README.md deploy/helm/nuna-audit-tables/values.yaml docs/observability/audit-log.md bites/
-- Effort: M, the dedup lookup and when the receiver answers, both in the writer's log path, with tests and bites; waits on nothing
-
-**What is wrong.** With `nuna.audit-tables.source: otlp` the writer takes the catalog's `nuna.audit` records over
-OTLP/HTTP (D23, amended 2026-11-23). Two things in it are weaker than the delivery in front of it will be.
-
-- **The dedup window is shorter than a late copy.** `LogWriter` leaves out a record whose CloudEvent id it saw in the
-  last `nuna.audit-tables.otlp.dedup-window` (15 minutes: `AuditTablesSettings.java:136`,
-  `deploy/helm/nuna-audit-tables/values.yaml:39`), counted from when the id arrived (`forget`, `LogWriter.java:149`).
-  After a restart or a failed commit it reloads only the ids of rows whose record time is in the last 15 minutes
-  (`reload`, and `EventsTable.eventIdsSince`, `EventsTable.java:172`). A copy that comes later is written again: a
-  collector's persistent queue re-sending its in-flight batches after a crash, or draining a backlog hours after an
-  outage (the at-least-once collector item 43 asks for); a filelog receiver that lost its storage and reads its files
-  again; or the outbox relay logging a change a second time after a fleet outage longer than 15 minutes.
-- **The writer answers before it commits.** Records wait in memory for up to `commit-interval` (1 minute) and the
-  sender is answered at once (`LogWriter`'s class comment; audit-log.md, "The audit table writer's source `otlp`"), so
-  a writer that dies before its commit loses rows the sender was told were taken. The collector project now calls
-  this acknowledge-on-admission pattern a loss window. The records are still on the catalog's stdout, so the record of
-  audit is whole; the console's Audit page is not, and nothing says which rows it lacks.
-
-What already holds: a partial success names only records that are no catalog event, and a writer too far behind
-answers 503, which exporters retry (`OtlpLogsReceiver.java`, lines 42 to 148), as OTLP asks.
-
-**Evidence.** The observability-audit research report of 2026-11-24 (in that agent's home,
-`research/reports/Nuna observability and audit grounding.md`), "Audit lines outlive the pod only if the collector is
-built to keep them": a persistent queue re-sends after a crash
-(https://github.com/open-telemetry/opentelemetry-collector/blob/main/exporter/exporterhelper/internal/queue/persistent_queue.go),
-`file_storage`'s `recreate` can replay, and OTLP accepts duplicates by design
-(https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md).
-
-**What to build.**
-
-- **Dedup by the record's own time, not its arrival.** Look each incoming id up among the table's rows of the
-  record's own day (the table is partitioned by the day of `time`, `EventsTable.java:85`), so a copy is found however
-  late it comes; keep the in-memory set for the common case. If that read costs too much at the writer's rate, make
-  the window at least the longest outage a collector's queue will hold plus its retry horizon, and say so in the doc;
-  measure which.
-- **Answer after the commit.** Hold each request's answer until the commit that holds its records. Boot caps the
-  catalog's own export at 10 s, retries included, so where the catalog sends straight to the writer the `otlp`
-  source's commit interval has to come under that (a few seconds), and behind a collector its exporter's `timeout`
-  has to exceed it. Measure the files a day that makes at the demo's rate and say whether the audit table's
-  compaction keeps up. If it does not, keep answering at once and say in audit-log.md which rows the table can lack
-  and how to find them (by item 262's sequence, if Paul chooses it).
-
-**Done when** `LogWriterTest` shows a copy arriving an hour after the first, and one arriving after a restart, left
-out; a writer killed before its commit loses nothing its sender was told was taken (or audit-log.md states the window,
-as above); the chart's values, `catalog-audit-tables/README.md` and audit-log.md say the new behaviour; bites in
-`bites/OBS-263/`.
-
 ### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR
 
 - Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
-- Touches: catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java catalog-server/src/test/ deploy/helm/nuna-catalog/values.yaml deploy/helm/nuna-maintenance/values.yaml docs/observability/README.md docs/observability/spans.md bites/
+- Touches: catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java catalog-server/src/main/java/nuna/catalog/server/metrics/MetricsWiring.java catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java catalog-server/src/test/ deploy/helm/nuna-catalog/values.yaml deploy/helm/nuna-maintenance/values.yaml docs/observability/README.md docs/observability/spans.md bites/
 - Effort: M, at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43
 
 **What is wrong.**
@@ -1780,37 +1744,18 @@ and Micrometer's handler
 **Done when** the test and its bite are in and the doc says which traces each mode keeps; at work, a forced 5xx shows
 as a trace in work's Grafana under tail sampling, or the doc says why the deployment keeps head sampling.
 
-### 266. Overview says a catalog's worker has not reported while the worker reports every scan
-
-- Added: 2026-11-24 by Paul, via item 252
-- Touches: catalog-server/src/main/resources/nuna/ui/overview.js, catalog-server/src/test/
-- Effort: S, one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest`
-
-## What is wrong
-
-Item 252 fixed the Maintenance page's head: when no table of a catalog is assessed, it reads item 251's readiness
-route and says what is missing ("The worker can't maintain ledger yet: 2 of 4 steps left.", `readiness.js`
-`stepsWords`), or, once every step is done, why nothing is assessed (`queue.js` `shapeWords(c, ready)`). Overview
-still says the worker "has not reported" on the same grounds, whenever no table is assessed, though the worker reports
-at every scan: the usual reason is that it cannot reach the catalog (no `write` grant, no storage for the catalog's
-profile), which readiness says and Overview does not.
-
-- `catalog-server/src/main/resources/nuna/ui/overview.js:35-36`: the head calls `shapeWords(c)` without readiness,
-  so it falls through to "{n} tables not assessed yet: the maintenance worker has not reported." (`queue.js:128`).
-- `overview.js:54-55`: the In shape KPI's line, "{n} not assessed yet: the maintenance worker has not reported".
-- `overview.js:72`: the queue panel, "Nothing queued: the maintenance worker has not assessed any table you may read
-  yet."
-
-## Done when
-
-- Overview reads item 251's readiness route as the Maintenance page does (`readinessOf`), and while no table is
-  assessed its head, KPI line and queue line say what readiness says, in Atelier's words from item 252 where they fit:
-  `stepsWords` while a step is left, `shapeWords(c, ready)` once all four are done, with a link to the Maintenance
-  page's "What the worker needs to maintain <catalog>" panel in place of the panel itself. "Has not reported" stays
-  only for a catalog no worker has reported on (`reported-at` absent), and for a caller readiness refuses.
-- A browser test, as `ConsoleReadinessBrowserTest` does on a catalog with no grant and no storage, shows Overview's
-  head and KPI line say steps are left, not "has not reported", as a caller who may read readiness, and the old words
-  for one who may not.
+**Progress, 2026-11-26 (the home part landed; the work part is left).** Verified first: with no change, a 5xx built by
+an `@ExceptionHandler` (`ErrorResponses`), by a route or by a filter without a throw left the server span's status
+UNSET, and a failure that escaped to the container marked it ERROR with its message on the span. `RequestMetrics` now
+marks the server span ERROR for every 5xx on an Iceberg REST route, recording `AnswerFailed`, which names the status and
+the exception's class or the body's error type, never a message; it rethrows an escaped failure as an `AnswerFailed`
+too, after logging it in full. A 4xx is left unset. It takes the `ObservationRegistry` from `MetricsWiring` (added to
+Touches). `ServerSpanStatusTest` (untagged, Java only) covers each kind; bites `bites/OBS-265/five-hundred-not-error`
+and `escaped-failure-message-on-span`; the three `bites/OBS-39/requests-*` bites recorded again, same breaks.
+spans.md, "The server span's status", and README.md, "Sampling", say which traces head and tail sampling keep. Left,
+at work with item 43: the collector's `loadbalancing` and `tail_sampling` tiers, `telemetry.sampling` in the charts'
+values for the deployment, README.md saying which mode work runs, and a forced 5xx seen as a trace in work's Grafana
+(or the doc saying why the deployment keeps head sampling). The item stays open for that.
 
 ### 278. A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left)
 
@@ -2145,7 +2090,9 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [260](backlog/260.md) | Console: the Grants page lists the catalog's groups with their duties when no group is named | done | 2026-11-25 |
 | [261](backlog/261.md) | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | done | 2026-11-25 |
 | [262](backlog/262.md) | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | done | 2026-11-25 |
+| [263](backlog/263.md) | Audit table writer: a copy arriving more than 15 minutes after the first is written again, and records answered before their commit die with the writer | done | 2026-11-26 |
 | [264](backlog/264.md) | D23 cites NYDFS 500.6 for five years, but 500.6(b) asks three for audit trails (Paul decides the citation) | done | 2026-11-24 |
+| [266](backlog/266.md) | Overview says a catalog's worker has not reported while the worker reports every scan | done | 2026-11-26 |
 | [267](backlog/267.md) | demo.sh's Kafka Connect calls retry a 502, 503, 504 or 409 instead of stopping up | done | 2026-11-25 |
 | [268](backlog/268.md) | Schema tests expect version 15 after migrations V16 and V17 (items 244, 250): SchemaAtStartupTest and RollingUpgradeTest | done | 2026-11-25 |
 | [269](backlog/269.md) | MutatingRoutesAuditTest: the OPA routes (item 115) have no case | done | 2026-11-25 |
@@ -2172,3 +2119,5 @@ READ COMMITTED; if it reports NO BITE, record that store's bite another way. The
 | [291](backlog/291.md) | Heavy tests on Podman: a Docker call made after 10 s without one fails, since Podman's API closes idle connections and Testcontainers reuses them (TwoIssuersTest) | done | 2026-11-26 |
 | [292](backlog/292.md) | GitHub's push protection refuses the openssl pkcs8 command's argument order | done | 2026-11-26 |
 | [293](backlog/293.md) | The CDC leg and CloudBeaver keep their data on volumes: cdc stop and down pause the leg, the next cdc carries on, cdc reset starts it anew | done | 2026-11-26 |
+| [294](backlog/294.md) | kind's node caps every container at 307 tasks: SingleStore's pipelines, and the JVMs, run out of threads | done | 2026-11-26 |
+| [295](backlog/295.md) | AuditTablesTest's ForbiddenException for updateTable: confirm the cause and guard the fix with a bite | done | 2026-11-26 |

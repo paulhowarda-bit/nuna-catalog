@@ -1,0 +1,22 @@
+Breaks: a new events table is made first and given the added columns after, a schema change that needs modify, which the writer's group (create and write) lacks, so the writer never starts (backlog 289, 295).
+Module: catalog-audit-tables
+Test: AuditTablesTest
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+index efd82106..2bc53c46 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+@@ -145,11 +145,8 @@ final class EventsTable {
+             }
+             // One staged create that already holds the added columns: the catalog judges its commit as a create,
+             // which the writer's group may do, where a schema change on a table that exists needs modify.
+-            Transaction create = catalog.buildTable(id, FIRST).withPartitionSpec(SPEC)
+-                    .withProperty(TableProperties.FORMAT_VERSION, "2").createTransaction();
+-            addAbsent(create.table(), create.updateSchema());
+-            create.commitTransaction();
+-            table = catalog.loadTable(id);
++            table = catalog.buildTable(id, FIRST).withPartitionSpec(SPEC)
++                    .withProperty(TableProperties.FORMAT_VERSION, "2").create();
+         }
+         addAbsent(table, table.updateSchema());
+         for (Types.NestedField expected : SCHEMA.columns()) {

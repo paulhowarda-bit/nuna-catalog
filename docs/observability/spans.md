@@ -42,6 +42,23 @@ message, cause or stack trace. Those messages can name a table's location, the p
 value a database refused. The timer's own `error` tag (Micrometer's) reads `CallFailed` for every failure; the
 `exception` tag says which.
 
+## The server span's status
+
+Every answer of 500 or more ends the request's server span with status ERROR, and nothing below 500 does (backlog 265).
+Spring's observation filter marks the span only for a failure that escapes to the container; it does not for an answer
+an `@ExceptionHandler` built (`ErrorResponses`, `AuditUnavailableResponses`), nor for a 5xx a route or a filter wrote
+without a throw, such as a commit's `Unavailable` reply or authentication's 503 when it could not check a token.
+`RequestMetrics`, the filter that times every Iceberg REST call and already knows its status, marks it for those, so a
+tail sampler that keeps traces with status ERROR keeps every failed call (README.md, "Sampling"). A 5xx on another
+route (the console, the management API) is marked only when its failure escapes.
+
+The span records one exception event, `AnswerFailed`, whose message is the status and the class of the exception
+behind the answer, or, for one written without a throw, the Iceberg error type its body names: for example
+`503 nuna.catalog.store.StoreUnavailableException` or `503 ServiceUnavailableException`. It carries no message, cause
+or stack trace: those can name a table, a location or a principal. A failure that escapes to the container is logged
+in full (`RequestMetrics`, "request failed outside the routes") and reaches Spring's filter, and so the span, as an
+`AnswerFailed` naming its class. Boot's `http.server.requests` timer tags such a call `exception=AnswerFailed`.
+
 ## What a commit and a load look like
 
 From `SpanTreeTest`, on PostgreSQL, Silo's S3 and STS, and one Kafka broker:
@@ -108,6 +125,8 @@ page's does, keeps them. The stores, `catalog-audit` and `catalog-objectstore` a
 |---|---|
 | `SpanTreeTest` | Through an in-memory span exporter on a running server: a commit's tree (server span, then the object store's write before the store's pointer move, STS, and the credential issue's publish to Kafka) and a load's (server span, the store's reads and the read audit's publish); no attribute names a person, table, namespace, location or credential, and each span carries only its own tags. |
 | `ObservedTest` | On Micrometer's OpenTelemetry bridge: a call inside an observation is one child span and one timer with its outcome; outside any, neither; a failure's span is an error naming the exception's type, never its message; a store call's span and outcome. |
+| `ServerSpanStatusTest` | Spring's server observation filter, `RequestMetrics` and `ErrorResponses` in the server's order, on Micrometer's OpenTelemetry bridge: a 5xx from an exception handler, from a route or a filter without a throw, or from a failure that escapes, ends its server span ERROR with an `AnswerFailed` event naming the class or error type, never the message; a 404 or a 200 leaves the status unset. |
 | `AuditPublishBucketsTest` | At a small OTLP receiver, through a composite as in the server: the audit publish timer arrives with the health page's buckets and its records in the right ones, another timer with none; a registry with buckets of its own for the timer keeps them. |
 
-Each guarded rule's bite is in `bites/OBS-41/`, and the audit publish buckets' in `bites/OBS-71/`.
+Each guarded rule's bite is in `bites/OBS-41/`, the audit publish buckets' in `bites/OBS-71/`, and the server span's
+status in `bites/OBS-265/`.

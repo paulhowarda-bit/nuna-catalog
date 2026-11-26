@@ -12,6 +12,7 @@ import {catalogOff, estate, estateCounts, estateLegend, iceEstate, lastAssessed,
 import {sloFigures} from './health.js';
 import {governanceFigures} from './governance.js';
 import {editPolicyLink} from './maintenance.js';
+import {readinessOf, stepsWords} from './readiness.js';
 
 export function overviewPage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'overview'});
@@ -24,18 +25,26 @@ export function overviewPage(catalog) {
     const none = c.total > 0 && c.unassessed === c.total;
     // The worker assesses only where compaction is on, so the catalog's policy is said to have it off only while none
     // is assessed (backlog 190).
-    const off = none ? await catalogOff(catalog, tables, pageHref('maintenance', catalog)) : null;
+    // While none is assessed, item 251's readiness says why, as on Maintenance (backlog 266): the steps left, or once all
+    // four are done, why nothing is assessed. For a caller it would refuse, or a catalog no worker has reported on, the
+    // page keeps the words that wait for the worker.
+    const [off, readiness] = none ? await Promise.all([catalogOff(catalog, tables, pageHref('maintenance', catalog)),
+      readinessOf(catalog)]) : [null, null];
+    const ready = readiness && readiness.ready;
+    const reported = !!ready && !!(ready['reported-at'] || ready['scanned-at']);
+    const left = stepsWords(catalog, ready);
     const now = new Date();
     const out = [pageHead({
       hero: true,
       eyebrow: `${catalog} · ${now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}, `
         + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
       title: !c.total ? nothingToRead(catalog, everywhere, 'overview')
+        : left ? left
         : off ? off
-        : none ? shapeWords(c)
+        : none ? shapeWords(c, ready)
           : [shapeWords(c) + ' ', c.queued
             ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
-      sub: off ? `${plural(c.total, 'table')} you may read, none assessed: the worker assesses a table only where its policy turns `
+      sub: off && !left ? `${plural(c.total, 'table')} you may read, none assessed: the worker assesses a table only where its policy turns `
         + 'maintenance on.'
         : 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s Maintenance tab has the detail.',
       side: assessed ? pill('ok', icon('check'), 'Last assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
@@ -51,8 +60,10 @@ export function overviewPage(catalog) {
       h('p', {class: 'kpi-l'}, icon('check'), 'In shape'),
       none ? h('p', {class: 'kpi-v'}, '–', h('small', null, 'none assessed yet'))
         : h('p', {class: 'kpi-v'}, `${fmt(c.inShape)} of ${fmt(c.total - c.unassessed)}`, c.unassessed ? h('small', null, 'assessed') : null),
-      h('p', {class: 'kpi-d'}, none ? `${fmt(c.unassessed)} not assessed yet: ` + (off ? 'maintenance is off in the catalog\'s policy'
-        : 'the maintenance worker has not reported')
+      h('p', {class: 'kpi-d'}, left ? left
+        : none && !off && reported ? shapeWords(c, ready)
+        : none ? `${fmt(c.unassessed)} not assessed yet: ` + (off ? 'maintenance is off in the catalog\'s policy'
+          : 'the maintenance worker has not reported')
         : [c.queued ? `${fmt(c.queued)} queued for tonight` : 'none queued for tonight',
           c.unassessed ? `, ${fmt(c.unassessed)} not assessed yet` : ''])));
     out.push(kpis);
@@ -67,8 +78,12 @@ export function overviewPage(catalog) {
       rows.length ? [queueTable(rows.slice(0, 8), {numbered: false, cls: 'stack-sm'}),
         h('p', {class: 'fine'}, rows.length > 8 ? `${rows.length - 8} more in the queue. ` : '',
           h('a', {href: pageHref('maintenance', catalog)}, 'Open the maintenance queue'))]
-        : h('p', {class: 'muted'}, off ? [`Nothing queued: maintenance is off in ${catalog}'s policy.`,
+        // While a step is left, a link to Maintenance's "What the worker needs to maintain <catalog>" in place of the panel.
+        : h('p', {class: 'muted'}, left ? [left + ' ', h('a', {href: pageHref('maintenance', catalog), 'data-readiness': ''},
+          `What the worker needs to maintain ${catalog}`, ' →')]
+          : off ? [`Nothing queued: maintenance is off in ${catalog}'s policy.`,
           editPolicyLink(catalog, () => main.replaceWith(overviewPage(catalog)))]
+          : none && reported ? shapeWords(c, ready)
           : none ? 'Nothing queued: the maintenance worker has not assessed any table you may read yet.'
           : c.unassessed ? `No assessed table you may read needs compaction; ${fmt(c.unassessed)} not assessed yet.`
             : 'No table you may read needs compaction.')), lastNight));

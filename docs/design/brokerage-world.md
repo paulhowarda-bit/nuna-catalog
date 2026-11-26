@@ -204,7 +204,7 @@ a sanctions match that raise alerts.
   SingleStore off, the orders go through topic `brokerage.trading.order-events` to `brokerage.trading.order_events`
   (an append of every change, as the Kafka sink only appends); with Kafka off, every other feed is inserted into a
   SingleStore table of its own keyed by `seq`, the record's number in its feed, and an append-only change feed per
-  table copies it to `brokerage.singlestore.<table>`. A restart counts what each way carried (a topic's records
+  table copies it to `brokerage.singlestore.<table>`, the eleven in one pipeline so they share one extractor. A restart counts what each way carried (a topic's records
   since the world began, a table's rows, or, for the way that is off, its lake table's records), so it sends nothing
   twice across a change of route; demo.sh drains a way into the lake (`Main drain`) before turning it off. The
   end-of-day tags go on every table that changed that day, whichever way it went.
