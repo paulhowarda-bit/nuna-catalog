@@ -1,0 +1,17 @@
+Breaks: the export ignores ?ref= and returns main's pointer, file and journal, so the console's Export through a ref exports main's under the ref's name (backlog 172).
+Module: catalog-server
+Test: MetadataLogRefTest#anExportThroughABranchIsItsHeadAndTheLogAsTheBranchReadsItOldestFirstAuditedThroughIt+anExportThroughARefThatIsNotLiveOrDoesNotHoldTheTableAnswers404
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index c263cda6..4d86ffec 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -322,7 +322,7 @@ class LifecycleRoutes {
+         guard.require(request, Authorizer.Target.of(object), audited, "exportObject", Privilege.SELECT);
+         ObjectNode body = Management.JSON.createObjectNode();
+         body.set("object", object(catalog, object));
+-        if (ref != null && !ref.isEmpty()) {
++        if (false) {
+             Through through = through(catalog, object, ref);
+             RefEntry.At reads = through.reads();
+             exported(body, catalog, id, reads.metadataLocation(), reads.version(), reads.sha256());
