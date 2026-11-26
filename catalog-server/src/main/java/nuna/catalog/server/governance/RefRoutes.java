@@ -106,6 +106,18 @@ class RefRoutes {
     private static final int PAGE = 100;
     private static final int MAX_PAGE = 1000;
     private static final int WALK_PAGE = 1000;
+    /**
+     * How many dropped and purging objects of a namespace the read of which refs keep a path reads at most, to find
+     * those by its name (the store has no lookup of dropped objects by name): past it, the answer says it was cut short
+     * (the Nuna Security Expert's review of backlog 170).
+     */
+    static final int KEPT_WALK_LIMIT = 10_000;
+    /**
+     * How many dropped objects in one answer of that read are looked up in the audit table for who dropped them, the
+     * newest first: each lookup is a feed query the feed's own rate limit does not see, so the rest say they were left
+     * out (the same review).
+     */
+    static final int DROPPERS_READ = 5;
     private static final int MAX_NAME = 1000;
     private static final Duration WARNING_LEASE = Duration.ofMinutes(1);
     /** What a merge is authorized and audited as. */
@@ -1027,9 +1039,9 @@ class RefRoutes {
         List<String> levels = RestRequest.namespaceLevels(namespace);
         CatalogError missing = CatalogError.of(404, "NoSuchObjectException", "No table or view "
                 + String.join(".", levels) + "." + name + " in " + catalog.name());
-        List<CatalogObject> found = store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList())
-                .map(at -> atPath(at.id(), Names.normalize(name))).orElse(List.of());
-        return keptAnswer(request, catalog, found, missing);
+        AtPath found = store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList())
+                .map(at -> atPath(at.id(), Names.normalize(name))).orElse(new AtPath(List.of(), false));
+        return keptAnswer(request, catalog, found.found(), found.cutShort(), missing);
     }
 
     /** {@link #keptAt} for the one table or view an id names, until it is purged or unregistered. */
@@ -1047,7 +1059,7 @@ class RefRoutes {
         CatalogError missing = CatalogError.of(404, "NoSuchObjectException", "No table or view " + id + " in "
                 + catalog.name());
         return keptAnswer(request, catalog, store.readObject(objectId).filter(o -> o.catalogId().equals(catalog.id())
-                && tracked(o)).stream().toList(), missing);
+                && tracked(o)).stream().toList(), false, missing);
     }
 
     /** Whether the catalog still tracks an object for this read: live, dropped, or being purged. */
@@ -1056,20 +1068,39 @@ class RefRoutes {
                 || object.state() == CatalogObject.State.PURGING;
     }
 
-    /** The tables and views a namespace holds by a name, newest first: the live one, then by when each was dropped. */
-    private List<CatalogObject> atPath(UUID namespaceId, String normalizedName) {
+    /** The objects found at a path, and whether the walk for its dropped ones stopped at {@link #KEPT_WALK_LIMIT}. */
+    private record AtPath(List<CatalogObject> found, boolean cutShort) {
+    }
+
+    /**
+     * The tables and views a namespace holds by a name, newest first: the live one, then by when each was dropped. The
+     * dropped ones are found by walking the namespace's dropped and purging objects, at most {@link #KEPT_WALK_LIMIT}.
+     */
+    private AtPath atPath(UUID namespaceId, String normalizedName) {
         List<CatalogObject> found = new ArrayList<>();
         store.findObject(namespaceId, normalizedName).ifPresent(found::add);
         List<CatalogObject> dropped = new ArrayList<>();
+        int read = 0;
+        boolean cutShort = false;
+        walk:
         for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {
             for (CatalogObject.State state : List.of(CatalogObject.State.DROPPED, CatalogObject.State.PURGING)) {
+                if (read >= KEPT_WALK_LIMIT) {
+                    cutShort = true;
+                    break walk;
+                }
                 PageRequest page = PageRequest.first(WALK_PAGE);
                 while (true) {
                     Page<CatalogObject> listed = store.listObjects(namespaceId, kind, state, page);
+                    read += listed.items().size();
                     listed.items().stream().filter(o -> o.name().normalized().equals(normalizedName))
                             .forEach(dropped::add);
                     if (listed.nextToken().isEmpty()) {
                         break;
+                    }
+                    if (read >= KEPT_WALK_LIMIT) {
+                        cutShort = true;
+                        break walk;
                     }
                     page = page.after(listed);
                 }
@@ -1077,7 +1108,7 @@ class RefRoutes {
         }
         dropped.sort(java.util.Comparator.comparing((CatalogObject o) -> o.droppedAt().orElseThrow()).reversed());
         found.addAll(dropped);
-        return found;
+        return new AtPath(found, cutShort);
     }
 
     /**
@@ -1089,10 +1120,12 @@ class RefRoutes {
      * {@code expired}: past its expiry, its name still held until the worker ends it; and {@code own-version}, a
      * branch's own pointer's version where one of its commits changed it), by name; and {@code may.remove}, whether
      * the caller holds {@code manage-tags} on it, which taking it out of refs needs. Who made each ref is left out, as
-     * for a caller without create.
+     * for a caller without create. Who dropped it is looked up for the newest {@link #DROPPERS_READ} dropped objects
+     * only; each past them has {@code dropped-by-left-out: true}. A walk stopped at {@link #KEPT_WALK_LIMIT} adds
+     * {@code cut-short: true} to the answer.
      */
     private ResponseEntity<String> keptAnswer(Request request, CatalogRecord catalog, List<CatalogObject> found,
-                                              CatalogError missing) {
+                                              boolean cutShort, CatalogError missing) {
         List<Authorizer.Request> asks = new ArrayList<>();
         for (CatalogObject object : found) {
             Authorizer.Target on = new Authorizer.Target.TableOrView(object);
@@ -1103,10 +1136,18 @@ class RefRoutes {
         Instant now = now();
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode objects = body.putArray("objects");
+        int droppers = 0;
         for (int i = 0; i < found.size(); i++) {
             if (decisions.get(2 * i).allowed()) {
-                objects.add(keptObject(request, catalog, found.get(i), decisions.get(2 * i + 1).allowed(), now));
+                CatalogObject object = found.get(i);
+                boolean dropped = object.state() != CatalogObject.State.ACTIVE;
+                objects.add(keptObject(request, catalog, object, decisions.get(2 * i + 1).allowed(),
+                        dropped && droppers < DROPPERS_READ, now));
+                droppers += dropped ? 1 : 0;
             }
+        }
+        if (cutShort) {
+            body.put("cut-short", true);
         }
         if (objects.isEmpty()) {
             if (!found.isEmpty()) {
@@ -1118,7 +1159,7 @@ class RefRoutes {
     }
 
     private ObjectNode keptObject(Request request, CatalogRecord catalog, CatalogObject object, boolean mayRemove,
-                                  Instant now) {
+                                  boolean readDropper, Instant now) {
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
         ObjectNode node = Management.JSON.createObjectNode();
         node.put("id", object.id().toString());
@@ -1132,14 +1173,19 @@ class RefRoutes {
         if (object.state() != CatalogObject.State.ACTIVE) {
             node.put("dropped-at", object.droppedAt().orElseThrow().toString());
             object.purgeAfter().ifPresent(at -> node.put("purge-after", at.toString()));
-            drops.droppedBy(request, catalog, object, Management.audit(catalog, levels, object.name().display(),
-                    object)).ifPresent(by -> {
-                        ObjectNode who = node.putObject("dropped-by");
-                        who.put("principal", by.principal());
-                        if (by.endUser() != null) {
-                            who.put("end-user", by.endUser());
-                        }
-                    });
+            if (readDropper) {
+                drops.droppedBy(request, catalog, object, Management.audit(catalog, levels,
+                        object.name().display(), object)).ifPresent(by -> {
+                            ObjectNode who = node.putObject("dropped-by");
+                            who.put("principal", by.principal());
+                            if (by.endUser() != null) {
+                                who.put("end-user", by.endUser());
+                            }
+                        });
+            } else {
+                // Past the newest DROPPERS_READ drops, no one is looked up, and the answer says so.
+                node.put("dropped-by-left-out", true);
+            }
         }
         ArrayNode refs = node.putArray("refs");
         store.listRefPointers(object.id()).stream()

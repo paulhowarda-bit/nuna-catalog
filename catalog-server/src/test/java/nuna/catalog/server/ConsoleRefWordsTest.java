@@ -58,27 +58,52 @@ class ConsoleRefWordsTest {
         String refs = resource("refs.js");
 
         assertThat(refs).contains("droppedPill(title, 'Dropped on main');",
-                "who ? `${who} dropped it on ${refAt(o['dropped-at'])}.` : `It was dropped on ${refAt(o['dropped-at'])}.`",
-                "' Main has no such table.', kept ? [' A ref made before then still keeps it: ', ...keptChips(c, o), '.']",
-                "' No branch or tag keeps it. Cleanup can purge it and delete its files.'",
-                // Item 279's control goes here.
-                "'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)");
-        assertThat(refs).doesNotContain("No ref holds it.", "still reads it: @");
+                "const mark = pill('warn', text);",
+                // Every dropped table at the path, newest first, each with its own slot (Atelier's check, 2026-11-25).
+                "const dropped = objects.filter(x => x.state !== 'active');",
+                "const opening = i === 0 ? [who ? `${who} dropped it on ${t}.` : `It was dropped on ${t}.`, ' Main has no such table.']",
+                ": [who ? `${who} dropped an earlier table at this path on ${t}.` : `An earlier table at this path was dropped on ${t}.`];",
+                "kept ? [' Still kept by ', ...keptChips(c, o), '.'] : ' No branch or tag keeps it. Cleanup can purge it and delete its files.'",
+                "cref(x, {warn: !!x.expired}), x.expired ? ' (past its expiry)' : null)]);",
+                // Item 279's control goes here, one for each dropped table.
+                "'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)",
+                // The read's walk cut short (the Security Expert's review).
+                "objects.cutShort = !!answer['cut-short'];",
+                "objects.cutShort ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog stopped looking before it had read every '",
+                "+ 'dropped table in this namespace, so an earlier table at this path may be missing here.') : null");
+        assertThat(refs).doesNotContain("No ref holds it.", "still reads it: @", "A ref made before then still keeps it",
+                "pill('bad', text)", "objects.find(x => x.state !== 'active')");
     }
 
-    /** Item 170: dropped on main, read through a ref that keeps it. */
+    /** Item 170: dropped on main, read through a ref that keeps it, and main's newer table at the path. */
     @Test
     void aTableDroppedOnMainButKeptByTheRefSaysItStaysReadableUntilTakenOut() throws IOException {
         String refs = resource("refs.js");
 
         assertThat(refs).contains("droppedPill(title, `Dropped on main ${dayMon(o['dropped-at'])}`);",
+                "if (!o || o.state === 'active') return null;",
+                "now: objects.find(x => x.state === 'active' && x.id !== o.id) || null",
                 "who ? `${who} dropped ${path} on main on ${t}.` : `${path} was dropped on main on ${t}.`",
-                "` @${target.ref} was made before then, so it still reads the table as it was; main answers 404 for it.`",
-                "' It stays readable here, and its files stay, until it is ', h('a', {href: objectHref(target, 'access'),"
-                        + " 'data-kept-link': ''},",
-                "'taken out of'), ' every branch and tag that keeps it.'");
+                "` @${target.ref} still keeps it, so it reads the table as it was; main answers 404 for it.`",
+                "' It stays readable here, and its files stay, until it is ',",
+                "h('a', {href: objectHref(target, 'access'), 'data-kept-link': ''}, 'taken out of'), ' every branch and tag that keeps it.'",
+                // Main made a new table by that name (Atelier, 2026-11-25).
+                "id: 'replaced-on-main', 'data-kept': 'replaced'",
+                "who ? `${who} dropped ${path} on main on ${t}, and main made a new table by that name on ${refAt(now['made-at'])}.`",
+                ": `${path} was dropped on main on ${t}, and main made a new table by that name on ${refAt(now['made-at'])}.`",
+                "` @${target.ref} still keeps the old one, so this page reads the table as it was. `",
+                "h('a', {href: onMain(target, null), 'data-main-table': ''}, `Main's ${path}`), ' is a different table.', ...untilTakenOut(target)",
+                "const onMain = (target, tab) => objectHref({...target, ref: null}, tab);",
+                // Access, Maintenance and Audit show the line, not the new table's data, and leave 279's panel room.
+                "`These tabs are main's, and main's ${path} is a different table from the one @${target.ref} reads. Open them on `",
+                "h('a', {href: onMain(target, tab), 'data-main-tab': tab}, `main's ${path}`), '.')),",
+                "h('div', {'data-kept-panel': found.o.id, 'data-tab': tab})");
+        assertThat(refs).doesNotContain("was made before then, so it still reads the table as it was",
+                "objects.some(x => x.state === 'active')) return null;");
         assertThat(resource("table.js")).contains(
-                "if (target.ref) droppedThroughRef(target, title).then(note => note && tabs.before(note), () => {});");
+                "if (target.ref) droppedThroughRef(target, title).then(note => note && tabs.before(note), () => {});",
+                "const replaced = what && await replacedGuard(target, {health: 'maintenance', access: 'access', audit: 'audit'}[what]);",
+                "if (replaced) return replaced;");
     }
 
     /** Item 170: through a ref, a table made after its point, and the fourth state, taken out of the ref. */

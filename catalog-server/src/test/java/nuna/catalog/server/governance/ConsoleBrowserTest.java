@@ -1805,7 +1805,7 @@ class ConsoleBrowserTest {
             browser.open("/ui/#" + at("table", List.of(ns), "orders", null));
             WebElement dropped = browser.await(By.id("dropped-on-main"));
             assertThat(textContent(dropped)).contains("dropped it on", "Main has no such table.",
-                    "A ref made before then still keeps it: @" + tag + ".");
+                    "Still kept by @" + tag + ".");
             dropped.findElement(By.cssSelector("[data-kept-ref='" + tag + "']"));
             dropped.findElement(By.cssSelector("[data-kept-acts]"));
             assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row [data-dropped-pill]"))))
@@ -1820,7 +1820,7 @@ class ConsoleBrowserTest {
             browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + tag);
             WebElement kept = browser.await(By.id("dropped-through-ref"));
             assertThat(textContent(kept)).contains(" dropped " + ns + ".orders on main on ",
-                    "@" + tag + " was made before then, so it still reads the table as it was; main answers 404 for it."
+                    "@" + tag + " still keeps it, so it reads the table as it was; main answers 404 for it."
                             + " It stays readable here, and its files stay, until it is taken out of every branch and"
                             + " tag that keeps it.");
             assertThat(kept.findElement(By.cssSelector("a[data-kept-link]")).getDomAttribute("href"))
@@ -1839,6 +1839,48 @@ class ConsoleBrowserTest {
             assertThat(textContent(browser.await(By.id("taken-out")))).startsWith("@" + tag + " no longer keeps " + ns
                     + ".fills, though main had it at the point: it was taken out of it.");
             assertThat(driver.findElements(By.id("made-after"))).isEmpty();
+
+            // Made again on main and dropped again: two dropped tables at the path, newest first, each with its own
+            // refs and its own slot for item 279's control (Atelier's check, 2026-11-25).
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/orders", null), 204);
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null));
+            WebElement twice = browser.await(By.id("dropped-on-main"));
+            browser.await("the second dropped table is not drawn",
+                    d -> twice.findElements(By.cssSelector("[data-kept-object]")).size() == 2);
+            List<WebElement> generations = twice.findElements(By.cssSelector("[data-kept-object]"));
+            assertThat(textContent(generations.get(0))).contains("dropped it on", "Main has no such table.",
+                    "No branch or tag keeps it. Cleanup can purge it and delete its files.");
+            assertThat(textContent(generations.get(1))).contains("dropped an earlier table at this path on",
+                    "Still kept by @" + tag + ".");
+            assertThat(generations.get(1).findElements(By.cssSelector("[data-kept-acts]"))).hasSize(1);
+
+            // Made again on main: through the tag, the page reads the old table, and main's is a different one.
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + tag);
+            WebElement replaced = browser.await(By.id("replaced-on-main"));
+            assertThat(textContent(replaced)).contains(" dropped " + ns + ".orders on main on ",
+                    ", and main made a new table by that name on ",
+                    "@" + tag + " still keeps the old one, so this page reads the table as it was. Main's " + ns
+                            + ".orders is a different table. It stays readable here, and its files stay, until it is"
+                            + " taken out of every branch and tag that keeps it.");
+            assertThat(replaced.findElement(By.cssSelector("a[data-main-table]")).getDomAttribute("href"))
+                    .contains("n=orders").doesNotContain("r=" + tag);
+            assertThat(replaced.findElement(By.cssSelector("a[data-kept-link]")).getDomAttribute("href"))
+                    .contains("tab=access", "r=" + tag);
+            assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row [data-dropped-pill]"))))
+                    .startsWith("Dropped on main ");
+            // Main's tabs read by path would show the new table's data: each says so instead. (Audit takes the same
+            // guard, for a caller whose trail is open; the tester's may not be.)
+            for (String tab : List.of("access", "maintenance")) {
+                browser.open("/ui/#" + at("table", List.of(ns), "orders", tab) + "&r=" + tag);
+                WebElement guard = browser.await(By.id("main-tabs-replaced"));
+                assertThat(textContent(guard)).contains("These tabs are main's, and main's " + ns + ".orders is a"
+                        + " different table from the one @" + tag + " reads. Open them on main's " + ns + ".orders.");
+                assertThat(guard.findElement(By.cssSelector("a[data-main-tab]")).getDomAttribute("href"))
+                        .contains("tab=" + tab).doesNotContain("r=" + tag);
+                guard.findElement(By.cssSelector("[data-kept-panel]"));
+            }
         } finally {
             api.manage("DELETE", "/refs/" + tag, null);
         }
