@@ -720,7 +720,8 @@ class EngineMatrixTest {
                 cli.ok(Duration.ofMinutes(20), "docker", "pull", "-q", SINGLESTORE_IMAGE);
                 load(List.of(SINGLESTORE_IMAGE));
                 // Root's password, which singlestore.yaml takes from this Secret, made for this run.
-                secret("singlestore-root", "password", "pw-" + UUID.randomUUID());
+                String root = "pw-" + UUID.randomUUID();
+                secret("singlestore-root", "password", root);
                 apply(stack, "singlestore.yaml");
             }
             kubectl(Duration.ofMinutes(11), "rollout", "status", "deployment/singlestore", "--timeout=10m");

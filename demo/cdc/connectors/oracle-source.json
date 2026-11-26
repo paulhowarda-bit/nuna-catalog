@@ -4,7 +4,7 @@
   "database.hostname": "oracle",
   "database.port": "1521",
   "database.user": "c##dbzuser",
-  "database.password": "dbz",
+  "database.password": "${env:CDC_DEBEZIUM_PASSWORD}",
   "database.dbname": "FREE",
   "database.pdb.name": "FREEPDB1",
   "topic.prefix": "oracle",

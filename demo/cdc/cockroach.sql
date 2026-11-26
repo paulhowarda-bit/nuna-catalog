@@ -29,18 +29,18 @@ INSERT INTO positions.holdings (holding_id, account, isin, quantity, market_valu
     (9004, 'CUST-0003', 'DE0008404005',   800, 286400.00, 'EUR', 'SETTLED');
 
 -- Debezium's login (cockroach-source.json).
-CREATE USER debezium WITH PASSWORD 'dbz';
+CREATE USER debezium WITH PASSWORD '${PASSWORD_DEBEZIUM}';
 GRANT USAGE ON SCHEMA positions TO debezium;
 GRANT SELECT, CHANGEFEED ON TABLE positions.holdings TO debezium;
 GRANT SYSTEM VIEWCLUSTERSETTING TO debezium;
 
 -- The demo's people, with their Keycloak passwords: everyone reads every table, ana also writes, creates,
 -- alters and drops tables in the database, and gary and presenter are admins.
-CREATE USER ana WITH PASSWORD 'ana-demo';
-CREATE USER gary WITH PASSWORD 'gary-demo';
-CREATE USER stella WITH PASSWORD 'stella-demo';
-CREATE USER oscar WITH PASSWORD 'oscar-demo';
-CREATE USER presenter WITH PASSWORD 'presenter-demo';
+CREATE USER ana WITH PASSWORD '${PASSWORD_ANA}';
+CREATE USER gary WITH PASSWORD '${PASSWORD_GARY}';
+CREATE USER stella WITH PASSWORD '${PASSWORD_STELLA}';
+CREATE USER oscar WITH PASSWORD '${PASSWORD_OSCAR}';
+CREATE USER presenter WITH PASSWORD '${PASSWORD_PRESENTER}';
 GRANT admin TO gary, presenter;
 GRANT CREATE ON DATABASE custody TO ana;
 GRANT ALL ON SCHEMA positions TO ana;

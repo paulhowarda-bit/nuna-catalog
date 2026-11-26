@@ -45,7 +45,6 @@ config:
         driver-memory: 768m
         max-jobs: 1
 
-secrets:
-  values:
-    nuna.maintenance.token.client-secret: nuna-maintenance-client-secret
-    nuna.maintenance.storage.silo.secret-access-key: nuna-maintenance-secret-key
+# secrets.values, the client secret (nuna.maintenance.token.client-secret) and the worker's Silo key
+# (nuna.maintenance.storage.silo.secret-access-key), are not here: run.sh makes them once per machine in
+# ~/.nuna-k8s/secrets and passes each with helm's --set-file (backlog 282).

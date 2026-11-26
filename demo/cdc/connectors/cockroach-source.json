@@ -4,7 +4,7 @@
   "database.hostname": "cockroach",
   "database.port": "26257",
   "database.user": "debezium",
-  "database.password": "dbz",
+  "database.password": "${env:CDC_DEBEZIUM_PASSWORD}",
   "database.dbname": "custody",
   "database.sslmode": "disable",
   "topic.prefix": "cockroach",

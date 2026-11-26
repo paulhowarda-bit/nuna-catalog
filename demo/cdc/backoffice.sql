@@ -34,14 +34,14 @@ CREATE ROLE settlement_owner NOLOGIN;
 ALTER SCHEMA settlement OWNER TO settlement_owner;
 ALTER TABLE settlement.instructions OWNER TO settlement_owner;
 
-CREATE ROLE ana LOGIN PASSWORD 'ana-demo';
+CREATE ROLE ana LOGIN PASSWORD '${PASSWORD_ANA}';
 GRANT pg_read_all_data, pg_write_all_data, settlement_owner TO ana;
 GRANT CREATE ON DATABASE backoffice TO ana;
 GRANT CREATE ON SCHEMA public TO ana;
-CREATE ROLE gary LOGIN SUPERUSER PASSWORD 'gary-demo';
-CREATE ROLE presenter LOGIN SUPERUSER PASSWORD 'presenter-demo';
-CREATE ROLE stella LOGIN PASSWORD 'stella-demo';
-CREATE ROLE oscar LOGIN PASSWORD 'oscar-demo';
+CREATE ROLE gary LOGIN SUPERUSER PASSWORD '${PASSWORD_GARY}';
+CREATE ROLE presenter LOGIN SUPERUSER PASSWORD '${PASSWORD_PRESENTER}';
+CREATE ROLE stella LOGIN PASSWORD '${PASSWORD_STELLA}';
+CREATE ROLE oscar LOGIN PASSWORD '${PASSWORD_OSCAR}';
 GRANT pg_read_all_data TO stella, oscar;
 -- Everyone also reads the server's statistics, settings and activity (pg_monitor); gary and presenter have them as superusers.
 GRANT pg_monitor TO ana, stella, oscar;

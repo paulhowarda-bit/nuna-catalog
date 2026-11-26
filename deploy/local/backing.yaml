@@ -1,6 +1,8 @@
 # Throwaway backing services for trying the chart on a local cluster: PostgreSQL, Kafka and Silo, as in the
 # demo's stack (demo/k8s), plus a job that makes the warehouse bucket and publishes the test issuer's JWKS from
-# the ConfigMap nuna-idp (deploy/local/run.sh makes it). No volumes: everything is lost with the pods. Test
+# the ConfigMap nuna-idp (deploy/local/run.sh makes it). No volumes: everything is lost with the pods. The passwords
+# and keys are in Secret nuna-local-secrets, which run.sh makes from the ones it keeps per machine in
+# ~/.nuna-k8s/secrets (backlog 282); none is in the repository. Test
 # passwords and keys only; never use any of this outside a laptop.
 apiVersion: apps/v1
 kind: Deployment
@@ -20,7 +22,8 @@ spec:
           env:
             - {name: POSTGRES_DB, value: catalog}
             - {name: POSTGRES_USER, value: catalog}
-            - {name: POSTGRES_PASSWORD, value: catalog}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: nuna-local-secrets, key: postgres-password}}
           ports:
             - containerPort: 5432
           readinessProbe:
@@ -104,7 +107,8 @@ spec:
           args: ["server", "/data"]
           env:
             - {name: MINIO_ROOT_USER, value: nunademo}
-            - {name: MINIO_ROOT_PASSWORD, value: nunademo-secret-key}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: nuna-local-secrets, key: silo-root}}
           ports:
             - containerPort: 9000
           readinessProbe:
@@ -136,10 +140,13 @@ spec:
       containers:
         - name: seed
           image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
+          env:
+            - name: ROOT_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: nuna-local-secrets, key: silo-root}}
           command: ["sh", "-ec"]
           args:
             - |
-              until mc alias set s http://silo:9000 nunademo nunademo-secret-key >/dev/null; do sleep 2; done
+              until mc alias set s http://silo:9000 nunademo "$ROOT_SECRET_KEY" >/dev/null; do sleep 2; done
               mc mb --ignore-existing s/warehouse s/idp
               mc anonymous set download s/idp
               mc cp /seed/keys.json s/idp/keys.json
