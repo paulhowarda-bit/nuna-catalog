@@ -22,7 +22,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "pw-ana",
+          "value": "${NUNA_TEST_PASSWORD}",
           "temporary": false
         }
       ],
