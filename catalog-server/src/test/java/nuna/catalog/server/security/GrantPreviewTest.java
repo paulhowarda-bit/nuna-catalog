@@ -449,7 +449,7 @@ class GrantPreviewTest {
 
     private Ref ref(String name, Ref.Kind kind, Optional<Instant> expiresAt) {
         return new Ref(catalog.id(), UUID.randomUUID(), new Name(Names.normalize(name), name), kind,
-                Instant.parse("2026-11-01T00:00:00Z"), "gary", Optional.empty(), Ref.MAIN, expiresAt);
+                Instant.parse("2026-11-01T00:00:00Z"), "gary", Optional.empty(), Ref.MAIN, expiresAt, Optional.empty());
     }
 
     private static String namespaceSpec(String level) {
