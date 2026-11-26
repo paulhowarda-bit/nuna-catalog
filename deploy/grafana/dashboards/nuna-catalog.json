@@ -402,6 +402,207 @@
       }
     },
     {
+      "id": 42,
+      "type": "stat",
+      "title": "Loads not answered 5xx",
+      "description": "The share of loads not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target (backlog 261).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - ((sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=\"loadTable\", outcome=\"5xx\"}[$__range])) or vector(0))\n/ sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=\"loadTable\", outcome=~\"2xx|3xx|5xx\"}[$__range])))",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "no requests",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 43,
+      "type": "stat",
+      "title": "Commits not answered 5xx",
+      "description": "The share of commits (updateTable and commitTransaction) not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target (backlog 261).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - ((sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=~\"updateTable|commitTransaction\", outcome=\"5xx\"}[$__range])) or vector(0))\n/ sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=~\"updateTable|commitTransaction\", outcome=~\"2xx|3xx|5xx\"}[$__range])))",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "no requests",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 44,
+      "type": "stat",
+      "title": "Iceberg calls not answered 5xx",
+      "description": "The share of every Iceberg REST call nuna.catalog.requests times not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target (backlog 261).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - ((sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", outcome=\"5xx\"}[$__range])) or vector(0))\n/ sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", outcome=~\"2xx|3xx|5xx\"}[$__range])))",
+          "legendFormat": "",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "no requests",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value"
+      }
+    },
+    {
       "id": 7,
       "type": "timeseries",
       "title": "Share within objective",
@@ -414,7 +615,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 12
       },
       "targets": [
         {
@@ -501,7 +702,7 @@
       "id": 8,
       "type": "timeseries",
       "title": "Error-budget burn rate, 1 hour",
-      "description": "How fast each SLO spends its error budget (1% of answers may miss the objective), over the last hour: 1 spends a 30-day budget in 30 days. The rules page at 14.4 (1 h and 5 min) and at 6 (6 h and 30 min), and warn at 1 (3 days and 6 h).",
+      "description": "How fast each SLO spends its error budget over the last hour: 1 spends a 30-day budget in 30 days. A latency SLO's budget is 1% of its answers past the bound, an availability SLO's 0.1% of answers 5xx (4xx left out). The rules page at 14.4 (1 h and 5 min) and at 6 (6 h and 30 min), and warn at 1 (3 days and 6 h).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -510,7 +711,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 12
       },
       "targets": [
         {
@@ -543,6 +744,39 @@
           "expr": "(1 - (sum(increase(nuna_catalog_requests_milliseconds_bucket{job=~\"$job\", catalog=~\"$catalog\", operation_id=~\"updateTable|commitTransaction\", outcome=\"2xx\", le=~\"300([.]0)?\"}[1h]))\n/ sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=~\"updateTable|commitTransaction\", outcome=\"2xx\"}[1h])))) / 0.01",
           "legendFormat": "commits answered 200 within 300 ms",
           "refId": "C",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "((sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=\"loadTable\", outcome=\"5xx\"}[1h])) or vector(0))\n/ sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=\"loadTable\", outcome=~\"2xx|3xx|5xx\"}[1h]))) / 0.001",
+          "legendFormat": "loads not answered 5xx",
+          "refId": "D",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "((sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=~\"updateTable|commitTransaction\", outcome=\"5xx\"}[1h])) or vector(0))\n/ sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", operation_id=~\"updateTable|commitTransaction\", outcome=~\"2xx|3xx|5xx\"}[1h]))) / 0.001",
+          "legendFormat": "commits not answered 5xx",
+          "refId": "E",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "((sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", outcome=\"5xx\"}[1h])) or vector(0))\n/ sum(increase(nuna_catalog_requests_milliseconds_count{job=~\"$job\", catalog=~\"$catalog\", outcome=~\"2xx|3xx|5xx\"}[1h]))) / 0.001",
+          "legendFormat": "Iceberg calls not answered 5xx",
+          "refId": "F",
           "range": true,
           "instant": false
         }
@@ -613,7 +847,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "targets": [
         {
@@ -683,7 +917,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 28
       }
     },
     {
@@ -699,7 +933,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 25
+        "y": 29
       },
       "targets": [
         {
@@ -768,7 +1002,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 25
+        "y": 29
       },
       "targets": [
         {
@@ -838,7 +1072,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 37
       },
       "targets": [
         {
@@ -907,7 +1141,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 37
       },
       "targets": [
         {
@@ -976,7 +1210,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 45
       },
       "targets": [
         {
@@ -1043,7 +1277,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 53
       }
     },
     {
@@ -1059,7 +1293,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 54
       },
       "targets": [
         {
@@ -1128,7 +1362,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 50
+        "y": 54
       },
       "targets": [
         {
@@ -1197,7 +1431,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 58
+        "y": 62
       },
       "targets": [
         {
@@ -1266,7 +1500,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 58
+        "y": 62
       },
       "targets": [
         {
@@ -1335,7 +1569,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 70
       },
       "targets": [
         {
@@ -1401,7 +1635,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 78
       }
     },
     {
@@ -1417,7 +1651,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 79
       },
       "targets": [
         {
@@ -1486,7 +1720,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 79
       },
       "targets": [
         {
@@ -1556,7 +1790,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 87
       },
       "targets": [
         {
@@ -1625,7 +1859,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 87
       },
       "targets": [
         {
@@ -1694,7 +1928,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 91
+        "y": 95
       },
       "targets": [
         {
@@ -1763,7 +1997,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 91
+        "y": 95
       },
       "targets": [
         {
@@ -1829,7 +2063,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 103
       }
     },
     {
@@ -1845,7 +2079,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 100
+        "y": 104
       },
       "targets": [
         {
@@ -1914,7 +2148,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 100
+        "y": 104
       },
       "targets": [
         {
@@ -1983,7 +2217,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 108
+        "y": 112
       },
       "targets": [
         {
@@ -2052,7 +2286,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 108
+        "y": 112
       },
       "targets": [
         {
@@ -2118,7 +2352,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 116
+        "y": 120
       }
     },
     {
@@ -2134,7 +2368,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 117
+        "y": 121
       },
       "targets": [
         {
@@ -2203,7 +2437,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 117
+        "y": 121
       },
       "targets": [
         {
@@ -2280,7 +2514,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 125
+        "y": 129
       }
     },
     {
@@ -2296,7 +2530,7 @@
         "h": 4,
         "w": 8,
         "x": 0,
-        "y": 126
+        "y": 130
       },
       "targets": [
         {
@@ -2363,7 +2597,7 @@
         "h": 4,
         "w": 8,
         "x": 8,
-        "y": 126
+        "y": 130
       },
       "targets": [
         {
@@ -2430,7 +2664,7 @@
         "h": 4,
         "w": 8,
         "x": 16,
-        "y": 126
+        "y": 130
       },
       "targets": [
         {
@@ -2497,7 +2731,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 130
+        "y": 134
       },
       "targets": [
         {

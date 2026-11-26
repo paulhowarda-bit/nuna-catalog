@@ -2,7 +2,7 @@
 // kind, person, path and time, each record with its request id, where it was read from and its hash chain; the
 // last day's counts by kind and the busiest objects; and the archive check. These routes are for audit readers
 // only (D23): anyone else is shown the refusal as the catalog answered it, with the catalog's own records below,
-// read from Kafka as before, for those who manage its grants.
+// for those who manage its grants, read from the audit table, or from Kafka where there is none (backlog 197).
 
 import * as api from './api.js';
 import {at, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
@@ -266,8 +266,10 @@ function feedPanel(catalog, summary, own) {
     feed.append(...records.map(r => feedRow(catalog, r)));
     shown += records.length;
     const committed = (answer.table || {})['committed-at'];
-    status.textContent = `${plural(shown, 'record')} shown, newest first, up to `
-      + `${committed ? at(committed) : 'the last commit'}. Records arrive here about a minute after they happen.`
+    // "As of" the last commit, not "up to" it: a writer catching up commits later than the newest record it holds.
+    status.textContent = (committed ? `${plural(shown, 'record')} shown, newest first, as of the last commit at ${at(committed)}.`
+      : `${plural(shown, 'record')} shown: nothing has been committed to the audit tables.`)
+      + ' Records arrive here about a minute after they happen.'
       + (answer['searched-to'] ? ` Searched back to ${at(answer['searched-to'])}.` : '');
     if (!shown && !answer['next-page-token']) feed.replaceChildren(h('p', {class: 'muted feed-none'}, 'No record matches. Try another kind, anyone, or an earlier time.'));
     more.replaceChildren();

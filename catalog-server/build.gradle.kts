@@ -92,8 +92,12 @@ configurations.consumable("execJar") {
 
 tasks.test {
     listOf("postgres.image", "keycloak.image", "kafka.image", "oracle.image", "mongo.image", "chrome.image",
-        "toxiproxy.image")
+        "toxiproxy.image", "prometheus.image")
         .forEach { systemProperty(it, project.property(it)!!) }
+    // AlertRulesTest runs promtool over the alert rules and their unit tests (backlog 261): a changed rule or test
+    // runs it again, a bite's patch included, rather than taking an earlier result from the build cache.
+    inputs.files(rootProject.fileTree("deploy/grafana") { include("rules/**", "tests/**") })
+        .withPropertyName("alertRules").withPathSensitivity(PathSensitivity.RELATIVE)
     // The console's browser tests refuse to start beside the nuna-demo stack unless -Pnuna.demo-beside (ConsoleBrowser,
     // backlog 209).
     systemProperty("nuna.demo-beside", providers.gradleProperty("nuna.demo-beside").isPresent)
