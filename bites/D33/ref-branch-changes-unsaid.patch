@@ -1,0 +1,16 @@
+Breaks: a ref made from a branch does not say it holds the branch's changes as they were at its making (backlog 168).
+Module: catalog-server
+Test: RefRoutesTest#aRefsCutWasTakenWhenTheRefAtTheFootOfItsLineWasMadeFromMain
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index e3f05183..04cb05bd 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1078,7 +1078,7 @@ class RefRoutes {
+                 node.put("cut-from-ended", at.fromName());
+                 break;
+             }
+-            if (source.get().kind() == Ref.Kind.BRANCH) {
++            if (false) {
+                 changes.addObject().put("branch", source.get().name().display())
+                         .put("as-of", at.createdAt().toString());
+             }

@@ -3,15 +3,15 @@ Module: catalog-store-mongo
 Test: MongoStoreSuiteTest$Refs#aNamespaceDropWaitsForAnOpenRefCreate
 
 diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java
-index 7b0ca6da..05b27315 100644
+index 95b4f294..00981b59 100644
 --- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java
 +++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java
-@@ -177,8 +177,6 @@ final class MongoNamespaces {
+@@ -178,8 +178,6 @@ final class MongoNamespaces {
              tx.see(catalog);
              tx.see(namespace);
              parent.ifPresent(doc -> tx.mark(NAMESPACE, doc));
 -            tx.collection(CATALOG).updateOne(tx.session, byId(uuid(catalogId)), new BsonDocument("$set",
 -                    new BsonDocument("clock", tx.clock()).append("trimmed", tx.clock())));
              tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(namespaceId)));
+             tx.collection(REF_GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(namespaceId)));
              tx.collection(ATTRIBUTE).deleteMany(tx.session, new BsonDocument("targetId", uuid(namespaceId)));
-             tx.collection(NAMESPACE).deleteOne(tx.session, byId(uuid(namespaceId)));

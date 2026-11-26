@@ -497,7 +497,8 @@ class RefMergeRoutesTest {
         return new RefRoutes(store, management, guard, new ManagementIdempotency(store, clock), authorizer, settings,
                 names, event -> {
                     throw new AssertionError("a merge sends no notice");
-                }, rest, (merging, events) -> engine(events).merging(), new AuditEvents(rest), clock);
+                }, rest, (merging, events) -> engine(events).merging(), new AuditEvents(rest),
+                (request, catalog, object, named) -> Optional.empty(), clock);
     }
 
     private CommitEngine engine(CommitEvents events) {

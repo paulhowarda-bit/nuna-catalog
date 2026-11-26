@@ -3,12 +3,12 @@ Module: catalog-server
 Test: GrantPreviewTest#aGrantToAGroupTheCallerBelongsToIsRefused
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index 4fcb962b..5b02db8b 100644
+index 37e4466f..7720b3d6 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -462,7 +462,7 @@ class GrantRoutes {
-             return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT, "write means nothing on a view: it"
-                     + " has no rows; select reads it, and modify changes its definition"));
+@@ -524,7 +524,7 @@ class GrantRoutes {
+                     + " is not granted on one branch: a grant that names a branch gives write or modify, what a"
+                     + " commit on it needs; reads and every other change ask through main"));
          }
 -        if (!ownGroups.mayActOn(caller, asked.group())) {
 +        if (false) {

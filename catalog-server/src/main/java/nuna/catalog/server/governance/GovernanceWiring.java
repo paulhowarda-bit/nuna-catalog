@@ -202,4 +202,10 @@ class GovernanceWiring {
     RefRoutes.Notices refNotices(AuditRuntime runtime) {
         return event -> runtime.notices().deliver(List.of(event));
     }
+
+    /** Who dropped a table or view, from the audit table, for the refs that keep it (backlog 170). */
+    @Bean
+    RefRoutes.Drops refDrops(AuditFeed feed, nuna.catalog.security.Authorizer authorizer, AuditTrail trail) {
+        return new AuditDrops(feed, authorizer, trail);
+    }
 }

@@ -1648,6 +1648,7 @@ class ConsoleBrowserTest {
         String branch = "dev_" + Api.suffix();
         expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
         expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("fills")), 200);
 
         signIn(tester());
         browser.open("/ui/#c=trading");
@@ -1678,6 +1679,25 @@ class ConsoleBrowserTest {
         browser.awaitText(By.cssSelector("#table-page h1"), "orders");
         assertThat(browser.awaitText(By.cssSelector("[data-ref-band='" + branch + "']"), "Reading the branch").getText())
                 .contains("1 table changed on it");
+        assertThat(JsonPath.<String>read(expect(api.manage("GET", "/refs/" + branch, null), 200).body(), "$.cut-at"))
+                .isEqualTo(JsonPath.<String>read(made.body(), "$.created-at"));
+
+        // The namespace's Contents through the branch fills its columns as the branch has each table (backlog 168):
+        // orders changed here at the branch's own version 1, fills as at the point at main's version 1, both with
+        // their format and snapshots.
+        browser.open("/ui/#" + at("namespace", List.of(ns), null, null) + "&r=" + branch);
+        WebElement ordersHere = contentsRow("orders");
+        assertThat(contentsCell(ordersHere, "fmt")).startsWith("v");
+        assertThat(contentsCell(ordersHere, "snaps")).isEqualTo("0");
+        assertThat(textContent(ordersHere.findElement(By.cssSelector(".on-ref")))).contains("changed here");
+        WebElement fillsHere = contentsRow("fills");
+        assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
+        assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point · v1");
+        assertThat(textContent(fillsHere.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
+        assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
+                .contains("Format, snapshots and last commit are as @" + branch + " has each table. Open one to read"
+                        + " it through @" + branch + ".")
+                .doesNotContain("A dash under Last commit");
         assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
         assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
                 .isEqualTo("trading@" + branch);
@@ -1881,6 +1901,179 @@ class ConsoleBrowserTest {
                     && d.findElements(By.cssSelector("[data-ref-band]")).isEmpty());
             browser.awaitText(By.cssSelector("#catalog-pick [data-cat]"), "trading");
             assertThat(textContent(driver.findElement(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+        }
+    }
+
+    /**
+     * A table's page when main or the ref read has no such table (backlog 170; Atelier, 2026-11-25): dropped on main
+     * and read on main, with the refs that keep it or none; dropped on main and read through a tag that keeps it;
+     * made on main after the tag's point; and taken out of the tag, which is not "made after the point".
+     */
+    @Test
+    void aTableDroppedOnMainMadeAfterThePointOrTakenOutOfARefSaysWhich() {
+        String ns = "kept_" + Api.suffix();
+        String tag = "eod_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("fills")), 200);
+        String fills = api.id(ns, "tables", "fills");
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("late")), 200);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/orders", null), 204);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/fills", null), 204);
+            expect(api.manage("POST", "/objects/" + fills + "/refs/remove", "{\"refs\":[\"" + tag + "\"]}",
+                    AUTH, api.steward()), 200);
+
+            signIn(tester());
+            // Dropped on main, read on main: the 404, who dropped it and when, and the tag that still keeps it.
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null));
+            WebElement dropped = browser.await(By.id("dropped-on-main"));
+            assertThat(textContent(dropped)).contains("dropped it on", "Main has no such table.",
+                    "Still kept by @" + tag + ".");
+            dropped.findElement(By.cssSelector("[data-kept-ref='" + tag + "']"));
+            dropped.findElement(By.cssSelector("[data-kept-acts]"));
+            assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row [data-dropped-pill]"))))
+                    .isEqualTo("Dropped on main");
+            assertThat(driver.findElements(By.cssSelector("#table-page .refusal"))).isNotEmpty();
+
+            // Dropped on main, and taken out of the tag: no branch or tag keeps it.
+            browser.open("/ui/#" + at("table", List.of(ns), "fills", null));
+            browser.awaitText(By.id("dropped-on-main"), "No branch or tag keeps it. Cleanup can purge it and delete its files.");
+
+            // Dropped on main, read through the tag, which keeps it.
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + tag);
+            WebElement kept = browser.await(By.id("dropped-through-ref"));
+            assertThat(textContent(kept)).contains(" dropped " + ns + ".orders on main on ",
+                    "@" + tag + " still keeps it, so it reads the table as it was; main answers 404 for it."
+                            + " It stays readable here, and its files stay, until it is taken out of every branch and"
+                            + " tag that keeps it.");
+            assertThat(kept.findElement(By.cssSelector("a[data-kept-link]")).getDomAttribute("href"))
+                    .contains("tab=access", "r=" + tag);
+            assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row [data-dropped-pill]"))))
+                    .startsWith("Dropped on main ");
+
+            // Made on main after the tag's point.
+            browser.open("/ui/#" + at("table", List.of(ns), "late", null) + "&r=" + tag);
+            assertThat(textContent(browser.await(By.id("made-after")))).startsWith(ns + ".late was made on ")
+                    .contains(", after @" + tag + "'s point, ")
+                    .endsWith("A ref holds only what main held then.");
+
+            // Main had it at the point, and it was taken out of the tag: the fourth state.
+            browser.open("/ui/#" + at("table", List.of(ns), "fills", null) + "&r=" + tag);
+            assertThat(textContent(browser.await(By.id("taken-out")))).startsWith("@" + tag + " no longer keeps " + ns
+                    + ".fills, though main had it at the point: it was taken out of it.");
+            assertThat(driver.findElements(By.id("made-after"))).isEmpty();
+
+            // Made again on main and dropped again: two dropped tables at the path, newest first, each with its own
+            // refs and its own slot for item 279's control (Atelier's check, 2026-11-25).
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/orders", null), 204);
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null));
+            WebElement twice = browser.await(By.id("dropped-on-main"));
+            browser.await("the second dropped table is not drawn",
+                    d -> twice.findElements(By.cssSelector("[data-kept-object]")).size() == 2);
+            List<WebElement> generations = twice.findElements(By.cssSelector("[data-kept-object]"));
+            assertThat(textContent(generations.get(0))).contains("dropped it on", "Main has no such table.",
+                    "No branch or tag keeps it. Cleanup can purge it and delete its files.");
+            assertThat(textContent(generations.get(1))).contains("dropped an earlier table at this path on",
+                    "Still kept by @" + tag + ".");
+            assertThat(generations.get(1).findElements(By.cssSelector("[data-kept-acts]"))).hasSize(1);
+
+            // Made again on main: through the tag, the page reads the old table, and main's is a different one.
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + tag);
+            WebElement replaced = browser.await(By.id("replaced-on-main"));
+            assertThat(textContent(replaced)).contains(" dropped " + ns + ".orders on main on ",
+                    ", and main made a new table by that name on ",
+                    "@" + tag + " still keeps the old one, so this page reads the table as it was. Main's " + ns
+                            + ".orders is a different table. It stays readable here, and its files stay, until it is"
+                            + " taken out of every branch and tag that keeps it.");
+            assertThat(replaced.findElement(By.cssSelector("a[data-main-table]")).getDomAttribute("href"))
+                    .contains("n=orders").doesNotContain("r=" + tag);
+            assertThat(replaced.findElement(By.cssSelector("a[data-kept-link]")).getDomAttribute("href"))
+                    .contains("tab=access", "r=" + tag);
+            assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row [data-dropped-pill]"))))
+                    .startsWith("Dropped on main ");
+            // Main's tabs read by path would show the new table's data: each says so instead. (Audit takes the same
+            // guard, for a caller whose trail is open; the tester's may not be.)
+            for (String tab : List.of("access", "maintenance")) {
+                browser.open("/ui/#" + at("table", List.of(ns), "orders", tab) + "&r=" + tag);
+                WebElement guard = browser.await(By.id("main-tabs-replaced"));
+                assertThat(textContent(guard)).contains("These tabs are main's, and main's " + ns + ".orders is a"
+                        + " different table from the one @" + tag + " reads. Open them on main's " + ns + ".orders.");
+                assertThat(guard.findElement(By.cssSelector("a[data-main-tab]")).getDomAttribute("href"))
+                        .contains("tab=" + tab).doesNotContain("r=" + tag);
+                guard.findElement(By.cssSelector("[data-kept-panel]"));
+            }
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+        }
+    }
+
+    /**
+     * Taking a table out of branches and tags from its Access tab (backlog 279; Atelier, 2026-11-25). A reader without
+     * {@code manage-tags} sees which refs keep a table main dropped and the steward's line, and no button; a tag steward,
+     * who holds {@code manage-tags} and not {@code select}, takes it out of the tag through the dialog, which opens on
+     * Cancel with nothing chosen, and reads what the answer left; the panel then says nothing keeps it.
+     */
+    @Test
+    void aStewardTakesADroppedTableOutOfATagFromAccessAndAReaderSeesNoButton() {
+        String ns = "out_" + Api.suffix();
+        String tag = "eod_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/orders", null), 204);
+            String access = "/ui/#" + at("table", List.of(ns), "orders", "access");
+
+            // The tester holds create and modify, not manage-tags: the list and the steward's line, no button.
+            signIn(tester());
+            browser.open(access);
+            WebElement panel = browser.await(By.cssSelector("#kept-by-refs .kept-panel"));
+            browser.awaitText(By.cssSelector("#kept-by-refs [data-kept-lead='dropped']"), "Main dropped this table on ");
+            assertThat(textContent(panel)).contains("Kept by branches and tags 1",
+                    "These still read it and keep its files from cleanup; once none does, cleanup can purge it and"
+                            + " delete its files.",
+                    "@" + tag, "tag · made ",
+                    "A tag steward, holding manage-tags on it, can take it out of them so cleanup can delete its files.");
+            assertThat(panel.findElement(By.cssSelector("[data-kept-row='" + tag + "'] a")).getDomAttribute("href"))
+                    .contains("r=" + tag);
+            assertThat(driver.findElements(By.cssSelector("button[data-act='take-out']"))).isEmpty();
+
+            // The steward: manage-tags on the catalog, and no select.
+            signIn(person("stella", GovernanceServer.STEWARDS));
+            browser.open(access);
+            browser.await(By.cssSelector("#kept-by-refs button[data-act='take-out']")).click();
+            WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
+            assertThat(textContent(dialog.findElement(By.id("dlg-h")))).isEqualTo("Take orders out of branches and tags");
+            assertThat(textContent(dialog)).contains("Each branch and tag you choose stops keeping " + ns + ".orders.",
+                    "Main dropped it on ", "This cannot be undone:", "Every branch and tag that keeps it (1)",
+                    "Only the ones I tick");
+            // Focus starts on Cancel, and nothing is chosen.
+            assertThat(textContent(driver.switchTo().activeElement())).isEqualTo("Cancel");
+            assertThat(dialog.findElements(By.cssSelector("input:checked"))).isEmpty();
+            WebElement submit = dialog.findElement(By.cssSelector("button[type='submit']"));
+            assertThat(textContent(submit)).isEqualTo("Take it out");
+            submit.click();
+            browser.awaitText(By.cssSelector("dialog.dlg .dlg-out"), "Choose which branches and tags to take it out of.");
+
+            // Ticking the tag chooses "Only the ones I tick", and the button names it.
+            dialog.findElement(By.cssSelector("input[name='ref'][value='" + tag + "']")).click();
+            assertThat(dialog.findElement(By.cssSelector("input[name='which'][value='some']")).isSelected()).isTrue();
+            assertThat(textContent(submit)).isEqualTo("Take it out of @" + tag);
+            submit.click();
+            WebElement took = browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Took " + ns + ".orders out of @" + tag);
+            assertThat(textContent(took)).contains("No branch or tag keeps it now. Cleanup can purge it and delete its files.");
+            assertThat(submit.isDisplayed()).isFalse();
+
+            // On close the panel reads again.
+            dialog.findElement(By.cssSelector("button.dlg-x")).click();
+            browser.awaitText(By.cssSelector("#kept-by-refs [data-kept-none]"), "No branch or tag keeps this table.");
+            assertThat(driver.findElements(By.cssSelector("button[data-act='take-out']"))).isEmpty();
         } finally {
             api.manage("DELETE", "/refs/" + tag, null);
         }

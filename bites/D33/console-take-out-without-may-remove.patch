@@ -1,0 +1,16 @@
+Breaks: the Access panel offers Take out of branches and tags to a caller without manage-tags on the table (backlog 279).
+Module: catalog-server
+Test: ConsoleRefWordsTest#theAccessPanelListsTheRefsThatKeepItAndOffersTheControlOnlyToAStewardFreeOfHoldAndFreeze
+diff --git a/catalog-server/src/main/resources/nuna/ui/kept.js b/catalog-server/src/main/resources/nuna/ui/kept.js
+index fdebb209..565bd365 100644
+--- a/catalog-server/src/main/resources/nuna/ui/kept.js
++++ b/catalog-server/src/main/resources/nuna/ui/kept.js
+@@ -61,7 +61,7 @@ const STEWARD = 'A tag steward, holding manage-tags on it, can take it out of th
+ /** The button, or the hold, freeze or steward line in its place; nothing for a reader of a live object. */
+ export async function keptActs(target, o) {
+   const n = (o.refs || []).length;
+-  if (!(o.may || {}).remove) return dropped(o) && n ? h('p', {class: 'fine', 'data-kept-steward': ''}, STEWARD) : null;
++  if (false) return dropped(o) && n ? h('p', {class: 'fine', 'data-kept-steward': ''}, STEWARD) : null;
+   if (!n) return null;
+   const stop = await heldOrFrozen(target, o);
+   if (stop === 'held') return h('p', {class: 'fine', 'data-kept-held': ''}, HELD);

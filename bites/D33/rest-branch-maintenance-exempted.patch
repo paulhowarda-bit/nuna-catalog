@@ -3,13 +3,13 @@ Module: catalog-server
 Test: RefReadsTest#theMaintenanceExemptionHoldsOnMainOnly
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
-index c26ea89..df0f545 100644
+index af075ed5..9b3c59b2 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
-@@ -239,7 +239,7 @@ class Guard {
+@@ -252,7 +252,7 @@ class Guard {
                    CatalogError missing) {
          Target target = new Target.TableOrView(object);
-         Decision decision = authorizer.decide(request.caller(), target, operation);
+         Decision decision = authorizer.decide(request.caller(), target, operation, on.refId());
 -        if (!on.onMain() && decision instanceof Decision.Exempted) {
 +        if (!on.onMain() && decision == null) {
              decision = new Decision.Denied(Authorizer.Reason.FLAGGED_TABLE, null, "table "

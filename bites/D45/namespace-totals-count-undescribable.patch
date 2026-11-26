@@ -1,16 +1,16 @@
-Breaks: a child namespace's totals count every table beneath it, those the caller may not describe too.
+Breaks: a child namespace's totals count every table beneath it, those the caller may not describe too, on main and through a ref.
 Module: catalog-server
-Test: NamespaceTablesRoutesTest#aTableTheCallerMayNotDescribeIsNotCounted
+Test: NamespaceTablesRoutesTest#aTableTheCallerMayNotDescribeIsNotCounted+throughARefOnlyWhatTheCallerMayDescribeIsListed
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
-index 0d2f715..241aa85 100644
+index e2e70266..0a0944cd 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
-@@ -230,7 +230,7 @@ class NamespaceTablesRoutes {
-                                 DESCRIBE_COUNTED))
-                         .toList());
+@@ -377,7 +377,7 @@ class NamespaceTablesRoutes {
+                 examined += page.looked();
+                 List<Decision> decisions = decide(caller, tables, DESCRIBE_COUNTED);
                  for (int i = 0; i < tables.size(); i++) {
 -                    if (decisions.get(i).allowed()) {
 +                    if (decisions.get(i) != null) {
-                         counted.add(new Counted(tables.get(i), below(level.path(), tables.get(i).name().display())));
+                         counted.add(new Counted(tables.get(i), below(level.path(), tables.get(i).name())));
                      }
                  }

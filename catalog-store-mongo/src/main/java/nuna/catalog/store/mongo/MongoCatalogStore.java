@@ -108,6 +108,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String NAMESPACE = "namespace";
     static final String OBJECT = "catalog_object";
     static final String GRANT = "grant";
+    static final String REF_GRANT = "ref_grant";
     static final String STORAGE_PROFILE = "storage_profile";
     static final String ATTRIBUTE = "governance_attribute";
     static final String HOLD = "legal_hold";

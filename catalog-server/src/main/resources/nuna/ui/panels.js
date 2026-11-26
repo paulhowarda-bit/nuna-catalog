@@ -13,6 +13,7 @@ import {liveRefLink, refWords} from './refs.js';
 import {heldHere} from './requests.js';
 import {rulesPanel, yourView} from './rules.js';
 import {grantAccess} from './grant.js';
+import {keptPanel} from './kept.js';
 
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
 const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', 'row-column-policy'];
@@ -439,12 +440,16 @@ function specOf(securable) {
   return spec;
 }
 
+/** A grant's privilege, and the branch it holds on when it names one (backlog 113); a grant without one holds on every ref. */
+export const privilegeCell = g => h('td', {class: 'name'}, g.privilege, g.branch ? muted(` on @${g.branch} only`) : null);
+
 /** A revoke, after a word in a dialog: what goes, from whom. */
 export function revokeDialog(catalog, g, after) {
-  openDialog(`Revoke ${g.privilege} from ${g.group}`, h('div', null,
-    h('p', null, `${g.group} loses ${g.privilege} on `, onWords(g.securable), '. The grant and its revocation stay in the audit trail.'),
+  const only = g.branch ? ` on @${g.branch}` : '';
+  openDialog(`Revoke ${g.privilege}${only} from ${g.group}`, h('div', null,
+    h('p', null, `${g.group} loses ${g.privilege}${only} on `, onWords(g.securable), '. The grant and its revocation stay in the audit trail.'),
     dialogForm(null, 'Revoke', async (form, out) => {
-      const answer = await api.revoke(catalog, specOf(g.securable), g.group, g.privilege);
+      const answer = await api.revoke(catalog, specOf(g.securable), g.group, g.privilege, g.branch);
       fill(out, granted(`Revoked ${g.privilege} from ${g.group}.`, answer));
       after(answer);
     })));
@@ -505,6 +510,9 @@ export function accessTab(target, reload) {
   const gov = h('div');
   load(you, () => youMay(target));
   load(gov, () => governanceTab(target, reload));
+  // Which branches and tags keep a table or view, after its governance (item 279): from item 170's read alone.
+  const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;
+  if (kept) load(kept, () => keptPanel(target));
   const [grants, listAgain] = grantsPart(target);
   // Once the dialog closes after a grant, the grant's row is brought to the middle of the view, once the list has it.
   let listed = Promise.resolve(null);
@@ -516,7 +524,7 @@ export function accessTab(target, reload) {
   const acts = may(target.catalog, 'manage-grants') ? h('div', {class: 'refusal-acts access-acts'},
     h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target,
       {after: made => { listed = listAgain(made); }, closed: showMade})}, icon('key'), 'Grant access')) : null;
-  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, rulesPanel(target), grants);
+  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, kept, rulesPanel(target), grants);
 }
 
 /** The Access tab's grants, and what lists them again once the dialog makes one, marking it. */
@@ -530,7 +538,7 @@ function grantsPart(target) {
   const ownGrants = () => load(mine, async () => {
     const list = await api.grantsOfGroups(target.catalog, []);
     return list.length ? tbl('stack-line', ['Group', 'Privilege', 'On', 'Granted'], list.map(g => h('tr', null,
-      h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege), h('td', null, onWords(g.securable)),
+      h('td', {class: 'name'}, g.group), privilegeCell(g), h('td', null, onWords(g.securable)),
       h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])))))
       : h('p', {class: 'muted'}, 'Your groups hold no grant in this catalog.');
   });
@@ -548,9 +556,10 @@ function grantsPart(target) {
       return panel(`Grants that reach this ${target.kind}`, `${plural(list.length, 'grant')} · from the catalog down`,
         list.length ? tbl('stack-line grants-reach', ['Group', 'Privilege', 'Granted on', 'Granted', ''], list.map(g => {
           const [on, words] = grantedOn(target, g.securable);
-          const isMade = !!made && on === 'here' && g.group === made.group && g.privilege === made.privilege;
-          return h('tr', {'data-group': g.group, 'data-privilege': g.privilege, 'data-on': on, class: isMade ? 'is-new' : null},
-            h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege), h('td', null, words),
+          const isMade = !!made && on === 'here' && g.group === made.group && g.privilege === made.privilege && !g.branch;
+          return h('tr', {'data-group': g.group, 'data-privilege': g.privilege, 'data-on': on, 'data-branch': g.branch || null,
+            class: isMade ? 'is-new' : null},
+            h('td', {class: 'name'}, g.group), privilegeCell(g), h('td', null, words),
             h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])),
             h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(target.catalog, g, () => refresh())}, 'Revoke')));
         })) : h('p', {class: 'muted'}, `No grant reaches this ${target.kind}.`),

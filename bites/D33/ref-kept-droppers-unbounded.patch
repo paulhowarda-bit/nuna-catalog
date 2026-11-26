@@ -1,0 +1,16 @@
+Breaks: the read of which refs keep a table looks up who dropped every dropped table at the path in the audit table, past the newest five, so one request makes unlimited feed queries (backlog 170).
+Module: catalog-server
+Test: RefRoutesTest#whoDroppedItIsLookedUpForTheNewestFiveDropsOnlyAndTheRestSayItWasLeftOut
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index 045c6ab9..ea318994 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -1142,7 +1142,7 @@ class RefRoutes {
+                 CatalogObject object = found.get(i);
+                 boolean dropped = object.state() != CatalogObject.State.ACTIVE;
+                 objects.add(keptObject(request, catalog, object, decisions.get(2 * i + 1).allowed(),
+-                        dropped && droppers < DROPPERS_READ, now));
++                        dropped, now));
+                 droppers += dropped ? 1 : 0;
+             }
+         }

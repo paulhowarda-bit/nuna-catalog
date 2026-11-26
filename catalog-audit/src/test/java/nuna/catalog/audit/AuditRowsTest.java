@@ -221,6 +221,12 @@ class AuditRowsTest {
         AuditRow branchRead = AuditRows.of(CatalogEvent.create(SampleEvents.SOURCE, SampleEvents.TIME,
                 new ObjectRead(SampleEvents.TABLE, "Dev-1", SampleEvents.V2, SampleEvents.ACTOR)), 0, 0);
         assertThat(branchRead.branch()).isEqualTo("Dev-1");
+        CatalogEvent onDev = CatalogEvent.create(SampleEvents.SOURCE, SampleEvents.TIME, new GrantChange(
+                GrantChange.Action.GRANTED, SampleEvents.TABLE, "grp-dev-writers", "write", SampleEvents.ACTOR, "Dev-1",
+                ref));
+        AuditRow branchGrant = AuditRows.of(onDev, 0, 0);
+        assertThat(branchGrant.branch()).as("a grant naming a branch (backlog 113)").isEqualTo("Dev-1");
+        assertThat(AuditRows.event(branchGrant)).isEqualTo(onDev);
     }
 
     @Test

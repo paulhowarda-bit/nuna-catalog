@@ -3,18 +3,17 @@ Module: catalog-server
 Test: RefReadsTest#aCallerHoldingNothingIsTold404+aDescriberIsRefusedTheLoad+aFlaggedTableRefusesAnUntrustedEngineThroughARef+anUnclassifiedTableIsClosedThroughARef
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index 0117b1a..c93655b 100644
+index 86c0b9ff..8e73738d 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -150,8 +150,9 @@ class TableRoutes {
+@@ -150,8 +150,8 @@ class TableRoutes {
          List<String> levels = Lookup.levels(namespace);
          Lookup.Seen seen = objects.seen(on, levels, table, Kind.TABLE);
          CatalogObject object = seen.object();
--        boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
--                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))) && Lookup.writable(on, object);
-+        boolean write = (!on.onMain() || guard.onObjectMayWrite(request, catalog, object,
-+                AuditEvents.path(levels, table), Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))))
-+                && Lookup.writable(on, object);
+-        Guard.Writes write = writable(on, object, guard.onObjectWrites(request, on, object,
+-                AuditEvents.path(levels, table), Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))));
++        Guard.Writes write = writable(on, object, !on.onMain() ? Guard.Writes.ALL : guard.onObjectWrites(request, on,
++                object, AuditEvents.path(levels, table), Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))));
          Vended vended = vend(new Target(on, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                  object.id(), object.locationRoot(), write);
-         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
+         Map<String, String> places = BranchPlaces.of(on, object, write);

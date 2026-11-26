@@ -98,6 +98,46 @@ same reads (below, "A child namespace's totals").
   `412+ tables`). `next-page-token` is there while more children may follow; a token the catalog did not issue is
   400 `BadRequestException`.
 
+## Through a branch or tag
+
+Both reads take `?ref=<name>` (D33, backlog 168) and then read the catalog's branch or tag of that name, as the
+Iceberg routes read `catalog@ref`: the namespaces and tables of its cut, by the names the cut has (one main made since
+is not there, one main dropped since still is), and each table as the ref reads it.
+
+```json
+{
+  "id": "6c1d...",
+  "name": "trades",
+  "format-version": 2,
+  "snapshots": 3,
+  "ref": {"pointer": "cut", "version": 4, "line": "main"},
+  "last-commit": {"version": 4, "line": "main", "committed-at": "...", "principal": "trino"}
+}
+```
+
+- `ref.pointer` is `own` for a branch's own pointer, which its commits made, and `cut` for the pointer its cut took.
+- `ref.version` is that pointer's version, numbered on `ref.line`: the journal that wrote it. A branch numbers its own
+  versions from 1 whatever the cut's (item 105), so for an `own` pointer the line is the ref's own name; for a `cut`
+  one it is `main`, or the ref the cut took a branch's own pointer from, by the name it had then. A branch's journal
+  stays after it ends, keyed by its id, so its line is found then too. Where it cannot be (a ref the cut came from has
+  ended, and with it what that one was made from), `line` and `last-commit` are left out.
+- `last-commit` is that journal's entry at that version, the commit that wrote the file the ref reads; its `version`
+  is `ref.version`, on the same `line`. The totals' `newest-commit` carries `line` the same way.
+- `format-version` and `snapshots` come from the projection beside a branch's own pointer. A cut's pointer keeps no
+  projection: while main's pointer is still the cut's file, main's projection serves; otherwise the catalog reads the
+  cut's metadata file, through the metadata cache, checked against the SHA-256 the cut kept, and takes its format
+  version and number of snapshots. A file that no longer matches gives neither. No table is loaded and no audit record
+  is written per table, as on main: format and snapshot count are what a caller who may describe the table sees.
+- Rights are main's, as on every read through a ref (item 26's choice 12): a table is listed and counted to a caller
+  who may `describe` it on main, and the namespace answered as above, by its id. 404 `NoSuchRefException` when no live
+  ref has the name; 404 `NoSuchNamespaceException` when its cut has no such namespace.
+
+The ref's own answers (`GET …/refs`, `GET …/refs/{ref}`) say when its cut was taken from main, `cut-at`: its making
+for a ref made from main, and for one made from another ref, that of the ref at the foot of its line. A ref made
+from a branch also holds the branch's own pointers as they were then: `branch-changes` names each such branch, with
+`as-of`. Where a ref in that line has ended, what it was made from is not kept: `cut-at` is left out and
+`cut-from-ended` names the ref that ended.
+
 ## The cost
 
 Each row of the tables read costs two reads of the catalog's database: the table's main pointer and one journal
@@ -107,6 +147,11 @@ The totals read costs the same two reads for every table it counts, plus a listi
 namespaces in every namespace it walks: at most 1,000 tables and namespaces looked at a page, so at most about 2,000
 pointer and journal reads. It reads no metadata file, loads no table, and writes no audit record per table. Contents
 makes one such read a page for all its namespace rows, never one a row.
+
+Through a ref each table costs the same, plus a read of main's pointer for a cut's table, and walking down the refs
+the cut came from costs a journal read and a ref read a step. A cut's table whose file main has moved past costs one
+read of the object store, unless the metadata cache holds the file; metadata files never change, so the cache never
+goes stale. A page of 200 rows can read up to 200 files the first time; a totals page up to 1,000.
 
 ## Tests and bites
 
@@ -123,4 +168,12 @@ makes one such read a page for all its namespace rows, never one a row.
   totals read, and a top namespace's row on the catalog's Contents.
 - Bites in `bites/D45/`: `namespace-tables-lists-undescribable` (every table listed, describable or not),
   `namespace-tables-page-unbounded` (a page without its 200-row bound) and `namespace-totals-count-undescribable`
-  (every table beneath a child counted, describable or not).
+  (every table beneath a child counted, describable or not); the two that filter bite through a ref too.
+- Through a ref (backlog 168), `NamespaceTablesRoutesTest` checks a tag's tables at the cut (a file read for the one
+  main moved past, main's projection for the rest, a table dropped on main since still listed), a branch's own
+  pointer on its own line, a tag made from a branch on that branch's line after it ended, rights and refusals as on
+  main, and totals as the ref has each table; `RefRoutesTest#aRefsCutWasTakenWhenTheRefAtTheFootOfItsLineWasMadeFromMain`
+  checks `cut-at`, `branch-changes` and `cut-from-ended`. `ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged`
+  (heavy) checks the Contents columns through a branch. Bites in `bites/D33/`: `namespace-tables-ref-reads-main`,
+  `namespace-tables-ref-own-ignored`, `namespace-tables-ref-line-main-only`, `ref-cut-at-own-making`,
+  `ref-cut-at-past-ended` and `ref-branch-changes-unsaid`.

@@ -96,7 +96,7 @@ public final class StsCredentialVending implements CredentialVending {
         Access access = request.write() ? Access.READ_WRITE : Access.READ;
         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
-                caller.principal().id(), subject, caller.engine());
+                caller.principal().id(), subject, caller.engine(), request.writeUnder());
         AtomicBoolean minted = new AtomicBoolean();
         VendedCredentials credentials;
         try {
@@ -122,14 +122,16 @@ public final class StsCredentialVending implements CredentialVending {
                 request.tableId());
         VendedCredentials credentials = Observed.call(observations, ASSUME_ROLE, "sts assume-role",
                 KeyValues.of("profile", bound.name(), "access", access.name().toLowerCase(Locale.ROOT).replace('_', '-')),
-                () -> bound.vendor().vend(request.location(), access, identity), issued -> "issued");
+                () -> bound.vendor().vend(request.location(), access, identity, request.writeUnder()),
+                issued -> "issued");
         Actor actor = new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                 caller.engine(), request.requestId());
         try {
             audit.publish(new CatalogEvent(UUID.randomUUID(), source, clock.instant(), new CredentialIssue(new Securable(Securable.Kind.TABLE, request.tableId(),
                     request.catalog().name(), request.path()), bound.name(), credentials.location(),
                     CredentialIssue.Access.valueOf(access.name()), credentials.sessionName(),
-                    credentials.expiresAt(), actor)));
+                    credentials.expiresAt(), actor,
+                    credentials.writeUnder().map(under -> credentials.location() + "/" + under).orElse(null))));
         } catch (RuntimeException e) {
             throw new AuditFailedException(e);
         }

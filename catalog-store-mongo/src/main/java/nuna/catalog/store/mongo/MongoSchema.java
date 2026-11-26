@@ -5,6 +5,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.CATALOG;
 import static nuna.catalog.store.mongo.MongoCatalogStore.DURABILITY_BARRIER;
 import static nuna.catalog.store.mongo.MongoCatalogStore.ENGINE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
+import static nuna.catalog.store.mongo.MongoCatalogStore.REF_GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static nuna.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.JOURNAL;
@@ -233,6 +234,22 @@ final class MongoSchema {
                     }
                 }
                 index(database, RULE, "row_column_rule_key", true, null, "tableId", "group");
+            }),
+            // Backlog 113: grants that name a branch, apart from the grant collection so the previous release's
+            // servers never read one as a grant on every ref. New, so made here outside any transaction, as step 14's.
+            new Step(15, "ref grants", database -> {
+                try {
+                    database.createCollection(REF_GRANT);
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != NAMESPACE_EXISTS) {
+                        throw e;
+                    }
+                }
+                index(database, REF_GRANT, "ref_grant_key", true, null, "securableId", "group", "privilege",
+                        "refScope");
+                index(database, REF_GRANT, "ref_grant_group", false, null, "catalogId", "group", "securableId",
+                        "privilege", "refScope");
+                index(database, REF_GRANT, "ref_grant_by_ref", false, null, "refScope");
             }));
 
     private MongoSchema() {

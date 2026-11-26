@@ -1,0 +1,17 @@
+Breaks: Any privilege may name a branch, not only write and modify.
+Module: catalog-server
+Test: GrantPreviewTest#aBranchGrantIsWriteOrModifyOnALiveBranchOnly
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 37e4466f..c64b9414 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -518,7 +518,7 @@ class GrantRoutes {
+             return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_OBJECT, "write means nothing on a view: it"
+                     + " has no rows; select reads it, and modify changes its definition"));
+         }
+-        if (asked.branch().isPresent() && asked.privilege() != Privilege.WRITE
++        if (false && asked.branch().isPresent() && asked.privilege() != Privilege.WRITE
+                 && asked.privilege() != Privilege.MODIFY) {
+             return Optional.of(new Refusal(Refusal.Kind.PRIVILEGE_NOT_ON_A_BRANCH, asked.privilege().wireName()
+                     + " is not granted on one branch: a grant that names a branch gives write or modify, what a"

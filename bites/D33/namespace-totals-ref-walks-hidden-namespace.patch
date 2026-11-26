@@ -1,0 +1,17 @@
+Breaks: totals through a ref go down into a namespace of the cut the caller holds nothing on, and name it in the newest commit (backlog 168, security review finding 1).
+Module: catalog-server
+Test: NamespaceTablesRoutesTest#throughARefTotalsNeverGoDownIntoANamespaceTheCallerHoldsNothingOn
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+index a24e1019..cd8672fc 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+@@ -401,8 +401,7 @@ class NamespaceTablesRoutes {
+                 // Through a ref a namespace of the cut may hold a table main has since moved where the caller may
+                 // describe it; its newest commit would then name the namespace, which the caller may not list. So a
+                 // walk through a ref goes down only into a namespace the caller holds something on, above or in.
+-                page.items().stream().filter(ns -> scope.ref().isEmpty()
+-                                || holdings.onAboveOrIn(caller, scope.target().catalog().id(), ns.id()))
++                page.items().stream()
+                         .forEach(ns -> under.add(new Level(ns, below(level.path(), ns.name()))));
+                 token = page.nextToken();
+             } while (token.isPresent());

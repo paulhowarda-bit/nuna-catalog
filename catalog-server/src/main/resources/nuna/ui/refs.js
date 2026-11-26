@@ -15,9 +15,9 @@ const DAY = 86_400_000;
 const ms = iso => new Date(iso).getTime();
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "21 Dec" */
-const dayMon = iso => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+export const dayMon = iso => { const d = new Date(iso); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
 /** "21 Dec 06:41", always with the date. */
-const refAt = iso => { const d = new Date(iso); return `${dayMon(iso)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+export const refAt = iso => { const d = new Date(iso); return `${dayMon(iso)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const daysTo = iso => Math.max(0, Math.ceil((ms(iso) - Date.now()) / DAY));
 const untilWords = iso => { const n = daysTo(iso); return n ? `in ${plural(n, 'day')}` : 'today'; };
 /** Whole days in an ISO-8601 duration as Java writes one (PT720H). */
@@ -61,18 +61,27 @@ const FRESH = new Set();
 const resultKey = (c, name) => c + '|' + String(name).toLowerCase();
 
 /**
- * The time a ref's cut was taken: its own making, or that of the branch or tag it was made from, back to main. The
- * list names a ref's source by name only, so a ref found by that name but made after this one is a later ref that
- * took the name again: the walk stops there.
+ * The time a ref's cut was taken from main, as the catalog answers it (backlog 168): its own making, or that of the
+ * ref at the foot of the line it was made from. Null where a ref in that line has ended (`cut-from-ended`).
  */
-function cutOf(r, list) {
-  let at = r;
-  for (let i = 0; i < 20 && !isMain(at.from); i++) {
-    const from = list.refs.find(x => x.name.toLowerCase() === at.from.toLowerCase());
-    if (!from || ms(from['created-at']) > ms(at['created-at'])) return null;
-    at = from;
-  }
-  return at['created-at'];
+const cutOf = r => r['cut-at'] || null;
+
+/**
+ * The branches' changes a ref holds besides main at its point, as each was taken, nearest first as the catalog lists
+ * them: ", with @a's changes as at {time}", then " and @b's as at {time}" for each after it (Atelier, 2026-11-25).
+ */
+const heldWords = r => (r['branch-changes'] || []).map((b, i) => i === 0
+  ? `, with @${b.branch}'s changes as at ${refAt(b['as-of'])}` : ` and @${b.branch}'s as at ${refAt(b['as-of'])}`).join('');
+
+/**
+ * The point a ref reads main at, for the band (Atelier, 2026-11-25): its time, or "@x's point" where a ref in its line
+ * has ended, then the branches' changes it holds; and the sentence the band adds after its own when one has ended.
+ */
+function pointWords(r) {
+  const cut = cutOf(r);
+  const x = r['cut-from-ended'] || r.from;
+  return {at: (cut ? refAt(cut) : `@${x}'s point`) + heldWords(r),
+    ended: cut ? '' : ` @${x} has ended, so the catalog no longer knows when its point was.`};
 }
 
 // ---- the chip, the selector, the band and the notes ----
@@ -195,12 +204,11 @@ export function readingControl(where, mainOnly = false) {
 function refBand(r, where, list) {
   const back = h('a', {class: 'btn sm', href: href(Object.assign({}, where, {r: null}))}, 'Read main instead');
   const more = h('a', {class: 'btn sm ghost', href: refHref(where.c, r.name)}, `About @${r.name}`);
-  const cut = cutOf(r, list);
-  const cutWords = cut ? refAt(cut) : `the point @${r.from} was made from`;
+  const point = pointWords(r);
   if (r.kind === 'tag') {
     return h('div', {class: 'ref-band t', role: 'note', 'data-ref-band': r.name}, h('span', {class: 'rb-ic'}, icon('lock')),
-      h('div', {class: 'rb-txt'}, h('p', null, h('b', null, 'Reading the tag ', cref(r), `: ${where.c} as it was at ${cutWords}.`),
-        ' Read-only: no engine and no console page can change anything through it.'),
+      h('div', {class: 'rb-txt'}, h('p', null, h('b', null, 'Reading the tag ', cref(r), `: ${where.c} as it was at ${point.at}.`),
+        point.ended, ' Read-only: no engine and no console page can change anything through it.'),
       h('p', {class: 'fine'}, madeFrom(r, list), '. It never expires.')),
       h('div', {class: 'rb-acts'}, more, back));
   }
@@ -209,7 +217,7 @@ function refBand(r, where, list) {
   return h('div', {class: 'ref-band b' + (expiring(r) ? ' warn' : ''), role: 'note', 'data-ref-band': r.name},
     h('span', {class: 'rb-ic'}, icon(expiring(r) ? 'clock' : 'branch')),
     h('div', {class: 'rb-txt'}, h('p', null, h('b', null, 'Reading the branch ', cref(r), '.'),
-      ` ${plural(n, 'table')} changed on it; every other table reads as main had it at ${cutWords}.`),
+      ` ${plural(n, 'table')} changed on it; every other table reads as main had it at ${point.at}.${point.ended}`),
     h('p', {class: 'fine'}, madeFrom(r, list), '. ', expiring(r)
       ? h('b', {class: 'warn-ink'}, `Expires ${untilWords(r['expires-at'])}, ${refAt(r['expires-at'])}.`)
       : `Expires ${refAt(r['expires-at'])} unless a commit or a renewal moves it.`)),
@@ -265,9 +273,11 @@ export function refNote(r, what) {
     governance: [h('b', null, 'Governance holds on every ref.'), ' Holds, freezes, classifications and the regulated area are main\'s '
       + 'record of the table, by its id: what you see here binds ', chip, ' too, and a merge is judged by it.'],
     access: [h('b', null, 'Governance and grants hold on every ref.'), ' They are main\'s record of the object, by its id: '
-      + 'what you see here binds ', chip, ' too, and whoever may write it on main may write it there. A grant cannot name a branch.'],
-    grants: [h('b', null, 'Grants hold on every ref.'), ' Whoever may write this table on main may write it on ', chip,
-      ', and no one else: a grant cannot name a branch.'],
+      + 'what you see here binds ', chip, ' too, and whoever may write it on main may write it there. '
+      + (tag ? 'A tag takes no write.' : 'A grant of write or modify may also name one branch, and holds on it alone.')],
+    grants: tag ? [h('b', null, 'Grants hold on every ref.'), ' Reading through ', chip, ' needs what reading main needs; a tag takes no write.']
+      : [h('b', null, 'Grants hold on every ref.'), ' Whoever may write this table on main may write it on ', chip,
+        ', and so may a group granted write or modify on ', code('@' + name), ' alone. Such a grant shows here as ', code('on @' + name + ' only'), '.'],
     audit: [h('b', null, 'This is the table\'s whole audit trail.'), ' Records of reads and commits through a ref name it, as ',
       code('on @' + name), ' or ', code('through @' + name), '.'],
     props: tag ? [h('b', null, 'Read-only through a tag.'), ' These are the properties in the metadata file the tag keeps.']
@@ -301,6 +311,192 @@ export async function readingRef(c, name) {
   }
 }
 
+// ---- a table dropped on main, or not in a ref's cut (item 170; Atelier, 2026-11-25) ----
+
+/** The tables and views at a target's path, live or dropped, newest first, with the refs that keep each; null if unread. */
+async function keptAt(target) {
+  try {
+    const answer = await api.objectRefs(target);
+    const objects = answer.objects || [];
+    // The catalog walked at most so many of the namespace's dropped tables (the Security Expert's review of 170).
+    objects.cutShort = !!answer['cut-short'];
+    return objects;
+  } catch {
+    return null;
+  }
+}
+
+const sameRef = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
+const keeps = (o, name) => (o.refs || []).some(x => sameRef(x.name, name));
+const pathOf = target => [...target.namespace, target.name].join('.');
+
+/** The pill beside the name, once however often the page draws its body. */
+function droppedPill(title, text) {
+  const old = $('[data-dropped-pill]', title);
+  const mark = pill('warn', text);
+  mark.dataset.droppedPill = '';
+  if (old) old.replaceWith(mark);
+  else title.append(mark);
+}
+
+/** The refs that keep a dropped object, each a link to its page, joined by commas. */
+function keptChips(c, o) {
+  return (o.refs || []).flatMap((x, i) => [i ? ', ' : null, h('a', {href: refHref(c, x.name), 'data-kept-ref': x.name},
+    cref(x, {warn: !!x.expired}), x.expired ? ' (past its expiry)' : null)]);
+}
+
+/**
+ * Who took an object out of a ref, and when, from the `nuna.catalog.ref` records about the object, for a caller who
+ * reads the feed: null otherwise, when the feed refuses, or when no record it reaches says so. The feed's subject
+ * filter (backlog 169) keeps the ref records whose tables name the object, by their `subject_ids`: its removal from
+ * each ref it left, and any merge that moved it; a page that stopped short searches on. The match below picks this
+ * ref's removal, and holds the same over a feed that has no such filter and lists every ref's records.
+ */
+async function takenOutBy(c, r, objectId) {
+  if (!r.id || !auditOpen(c)) return null;
+  let pageToken = null;
+  try {
+    for (let i = 0; i < 4; i++) {
+      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', subject: objectId, pageToken});
+      const hit = (answer.records || []).find(x => {
+        const d = (x.event || {}).data || {};
+        return d.ref === r.id && String(d.action || '').toUpperCase() === 'OBJECT_REMOVED'
+          && (d.tables || []).some(t => t.id === objectId);
+      });
+      if (hit) return hit;
+      pageToken = answer['next-page-token'];
+      if (!pageToken) break;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * What the table page says after the catalog's 404 for a table, or null to show the 404 alone. On main, a table
+ * dropped there: who dropped it and when, and which refs still keep it, with a place for item 279's control. Through
+ * a ref: a table main made after the ref's point, or one main had then that has since been taken out of the ref.
+ */
+export async function missingWords(target, title) {
+  const objects = await keptAt(target);
+  if (!objects || !(objects.length || objects.cutShort)) return null;
+  const c = target.catalog;
+  const path = pathOf(target);
+  if (!target.ref) {
+    // Every table dropped at the path, newest first, each with the refs that keep it (Atelier's check, 2026-11-25).
+    const dropped = objects.filter(x => x.state !== 'active');
+    // A walk cut short that found none proves none absent: say so, with no pill (Atelier, 2026-11-25).
+    if (!dropped.length && objects.cutShort) {
+      return h('div', {class: 'notice kept-note', id: 'dropped-on-main', 'data-kept': 'none-found'}, icon('info'),
+        h('p', {'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped tables and found none at this path '
+          + 'among them; one dropped earlier may still be kept by a branch or tag.'));
+    }
+    if (!dropped.length) return null;
+    droppedPill(title, 'Dropped on main');
+    // Who dropped each past the newest five is not looked up (the Security Expert's review): an audit reader is sent
+    // to the feed, searched for the path.
+    const leftOut = auditOpen(c) && dropped.some(x => x['dropped-by-left-out']);
+    return h('div', {class: 'notice kept-note', id: 'dropped-on-main', 'data-kept': 'dropped-main'}, icon('info'), h('div', null,
+      dropped.map((o, i) => {
+        const who = o['dropped-by'] && o['dropped-by'].principal;
+        const t = refAt(o['dropped-at']);
+        const kept = (o.refs || []).length;
+        const opening = i === 0 ? [who ? `${who} dropped it on ${t}.` : `It was dropped on ${t}.`, ' Main has no such table.']
+          : [who ? `${who} dropped an earlier table at this path on ${t}.` : `An earlier table at this path was dropped on ${t}.`];
+        return h('div', {class: 'kept-object', 'data-kept-object': o.id}, h('p', null, ...opening,
+          kept ? [' Still kept by ', ...keptChips(c, o), '.'] : ' No branch or tag keeps it. Cleanup can purge it and delete its files.'),
+        // Item 279 draws here its control to take this table out of these refs (may-remove) or its steward line.
+        kept ? h('div', {class: 'kept-acts', 'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)}) : null);
+      }),
+      // A drop past the newest five has `dropped-by-left-out` and no actor: it takes the words without one, above.
+      leftOut ? h('p', {class: 'fine', 'data-kept-left-out': ''}, 'Who dropped each table past the newest five is not looked up here: ',
+        h('a', {href: pageHref('audit', c) + '&' + new URLSearchParams({path})}, `search the audit feed for ${path}`), '.') : null,
+      objects.cutShort ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped '
+        + 'tables and stopped before the end, so an earlier table at this path, and the branches and tags that keep it, may be '
+        + 'missing here.') : null));
+  }
+  const r = await readingRef(c, target.ref);
+  const cut = r && cutOf(r);
+  if (!cut) return null;
+  // Main's object at the point: made by then, and live or dropped only after it.
+  const then = objects.find(x => x['made-at'] && ms(x['made-at']) <= ms(cut)
+    && (x.state === 'active' || ms(x['dropped-at']) > ms(cut)));
+  if (then && !keeps(then, r.name)) {
+    const line = h('p', null, `@${r.name} no longer keeps ${path}, though main had it at the point: it was taken out of it.`);
+    const note = h('div', {class: 'notice kept-note', id: 'taken-out', 'data-kept': 'taken-out'}, icon('info'), h('div', null, line));
+    takenOutBy(c, r, then.id).then(x => {
+      const who = x && (x.principal || (((x.event || {}).data || {}).actor || {}).principal);
+      if (who) line.append(` ${who} took it out on ${refAt(x.time)}.`);
+    });
+    return note;
+  }
+  const after = objects.find(x => x['made-at'] && ms(x['made-at']) > ms(cut));
+  if (!after) return null;
+  return h('div', {class: 'notice kept-note', id: 'made-after', 'data-kept': 'made-after'}, icon('info'),
+    h('span', null, `${path} was made on ${refAt(after['made-at'])}, after @${r.name}'s point, ${refAt(cut)}. `
+      + 'A ref holds only what main held then.'));
+}
+
+/**
+ * The table a ref keeps at a target's path that main has dropped (`o`), and main's live table now at that path, if any
+ * (`now`, a different table); null when the ref keeps none dropped. Read through a ref only.
+ */
+async function droppedKept(target) {
+  if (!target.ref || target.kind !== 'table') return null;
+  const objects = await keptAt(target);
+  const o = (objects || []).find(x => keeps(x, target.ref));
+  if (!o || o.state === 'active') return null;
+  return {o, now: objects.find(x => x.state === 'active' && x.id !== o.id) || null};
+}
+
+const onMain = (target, tab) => objectHref({...target, ref: null}, tab);
+
+/** "…until it is taken out of every branch and tag that keeps it.", "taken out of" a link to Access through the ref. */
+const untilTakenOut = target => [' It stays readable here, and its files stay, until it is ',
+  h('a', {href: objectHref(target, 'access'), 'data-kept-link': ''}, 'taken out of'), ' every branch and tag that keeps it.'];
+
+/**
+ * A table read through a ref that main has dropped since (item 170; Atelier's check, 2026-11-25): the pill beside its
+ * name and what the page says under the band, or null when main still has it or this ref does not keep it. Where main
+ * has made a new table by that name since, the note says main's is a different table and links to it.
+ */
+export async function droppedThroughRef(target, title) {
+  const found = await droppedKept(target);
+  if (!found) return null;
+  const {o, now} = found;
+  droppedPill(title, `Dropped on main ${dayMon(o['dropped-at'])}`);
+  const who = o['dropped-by'] && o['dropped-by'].principal;
+  const path = pathOf(target);
+  const t = refAt(o['dropped-at']);
+  if (now) {
+    return h('div', {class: 'notice kept-note', id: 'replaced-on-main', 'data-kept': 'replaced'}, icon('info'), h('span', null,
+      who ? `${who} dropped ${path} on main on ${t}, and main made a new table by that name on ${refAt(now['made-at'])}.`
+        : `${path} was dropped on main on ${t}, and main made a new table by that name on ${refAt(now['made-at'])}.`,
+      ` @${target.ref} still keeps the old one, so this page reads the table as it was. `,
+      h('a', {href: onMain(target, null), 'data-main-table': ''}, `Main's ${path}`), ' is a different table.', ...untilTakenOut(target)));
+  }
+  return h('div', {class: 'notice kept-note', id: 'dropped-through-ref', 'data-kept': 'dropped-ref'}, icon('info'), h('span', null,
+    who ? `${who} dropped ${path} on main on ${t}.` : `${path} was dropped on main on ${t}.`,
+    ` @${target.ref} still keeps it, so it reads the table as it was; main answers 404 for it.`, ...untilTakenOut(target)));
+}
+
+/**
+ * Access, Maintenance and Audit are main's, read by path: where main has a new table at the path of the one a ref
+ * keeps, they would show the new table's governance, health and trail on the old one's page. In that state each shows
+ * this line instead (Atelier, 2026-11-25), then an empty `[data-kept-panel]` named by the kept table's id, where item
+ * 279 draws its "Kept by branches and tags" panel on Access. Null in every other state. `tab` is the route's tab.
+ */
+export async function replacedGuard(target, tab) {
+  const found = await droppedKept(target);
+  if (!found || !found.now) return null;
+  const path = pathOf(target);
+  return h('div', {class: 'stack', id: 'main-tabs-replaced'}, h('div', {class: 'notice kept-note', 'data-kept': 'replaced-tab'},
+    icon('info'), h('span', null, `These tabs are main's, and main's ${path} is a different table from the one @${target.ref} reads. Open them on `,
+      h('a', {href: onMain(target, tab), 'data-main-tab': tab}, `main's ${path}`), '.')),
+  h('div', {'data-kept-panel': found.o.id, 'data-tab': tab}));
+}
+
 // ---- audit words for a ref's record ----
 
 /** A nuna.catalog.ref record in words (6.5). */
@@ -319,6 +515,10 @@ export function refWords(d) {
     case 'MERGED': return `Merged the branch ${name} into main: ${plural((d.tables || []).length, 'table')} moved in one transaction, and the branch ended`;
     case 'EXPIRING': return `Warned that the branch ${name} expires ${until}`;
     case 'EXPIRED': return `Ended the branch ${name}, which expired ${until}`;
+    // Item 156's record names the table or view it took out in `tables` (RefChange.tables, each a Securable whose path
+    // is its namespace levels, then its name).
+    case 'OBJECT_REMOVED': return `Took ${((d.tables || [])[0] || {path: []}).path.join('.')} out of the ${kind} ${name}, `
+      + 'which no longer reads it or keeps its files';
     default: return `${String(d.action || '').toLowerCase()} ${name}`;
   }
 }
@@ -438,7 +638,7 @@ async function refsTab(c, list) {
       ' A new branch is refused until one is merged, deleted or expires. Tags are counted apart.')));
   }
   out.push(h('div', {class: 'panel refline-panel'}, h('h2', null, 'Every ref on one line ',
-    h('span', {class: 'meta'}, 'main is the waterline; branches run beneath it to their expiry')), refLine(c, refs, list),
+    h('span', {class: 'meta'}, 'main is the waterline; branches run beneath it to their expiry')), refLine(c, refs),
   h('p', {class: 'fine only-sm'}, 'Opens at today; earlier refs are to the left.')));
   const rows = refs.slice().sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'branch' ? -1 : 1)
     || (a.kind === 'branch' ? ms(a['expires-at']) - ms(b['expires-at']) : ms(b['created-at']) - ms(a['created-at'])))
@@ -528,11 +728,11 @@ function refsExplain(c, lim) {
 }
 
 /** The ref line: main as the waterline, tags as flags, each branch beneath it from its point to its expiry. */
-function refLine(c, refs, list) {
+function refLine(c, refs) {
   const now = Date.now();
   const brs = refs.filter(r => r.kind === 'branch').sort((a, b) => ms(a['created-at']) - ms(b['created-at']));
   const tags = refs.filter(r => r.kind === 'tag');
-  const cut = r => ms(cutOf(r, list) || r['created-at']);
+  const cut = r => ms(cutOf(r) || r['created-at']);
   const lo = Math.min(...refs.map(cut), now - 30 * DAY) - 2 * DAY;
   const hi = Math.max(...brs.map(r => ms(r['expires-at'])), now + 30 * DAY) + 3 * DAY;
   const W = 1100;
@@ -622,7 +822,7 @@ export function refPage(c, name, tab) {
     const total = Math.max(changed.length, (findRef(list, r.name) || {})['changed-count'] || 0);
     // A branch's own versions number from 1 (item 105), so its version is its count of commits.
     const commits = changed.reduce((a, t) => a + (t.version || 0), 0);
-    const cut = cutOf(r, list);
+    const cut = cutOf(r);
     const title = h('div', {class: 'title-row'}, h('h1', {tabindex: '-1', 'aria-label': `${kindWord(r)} @${r.name}`}, cref(r, {big: true})),
       badge(kindWord(r), 'strong'), expiring(r) ? pill('warn', icon('clock'), `Expires ${untilWords(r['expires-at'])}`) : null);
     const sub = h('p', {class: 'sub'}, purpose(r), madeFrom(r, list), '.');

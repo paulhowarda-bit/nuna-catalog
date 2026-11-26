@@ -3,15 +3,15 @@ Module: catalog-objectstore
 Test: VendingTest#vendorRefusesLocationsOutsideTheProfile
 
 diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CredentialVendor.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CredentialVendor.java
-index 5d38467..c90015e 100644
+index a52bc629..5714fbe1 100644
 --- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CredentialVendor.java
 +++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CredentialVendor.java
-@@ -73,7 +73,7 @@ public final class CredentialVendor implements AutoCloseable {
-      * @throws ObjectStoreException      when STS refuses or cannot be reached
+@@ -84,7 +84,7 @@ public final class CredentialVendor implements AutoCloseable {
       */
-     public VendedCredentials vend(String location, Access access, SessionIdentity identity) {
+     public VendedCredentials vend(String location, Access access, SessionIdentity identity,
+                                   Optional<String> writeUnder) {
 -        ObjectLocation table = profile.approve(location);
 +        ObjectLocation table = ObjectLocation.parse(location);
-         String policy = SessionPolicy.forTable(table, access, profile.region(), profile.kmsKey());
+         String policy = SessionPolicy.forTable(table, access, profile.region(), profile.kmsKey(), writeUnder);
          String sessionName = identity.sessionName();
          AssumeRoleResponse response;

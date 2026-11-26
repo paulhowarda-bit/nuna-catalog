@@ -17,7 +17,8 @@ import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceS
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
-import {readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
+import {fillKeptSlots, keptPanel} from './kept.js';
+import {droppedThroughRef, missingWords, readingRef, readOnlyNote, refChrome, refNote, replacedGuard} from './refs.js';
 import {closedNote, openingTab, trailOpen, trailWords} from './access.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
@@ -56,6 +57,18 @@ function refusedLoad(error, others, ref) {
 }
 
 /**
+ * The catalog's 404 for a table, then what the catalog knows of the path (item 170): dropped on main and which refs
+ * keep it, made after the point of the ref read, or taken out of it. Null for any other refusal, or when it knows none.
+ */
+async function missingLoad(error, target, title) {
+  if (error.status !== 404 || error.type !== 'NoSuchTableException') return null;
+  const words = await missingWords(target, title);
+  // Item 279's control, or its steward line, in each slot the state leaves for a dropped object.
+  if (words) await fillKeptSlots(words, target);
+  return words ? [failure(error, {big: true}), words] : null;
+}
+
+/**
  * A table flagged for row and column rules refuses the console's load, which is storage access, to everyone (D20): its
  * Overview, Schema and History say why instead of the refusal (Atelier, 2026-11-24; backlog 241).
  */
@@ -74,6 +87,14 @@ async function throughRef(target, loaded, what, draw) {
     await loaded();
   } catch (error) {
     if (noLiveRef(error)) return null;
+  }
+  // Main's path naming a newer table than the one the ref keeps: its data would be that table's (item 170).
+  const replaced = what && await replacedGuard(target, {health: 'maintenance', access: 'access', audit: 'audit'}[what]);
+  if (replaced) {
+    // On Access, item 279's panel for the table the ref keeps, beneath the line, in the slot 170 leaves.
+    const slot = $('[data-kept-panel][data-tab="access"]', replaced);
+    if (slot) fill(slot, await keptPanel(target));
+    return replaced;
   }
   return [what ? refNote(await readingRef(target.catalog, target.ref) || target.ref, what) : null, await draw()];
 }
@@ -126,6 +147,8 @@ export function tablePage(target, tab, route) {
     const m = t.metadata;
     title.insertBefore(badge(`iceberg v${m['format-version']}`, 'strong'), title.children[2] || null);
     addCount(tabs, 'schema', (m.schemas || []).length);
+    // A table a ref still reads after main dropped it says so under the band, on every tab (item 170).
+    if (target.ref) droppedThroughRef(target, title).then(note => note && tabs.before(note), () => {});
   }, () => {});
   const reload = () => show();
   const afterChange = () => {
@@ -156,7 +179,8 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
-          return await flaggedLoad(error, target) || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
+          return await flaggedLoad(error, target) || await missingLoad(error, target, title)
+            || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
         const shown = {'': overviewTab, schema: (x, y) => h('div', {class: 'stack'}, schemaTab(x, y), partitionTab(x, y)),

@@ -97,7 +97,7 @@ class Management {
                 .orElseThrow(() -> noSuchNamespace(levels));
     }
 
-    private static CatalogError noSuchNamespace(List<String> levels) {
+    static CatalogError noSuchNamespace(List<String> levels) {
         return CatalogError.of(404, "NoSuchNamespaceException", "Namespace does not exist: " + String.join(".", levels));
     }
 

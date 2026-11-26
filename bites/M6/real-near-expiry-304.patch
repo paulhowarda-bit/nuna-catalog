@@ -3,13 +3,13 @@ Module: catalog-server
 Test: VendingNearExpiryTest
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index 0117b1a..ac519cc 100644
+index 86c0b9ff..6816350e 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -154,7 +154,7 @@ class TableRoutes {
-                 Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))) && Lookup.writable(on, object);
+@@ -155,7 +155,7 @@ class TableRoutes {
          Vended vended = vend(new Target(on, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                  object.id(), object.locationRoot(), write);
+         Map<String, String> places = BranchPlaces.of(on, object, write);
 -        boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
 +        boolean cacheable = true;
          Map<String, String> labels = GovernanceChain.of(store, object).labels();

@@ -1,0 +1,15 @@
+Breaks: through a ref that keeps a table main dropped and made again, the Access panel lists main's new table instead of the one the ref keeps (backlog 279).
+Module: catalog-server
+Test: ConsoleRefWordsTest#thePanelShowsEachObjectByItsIdAndThroughARefTheOneItKeeps
+diff --git a/catalog-server/src/main/resources/nuna/ui/kept.js b/catalog-server/src/main/resources/nuna/ui/kept.js
+index fdebb209..fc66b506 100644
+--- a/catalog-server/src/main/resources/nuna/ui/kept.js
++++ b/catalog-server/src/main/resources/nuna/ui/kept.js
+@@ -23,7 +23,6 @@ const kindOf = o => o.kind === 'view' ? 'view' : 'table';
+ export function shownObjects(objects, target) {
+   if (target.ref) {
+     const kept = objects.filter(o => keeps(o, target.ref));
+-    if (kept.length) return kept;
+   }
+   const active = objects.find(o => !dropped(o));
+   return active ? [active] : objects;
