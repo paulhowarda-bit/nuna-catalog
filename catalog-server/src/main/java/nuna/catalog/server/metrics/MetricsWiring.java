@@ -3,6 +3,7 @@ package nuna.catalog.server.metrics;
 import io.micrometer.core.instrument.FunctionCounter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
+import io.micrometer.observation.ObservationRegistry;
 import nuna.catalog.core.commit.MetadataCache;
 import nuna.catalog.server.governance.RefSettings;
 import nuna.catalog.server.storage.StorageSettings;
@@ -26,8 +27,9 @@ class MetricsWiring {
     }
 
     @Bean
-    FilterRegistrationBean<RequestMetrics> requestMetrics(MeterRegistry registry) {
-        FilterRegistrationBean<RequestMetrics> registration = new FilterRegistrationBean<>(new RequestMetrics(registry));
+    FilterRegistrationBean<RequestMetrics> requestMetrics(MeterRegistry registry, ObservationRegistry observations) {
+        FilterRegistrationBean<RequestMetrics> registration = new FilterRegistrationBean<>(
+                new RequestMetrics(registry, observations));
         // Right after the trace starts and the request id is set (TelemetryWiring), before authentication.
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 3);
         return registration;

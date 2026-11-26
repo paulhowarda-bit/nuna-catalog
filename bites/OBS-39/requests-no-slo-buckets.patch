@@ -3,11 +3,11 @@ Module: catalog-server
 Test: CatalogMetricsRoutesTest#callsAreTimedByOperationOutcomeAndErrorType
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
-index ae767f1..68be645 100644
+index a539b6ab..37a996ca 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
-@@ -42,7 +42,6 @@ public final class RequestMetrics extends OncePerRequestFilter {
-     RequestMetrics(MeterRegistry registry) {
+@@ -57,7 +57,6 @@ public final class RequestMetrics extends OncePerRequestFilter {
+         this.observations = observations;
          this.timers = Timer.builder(REQUESTS)
                  .description("Iceberg REST calls, by operationId and outcome")
 -                .serviceLevelObjectives(SLO.toArray(Duration[]::new))
