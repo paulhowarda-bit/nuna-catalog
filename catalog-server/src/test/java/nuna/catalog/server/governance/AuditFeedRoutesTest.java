@@ -201,6 +201,40 @@ class AuditFeedRoutesTest {
         assertThat(query.to()).isEqualTo(Instant.parse("2026-11-22T00:00:00Z"));
         assertThat(query.limit()).isEqualTo(20);
         assertThat(query.after()).contains(new EventsReader.Cursor(5, 0, 3));
+        assertThat(query.branch()).isNull();
+        assertThat(query.subject()).isNull();
+    }
+
+    @Test
+    void theRefAndSubjectFiltersReachTheTableWithinTheCatalog() {
+        // Backlog 169: the records through a ref, and the records about an object or a ref.
+        String orders = "7f0c2a52-9d0e-4a8b-9c61-2b1e6f0d4a11";
+        table.rows = List.of(row(0, 41, "request-9"));
+
+        String body = feed(Map.of("branch", "Q3-Close", "subject", orders, "type", "nuna.catalog.ref")).getBody();
+
+        EventsReader.Query query = table.asked.getFirst();
+        assertThat(query.catalog()).as("only the catalog asked about").isEqualTo("gate");
+        assertThat(query.branch()).as("compared as names are").isEqualTo("q3-close");
+        assertThat(query.subject()).isEqualTo(orders);
+        assertThat(query.types()).containsExactly("nuna.catalog.ref");
+        assertThat(JsonPath.<String>read(body, "$.records[0].branch")).as("the ref the record went through")
+                .isEqualTo("main");
+        assertThat(audited(AuditRead.class)).singleElement().satisfies(read ->
+                assertThat(read.target().id()).isEqualTo(gate.id()));
+    }
+
+    @Test
+    void theRefAndSubjectFiltersAreRefusedToWhoeverMayNotReadTheFeed() {
+        // Backlog 169: who may read which records does not change with the filters.
+        for (Caller refused : List.of(TOM, GINA, OLIVE)) {
+            caller = refused;
+            assertThat(answer(() -> feed(Map.of("branch", "q3", "subject", EVENT)))).as(refused.subject().id())
+                    .isEqualTo(403);
+        }
+        assertThat(audited(Denial.class)).hasSize(3).allSatisfy(denial ->
+                assertThat(denial.securable().id()).isEqualTo(audit.id()));
+        assertThat(table.asked).isEmpty();
     }
 
     @Test
@@ -217,7 +251,7 @@ class AuditFeedRoutesTest {
 
     @Test
     void anUnknownCatalogIs404() {
-        assertThat(answer(() -> routes.feed("nowhere", null, null, null, null, null, null, null, http)))
+        assertThat(answer(() -> routes.feed("nowhere", null, null, null, null, null, null, null, null, null, http)))
                 .isEqualTo(404);
         assertThat(answer(() -> routes.summary("nowhere", http))).isEqualTo(404);
         assertThat(table.asked).isEmpty();
@@ -227,7 +261,9 @@ class AuditFeedRoutesTest {
     void aBadlyAskedReadIs400AndReadsNothing() {
         for (Map<String, String> bad : List.of(Map.of("type", "nuna.catalog.nothing"), Map.of("from", "yesterday"),
                 Map.of("from", "2026-11-22T00:00:00Z", "to", "2026-11-22T00:00:00Z"), Map.of("limit", "0"),
-                Map.of("limit", "201"), Map.of("pageToken", "not-a-token"), Map.of("path", "hr\u001f"))) {
+                Map.of("limit", "201"), Map.of("pageToken", "not-a-token"), Map.of("path", "hr\u001f"),
+                Map.of("branch", "@q3"), Map.of("branch", " "), Map.of("branch", "q\uD800"), Map.of("subject", "orders"),
+                Map.of("subject", EVENT + "0"))) {
             assertThat(answer(() -> feed(bad))).as(bad.toString()).isEqualTo(400);
         }
         assertThat(table.asked).isEmpty();
@@ -488,7 +524,7 @@ class AuditFeedRoutesTest {
         assertThat(answer(() -> feed(Map.of()))).isEqualTo(403);
         assertThat(answer(() -> routes.summary("gate", http))).isEqualTo(403);
         assertThat(answer(() -> routes.archive(http))).isEqualTo(403);
-        assertThat(answer(() -> routes.feed("nowhere", null, null, null, null, null, null, null, http)))
+        assertThat(answer(() -> routes.feed("nowhere", null, null, null, null, null, null, null, null, null, http)))
                 .as("refused before the catalog is looked up").isEqualTo(403);
         assertThat(answer(() -> chain(RUN_GAP, "6", EVENT))).isEqualTo(403);
         assertThat(answer(() -> chain("not-a-run", "0", null))).as("refused before what is asked is read")
@@ -517,7 +553,8 @@ class AuditFeedRoutesTest {
 
     private ResponseEntity<String> feed(Map<String, String> query) {
         Function<String, String> q = query::get;
-        return routes.feed("gate", q.apply("type"), q.apply("principal"), q.apply("path"), q.apply("from"),
+        return routes.feed("gate", q.apply("type"), q.apply("principal"), q.apply("path"), q.apply("branch"),
+                q.apply("subject"), q.apply("from"),
                 q.apply("to"), q.apply("limit"), q.apply("pageToken"), http);
     }
 

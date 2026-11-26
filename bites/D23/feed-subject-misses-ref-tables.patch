@@ -1,0 +1,17 @@
+Breaks: a table's subject filter matches a ref record by its ref only, not by the tables it names, so who took the table out of a ref is not found (backlog 169).
+Module: catalog-audit-tables
+Test: EventsReaderTest#filtersByTheObjectOrRefARecordIsAbout
+
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+index 6f78f9e5..d61e01cc 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+@@ -375,7 +375,7 @@ public final class EventsReader implements AutoCloseable {
+         if (query.subject() != null && !query.subject().equals(record.getField("object_id"))) {
+             @SuppressWarnings("unchecked")
+             List<String> subjects = (List<String>) record.getField("subject_ids");
+-            if (subjects == null || !subjects.contains(query.subject())) {
++            if (subjects == null || !subjects.getFirst().equals(query.subject())) {
+                 return false;
+             }
+         }
