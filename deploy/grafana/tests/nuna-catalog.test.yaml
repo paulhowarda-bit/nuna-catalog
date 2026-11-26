@@ -1,0 +1,283 @@
+# promtool unit tests of rules/nuna-catalog.rules.yaml (backlog 261). AlertRulesTest (catalog-server, tagged heavy)
+# runs them in the Prometheus image the demo runs; by hand, from the repo root:
+#
+#   docker run --rm -v "$PWD/deploy/grafana:/grafana:ro" --entrypoint promtool prom/prometheus:v3.16.0 \
+#     test rules /grafana/tests/nuna-catalog.test.yaml
+#
+# Series stand for what one catalog server pushes each minute (cumulative counts), named as
+# docs/observability/dashboards-and-alerts.md assumes. The alert counter is pushed from the server's start, busy or
+# idle; a request series begins at its first call. An alertname listed with no alerts must not fire at that time.
+rule_files:
+  - ../rules/nuna-catalog.rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: every call answered 500 for 15 minutes pages
+    # Six hours of loads answered 200 within 50 ms, 60 a minute; from 360m every load is answered 503 (the store
+    # unreachable, say).
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x390
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none"}
+        values: 0+60x360 21600x30
+      - series: nuna_catalog_requests_milliseconds_bucket{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none", le="50"}
+        values: 0+60x360 21600x30
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="5xx", error_type="ServiceUnavailableException"}
+        values: _x361 60+60x29
+    alert_rule_test:
+      # Two minutes after the first failure, once the new 5xx series has the two pushes rate() needs: the 1 h and
+      # 5 min windows page; the 6 h one crosses its factor a minute later.
+      - eval_time: 362m
+        alertname: NunaLoadAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
+              description: >-
+                2.522% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
+                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
+      - eval_time: 375m
+        alertname: NunaLoadAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
+              description: >-
+                24.47% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
+                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
+      - eval_time: 375m
+        alertname: NunaRequestAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "Iceberg calls fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
+              description: >-
+                24.47% of the Iceberg REST calls nuna.catalog.requests times were answered 5xx (4xx answers left out);
+                the SLO allows 0.1%, a draft target (backlog 261). Burning at 14.4 times the budget over 1 h and 5 min,
+                or 6 times over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
+      - eval_time: 375m
+        alertname: NunaCommitAvailabilityBurnFast
+        exp_alerts: []
+      # The blind spot the availability SLOs close: the latency SLO times answers 200 only, and there are none.
+      - eval_time: 375m
+        alertname: NunaLoadSloBurnFast
+        exp_alerts: []
+
+  - name: 409 commit conflicts alone do not page
+    # Two hours of commits, half of them refused 409 (CommitFailedException), and loads of a missing table (404):
+    # 4xx answers are neither good nor bad.
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x120
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="updateTable", outcome="2xx", error_type="none"}
+        values: 0+30x120
+      - series: nuna_catalog_requests_milliseconds_bucket{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="updateTable", outcome="2xx", error_type="none", le="300"}
+        values: 0+30x120
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="updateTable", outcome="4xx", error_type="CommitFailedException"}
+        values: 0+30x120
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="commitTransaction", outcome="4xx", error_type="CommitFailedException"}
+        values: 0+10x120
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none"}
+        values: 0+60x120
+      - series: nuna_catalog_requests_milliseconds_bucket{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none", le="50"}
+        values: 0+60x120
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="4xx", error_type="NoSuchTableException"}
+        values: 0+60x120
+    alert_rule_test:
+      - eval_time: 120m
+        alertname: NunaCommitAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: NunaCommitAvailabilityBurnSlow
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: NunaLoadAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: NunaRequestAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: NunaRequestAvailabilityBurnSlow
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: NunaCommitSloBurnFast
+        exp_alerts: []
+
+  - name: a catalog that stops reporting pages within 10 minutes
+    # The only catalog stops pushing after 30m.
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x30
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none"}
+        values: 0+60x30
+      - series: nuna_catalog_requests_milliseconds_bucket{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none", le="50"}
+        values: 0+60x30
+    alert_rule_test:
+      - eval_time: 39m
+        alertname: NunaCatalogGone
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: NunaCatalogGone
+        exp_alerts:
+          - exp_labels: {severity: page}
+            exp_annotations:
+              summary: "No catalog server reports any metrics"
+              description: >-
+                nuna_catalog_alerts_metadata_integrity_total, which every catalog server pushes each minute from its
+                start, has had no sample for 10 minutes: no server runs, or their telemetry does not reach Prometheus.
+                docs/observability/dashboards-and-alerts.md.
+      # When no catalog reports, NunaCatalogGone pages alone.
+      - eval_time: 40m
+        alertname: NunaCatalogSilent
+        exp_alerts: []
+
+  - name: one deployment of two stops reporting
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x30
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="other/nuna-catalog", instance="catalog-0"}
+        values: 0x60
+    alert_rule_test:
+      - eval_time: 39m
+        alertname: NunaCatalogSilent
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: NunaCatalogSilent
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "A catalog deployment has stopped reporting metrics (nuna/nuna-catalog)"
+              description: >-
+                Its servers pushed metrics within the last day and none for 10 minutes: none runs, or their telemetry
+                does not reach Prometheus. Other deployments still report. docs/observability/dashboards-and-alerts.md.
+      - eval_time: 40m
+        alertname: NunaCatalogGone
+        exp_alerts: []
+
+  - name: a firing page whose series stop keeps firing for keep_firing_for
+    # Six hours of loads, 60 a minute; from 360m one in ten is answered 503, which pages within about ten minutes
+    # (the 1 h and 5 min windows; the 6 h window stays under its factor); at 375m the server stops pushing. The
+    # 5-minute window holds too few samples from 379m, so the page's condition clears there; keep_firing_for keeps
+    # it firing until NunaCatalogGone has taken over at 385m.
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x375
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none"}
+        values: 0+60x360 21654+54x14
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="5xx", error_type="ServiceUnavailableException"}
+        values: _x361 6+6x14
+    alert_rule_test:
+      - eval_time: 375m
+        alertname: NunaLoadAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
+              description: >-
+                2.42% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
+                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
+      - eval_time: 385m
+        alertname: NunaLoadAvailabilityBurnFast
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
+              description: >-
+                2.611% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
+                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
+      - eval_time: 385m
+        alertname: NunaCatalogGone
+        exp_alerts:
+          - exp_labels: {severity: page}
+            exp_annotations:
+              summary: "No catalog server reports any metrics"
+              description: >-
+                nuna_catalog_alerts_metadata_integrity_total, which every catalog server pushes each minute from its
+                start, has had no sample for 10 minutes: no server runs, or their telemetry does not reach Prometheus.
+                docs/observability/dashboards-and-alerts.md.
+      - eval_time: 390m
+        alertname: NunaLoadAvailabilityBurnFast
+        exp_alerts: []
+
+  - name: an SLO whose bucket is missing pages
+    # Loads answered 200 arrive with no buckets (percentiles configured for the timer, say); commits' bucket at 300 ms
+    # arrives written 300.0, which the rules read.
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x20
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none"}
+        values: 0+60x20
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="updateTable", outcome="2xx", error_type="none"}
+        values: 0+10x20
+      - series: nuna_catalog_requests_milliseconds_bucket{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="updateTable", outcome="2xx", error_type="none", le="300.0"}
+        values: 0+10x20
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NunaSloBucketMissing
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, slo: loads answered 200 within 50 ms, severity: page}
+            exp_annotations:
+              summary: "The SLO loads answered 200 within 50 ms reads no bucket at its bound (nuna/nuna-catalog)"
+              description: >-
+                Its answers arrive in nuna_catalog_requests_milliseconds_count, but no _bucket series has the SLO's `le`
+                for 10 minutes, so its burn-rate rules return nothing. nuna.catalog.requests' buckets are set in code
+                (RequestMetrics.SLO). docs/observability/dashboards-and-alerts.md.
+
+  - name: request series that stop arriving while the catalog reports page after an hour
+    # The server keeps pushing; its request series stop after 30m (converted to native histograms, say).
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x120
+      - series: nuna_catalog_requests_milliseconds_count{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none"}
+        values: 0+60x30
+      - series: nuna_catalog_requests_milliseconds_bucket{job="nuna/nuna-catalog", instance="catalog-0", catalog="markets", operation_id="loadTable", outcome="2xx", error_type="none", le="50"}
+        values: 0+60x30
+    alert_rule_test:
+      - eval_time: 89m
+        alertname: NunaRequestSeriesMissing
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: NunaRequestSeriesMissing
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "A catalog deployment reports, but no request series has arrived for an hour (nuna/nuna-catalog)"
+              description: >-
+                nuna_catalog_requests_milliseconds_count has had no sample for an hour while the servers report. Its
+                series may arrive under other names (native histograms, seconds), and then no SLO rule sees anything; or
+                no Iceberg call has reached a server since it started. docs/observability/dashboards-and-alerts.md.
+      # The count and its buckets went together: that is this alert's, not the bucket's.
+      - eval_time: 90m
+        alertname: NunaSloBucketMissing
+        exp_alerts: []
+
+  - name: a new catalog with no calls yet does not page in its first hour
+    # Once it has reported for an hour with no request series, it does: see the rule's comment.
+    interval: 1m
+    input_series:
+      - series: nuna_catalog_alerts_metadata_integrity_total{job="nuna/nuna-catalog", instance="catalog-0"}
+        values: 0x90
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: NunaRequestSeriesMissing
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: NunaRequestSeriesMissing
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-catalog, severity: page}
+            exp_annotations:
+              summary: "A catalog deployment reports, but no request series has arrived for an hour (nuna/nuna-catalog)"
+              description: >-
+                nuna_catalog_requests_milliseconds_count has had no sample for an hour while the servers report. Its
+                series may arrive under other names (native histograms, seconds), and then no SLO rule sees anything; or
+                no Iceberg call has reached a server since it started. docs/observability/dashboards-and-alerts.md.
