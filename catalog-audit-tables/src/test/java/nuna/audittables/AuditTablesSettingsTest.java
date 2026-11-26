@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -15,13 +16,17 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 /** The writer's settings as Spring binds them, and the Iceberg and Kafka client settings it makes of them. */
 class AuditTablesSettingsTest {
 
+    /** Sample secrets, made per run so no credential-shaped literal sits in the source. */
+    private static final String SECRET = "cs-" + UUID.randomUUID();
+    private static final String ARCHIVE_SECRET = "sk-" + UUID.randomUUID();
+
     private static Map<String, String> required() {
         Map<String, String> properties = new HashMap<>();
         properties.put("nuna.audit-tables.catalog-uri", "http://nuna-catalog:8181/");
         properties.put("nuna.audit-tables.principal", "svc-audit-tables");
         properties.put("nuna.audit-tables.token.endpoint", "https://idp.example/oauth2/token");
         properties.put("nuna.audit-tables.token.client-id", "audit-tables");
-        properties.put("nuna.audit-tables.token.client-secret", "s3cret");
+        properties.put("nuna.audit-tables.token.client-secret", SECRET);
         properties.put("nuna.audit-tables.kafka.bootstrap-servers", "kafka:9092");
         return properties;
     }
@@ -83,7 +88,7 @@ class AuditTablesSettingsTest {
         properties.put("nuna.audit-tables.otlp.token", "a".repeat(32));
         properties.put("nuna.audit-tables.archive.bucket", "nuna-audit-archive");
         properties.put("nuna.audit-tables.archive.access-key-id", "AKIAEXAMPLE");
-        properties.put("nuna.audit-tables.archive.secret-access-key", "archive-s3cret");
+        properties.put("nuna.audit-tables.archive.secret-access-key", ARCHIVE_SECRET);
 
         AuditTablesSettings.Archive archive = bind(properties).archive();
 
@@ -92,7 +97,7 @@ class AuditTablesSettingsTest {
         assertThat(archive.retention()).isEqualTo(Duration.ofDays(2557));
         assertThat(archive.segmentAge()).isEqualTo(Duration.ofMinutes(1));
         assertThat(archive.checkpointInterval()).isEqualTo(Duration.ofMinutes(5));
-        assertThat(archive.toString()).doesNotContain("archive-s3cret");
+        assertThat(archive.toString()).doesNotContain(ARCHIVE_SECRET);
         assertThat(bind(required()).archive().configured()).as("none unless a bucket is named").isFalse();
     }
 
@@ -132,7 +137,7 @@ class AuditTablesSettingsTest {
 
         assertThat(client).containsEntry("uri", "http://nuna-catalog:8181/")
                 .containsEntry("warehouse", "nuna_audit")
-                .containsEntry("credential", "audit-tables:s3cret")
+                .containsEntry("credential", "audit-tables:" + SECRET)
                 .containsEntry("oauth2-server-uri", "https://idp.example/oauth2/token")
                 .containsEntry("token-exchange-enabled", "false")
                 .containsEntry("audience", "nuna-catalog")

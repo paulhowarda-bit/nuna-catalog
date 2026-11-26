@@ -21,6 +21,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntUnaryOperator;
@@ -36,6 +37,9 @@ import org.junit.jupiter.api.io.TempDir;
  * namespace of its own.
  */
 class TokenSourceTest {
+
+    /** The sample client secret, made per run so no credential-shaped literal sits in the source. */
+    private static final String SECRET = "cs-" + UUID.randomUUID();
 
     @TempDir
     Path folder;
@@ -60,7 +64,7 @@ class TokenSourceTest {
             FakeClock clock = new FakeClock();
             WorkerSettings.Token settings = new WorkerSettings.Token(null,
                     URI.create("http://127.0.0.1:" + idp.getAddress().getPort() + "/token"), "nuna-maintenance",
-                    "s3cret", "catalog-access", "nuna-catalog");
+                    SECRET, "catalog-access", "nuna-catalog");
             TokenSource tokens = new TokenSource.ClientCredentials(settings, HttpClient.newHttpClient(), clock);
 
             assertThat(tokens.token()).isEqualTo("t1");
@@ -70,9 +74,9 @@ class TokenSourceTest {
             assertThat(tokens.token()).as("within a minute of expiry").isEqualTo("t2");
 
             assertThat(forms.getFirst()).contains("grant_type=client_credentials", "client_id=nuna-maintenance",
-                    "client_secret=s3cret", "scope=catalog-access", "audience=nuna-catalog");
+                    "client_secret=" + SECRET, "scope=catalog-access", "audience=nuna-catalog");
             assertThat(tokens.clientProperties()).as("the Job asks for what the worker asks for")
-                    .containsEntry("credential", "nuna-maintenance:s3cret").containsEntry("scope", "catalog-access")
+                    .containsEntry("credential", "nuna-maintenance:" + SECRET).containsEntry("scope", "catalog-access")
                     .containsEntry("audience", "nuna-catalog").doesNotContainKey("token");
         } finally {
             idp.stop(0);
@@ -140,7 +144,7 @@ class TokenSourceTest {
         FakeClock clock = new FakeClock();
         List<Duration> pauses = new CopyOnWriteArrayList<>();
         WorkerSettings.Token settings = new WorkerSettings.Token(null,
-                URI.create("http://127.0.0.1:" + idp.getAddress().getPort() + "/token"), "nuna-maintenance", "s3cret",
+                URI.create("http://127.0.0.1:" + idp.getAddress().getPort() + "/token"), "nuna-maintenance", SECRET,
                 "catalog-access", null);
         TokenSource tokens = new TokenSource.ClientCredentials(settings, HttpClient.newHttpClient(), clock, time -> {
             pauses.add(time);
@@ -176,9 +180,9 @@ class TokenSourceTest {
     @Test
     void compactionNeedsTheGrantWithAScopeAndANamespaceOfItsOwn() {
         URI endpoint = URI.create("https://idp.test/token");
-        WorkerSettings.Token grant = new WorkerSettings.Token(null, endpoint, "nuna-maintenance", "s3cret",
+        WorkerSettings.Token grant = new WorkerSettings.Token(null, endpoint, "nuna-maintenance", SECRET,
                 "catalog-access", null);
-        WorkerSettings.Token noScope = new WorkerSettings.Token(null, endpoint, "nuna-maintenance", "s3cret", null,
+        WorkerSettings.Token noScope = new WorkerSettings.Token(null, endpoint, "nuna-maintenance", SECRET, null,
                 null);
         WorkerSettings.Token file = new WorkerSettings.Token(folder.resolve("token"), null, null, null, "catalog-access",
                 null);
