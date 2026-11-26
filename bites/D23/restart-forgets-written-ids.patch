@@ -2,12 +2,12 @@ Breaks: A restarted writer from the log does not read back the ids it wrote, so 
 Module: catalog-audit-tables
 Test: LogWriterTest#aRestartedWriterLeavesOutARecentRecordItWroteAndNumbersAboveIt
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
-index f15ea540..3c0db082 100644
+index d4a24f2e..f68e23d2 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
-@@ -215,7 +215,7 @@ final class LogWriter {
+@@ -249,7 +249,7 @@ final class LogWriter {
          }
-         long recorded = table.reloadRecorded().map(offsets -> offsets.getOrDefault(PARTITION, 0L)).orElse(0L);
+         long recorded = offsets.map(o -> o.getOrDefault(PARTITION, 0L)).orElse(0L);
          Instant now = clock.instant();
 -        Set<String> written = table.eventIdsSince(now.minus(dedupWindow));
 +        Set<String> written = Set.of();
