@@ -1,7 +1,8 @@
-# The demo's ports on localhost, where Docker Desktop serves LoadBalancer Services, all HTTPS through one front
-# door: 8180 Keycloak, 8181 the catalog and its console, 8182 kafbat, 8183 SingleStore Studio, 8184 Silo's
-# console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's REST API (connect.yaml; with a password, below), 8187
-# Silo's S3 API, for engines on other machines, 8188 Grafana (metrics.yaml, while the switch metrics is on). Only demo.sh applies this; a matrix run publishes nothing.
+# The demo's ports on localhost, all HTTPS through one front door, which the cluster's node publishes
+# (deploy/kind/cluster.yaml) to NodePort Services of the same numbers: 8180 Keycloak, 8181 the catalog and its
+# console, 8182 kafbat, 8183 SingleStore Studio, 8184 Silo's console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's
+# REST API (connect.yaml; with a password, below), 8187 Silo's S3 API, for engines on other machines, 8188 Grafana
+# (metrics.yaml, while the switch metrics is on). Only demo.sh applies this; a matrix run publishes nothing.
 #
 # The front door is nginx (Deployment front): it ends TLS with the certificate in Secret demo-tls, which demo.sh
 # makes from ~/.nuna-demo/tls (publish_tls), and passes each request on over plain HTTP inside the cluster, to
@@ -34,8 +35,8 @@ spec:
         - name: nginx
           image: ${NGINX_IMAGE}
           imagePullPolicy: Never
-          # A pod being replaced keeps serving for a while: Docker Desktop's LoadBalancer can still send it a
-          # new connection, which otherwise hangs and fails its TLS handshake.
+          # A pod being replaced keeps serving for a while: the Service can still send it a new connection, which
+          # otherwise hangs and fails its TLS handshake.
           lifecycle:
             preStop:
               exec: {command: ["sleep", "10"]}
@@ -124,87 +125,87 @@ kind: Service
 metadata:
   name: keycloak-public
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8180, targetPort: 8180}
+    - {port: 8180, targetPort: 8180, nodePort: 8180}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: catalog-public
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8181, targetPort: 8181}
+    - {port: 8181, targetPort: 8181, nodePort: 8181}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: kafka-ui-public
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8182, targetPort: 8182}
+    - {port: 8182, targetPort: 8182, nodePort: 8182}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: singlestore-studio
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8183, targetPort: 8183}
+    - {port: 8183, targetPort: 8183, nodePort: 8183}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: silo-console
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8184, targetPort: 8184}
+    - {port: 8184, targetPort: 8184, nodePort: 8184}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: cloudbeaver-public
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8185, targetPort: 8185}
+    - {port: 8185, targetPort: 8185, nodePort: 8185}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: connect-public
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8186, targetPort: 8186}
+    - {port: 8186, targetPort: 8186, nodePort: 8186}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: s3-public
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8187, targetPort: 8187}
+    - {port: 8187, targetPort: 8187, nodePort: 8187}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: grafana-public
 spec:
-  type: LoadBalancer
+  type: NodePort
   selector: {app: front}
   ports:
-    - {port: 8188, targetPort: 8188}
+    - {port: 8188, targetPort: 8188, nodePort: 8188}

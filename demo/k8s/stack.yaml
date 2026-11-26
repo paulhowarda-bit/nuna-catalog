@@ -1,8 +1,8 @@
 # The stack the demo and the engine matrix share, part 1: PostgreSQL and the token issuer's key server; Kafka and
 # kafbat are in kafka.yaml. Part 2 is the S3 store (store-silo.yaml or store-ceph.yaml, then seed.yaml), part 3
 # the catalog (the Helm chart with catalog-values.yaml), part 4 SingleStore (singlestore.yaml). demo/demo.sh and
-# EngineMatrixTest both apply them. Images are never pulled by the cluster: Docker Desktop's runs them from the
-# local Docker engine, and the harness loads them into kind. PostgreSQL keeps its data on a volume of its own
+# EngineMatrixTest both apply them. Images are never pulled by the cluster: demo.sh and the harness put them on
+# its nodes (deploy/kind/kind.sh). PostgreSQL keeps its data on a volume of its own
 # (claim postgres-data, below; backlog 237), which demo.sh down keeps and demo.sh wipe deletes.
 #
 # The catalog signs in to PostgreSQL by its client certificate, over TLS, and no role has a password (backlog 281):

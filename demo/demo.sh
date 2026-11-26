@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The local demo of nuna-catalog, on Docker Desktop's Kubernetes: the stack it shares with the engine matrix
-# (demo/k8s), its sample data, and the matrix's engines on demand. See demo/README.md.
+# The local demo of nuna-catalog, on kind cluster nuna on Podman (deploy/kind): the stack it shares with the
+# engine matrix (demo/k8s), its sample data, and the matrix's engines on demand. See demo/README.md.
 #
 #   demo/demo.sh up       build the jars and images, start the core stack, load sample data once, with the
 #                         catalog's branch dev and tag sample, turn gen, ss and kafka back on if they were, print
@@ -19,7 +19,7 @@
 #                         SingleStore, a change feed per table into brokerage.singlestore, or stops if ss is off
 #   demo/demo.sh metrics  turn on the metrics stack: an OpenTelemetry collector, Prometheus, Tempo and Grafana
 #                         (port 8188) with nuna's dashboards, which the catalog and the maintenance worker send their
-#                         metrics and traces to (refused when Docker Desktop has too little memory left)
+#                         metrics and traces to (refused when the cluster has too little memory left)
 #   demo/demo.sh metrics stop  turn it off; its series, traces and Grafana's database stay on their volumes
 #   demo/demo.sh engines  run the engine matrix (Spark, Kafka Connect, PyIceberg, SingleStore) against the stack
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
@@ -40,12 +40,13 @@
 #   demo/demo.sh wipe     down, and delete the volumes too: the next up writes fresh sample data (keeps the signing
 #                         key, tokens, Keycloak keys, the passwords and the certificates, as down does)
 #
-# Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
-# Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use NUNA_DEMO_CONTEXT (default
-# docker-desktop), never the current context, and the stack is namespace NUNA_DEMO_NAMESPACE (default
-# nuna-demo). Docker Desktop's cluster runs images from the local Docker engine and serves LoadBalancer
-# Services on localhost. The signing key, tokens, Keycloak's keys, the certificate and the catalog's database's CA
-# and certificates (db_tls), and every password and key the demo uses (demo_secrets: none is in the repository) are
+# Needs bash (Git Bash on Windows), Podman (Podman Desktop's machine), kind, kubectl, helm, curl, unzip, openssl
+# (Git Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use NUNA_DEMO_CONTEXT (default
+# kind-nuna), never the current context, and the stack is namespace NUNA_DEMO_NAMESPACE (default nuna-demo). In
+# kind-nuna, up creates or starts the cluster (deploy/kind/kind.sh) and puts the images Podman builds and pulls on
+# its node; the node publishes the ports on localhost. The signing key, tokens, Keycloak's keys, the certificate
+# and the catalog's database's CA and certificates (db_tls), and every password and key the demo uses
+# (demo_secrets: none is in the repository) are
 # kept in NUNA_DEMO_HOME (default ~/.nuna-demo); the people's passwords are listed in its file people.
 #
 # Every page is HTTPS, at https://<NUNA_DEMO_HOST>:<port> (default localhost), with the certificate in
@@ -96,7 +97,9 @@ fi
 if [[ -n "${NUNA_DEMO_COMMIT:-}" && "$(cat "$RUN/checkout.pid" 2>/dev/null)" == "$$" ]]; then
   trap 'rm -f "$RUN/checkout.pid"' EXIT
 fi
-CONTEXT="${NUNA_DEMO_CONTEXT:-docker-desktop}"
+# shellcheck source=../deploy/kind/kind.sh
+source "$REPO/deploy/kind/kind.sh"
+CONTEXT="${NUNA_DEMO_CONTEXT:-$KIND_CONTEXT}"
 NS="${NUNA_DEMO_NAMESPACE:-nuna-demo}"
 DEMO_HOST="${NUNA_DEMO_HOST:-localhost}"
 TLS="$RUN/tls"
@@ -135,7 +138,7 @@ CONNECT_AUTH=(-K "$SECRETS/connect.curlrc")
 # The front door (ports.yaml): TLS on every port the demo publishes.
 NGINX_IMAGE=nginx:1.30.6-alpine
 # The switch metrics (metrics.yaml), and what its four pods ask, 64 + 256 + 128 + 256 MiB. Turning it on also rolls the
-# catalog, whose new pod (768 MiB) starts before the old one stops, so metrics_start checks Docker Desktop has both free.
+# catalog, whose new pod (768 MiB) starts before the old one stops, so metrics_start checks the cluster has both free.
 OTEL_COLLECTOR_IMAGE=otel/opentelemetry-collector:0.166.0
 PROMETHEUS_IMAGE=prom/prometheus:v3.16.0
 TEMPO_IMAGE=grafana/tempo:2.10.10
@@ -318,12 +321,28 @@ load_images() {
   source "$RUN/images.env"
 }
 
-image_id() { docker image inspect -f '{{.Id}}' "$1" | sed 's/^sha256://' | cut -c1-12; }
+image_id() { podman image inspect --format '{{.Id}}' "$1" | sed 's/^sha256://' | cut -c1-12; }
+
+# Images Podman built or pulled, put on kind's node unless there already (deploy/kind/kind.sh); in another cluster
+# (NUNA_DEMO_CONTEXT), its nodes must see them some other way.
+on_node() {
+  if [[ "$CONTEXT" == "$KIND_CONTEXT" ]]; then
+    kind_load "$@"
+  fi
+}
+pull() {
+  local image
+  for image in "$@"; do
+    podman image exists "$image" || podman pull -q "$(kind_ref "$image")" >/dev/null
+  done
+  on_node "$@"
+}
 
 # Built from this checkout on every up, so the stack never runs code older than the checkout; Gradle and
-# Docker do nothing when nothing changed. SingleStore's image is tagged with the hash of the connector jar and
+# Podman do nothing when nothing changed. SingleStore's image is tagged with the hash of the connector jar and
 # its Dockerfile, so a change to either replaces the pod (and up seeds the new one); the brokerage world's with the
-# hash of its classpath and its Dockerfile. The cluster never pulls: images it runs come from the local Docker engine.
+# hash of its classpath and its Dockerfile. The cluster never pulls: images it runs are built or pulled by Podman
+# and put on its node.
 build() {
   say "building the catalog server, audit table writer, maintenance worker, change-feed connector and brokerage world jars (no tests run)"
   (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :catalog-audit-tables:bootJar :catalog-maintenance:bootJar \
@@ -337,30 +356,30 @@ build() {
   cp -r "$REPO/demo-datagen/build/image/lib" "$RUN/images/brokerage/"
 
   say "building the images: the catalog, the audit table writer, the maintenance worker, SingleStore with the connector, the lake writer, CloudBeaver, the brokerage world"
-  docker build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
-  docker build -q -f "$REPO/deploy/image/audit-tables.Dockerfile" -t nuna-audit-tables:demo \
+  podman build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
+  podman build -q -f "$REPO/deploy/image/audit-tables.Dockerfile" -t nuna-audit-tables:demo \
     "$REPO/catalog-audit-tables/build/libs" >/dev/null
-  docker build -q -f "$REPO/deploy/image/maintenance.Dockerfile" -t nuna-maintenance:demo \
+  podman build -q -f "$REPO/deploy/image/maintenance.Dockerfile" -t nuna-maintenance:demo \
     "$REPO/catalog-maintenance/build/libs" >/dev/null
   # Built once: its Dockerfile downloads Iceberg's jars from Maven Central.
-  if ! docker image inspect "$SPARK_IMAGE" >/dev/null 2>&1; then
+  if ! podman image exists "$SPARK_IMAGE"; then
     say "building the Spark image $SPARK_IMAGE for the compaction Jobs (once)"
-    docker build -q -t "$SPARK_IMAGE" "$REPO/catalog-tests-engines/images/spark" >/dev/null
+    podman build -q -t "$SPARK_IMAGE" "$REPO/catalog-tests-engines/images/spark" >/dev/null
   fi
   # Studio's SAML address, in the image, names the host.
   SINGLESTORE_IMAGE="nuna-demo-singlestore:$( (cat "$jar" "$STACK/singlestore.Dockerfile"; echo "$DEMO_HOST") \
     | sha256sum | cut -c1-12)"
-  docker build -q -f "$STACK/singlestore.Dockerfile" --build-arg "DEMO_HOST=$DEMO_HOST" -t "$SINGLESTORE_IMAGE" \
+  podman build -q -f "$STACK/singlestore.Dockerfile" --build-arg "DEMO_HOST=$DEMO_HOST" -t "$SINGLESTORE_IMAGE" \
     "$RUN/images/singlestore" >/dev/null
-  docker build -q -f "$STACK/lake.Dockerfile" -t nuna-demo-lake:local "$RUN/images/lake" >/dev/null
+  podman build -q -f "$STACK/lake.Dockerfile" -t nuna-demo-lake:local "$RUN/images/lake" >/dev/null
   mkdir -p "$RUN/images/cloudbeaver"
   cp "$REPO/demo/CloudBeaverUsers.java" "$STACK/cloudbeaver-signin.conf" "$RUN/images/cloudbeaver/"
   CLOUDBEAVER_IMAGE="nuna-demo-cloudbeaver:$(cat "$STACK/cloudbeaver.Dockerfile" "$REPO/demo/CloudBeaverUsers.java" \
     "$STACK/cloudbeaver-signin.conf" | sha256sum | cut -c1-12)"
-  docker build -q -f "$STACK/cloudbeaver.Dockerfile" -t "$CLOUDBEAVER_IMAGE" "$RUN/images/cloudbeaver" >/dev/null
+  podman build -q -f "$STACK/cloudbeaver.Dockerfile" -t "$CLOUDBEAVER_IMAGE" "$RUN/images/cloudbeaver" >/dev/null
   BROKERAGE_IMAGE="nuna-demo-brokerage:$( (cat "$STACK/brokerage.Dockerfile"; cd "$RUN/images/brokerage" \
     && find lib -type f | LC_ALL=C sort | xargs sha256sum) | sha256sum | cut -c1-12)"
-  docker build -q -f "$STACK/brokerage.Dockerfile" -t "$BROKERAGE_IMAGE" "$RUN/images/brokerage" >/dev/null
+  podman build -q -f "$STACK/brokerage.Dockerfile" -t "$BROKERAGE_IMAGE" "$RUN/images/brokerage" >/dev/null
   BROKERAGE_IMAGE_ID=$(image_id "$BROKERAGE_IMAGE")
   say "building the Kafka Connect image (Debezium 3.7.1, the Apache Iceberg 1.12.0 sink)"
   build_connect
@@ -369,11 +388,11 @@ build() {
   # The commit the images are built from, which print_access names (backlog 274).
   commit_here > "$RUN/built-commit.txt"
 
-  local image
-  for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
-      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)" "$TRINO_IMAGE" "$OAUTH2_PROXY_IMAGE" "$NGINX_IMAGE"; do
-    docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
-  done
+  say "putting the images on the cluster's node (those that changed)"
+  pull "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
+    "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)" "$TRINO_IMAGE" "$OAUTH2_PROXY_IMAGE" "$NGINX_IMAGE"
+  on_node nuna-catalog:demo nuna-audit-tables:demo nuna-maintenance:demo "$SPARK_IMAGE" "$SINGLESTORE_IMAGE" \
+    nuna-demo-lake:local "$CLOUDBEAVER_IMAGE" "$BROKERAGE_IMAGE" "$CONNECT_IMAGE"
 }
 
 mint() {
@@ -682,20 +701,6 @@ tokens_expired() {
   (( expires - now < 3600 ))
 }
 
-# Before the stack publishes its ports for the first time, nothing else may hold them: a port-forward on 8181
-# would answer in the catalog's place.
-check_ports() {
-  k get service catalog-public >/dev/null 2>&1 && return 0
-  local port busy=()
-  for port in 8180 8181 8182 8183 8184 8185 8186 8187 8188; do
-    if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
-  done
-  if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8188. Stop what holds them." >&2
-    return 1
-  fi
-}
-
 wait_for_console() {
   for _ in $(seq 1 120); do
     curl -fs "${CURL_TLS[@]}" "$URL/ui/config.json" >/dev/null 2>&1 && return 0
@@ -789,7 +794,7 @@ mib() {
     *) echo $(( v / 1048576 )) ;;
   esac
 }
-# The memory Docker Desktop's node has that no pod asks for, in MiB: what a new pod can be given.
+# The memory the cluster's node has that no pod asks for, in MiB: what a new pod can be given.
 free_mib() {
   local allocatable requested
   allocatable=$(kubectl --context "$CONTEXT" get nodes -o jsonpath='{.items[0].status.allocatable.memory}')
@@ -802,7 +807,7 @@ room_for() {
   local free
   free=$(free_mib)
   if (( free < $1 )); then
-    echo "$2 asks for $1 MiB of Docker Desktop's memory, and only $free MiB is free: $3" >&2
+    echo "$2 asks for $1 MiB of the cluster's memory, and only $free MiB is free: $3" >&2
     return 1
   fi
 }
@@ -812,9 +817,7 @@ room_for() {
 metrics_apply() {
   local image deployment
   say "starting the metrics stack: the OpenTelemetry collector, Prometheus, Tempo and Grafana"
-  for image in "$OTEL_COLLECTOR_IMAGE" "$PROMETHEUS_IMAGE" "$TEMPO_IMAGE" "$GRAFANA_IMAGE"; do
-    docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
-  done
+  pull "$OTEL_COLLECTOR_IMAGE" "$PROMETHEUS_IMAGE" "$TEMPO_IMAGE" "$GRAFANA_IMAGE"
   k create configmap prometheus-rules --from-file="$REPO/deploy/grafana/rules" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
   k create configmap grafana-dashboards --from-file="$REPO/deploy/grafana/dashboards" --dry-run=client -o yaml \
@@ -998,7 +1001,7 @@ lake() {
 }
 
 # Kafka Connect and the brokerage world's generator (connect.yaml, brokerage.yaml) ask for 768 MiB between them,
-# which leaves Docker Desktop's node about 390 MiB: too little for a 768 MiB Job (the lake writer), for Spark, or
+# which leaves the cluster's node about 390 MiB: too little for a 768 MiB Job (the lake writer), for Spark, or
 # for a catalog server rolling to a new image, whose new pod starts before the old one stops. So up, rate and
 # engines stop both first and start them again after; up starts them last.
 pause_world() {
@@ -1090,9 +1093,8 @@ wait_for_commit() {
 
 # Each part once: the Iceberg tables and governance (ConfigMap demo-seeded marks them done) and SingleStore's
 # databases (done when ops exists; a new SingleStore pod starts empty). A new SingleStore's change feed finds
-# offsets in Iceberg that it cannot continue from, so its first commit is a resnapshot. PostgreSQL and Silo
-# keep their data only as long as their pods (a Docker Desktop restart empties both) but the ConfigMap
-# outlives them, so the lake counts as seeded only while the catalog can also load the trades table; a new
+# offsets in Iceberg that it cannot continue from, so its first commit is a resnapshot. PostgreSQL's and Silo's
+# volumes can go without it (kind delete cluster deletes them), so the ConfigMap can outlive their data, so the lake counts as seeded only while the catalog can also load the trades table; a new
 # lake empties SingleStore too, since its databases are loaded from the lake, and the brokerage world's orders
 # would no longer match its lake (feeds makes its database again).
 seed() {
@@ -1573,7 +1575,7 @@ EOF
 
 # The CDC leg (cdc.yaml), on demand: PostgreSQL backoffice, Oracle and CockroachDB, captured by Debezium into
 # Kafka, and written by the Apache Iceberg sink into history tables, one row per change; both run in the demo's
-# Kafka Connect (connect.yaml). Its pods do not fit beside Trino on an 8 GB Docker Desktop, so Trino, the audit
+# Kafka Connect (connect.yaml). Its pods do not fit beside Trino on the cluster's 8 GB node, so Trino, the audit
 # table writer and the brokerage world's generator stop while it runs; CloudBeaver stays, to query the databases.
 cdc_running() { running backoffice; }
 
@@ -1584,7 +1586,7 @@ CDC_CONNECTORS=(backoffice-source oracle-source cockroach-source backoffice-hist
 # either replaces the pod.
 build_connect() {
   CONNECT_IMAGE="nuna-demo-connect:$(cat "$STACK/connect.Dockerfile" "$REPO"/demo/cdc/plugins/*/pom.xml | sha256sum | cut -c1-12)"
-  docker build -q -f "$STACK/connect.Dockerfile" -t "$CONNECT_IMAGE" "$REPO/demo/cdc/plugins" >/dev/null
+  podman build -q -f "$STACK/connect.Dockerfile" -t "$CONNECT_IMAGE" "$REPO/demo/cdc/plugins" >/dev/null
 }
 
 # A call to Kafka Connect's REST API, with the body of a PUT on stdin; prints the answer, fails the script on
@@ -1744,12 +1746,10 @@ cdc_start() {
   fi
   local image
   image=$(image_of oracle.image)
-  if ! docker image inspect "$image" >/dev/null 2>&1; then
-    say "pulling $image (about 5 GB, once)"
-    docker pull -q "$image" >/dev/null
+  if ! podman image exists "$image"; then
+    say "pulling $image (about 5 GB, once) and putting it on the cluster's node"
   fi
-  image=$(image_of cockroachdb.image)
-  docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
+  pull "$image" "$(image_of cockroachdb.image)"
   say "stopping Trino, the brokerage world's generator and the maintenance worker: the CDC leg needs their memory"
   k scale deployment/trino --replicas=0 >/dev/null
   k wait --for=delete pod -l app=trino --timeout=2m >/dev/null
@@ -1873,6 +1873,10 @@ cdc_stop() {
 
 up() {
   mkdir -p "$RUN"
+  if [[ "$CONTEXT" == "$KIND_CONTEXT" ]]; then
+    say "starting kind cluster $KIND_CLUSTER on Podman, or creating it the first time (deploy/kind/kind.sh)"
+    kind_up
+  fi
   say "building commit $(commit_here)"
   build
   local minted=
@@ -1881,7 +1885,6 @@ up() {
     minted=yes
   fi
   kubectl --context "$CONTEXT" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
-  check_ports
   publish_tokens
   publish_keycloak_keys
   demo_secrets
@@ -2014,7 +2017,7 @@ refuse_while_cdc() {
 # The engine matrix's tests against this stack: its engines run as Jobs here, into catalog engines, and the
 # stack stays as it is. Results are in catalog-tests-engines/build/engines-run, of $RUN/checkout when started in the
 # main checkout. Trino, CloudBeaver, Kafka Connect
-# and the brokerage world's generator stop for the run: Spark's Job asks for 2 GiB, which an 8 GB Docker Desktop
+# and the brokerage world's generator stop for the run: Spark's Job asks for 2 GiB, which the cluster's 8 GB node
 # has only without them.
 engines() {
   if tokens_expired; then

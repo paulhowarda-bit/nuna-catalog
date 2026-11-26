@@ -17,20 +17,23 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import nuna.catalog.tests.s3.KindCluster;
 
 /**
- * Docker Desktop's Kubernetes as the maintenance chart sets it up for one test's compaction Jobs (D30 (3)), shared by
- * {@link KubernetesCompactionTest} and {@link PrivateCaCompactionTest}: the repo's Spark image built, and two
+ * nuna's kind cluster ({@link KindCluster}) as the maintenance chart sets it up for one test's compaction Jobs (D30 (3)),
+ * shared by {@link KubernetesCompactionTest} and {@link PrivateCaCompactionTest}: the repo's Spark image built by Podman
+ * and put on the node, and two
  * namespaces of the test's own, the worker's ({@link #namespace}) and the Jobs' ({@link #jobs}), created here and
  * deleted on {@link #close}; it never touches another (nuna-demo least of all). The chart's service account goes in the
  * worker's namespace and its Role in the Jobs', and a token of that account, the cluster's CA and the namespace go in a
  * folder as a pod has them mounted, so the worker, through {@link #settings}, talks to the API server as the chart's
  * service account with only the chart's Role, and its Jobs run as the chart's Job service account.
- * Needs Docker, kubectl and Helm on the PATH and the kubectl context {@value #CONTEXT}.
+ * Needs Podman, kubectl and Helm on the PATH and the kind cluster running ({@code deploy/kind/kind.sh up}, which the
+ * overnight run does first).
  */
 final class CompactionCluster implements AutoCloseable {
 
-    static final String CONTEXT = "docker-desktop";
+    static final String CONTEXT = KindCluster.CONTEXT;
     static final String IMAGE = "nuna-engines/spark:4.1.4-iceberg-1.12.0";
     private static final String RELEASE = "nuna-maintenance";
 
@@ -58,8 +61,9 @@ final class CompactionCluster implements AutoCloseable {
     static CompactionCluster start(Path serviceAccount, URI catalogForPods, String... values)
             throws Exception {
         Path repo = Path.of(System.getProperty("repo.root"));
-        run(Duration.ofMinutes(20), null, "docker", "build", "-t", IMAGE,
+        run(Duration.ofMinutes(20), null, "podman", "build", "-t", IMAGE,
                 repo.resolve("catalog-tests-engines/images/spark").toString());
+        KindCluster.load(CONTEXT, serviceAccount, List.of(IMAGE));
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String namespace = "nuna-maintenance-test-" + suffix;
         String jobs = "nuna-compaction-test-" + suffix;

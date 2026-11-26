@@ -8,7 +8,9 @@
 - `image/audit-tables.Dockerfile` and `helm/nuna-audit-tables/`: the audit-tables writer's image and chart [D23],
   which writes every audit record into the audit catalog's `events` table, from the audit topic or from the catalog's
   log over OTLP ("Audit", below). See catalog-audit-tables/README.md.
-- `local/`: try the chart on Docker Desktop's Kubernetes, with throwaway PostgreSQL, Kafka and Silo.
+- `local/`: try the chart on the local kind cluster on Podman (`kind/`), with throwaway PostgreSQL, Kafka and Silo.
+- `kind/`: that cluster, kind cluster `nuna` (context `kind-nuna`), which the demo and the tests that run pods
+  share; `kind/kind.sh up` makes or starts it, `kind/kind.sh load` puts images Podman built on its node.
 
 ## The image
 
@@ -436,7 +438,7 @@ overnight run of 2026-11-22.
 
 ## Trying it locally
 
-On Docker Desktop with Kubernetes switched on:
+On the kind cluster on Podman (`deploy/kind`; `up` starts it, or makes it the first time):
 
 ```bash
 deploy/local/run.sh up      # jar, image nuna-catalog:local, PostgreSQL, Kafka, Silo, the chart (2 servers)
@@ -445,12 +447,12 @@ deploy/local/run.sh worker  # after up: Keycloak, the maintenance worker's chart
 deploy/local/run.sh down    # uninstall and delete the namespaces
 ```
 
-- It uses namespace `nuna-local` (`NUNA_K8S_NAMESPACE`), and always passes `--context docker-desktop`
+- It uses namespace `nuna-local` (`NUNA_K8S_NAMESPACE`), and always passes `--context kind-nuna`
   (`NUNA_K8S_CONTEXT`), never the current context.
 - The test issuer is `demo/Mint.java`. Its key and tokens are in `~/.nuna-k8s` (`NUNA_K8S_HOME`).
 - Memory limits add up to 3 GiB: two servers at 768 MiB, Kafka 640, Silo 512, PostgreSQL 384.
 - `up` takes about 2 minutes. To reach the console:
-  `kubectl --context docker-desktop -n nuna-local port-forward svc/nuna-catalog 8181:8181`, then open
+  `kubectl --context kind-nuna -n nuna-local port-forward svc/nuna-catalog 8181:8181`, then open
   <http://localhost:8181/ui/> and paste a token from `~/.nuna-k8s/tokens/`.
 - The catalog names Silo `silo.<namespace>.svc`, not `silo`: it vends that endpoint with each table's credentials,
   and the worker and its compaction Jobs read tables from other namespaces, where a short Service name does not
@@ -469,5 +471,5 @@ deploy/local/run.sh down    # uninstall and delete the namespaces
   (`local/keycloak.yaml`, in the catalog's namespace), lists and deletes as `nuna-maintenance`, its Silo user, and
   launches Jobs as the chart's service account. Its cleanup window is open all day, turning at 12:00 UTC, and it scans every minute. The
   Jobs run the engine matrix's Spark image, `nuna-engines/spark:4.1.4-iceberg-1.12.0`, which must be built first
-  (`docker build -t <that name> catalog-tests-engines/images/spark`). It adds 3 GiB of limits: Keycloak 768 MiB,
+  (`podman build -t <that name> catalog-tests-engines/images/spark`); `worker` puts it on the cluster's node. It adds 3 GiB of limits: Keycloak 768 MiB,
   the worker 768 MiB, one Job at a time at 1.5 GiB.

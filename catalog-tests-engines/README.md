@@ -28,12 +28,13 @@ Central jars and PyPI packages are baked into local images). On its own, everyth
 | Switch | Effect |
 |---|---|
 | `-Ps3=silo\|ceph\|aws` | The S3 store, as for every other test (default `silo`). |
-| `-Pengines.cluster=<context>` | The kubectl context of the existing cluster to deploy into (default `docker-desktop`, Docker Desktop's Kubernetes). The namespace is recreated at the start and deleted at the end; the cluster's nodes must see locally built images, as Docker Desktop's do. `kind` creates kind cluster `nuna-engines` instead. |
+| `-Pengines.cluster=<context>` | The kubectl context of the existing cluster to deploy into (default `kind-nuna`, the kind cluster on Podman that `deploy/kind/kind.sh up` makes). The namespace is recreated at the start and deleted at the end; the harness puts the images Podman built and pulled on a kind cluster's node, and another cluster's nodes must see them already. `kind` creates kind cluster `nuna-engines` instead. |
 | `-Pengines.keep-stack=true` | Leave everything up afterwards. |
 | `-Pengines.skip-build=true` | Use the images already built instead of building them. |
 | `-Pengines.stack=<namespace>` | Run the engines against the stack already up in that namespace of `-Pengines.cluster` instead of deploying one; nothing but the engines' Jobs is created or deleted. Needs `-Pengines.token-file=<file>`, a token the stack's issuer signed for group `engine-clients`. `demo/demo.sh engines` runs it against the demo. |
 
-By default the harness deploys into Docker Desktop's Kubernetes (context `docker-desktop`). With
+By default the harness deploys into the kind cluster on Podman (context `kind-nuna`; `deploy/kind/kind.sh up`
+makes it or starts it; Docker Desktop's Kubernetes until 2026-11-26, backlog 287). With
 `-Pengines.cluster=kind` it creates kind cluster `nuna-engines` with its own kubeconfig,
 `build/engines-run/kubeconfig`, so the current kubectl context is never changed, and deletes it at the end.
 `build/engines-run/` holds the token, `commands.log` (every command and its output), the rendered manifests
@@ -43,7 +44,7 @@ With the stack kept, the kafbat UI shows the Kafka topics (the Kafka Connect sou
 sink's control topic, the catalog's audit and change topics), their messages and consumer groups:
 
 ```
-kubectl --context docker-desktop -n nuna-engines port-forward svc/kafka-ui 8080:8080
+kubectl --context kind-nuna -n nuna-engines port-forward svc/kafka-ui 8080:8080
 ```
 
 then http://localhost:8080 (with `-Pengines.cluster=kind`, use `KUBECONFIG=build/engines-run/kubeconfig`
@@ -51,7 +52,7 @@ instead of `--context`).
 
 ## How it works
 
-- On its own, the harness recreates namespace `nuna-engines` in Docker Desktop's Kubernetes (or creates kind
+- On its own, the harness recreates namespace `nuna-engines` in the kind cluster `nuna` (or creates kind
   cluster `nuna-engines`, with `-Pengines.cluster=kind`), builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
   and the three engine images (`images/`), pulls the infrastructure images, and loads them all into the
   cluster: nothing is pulled from inside it.
@@ -89,7 +90,7 @@ instead of `--context`).
 | PyIceberg 0.12.0 | `python:3.12-slim-bookworm` + `pyiceberg[pyarrow]==0.12.0` | — |
 | SingleStore 10.9.0 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | (its own) |
 
-Cluster: Docker Desktop's Kubernetes (or `-Pengines.cluster`), `postgres:18.7`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
+Cluster: the kind cluster on Podman (or `-Pengines.cluster`), `postgres:18.7`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
 `ghcr.io/clyso/ceph-test:v20.2.5`, `busybox:1.37.0`; the catalog image is `eclipse-temurin:25.0.5_8-jre-noble`
 with the exec jar unpacked into Spring Boot's layers.
 

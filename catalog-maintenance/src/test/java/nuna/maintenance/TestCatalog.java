@@ -211,8 +211,9 @@ final class TestCatalog {
     }
 
     /**
-     * The catalog's address for pods of Docker Desktop's Kubernetes: a second server on the same database, which it
-     * and its storage profile's S3 endpoint name by {@code host.docker.internal}, as those pods resolve this machine.
+     * The catalog's address for pods of the kind cluster: a second server on the same database, which it and its
+     * storage profile's S3 endpoint name by {@code host.docker.internal}, as those pods resolve this machine
+     * ({@code deploy/kind/kind.sh} puts the name in the cluster's DNS).
      * The test and the worker reach the same catalog and store through {@link #get()}; this server's own calls to
      * the store resolve the name to this machine through {@link HostDockerInternal}, not the Windows hosts-file
      * entry, which goes stale when the machine's address changes.
@@ -249,7 +250,7 @@ final class TestCatalog {
     }
 
     /**
-     * This catalog's address for pods of Docker Desktop's Kubernetes, as {@link #forPods()} is the JVM's catalog's: a
+     * This catalog's address for pods of the kind cluster, as {@link #forPods()} is the JVM's catalog's: a
      * second server, started on each call, on this one's database and store, which it and its storage profile's S3
      * endpoint name by {@code host.docker.internal}.
      */

@@ -1,0 +1,25 @@
+# nuna's local Kubernetes cluster on Podman: kind cluster nuna, context kind-nuna (deploy/kind/kind.sh; backlog 287).
+# One node. It publishes the demo's ports, 8180 to 8188, on localhost, where the demo's NodePort Services of the same
+# numbers answer (demo/k8s/ports.yaml): the API server takes node ports from 8180 up for that. kind's StorageClass
+# standard keeps each volume's data under the node's /var, which kind keeps on a Podman volume of its own.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: nuna
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            service-node-port-range: "8180-32767"
+    extraPortMappings:
+      - {containerPort: 8180, hostPort: 8180}
+      - {containerPort: 8181, hostPort: 8181}
+      - {containerPort: 8182, hostPort: 8182}
+      - {containerPort: 8183, hostPort: 8183}
+      - {containerPort: 8184, hostPort: 8184}
+      - {containerPort: 8185, hostPort: 8185}
+      - {containerPort: 8186, hostPort: 8186}
+      - {containerPort: 8187, hostPort: 8187}
+      - {containerPort: 8188, hostPort: 8188}

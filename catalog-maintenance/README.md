@@ -371,8 +371,9 @@ docker build -f deploy/image/maintenance.Dockerfile -t nuna-maintenance:<version
 - with `config.nuna.maintenance.compaction.image` set, the Role, RoleBinding and Job service account in the
   Jobs' namespace (`config.nuna.maintenance.compaction.namespace`, which must exist).
 
-See `values.yaml` for the rest. `deploy/local/run.sh worker` installs it on Docker Desktop's Kubernetes beside the
-local catalog (`deploy/README.md`, "Trying it locally"); it was first installed that way on 2026-11-19 (backlog 5).
+See `values.yaml` for the rest. `deploy/local/run.sh worker` installs it on the local kind cluster beside the
+local catalog (`deploy/README.md`, "Trying it locally"); it was first installed that way, on Docker Desktop's
+Kubernetes, on 2026-11-19 (backlog 5).
 
 The compaction Jobs run in a namespace other than the worker's and the catalog's, and sign in themselves, so three
 addresses must resolve from there: the catalog (`compaction.catalog-uri`, by default `catalog-uri`), the identity
@@ -411,10 +412,10 @@ day (`TestCatalog.allDay`).
 | `OrphanRaceTest` | `heavy` | A writer committing during orphan scans loses nothing. |
 | `KafkaDownTest` | `heavy` | With Kafka down the scan still does its work: the catalog audits to its log (195). |
 | `KillMidPurgeTest` | `heavy` | A worker killed mid-purge is resumed by the next one. |
-| `KubernetesCompactionTest` | `heavy` | Compaction as a Job in Docker Desktop's cluster, the worker and its Jobs each in a namespace of their own that it deletes; the Job's deadline no later than the window's end; the next night the compacted table needs none; a Job naming the table by an id it no longer has stops without compacting; a Job whose window closes at once is stopped by Kubernetes and read as cut off. Needs `kubectl`, `helm` and the `docker-desktop` context. |
+| `KubernetesCompactionTest` | `heavy` | Compaction as a Job in the kind cluster on Podman, the worker and its Jobs each in a namespace of their own that it deletes; the Job's deadline no later than the window's end; the next night the compacted table needs none; a Job naming the table by an id it no longer has stops without compacting; a Job whose window closes at once is stopped by Kubernetes and read as cut off. Needs Podman, `kubectl`, `helm` and the kind cluster running (`deploy/kind/kind.sh up`). |
 | `LargeExpiryTest` | `overnight` | One scan expires 9,999 of 10,000 snapshots. |
 | `LargeOrphanScanTest` | `overnight` | The orphan scan's heap per reachable file, at 250,000 to 1,000,000 files. |
-| `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in Docker Desktop's cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails its S3 request and leaves the table alone (its log shows the unroutable IPv6 address's error, not the PKIX one); the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
+| `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in the kind cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails its S3 request and leaves the table alone (in Docker Desktop's cluster, until 2026-11-26, its log showed the unroutable IPv6 address's error, not the PKIX one); the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
 | `DrDrillTest#aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore` (in `catalog-tests-load`) | `overnight` | The worker's runnable jar as the DR verifier, on two Silo stores, the DR one fed by a replicator the test pauses: in the primary region the watermarks stop at the DR store's edge; in DR, a pass under the freeze leaves them there, and the rewind records each rewound table's watermark in its own commit, so the walk right after it checks the table at once, with no second verifier pass (backlog 92, 100). |
 | `EngineMatrixTest#compaction` (in `catalog-tests-engines`) | `overnight` | The worker's own Job in the engine matrix's cluster: 32 small files compacted into 4, the same rows, the replaced files left in place, no pending deletion. |
 

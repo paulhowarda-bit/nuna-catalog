@@ -8,9 +8,9 @@ import java.util.stream.Stream;
 
 /**
  * In this test JVM, {@code host.docker.internal} resolves to the loopback address; every other name resolves as the
- * JDK resolves it. Pods of Docker Desktop's Kubernetes resolve that name to this machine through Docker's own DNS.
- * This machine resolves it through a hosts-file entry that Docker Desktop writes when it starts, and that entry
- * goes stale when the machine's address changes. The server {@link TestCatalog#forPods} starts here names its S3
+ * JDK resolves it. Pods of the kind cluster resolve that name to this machine through the cluster's DNS
+ * ({@code deploy/kind/kind.sh}). This machine resolves it, if at all, through a hosts-file entry Docker Desktop wrote,
+ * which goes stale when the machine's address changes. The server {@link TestCatalog#forPods} starts here names its S3
  * store by that name, for the pods, and calls the store by it itself (for STS credentials), so here the name must
  * mean this machine. Registered in {@code META-INF/services}.
  */

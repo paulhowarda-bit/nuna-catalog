@@ -2,7 +2,7 @@ plugins {
     `java-library`
 }
 
-description = "Nightly engine matrix (the demo): the catalog's Helm chart in Docker Desktop's Kubernetes, with Spark, Kafka Connect, PyIceberg and SingleStore against it, and the audit table writer's chart beside it."
+description = "Nightly engine matrix (the demo): the catalog's Helm chart in the kind cluster on Podman (deploy/kind), with Spark, Kafka Connect, PyIceberg and SingleStore against it, and the audit table writer's chart beside it."
 
 // The catalog image packs the server's runnable jar, built first by this build.
 val serverJar = configurations.dependencyScope("serverJar")
@@ -44,7 +44,7 @@ tasks.test {
     // The stack the matrix shares with the demo.
     inputs.dir(rootProject.file("demo/k8s")).withPropertyName("stack").withPathSensitivity(PathSensitivity.RELATIVE)
     listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
-    // -Pengines.cluster=<kubectl context> deploys into that existing cluster instead of docker-desktop (kind makes
+    // -Pengines.cluster=<kubectl context> deploys into that existing cluster instead of kind-nuna (kind makes
     // a new kind cluster);
     // -Pengines.keep-stack=true leaves everything up afterwards; -Pengines.skip-build=true uses the images
     // already built; -Pengines.stack=<namespace> with -Pengines.token-file=<file> runs the engines against the
