@@ -3,15 +3,15 @@ Module: catalog-server
 Test: CatalogMetricsRoutesTest#callsAreTimedByOperationOutcomeAndErrorType
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
-index ae767f1..d5321ec 100644
+index a539b6ab..8fbdf941 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
-@@ -34,7 +34,7 @@ public final class RequestMetrics extends OncePerRequestFilter {
+@@ -46,7 +46,7 @@ public final class RequestMetrics extends OncePerRequestFilter {
      public static final String REQUESTS = "nuna.catalog.requests";
      /** The histogram's bucket bounds: the SLOs, set here rather than in configuration. */
      public static final List<Duration> SLO = List.of(Duration.ofMillis(10), Duration.ofMillis(50),
 -            Duration.ofMillis(300));
 +            Duration.ofMillis(250));
+     private static final Logger LOG = LoggerFactory.getLogger(RequestMetrics.class);
      private static final String CATALOG_ATTRIBUTE = RequestMetrics.class.getName() + ".catalog";
  
-     private final MeterProvider<Timer> timers;

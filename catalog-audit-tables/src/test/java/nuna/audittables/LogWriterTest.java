@@ -170,6 +170,44 @@ class LogWriterTest {
     }
 
     @Test
+    void aCopyArrivingAnHourAfterTheFirstIsLeftOutAndALateFirstCopyIsWritten() {
+        // Backlog 263: a collector's persistent queue re-sends its batches after a crash, or drains a backlog, long
+        // after the ids taken are forgotten in memory.
+        LogWriter writer = writer(1_000);
+        CatalogEvent event = read("reader");
+        offer(writer, List.of(event));
+        writer.commit();
+
+        clock.advance(Duration.ofHours(1));
+        CatalogEvent late = read("reader");
+        clock.advance(Duration.ofHours(1));
+        assertThat(offer(writer, List.of(event, late))).as("both forgotten in memory")
+                .isEqualTo(new LogWriter.Taken(2, 0, 0, 0));
+        writer.commit();
+
+        assertThat(rows()).extracting(Row::eventId).containsExactlyInAnyOrder(event.id().toString(),
+                late.id().toString());
+        assertThat(writer.waiting()).isZero();
+    }
+
+    @Test
+    void aLateCopyArrivingAfterARestartIsLeftOut() {
+        LogWriter first = writer(1_000);
+        CatalogEvent event = read("reader");
+        offer(first, List.of(event));
+        first.commit();
+
+        clock.advance(Duration.ofHours(1));
+        LogWriter restarted = writer(1_000);
+        restarted.commit();
+        offer(restarted, List.of(event));
+        restarted.commit();
+
+        assertThat(rows()).extracting(Row::eventId).containsExactly(event.id().toString());
+        assertThat(restarted.waiting()).isZero();
+    }
+
+    @Test
     void aCommitWhoseAnswerWasLostIsNotWrittenAgain() {
         LogWriter writer = writer(1_000);
         writer.commit();

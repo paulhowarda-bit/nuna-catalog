@@ -84,7 +84,17 @@ properties do the same: `management.otlp.metrics.export.url`, `management.opente
   `localhost:4318` every minute; `MetricsExportNeedsEndpoint` (in each module) keeps metrics off until a metrics
   endpoint is set. `management.otlp.metrics.export.enabled` or `OTEL_METRICS_EXPORTER`, when set, decides instead.
 - **Sampling.** The charts keep 10 % of new traces (`telemetry.sampling`), and every request whose caller's trace was
-  sampled. Metrics and logs are never sampled.
+  sampled. Metrics and logs are never sampled. Which traces each mode keeps (backlog 265):
+  - *Head sampling*, what the charts run today: the decision is made before the request runs, so a failed call's trace
+    is kept only if its trace was among the 10 %; about 9 in 10 failed calls leave no trace (inferred). The way back to
+    one is its request ID, in its log line and its audit record ("Log lines").
+  - *Tail sampling*, with a collector that runs it: the SDK keeps every trace (`telemetry.sampling: "1.0"`), a
+    `loadbalancing` exporter tier routes spans by trace ID, and a `tail_sampling` tier keeps every trace with status
+    ERROR, those slower than their SLO bound and 10 % of the rest. Traces then show about 30 s late (`decision_wait`).
+    Every 5xx answer's server span ends with status ERROR (spans.md, "The server span's status"), so a policy on
+    status ERROR alone keeps every failed call; a 4xx leaves it unset. nuna ships no collector configuration: whether
+    a deployment can run the two tiers is found where it is installed (backlog 43), and until then it keeps head
+    sampling.
 - The OTLP exporter sends over the JDK's HTTP client (`opentelemetry-exporter-sender-jdk`); OkHttp is excluded from
   every module (`build.gradle.kts`).
 
