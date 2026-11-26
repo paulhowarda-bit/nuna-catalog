@@ -337,9 +337,9 @@ function keptChips(c, o) {
 /**
  * Who took an object out of a ref, and when, from the `nuna.catalog.ref` records about the object, for a caller who
  * reads the feed: null otherwise, when the feed refuses, or when no record it reaches says so. The feed's subject
- * filter (item 169) keeps the records about the object, each an `OBJECT_REMOVED` of one ref it left; a page that
- * stopped short searches on. A feed without the filter ignores it and lists every ref's records, which the match
- * below (this ref's id, the action, the object's id) sorts the same, over fewer of them.
+ * filter (backlog 169) keeps the ref records whose tables name the object, by their `subject_ids`: its removal from
+ * each ref it left, and any merge that moved it; a page that stopped short searches on. The match below picks this
+ * ref's removal, and holds the same over a feed that has no such filter and lists every ref's records.
  */
 async function takenOutBy(c, r, objectId) {
   if (!r.id || !auditOpen(c)) return null;
@@ -369,14 +369,23 @@ async function takenOutBy(c, r, objectId) {
  */
 export async function missingWords(target, title) {
   const objects = await keptAt(target);
-  if (!objects || !objects.length) return null;
+  if (!objects || !(objects.length || objects.cutShort)) return null;
   const c = target.catalog;
   const path = pathOf(target);
   if (!target.ref) {
     // Every table dropped at the path, newest first, each with the refs that keep it (Atelier's check, 2026-11-25).
     const dropped = objects.filter(x => x.state !== 'active');
+    // A walk cut short that found none proves none absent: say so, with no pill (Atelier, 2026-11-25).
+    if (!dropped.length && objects.cutShort) {
+      return h('div', {class: 'notice kept-note', id: 'dropped-on-main', 'data-kept': 'none-found'}, icon('info'),
+        h('p', {'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped tables and found none at this path '
+          + 'among them; one dropped earlier may still be kept by a branch or tag.'));
+    }
     if (!dropped.length) return null;
     droppedPill(title, 'Dropped on main');
+    // Who dropped each past the newest five is not looked up (the Security Expert's review): an audit reader is sent
+    // to the feed, searched for the path.
+    const leftOut = auditOpen(c) && dropped.some(x => x['dropped-by-left-out']);
     return h('div', {class: 'notice kept-note', id: 'dropped-on-main', 'data-kept': 'dropped-main'}, icon('info'), h('div', null,
       dropped.map((o, i) => {
         const who = o['dropped-by'] && o['dropped-by'].principal;
@@ -390,8 +399,11 @@ export async function missingWords(target, title) {
         kept ? h('div', {class: 'kept-acts', 'data-kept-acts': o.id, 'data-may-remove': String(!!(o.may || {}).remove)}) : null);
       }),
       // A drop past the newest five has `dropped-by-left-out` and no actor: it takes the words without one, above.
-      objects.cutShort ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog stopped looking before it had read every '
-        + 'dropped table in this namespace, so an earlier table at this path may be missing here.') : null));
+      leftOut ? h('p', {class: 'fine', 'data-kept-left-out': ''}, 'Who dropped each table past the newest five is not looked up here: ',
+        h('a', {href: pageHref('audit', c) + '&' + new URLSearchParams({path})}, `search the audit feed for ${path}`), '.') : null,
+      objects.cutShort ? h('p', {class: 'fine', 'data-kept-cut': ''}, 'The catalog reads only part of a namespace\'s dropped '
+        + 'tables and stopped before the end, so an earlier table at this path, and the branches and tags that keep it, may be '
+        + 'missing here.') : null));
   }
   const r = await readingRef(c, target.ref);
   const cut = r && cutOf(r);

@@ -109,6 +109,9 @@ class AuditDropsTest {
         assertThat(query.path()).containsExactly("hr", "staff");
         assertThat(query.from()).isEqualTo(DROPPED);
         assertThat(query.to()).isAfter(DROPPED);
+        assertThat(query.branch()).isNull();
+        assertThat(query.subject()).isNull();
+        assertThat(query.objectId()).as("the drop is asked for by the object's id").isNotNull();
         assertThat(audited).extracting(CatalogEvent::data).singleElement().isInstanceOfSatisfying(AuditRead.class,
                 read -> {
                     assertThat(read.target().id()).isEqualTo(staff.id());
