@@ -1,0 +1,17 @@
+Breaks: A ref's Record tab asks for every ref's records, not this ref's by its id, so it shows other refs' changes (backlog 169).
+Module: catalog-server
+Test: ConsoleBrowserTest#theFeedsRefSearchReadsFromTheLiveRefsMakingAndTheRecordTabAsksByItsId
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
+index 80d45e0e..01cb0f10 100644
+--- a/catalog-server/src/main/resources/nuna/ui/refs.js
++++ b/catalog-server/src/main/resources/nuna/ui/refs.js
+@@ -748,7 +748,7 @@ async function recordTab(c, r) {
+   try {
+     // The feed keeps the records whose subject is this ref's id (backlog 169); a page that stopped short searches on.
+     for (let i = 0; i < 4; i++) {
+-      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', subject: r.id, pageToken});
++      const answer = await api.auditFeed(c, {type: 'nuna.catalog.ref', pageToken});
+       records.push(...(answer.records || []).map(x => x.event || {time: x.time, type: x.type}));
+       pageToken = answer['next-page-token'];
+       if (!pageToken) break;

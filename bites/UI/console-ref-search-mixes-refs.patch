@@ -1,0 +1,16 @@
+Breaks: The feed's @name search reads every ref that ever had the name, not the live one from its making (Atelier, 2026-11-25; backlog 169).
+Module: catalog-server
+Test: ConsoleBrowserTest#theFeedsRefSearchReadsFromTheLiveRefsMakingAndTheRecordTabAsksByItsId
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index 702414bd..c1558a4b 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -301,7 +301,6 @@ function feedPanel(catalog, summary, own) {
+     const ref = name ? refsOf(catalog).then(list => findRef(list, name), () => undefined) : Promise.resolve(undefined);
+     ref.then(r => {
+       if (my !== gen) return;
+-      if (r && !st.from && !st.upTo) since = r['created-at'];
+       if (r === null) refNote.textContent = `No live ref is named @${name}: these are records through every ref that had the name.`;
+       return page(null, my);
+     }).then(() => {
