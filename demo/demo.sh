@@ -228,7 +228,20 @@ set_switch() {
   { [[ -z "$rest" ]] || printf '%s\n' "$rest"; [[ "$2" == off ]] || echo "$1"; } > "$SWITCHES.new"
   mv "$SWITCHES.new" "$SWITCHES"
 }
-running() { k get deployment "$1" >/dev/null 2>&1; }
+# Whether a deployment is there. Only kubectl's NotFound says it is not: any other failure (the API server timing out
+# while Windows pages the Docker VM out) is asked again, each try bounded, for about three minutes, then stops the
+# script. Taking a deployment for gone on a timeout once let gen stop stop Kafka under a running generator (backlog
+# 286).
+running() {
+  local out try
+  for try in $(seq 1 12); do
+    (( try == 1 )) || sleep 5
+    out=$(k get deployment "$1" -o name --request-timeout=10s 2>&1) && return 0
+    [[ "$out" == *NotFound* ]] && return 1
+  done
+  echo "kubectl could not tell whether deployment $1 is there: $out" >&2
+  exit 1
+}
 switches_line() {
   local line="" name
   for name in gen ss kafka metrics; do
@@ -1471,7 +1484,7 @@ EOF
 # Kafka, and written by the Apache Iceberg sink into history tables, one row per change; both run in the demo's
 # Kafka Connect (connect.yaml). Its pods do not fit beside Trino on an 8 GB Docker Desktop, so Trino, the audit
 # table writer and the brokerage world's generator stop while it runs; CloudBeaver stays, to query the databases.
-cdc_running() { k get deployment backoffice >/dev/null 2>&1; }
+cdc_running() { running backoffice; }
 
 # The leg's connectors on the worker (demo/cdc/connectors).
 CDC_CONNECTORS=(backoffice-source oracle-source cockroach-source backoffice-history oracle-history cockroach-history)

@@ -2390,3 +2390,4 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [280](backlog/280.md) | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | done | 2026-11-25 |
 | [281](backlog/281.md) | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | done | 2026-11-25 |
 | [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |
+| [286](backlog/286.md) | demo.sh takes a deployment for gone only when kubectl says NotFound, so gen stop never stops Kafka under a running generator | done | 2026-11-25 |
