@@ -1,0 +1,16 @@
+Breaks: The Reading chip is not described by the note that the page shows main only, so whoever tabs to it never hears it.
+Module: catalog-server
+Test: ConsoleBrowserTest#onAPhoneABranchCarriedOntoAPageThatShowsMainOnlyKeepsTheHeaderInTheWindow
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
+index d59cd32d..f8798e5c 100644
+--- a/catalog-server/src/main/resources/nuna/ui/refs.js
++++ b/catalog-server/src/main/resources/nuna/ui/refs.js
+@@ -201,7 +201,6 @@ export function readingControl(where, mainOnly = false) {
+     if (mine !== wanted) return;
+     const pick = refPick(where, list);
+     // The note cannot take focus, so the chip carries it to whoever tabs there (backlog 297).
+-    if (note) $('[data-ref-pick]', pick).setAttribute('aria-describedby', 'main-only');
+     showReading(pick, note);
+   }, () => {});
+ }

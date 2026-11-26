@@ -37,8 +37,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
 | [296](backlog/296.md) | S | Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind | one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down | 2026-11-26 |
-| [297](backlog/297.md) | S | Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides) | a few header rules below 761 px once Atelier says how the note shows on a phone; a browser test | 2026-11-26 |
 | [298](backlog/298.md) | M | Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot | where the feed resumes kept somewhere compaction and snapshot expiry leave alone, in one class, with tests of a compacted and an expired history | 2026-11-26 |
+| [299](backlog/299.md) | S | Console prototype: bring its header up to the built console (the Reading slot, items 231 and 297) | porting header markup and rules that already exist in the built console into one file; no tests | 2026-11-26 |
 
 ## Open items in full
 
@@ -1791,22 +1791,6 @@ Done when the guard refuses while the demo's pods run in kind (for example by as
 nuna-demo get pods`, or by the kind node container being up with the demo's namespace in it), still lets
 `-Pnuna.demo-beside` through, and still starts the tests when the demo is down or kind is absent (a machine at work).
 
-### 297. Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides)
-
-- Added: 2026-11-26 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, docs/design/console/prototype.html
-- Effort: S, a few header rules below 761 px once Atelier says how the note shows on a phone; a browser test
-
-Found by Atelier while designing item 231 (the header from 761 to 1,440 px), outside that item's range. In her harness
-of today's header, at a 390 px window with a branch carried onto a page that shows main only (Governance with
-`&r=<branch>`), the header is 630 px wide: the note "This page shows main only" shows on one line beside the Reading
-chip. Item 231 lets the note wrap from 761 px up only. Also at 390 px the brand shrinks to nothing and leaves a sliver
-of the peak beside the catalog picker. Her prototype `docs/design/console/prototype.html` overflows the same way, and
-from 761 to 1,440 px it needs item 231's rules too.
-
-Done when, at 390 and 760 px with a branch carried onto a page that shows main only, the page is no wider than the
-window, the brand shows whole or not at all, as Atelier decides, and a browser test checks it.
-
 ### 298. Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot
 
 - Added: 2026-11-26 by local_0484717c-9adc-4b18-af93-2db236201f4a
@@ -1856,6 +1840,20 @@ Bites `resume-stops-at-replace-snapshot` and `offsets-property-not-written` (in 
 `second-writer-not-refused` was recorded again, the same break against the moved line, and bites.
 
 Left: start `ops.orders_to_lake` again on the demo once it runs this code, and see it carry on.
+
+### 299. Console prototype: bring its header up to the built console (the Reading slot, items 231 and 297)
+
+- Added: 2026-11-26 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: docs/design/console/prototype.html
+- Effort: S, porting header markup and rules that already exist in the built console into one file; no tests
+
+Atelier's prototype `docs/design/console/prototype.html` has fallen behind the built console's header. It has no Reading
+slot and no note that a page shows main only (item 201), none of item 231's rules for widths from 761 to 1,440 px, and
+none of item 297's phone rules, so it overflows where the console no longer does. Found by Atelier on 2026-11-26 while
+designing item 297, which left the prototype out because its Done-when does not cover it.
+
+Done when the prototype's header carries the Reading slot and the rules of items 201, 231 and 297, and fits the window
+from 361 to 1,440 px with long names, as the console does.
 
 ## Done and dropped
 
@@ -2128,3 +2126,4 @@ Left: start `ops.orders_to_lake` again on the demo once it runs this code, and s
 | [293](backlog/293.md) | The CDC leg and CloudBeaver keep their data on volumes: cdc stop and down pause the leg, the next cdc carries on, cdc reset starts it anew | done | 2026-11-26 |
 | [294](backlog/294.md) | kind's node caps every container at 307 tasks: SingleStore's pipelines, and the JVMs, run out of threads | done | 2026-11-26 |
 | [295](backlog/295.md) | AuditTablesTest's ForbiddenException for updateTable: confirm the cause and guard the fix with a bite | done | 2026-11-26 |
+| [297](backlog/297.md) | Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides) | done | 2026-11-26 |

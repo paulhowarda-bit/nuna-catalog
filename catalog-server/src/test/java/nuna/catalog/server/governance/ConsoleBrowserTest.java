@@ -29,7 +29,9 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chromium.HasCdp;
 import org.openqa.selenium.interactions.Actions;
+import org.openqa.selenium.remote.Augmenter;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.Select;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -1686,10 +1688,12 @@ class ConsoleBrowserTest {
      * Returns the first overlap in the header, or an empty string: two shown parts of {@code #top} side by side that
      * overlap, or a part whose shown content runs past its own box (the note that the page shows main only ran under Go
      * to a path while the page was still no wider than the window, in Atelier's harness). Content clipped by an element
-     * that hides its overflow, and visually hidden words, are left out.
+     * that hides its overflow, and visually hidden words, are left out, as is a part hung under the header (on a phone,
+     * the note that the page shows main only: backlog 297).
      */
     private static final String HEADER_OVERLAPS = """
             const shown = e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+            const bar = document.getElementById('top').getBoundingClientRect();
             const parts = [...document.getElementById('top').children].filter(shown)
                 .map(e => ({e, r: e.getBoundingClientRect()})).filter(p => p.r.width > 1)
                 .sort((a, b) => a.r.left - b.r.left);
@@ -1709,12 +1713,86 @@ class ConsoleBrowserTest {
                 if (!shown(d) || clipped(d, part)) continue;
                 const q = d.getBoundingClientRect();
                 if (q.width <= 1 || q.height <= 1) continue;
+                if (getComputedStyle(d).position === 'absolute' && q.top >= bar.bottom - 0.5) continue;
                 if (q.right > r.right + 0.5 || q.left < r.left - 0.5)
                   return name(d) + ' runs past ' + name(part) + ' (' + q.left.toFixed(1) + '-' + q.right.toFixed(1)
                       + ' against ' + r.left.toFixed(1) + '-' + r.right.toFixed(1) + ')';
               }
             }
             return '';
+            """;
+
+    /**
+     * On a phone, a page that shows main only, carried through a branch, keeps the header within the window (backlog
+     * 297; Atelier, 2026-11-26). Before, at 390 px the note sat on one line beside the Reading chip and the header was
+     * 630 px wide, and the brand shrank to a sliver of the peak. Now the note hangs under the header as a strip across
+     * the frame and the page moves down to clear it; the brand shows whole from 521 px and not at all below; the names
+     * end in an ellipsis; and the chip, which can take focus where the note cannot, is described by the note. Chrome
+     * lays out no window narrower than about 500 px, so the frames are set by emulating the screen.
+     */
+    @Test
+    void onAPhoneABranchCarriedOntoAPageThatShowsMainOnlyKeepsTheHeaderInTheWindow() {
+        signIn(tester());
+        String branch = "wide_branch_" + Api.suffix();
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + branch + "\",\"kind\":\"branch\"}"), 201);
+        try {
+            browser.open("/ui/#p=governance&c=trading&r=" + branch);
+            browser.awaitText(By.cssSelector("#top #reading-slot [data-main-only]"), "This page shows main only");
+            assertThat(driver.findElement(By.cssSelector("#top [data-ref-pick]")).getDomAttribute("aria-describedby"))
+                    .isEqualTo("main-only");
+            HasCdp cdp = (HasCdp) new Augmenter().augment(driver);
+            for (int frame : new int[] {361, 390, 520, 521, 760}) {
+                phoneFrame(cdp, frame);
+                assertThat(headerFits()).as("the header fits at %d px", frame).isTrue();
+                assertThat(sideways()).as("the page scrolls sideways at %d px", frame).isFalse();
+                assertThat((String) driver.executeScript(HEADER_OVERLAPS)).as("the header's parts at %d px", frame).isEmpty();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> at = (Map<String, Object>) driver.executeScript(PHONE_HEADER);
+                assertThat(at.get("note")).as("the note at %d px", frame).isEqualTo("");
+                assertThat(at.get("brand")).as("the brand at %d px", frame).isEqualTo(frame >= 521 ? "whole" : "none");
+                assertThat(driver.findElement(By.id("catalog-pick")).getAccessibleName()).as("at %d px", frame)
+                        .isEqualTo("Catalog trading");
+            }
+            cdp.executeCdpCommand("Emulation.clearDeviceMetricsOverride", Map.of());
+        } finally {
+            api.manage("DELETE", "/refs/" + branch, null);
+        }
+    }
+
+    /** Emulates a screen on which the console's frame is {@code frame} wide. */
+    private void phoneFrame(HasCdp cdp, int frame) {
+        int width = frame;
+        for (int i = 0; i < 4; i++) {
+            cdp.executeCdpCommand("Emulation.setDeviceMetricsOverride",
+                    Map.of("width", width, "height", 844, "deviceScaleFactor", 1, "mobile", false));
+            int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
+            if (now == frame) {
+                return;
+            }
+            width += frame - now;
+        }
+        assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
+                .as("the console's frame").isEqualTo(frame);
+    }
+
+    /**
+     * On a phone: {@code note} is empty when the note that the page shows main only is shown under the header, within
+     * the window and above the page's first part, or says what is wrong; {@code brand} is {@code whole}, {@code none},
+     * or {@code cut} when it shows narrower than its content.
+     */
+    private static final String PHONE_HEADER = """
+            const w = document.documentElement.clientWidth;
+            const bar = document.getElementById('top').getBoundingClientRect();
+            const n = document.querySelector('#top [data-main-only]').getBoundingClientRect();
+            const first = document.querySelector('.slot > .nc-main').firstElementChild.getBoundingClientRect();
+            let note = '';
+            if (n.width < 1 || n.height < 1) note = 'not shown';
+            else if (n.top < bar.bottom - 0.5) note = 'in the header (top ' + n.top + ', header ends ' + bar.bottom + ')';
+            else if (n.right > w + 0.5 || n.left < -0.5) note = 'past the window (' + n.left + '-' + n.right + ' in ' + w + ')';
+            else if (first.top < n.bottom - 0.5) note = 'over the page (ends ' + n.bottom + ', page starts ' + first.top + ')';
+            const b = document.querySelector('#top .nc-brand');
+            const brand = b.getClientRects().length === 0 ? 'none' : b.scrollWidth > b.clientWidth ? 'cut' : 'whole';
+            return {note, brand};
             """;
 
     /** Whether the header and its last control, Sign out, end within the window. */

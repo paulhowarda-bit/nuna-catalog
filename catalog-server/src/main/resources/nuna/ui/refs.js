@@ -196,8 +196,14 @@ export function clearReading() {
  */
 export function readingControl(where, mainOnly = false) {
   const mine = ++wanted;
-  const note = mainOnly ? h('span', {class: 'main-only', 'data-main-only': ''}, 'This page shows main only') : null;
-  refsOf(where.c).then(list => { if (mine === wanted) showReading(refPick(where, list), note); }, () => {});
+  const note = mainOnly ? h('span', {class: 'main-only', id: 'main-only', 'data-main-only': ''}, 'This page shows main only') : null;
+  refsOf(where.c).then(list => {
+    if (mine !== wanted) return;
+    const pick = refPick(where, list);
+    // The note cannot take focus, so the chip carries it to whoever tabs there (backlog 297).
+    if (note) $('[data-ref-pick]', pick).setAttribute('aria-describedby', 'main-only');
+    showReading(pick, note);
+  }, () => {});
 }
 
 /** The band under a page's title while it reads through a ref. */
