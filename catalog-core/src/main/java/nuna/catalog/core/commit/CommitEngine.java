@@ -536,7 +536,8 @@ public final class CommitEngine {
     /**
      * Registers an existing metadata file. Its UUID becomes the object id, so a UUID that another object holds
      * is refused. A dropped or unregistered object of this catalog keeps its UUID and location (D13, D25), and
-     * registering the file it left at, in its own namespace, brings it back as itself.
+     * registering the file it left at, in its own namespace, brings it back as itself. A file a branch wrote
+     * ({@link TableFiles#onBranch}) is refused, on main and through a branch alike: main never holds one (backlog 177).
      */
     private CommitReply register(Request request) {
         Optional<CatalogObject> existing = store.findObject(request.name().namespaceId(),

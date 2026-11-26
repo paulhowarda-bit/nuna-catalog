@@ -1,0 +1,21 @@
+Breaks: a register takes a metadata file a branch wrote, so main's pointer and journal can name a branch's file, which DR reconcile skips on main's chain (backlog 177).
+Module: catalog-core
+Test: BranchCommitTest#aRegisterRefusesABranchsFile+aReviveRefusesABranchsFile
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index 4aeb17ef..6cf6cf0f 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -549,12 +549,6 @@ public final class CommitEngine {
+                 ? RestRequest.register(request.json()).metadataLocation()
+                 : RestRequest.registerView(request.json()).metadataLocation();
+         String kind = table ? "Table" : "View";
+-        if (TableFiles.onBranch(metadataLocation)) {
+-            // Main never holds a branch's file: DR reconcile skips such files on main's chain (backlog 177).
+-            return new Failure(400, "BadRequestException", "Metadata file " + metadataLocation + " was written by a"
+-                    + " commit on a branch, and a " + kind.toLowerCase(java.util.Locale.ROOT) + " is registered only"
+-                    + " from a file of main's; merge the branch, or register a file main's commits wrote");
+-        }
+         TableFiles.Read read = files.read(metadataLocation, "");
+         Outcome outcome = table
+                 ? Metadata.registerTable(read.json(), metadataLocation)
