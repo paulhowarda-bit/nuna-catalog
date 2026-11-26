@@ -219,9 +219,9 @@ export const governanceSummary = catalog => call(`/management/v1/catalogs/${enc(
 /** Every hold and freeze in a catalog (item 128): those standing, and those the store recorded lifted in the last 30 days (item 133). */
 export const holdsAndFreezes = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/holds`);
 
-/** An object's export: its pointer, current metadata and commit journal, by the object's id. */
-export const exportObject = (catalog, id) =>
-  call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}/export`);
+/** An object's export: its pointer, current metadata and commit journal, by the object's id, through a catalog ref when `ref` names one (item 172). */
+export const exportObject = (catalog, id, ref) =>
+  call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}/export${ref ? '?ref=' + enc(ref) : ''}`);
 
 /** The management API's securable: {"type", "namespace", "name"}. */
 export function securable(target) {

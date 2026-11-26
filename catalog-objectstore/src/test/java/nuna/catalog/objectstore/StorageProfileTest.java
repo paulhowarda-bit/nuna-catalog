@@ -181,7 +181,7 @@ class StorageProfileTest {
             "localhost:9000",
             "rgw.internal",
             "http:rgw.internal",
-            "https://admin:secret@rgw.internal",
+            "https://admin@rgw.internal",
             "https://rgw.internal/",
             "https://rgw.internal/lake",
             "https://rgw.internal?bucket=lake",

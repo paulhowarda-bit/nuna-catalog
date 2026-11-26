@@ -661,7 +661,7 @@ const pathOfItem = t => [...(t.namespace || []), t.name].join('.');
 const pathCode = t => code(pathOfItem(t).split('.').flatMap((x, i, all) => i < all.length - 1 ? [x + '.', h('wbr')] : [x]));
 
 /** The button that copies the warehouse name an engine uses for a ref, naming exactly what it copies (backlog 217). */
-function copyWarehouse(name) {
+export function copyWarehouse(name) {
   const b = copyButton(name, ['Copy ', code(name)]);
   b.setAttribute('aria-label', 'Copy the warehouse name ' + name);
   return b;

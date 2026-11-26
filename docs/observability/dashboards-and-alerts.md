@@ -9,11 +9,12 @@ if work's Prometheus names them otherwise.
 
 | File | Holds |
 |---|---|
-| `dashboards/nuna-catalog.json` | 33 panels: the SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement and archive, nuna's alerts |
+| `dashboards/nuna-catalog.json` | 36 panels: the latency and availability SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement and archive, nuna's alerts |
 | `dashboards/nuna-maintenance.json` | 16 panels: the worker's scans, failures, work done and compaction |
 | `dashboards/nuna-client-reports.json` | 13 panels: engines' scan and commit reports, by engine |
-| `rules/nuna-catalog.rules.yaml` | 9 alerts: two burn-rate alerts for each latency SLO, one for each alert kind |
-| `rules/nuna-maintenance.rules.yaml` | 8 alerts: the worker's, as worker-metrics.md designs them |
+| `rules/nuna-catalog.rules.yaml` | 19 alerts: two burn-rate alerts for each latency and each availability SLO, four absence alerts, one for each alert kind |
+| `rules/nuna-maintenance.rules.yaml` | 10 alerts: the worker's, as worker-metrics.md designs them |
+| `tests/nuna-catalog.test.yaml` | promtool unit tests of the catalog's rules (backlog 261; "How they were checked") |
 
 Each dashboard picks its Prometheus through a `datasource` variable and its deployment through `job`; the catalog's
 and the reports' dashboards also pick catalogs (`catalog`), and the reports' engines (`engine`). They use dashboard
@@ -80,7 +81,7 @@ The series the files read, 56 in all from 44 meters:
 
 | Item 44 asks for | Where | Read from |
 |---|---|---|
-| The SLOs: load p99 < 50 ms, 304 p99 < 10 ms, commit p99 < 300 ms, at least 500 commits a second | nuna catalog, "SLOs": each latency SLO's share within its bound over the time range and over 5-minute windows, each one's error-budget burn rate over the last hour, and commits a second against a line at 500 | `nuna.catalog.requests`, as catalog-metrics.md defines each SLO |
+| The SLOs: load p99 < 50 ms, 304 p99 < 10 ms, commit p99 < 300 ms, at least 500 commits a second | nuna catalog, "SLOs": each latency SLO's share within its bound over the time range and over 5-minute windows; each availability SLO's share not answered 5xx over the time range (backlog 261); every SLO's error-budget burn rate over the last hour; and commits a second against a line at 500 | `nuna.catalog.requests`, as catalog-metrics.md defines each SLO |
 | Commits: the outcome split, and requirement failures by type | nuna catalog, "Commits": replies by outcome, requirement failures by `requirement.type`, refusals and failures by error type, commits by route, mean commit time | `nuna.catalog.commits`, `nuna.catalog.requests` |
 | Loads and the share answered 304 | nuna catalog, "Loads": loads by outcome, the 304 share (3xx over 2xx and 3xx, D14), mean load time, failures by error type, the metadata cache's hit share | `nuna.catalog.requests`, `nuna.catalog.metadata.cache.lookups` |
 | Credential vending | nuna catalog, "Credential vending": vends by outcome, the cache's share, mean vend time, failures by error type, STS calls and their mean time by storage profile | `nuna.catalog.credential.vends`, `nuna.sts` |
@@ -93,6 +94,10 @@ The series the files read, 56 in all from 44 meters:
 - **The SLOs are read as shares, not quantiles.** The request histogram's only buckets are the SLO bounds, so
   `histogram_quantile` would interpolate between them and invent a p99. "p99 within 50 ms" is the same statement as
   "at least 99% within 50 ms", which the buckets give exactly, as the console's health page does (health-page.md).
+- **Availability is read from the request counts.** Each availability stat is one less the 5xx answers over the 2xx,
+  3xx and 5xx ones, so 4xx answers count on neither side, as in the rules. A deployment that has never answered 5xx
+  has no 5xx series; the panels read that as no failures, not as no data. The burn-rate panel draws every SLO against
+  its own budget (1% for latency, 0.1% for availability), so the lines the rules fire at are the same for both.
 - **The audit's acknowledgement p99 is an estimate.** Its timer is exported with the console health page's ten
   buckets, 5 ms to 5 s (item 71), and the p99 panel takes `histogram_quantile(0.99, ...)` over them, beside the mean.
   Prometheus interpolates within the bucket the p99 falls in, so it can be off by that bucket's width (25 to 50 ms,
@@ -112,23 +117,86 @@ The series the files read, 56 in all from 44 meters:
 
 | Alert | Severity | Fires when |
 |---|---|---|
-| `NunaLoadSloBurnFast`, `NunaNotModifiedSloBurnFast`, `NunaCommitSloBurnFast` | page | The SLO's error budget burns at 14.4 times its rate over 1 h and 5 min, or 6 times over 6 h and 30 min |
-| `NunaLoadSloBurnSlow`, `NunaNotModifiedSloBurnSlow`, `NunaCommitSloBurnSlow` | warning | It burns at its rate or faster over 3 days and 6 h |
+| `NunaLoadSloBurnFast`, `NunaNotModifiedSloBurnFast`, `NunaCommitSloBurnFast` | page | The latency SLO's error budget burns at 14.4 times its rate over 1 h and 5 min, or 6 times over 6 h and 30 min |
+| `NunaLoadSloBurnSlow`, `NunaNotModifiedSloBurnSlow`, `NunaCommitSloBurnSlow` | warning | It burns at its rate or faster over 3 days and 6 h, for 15 minutes |
+| `NunaLoadAvailabilityBurnFast`, `NunaCommitAvailabilityBurnFast`, `NunaRequestAvailabilityBurnFast` | page | The availability SLO's error budget (0.1% of answers 5xx) burns at 14.4 times its rate over 1 h and 5 min, or 6 times over 6 h and 30 min |
+| `NunaLoadAvailabilityBurnSlow`, `NunaCommitAvailabilityBurnSlow`, `NunaRequestAvailabilityBurnSlow` | warning | It burns at its rate or faster over 3 days and 6 h, for 15 minutes |
+| `NunaCatalogGone` | page | No catalog server has pushed `nuna_catalog_alerts_metadata_integrity_total` for 10 minutes |
+| `NunaCatalogSilent` | page | A deployment (`job`) that pushed within the last day has not for 10 minutes, while another still does |
+| `NunaRequestSeriesMissing` | page | A deployment that has pushed for over an hour has had no `nuna_catalog_requests_milliseconds_count` for an hour |
+| `NunaSloBucketMissing` | page | A latency SLO's answers arrive without the bucket at its bound, for 10 minutes |
 | `NunaMetadataIntegrity` | page | `nuna.catalog.alerts.metadata.integrity` rose in the last 15 minutes |
 | `NunaRegulatedSchemaChange`, `NunaLargeMetadata` | warning | Their counter rose in the last 15 minutes |
 | `NunaWorkerNotScanning`, `NunaWorkerGone` | page | worker-metrics.md, "Alerts" |
 | `NunaPurgesFailing`, `NunaDeletionsFailing`, `NunaMaintenanceJobFailing`, `NunaScansSlowerThanInterval`, `NunaCompactionFallingBehind`, `NunaFilesOutsideTable` | warning | worker-metrics.md, "Alerts" (a "ticket" there) |
 | `NunaDrLagging`, `NunaDrVerifierNotPassing` | page | worker-metrics.md, "Alerts": a commit not whole in the DR store for 15 minutes, or no DR verifier pass for 15 minutes (D37, item 28) |
 
-- **Burn rates.** Each latency SLO allows 1% of its answers past the bound: that is its error budget. The windows and
-  factors are the Google SRE workbook's multiwindow alerts for a 30-day budget: 14.4 spends 2% of the month's budget
-  in an hour, 6 spends 5% in six hours, and 1 spends it all in 30 days. The short window of each pair stops the alert
-  soon after the burn stops. Fast burns page and slow ones warn, as the workbook has it; change the `severity` label
-  to change that. Each SLO is per deployment (`job`), summed over its servers and catalogs. A window with no answers
-  of the SLO's kind (no 304s, say) gives no ratio and no alert.
+- **Burn rates.** Each latency SLO allows 1% of its answers past the bound, and each availability SLO 0.1% of its
+  answers 5xx: that is its error budget. The windows and factors are the Google SRE workbook's multiwindow alerts for
+  a 30-day budget: 14.4 spends 2% of the month's budget in an hour, 6 spends 5% in six hours, and 1 spends it all in
+  30 days. The short window of each pair stops the alert soon after the burn stops. Fast burns page and slow ones
+  warn, as the workbook has it; change the `severity` label to change that. Each SLO is per deployment (`job`), summed
+  over its servers and catalogs. A window with no answers of the SLO's kind (no 304s, say), or with no 5xx, gives no
+  ratio and no alert.
+- **Availability** (backlog 261). The latency SLOs time answers 2xx or 3xx (R7: latencies of successful answers), so
+  a 5xx is neither inside nor outside them: a catalog answering every call 500 fired none of them, and calls that slow
+  until they fail as 5xx made the latency look better. The availability SLOs count answers instead. A 5xx is bad; a
+  2xx or 3xx is good, a 304 too; a 4xx is neither, 409 commit conflicts included, since a client's mistake or a lost
+  race is not the catalog failing. nuna's 503s count bad: they say the store or the identity provider could not be
+  reached, or a record that had to be audited first was not (`ErrorResponses`, `AuditUnavailableResponses`), not that
+  the catalog shed load. Its one 429, the audit read routes' per-caller limit, is on no Iceberg route and a 4xx anyway.
+  99.9% is a draft target, set at work as D43's names are. The R7 latency SLOs stay as written. An outage of every
+  call fires the load, the commit and the every-call pages at once.
+- **Few calls make big shares.** With, say, 10 commits an hour at night, one commit answered 5xx is 10% of the hour
+  and more of its 5 minutes, past the 1.44% the fast page fires at: one failure pages. The latency SLOs have the same
+  exposure at 14.4%, two slow commits. The SRE workbook's remedies are synthetic traffic and grouping kinds of request
+  (the commit SLOs already group `updateTable` and `commitTransaction`); Grafana's SLOs add a least number of failures.
+  To settle at work, with the target.
+- **Detection time: no `for` on the pages.** The fast pages have no `for` (backlog 261): the SRE workbook advises
+  against it on burn-rate alerts, since the short window already asks for a sustained burn and a flapping condition
+  restarts a `for`. Measured with promtool, pushes and evaluations each minute and six hours of history before the
+  failure: every load slower than 50 ms pages 9 minutes after it starts, when the hour's share of slow loads passes
+  14.4% (11 minutes with the `for: 2m` the rules had); every load answered 5xx pages 2 minutes after the first failure,
+  the two pushes a new 5xx series needs before `rate()` reads it. In production add up to a minute for the push and one
+  evaluation interval. The warnings keep `for: 15m`.
+- **A page outlasts its data.** Every page rule has `keep_firing_for: 10m`: when its condition clears, it fires 10
+  minutes more, then resolves. Pushed series have no `up` and no staleness marker, so when a catalog stops pushing, a
+  burn-rate page's 5-minute window empties within about 4 minutes and the page would resolve, a false all-clear, before
+  `NunaCatalogGone` fires at 10. With `keep_firing_for` the two overlap. The cost: a page whose cause has ended also
+  resolves 10 minutes late.
+- **Absence** (backlog 261). A catalog server registers its alert counters as it starts and pushes them every minute
+  while it runs, busy or idle, so their absence means the server stopped, or its telemetry no longer reaches
+  Prometheus. The request series cannot tell that: each begins at the first call of its kind since the server started,
+  so a catalog restarted into a quiet spell has none.
+  - `NunaCatalogGone`: no catalog pushes the counter for 10 minutes.
+  - `NunaCatalogSilent`: one deployment of several, a `job` that pushed within the last day and not for 10 minutes.
+    When none pushes, `NunaCatalogGone` pages alone.
+  - `NunaRequestSeriesMissing`: a deployment that has pushed for over an hour has no request series for an hour. They
+    arrive under other names (native histograms, `convert_histograms_to_nhcb`; seconds), so every SLO rule reads
+    nothing. A deployment restarted into an hour with no Iceberg call fires it too; where that is normal, lengthen its
+    window or make it a warning.
+  - `NunaSloBucketMissing`: a latency SLO's answers arrive without the bucket at its bound, for 10 minutes. The timer's
+    buckets changed (`RequestMetrics.SLO`) or were dropped (percentiles configured for it), or `le` is written
+    otherwise. It compares with the SLO's own count, so a deployment that never answers 304 does not fire it.
+- **Naming the deployments you expect.** `absent_over_time` gives an alert only the labels its selector sets with
+  `=`, so `NunaCatalogGone` names no deployment, and `NunaCatalogSilent` forgets one after a day of silence and never
+  knew one that never reported (its collector never wired, its `service.namespace` misspelt). A Prometheus that must
+  always hear from given deployments names each in a rule of its own, beside these files, with the `job` the charts
+  give it (`<namespace>/nuna-catalog`, "Names assumed"):
+
+  ```yaml
+  - alert: NunaCatalogDeploymentGone
+    expr: absent_over_time(nuna_catalog_alerts_metadata_integrity_total{job="prod/nuna-catalog"}[10m])
+    keep_firing_for: 10m
+    labels:
+      severity: page
+  ```
+
+  It pages with `job="prod/nuna-catalog"` however long the deployment has been gone, or if it never came.
 - **Alert kinds.** Metadata integrity pages and the other two warn, as item 44 and catalog-metrics.md ("The alerts")
   have it. The counters are registered when the server starts, so the first alert is a rise from 0 and `increase`
-  sees it. Each alert resolves 15 minutes after the counter last rose; the `nuna.alerts` log line names the table.
+  sees it. Each warning resolves 15 minutes after the counter last rose, and the page 25 (`keep_firing_for`); the
+  `nuna.alerts` log line names the table.
 - **The worker's rules** are worker-metrics.md's, unchanged, with names and severities. `600` in them is the default
   `scan-interval` in seconds, and `20m` two of them: use the deployment's own. `NunaWorkerNotScanning` waits an hour
   (`for: 1h`) so that a new deployment's first scan, which runs every table's orphan scan, can end; an hour is a guess
@@ -146,8 +214,9 @@ The series the files read, 56 in all from 44 meters:
   a burn rate on it would fire whenever traffic is light. The dashboard shows the rate against a line at 500. Item 44
   asked for burn-rate alerts on each SLO; Paul kept this one a panel with no alert (D43, amended 2026-11-20: "Panel
   only").
-- **No alert on errors.** The R7 SLOs are latencies of successful answers: a 5xx is neither inside nor outside them,
-  so a catalog answering every call 500 fires none of these rules. The dashboards show failures by error type.
+- **The worker's pages do not outlast their data.** Backlog 261 gave `keep_firing_for` to the catalog's page rules
+  only. `NunaDrLagging` reads a gauge, so a worker that stops pushing lets it resolve once Prometheus' 5-minute
+  lookback passes, about 10 minutes before `NunaWorkerGone` pages (inferred from the rules).
 
 ## How they were checked
 
@@ -176,6 +245,30 @@ verifier's meters in worker-metrics.md.
 Not checked at home before 2026-11-25: that Grafana imports the files, and that Prometheus loads the rules (both
 now do, in the demo, below). Still not checked: that the translation above is what work's Prometheus does (item 43).
 Item 44 is done at work when the dashboards show live data and each alert has fired once in a test.
+
+Backlog 261 (2026-11-25) put promtool to work. `AlertRulesTest` in `catalog-server`, tagged heavy so the heavy build
+and the overnight run run it, starts the Prometheus image the demo runs (`prometheus.image`, prom/prometheus:v3.16.0)
+and runs in it:
+
+- `promtool check rules` on both rule files: 19 and 10 rules, every expression parsed.
+- `promtool test rules` on `tests/nuna-catalog.test.yaml`, eight cases. Every load answered 503 pages 2 minutes after
+  the first failure and still at 15, while the latency page stays quiet. 409 conflicts on half the commits, and loads
+  answered 404, page nothing. The only catalog falling silent pages at 10 minutes, `NunaCatalogGone` alone; one
+  deployment of two falling silent pages `NunaCatalogSilent` for it. A page whose series stop keeps firing until
+  `NunaCatalogGone` has taken over, then resolves. Loads with no 50 ms bucket page `NunaSloBucketMissing`, while a
+  commit bucket written `300.0` does not. Request series that stop while the server reports page after an hour, and a
+  new catalog with no calls yet waits that hour.
+
+Run them with `./gradlew :catalog-server:test --tests AlertRulesTest -Pheavy`, or the `docker run` line at the top of
+the test file. Two bites in `bites/OBS-261/` break what the tests guard: one drops `keep_firing_for` from a page, one
+counts 4xx answers as failures. Note that promtool compares annotations exactly, so a test's `exp_annotations` carry
+each description as it renders, `$value` included: a changed description changes its test.
+
+The availability panels' queries were evaluated by promtool against test series too, with `$job` and `$catalog` as
+`.*` (not kept): with no 5xx series the stats read 100% and the burn rates 0; with one load in a hundred answered
+5xx beside 404s, loads read 99%, every call 1 less 1/110 (the 404s left out), and the load burn rate 10.
+
+Not checked: the 261 rules against the demo's live series (item 233's switch `metrics`).
 
 ## In the demo
 

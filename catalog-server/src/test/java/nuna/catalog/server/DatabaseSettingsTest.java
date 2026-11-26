@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.BindException;
 import org.springframework.boot.context.properties.bind.Binder;
@@ -18,7 +19,9 @@ import org.springframework.core.env.SystemEnvironmentPropertySource;
  */
 class DatabaseSettingsTest {
 
-    private static final String GOOD_URI = "mongodb://catalog:s3cret@h1,h2,h3/catalog?replicaSet=rs0&socketTimeoutMS=30000";
+    /** The addresses' password, made per run so no credential-shaped literal sits in the source. */
+    private static final String SECRET = "pw-" + UUID.randomUUID();
+    private static final String GOOD_URI = "mongodb://catalog:" + SECRET + "@h1,h2,h3/catalog?replicaSet=rs0&socketTimeoutMS=30000";
 
     @Test
     void postgresqlIsTheDefault() {
@@ -33,9 +36,9 @@ class DatabaseSettingsTest {
 
         assertRefused(Map.of("nuna.database.backend", "mongodb"), "nuna.database.mongodb.uri is required");
         assertRefused(Map.of("nuna.database.backend", "mongodb", "nuna.database.mongodb.uri",
-                "mongodb://catalog:s3cret@h1/?socketTimeoutMS=30000"), "must name the catalog's database");
+                "mongodb://catalog:" + SECRET + "@h1/?socketTimeoutMS=30000"), "must name the catalog's database");
         assertRefused(Map.of("nuna.database.backend", "mongodb", "nuna.database.mongodb.uri",
-                "mongodb://catalog:s3cret@h1/catalog?replicaSet=rs0"), "must set socketTimeoutMS");
+                "mongodb://catalog:" + SECRET + "@h1/catalog?replicaSet=rs0"), "must set socketTimeoutMS");
     }
 
     @Test
@@ -82,7 +85,7 @@ class DatabaseSettingsTest {
     private static void assertRefused(Map<String, String> properties, String message) {
         assertThatThrownBy(() -> bind(properties))
                 .isInstanceOf(BindException.class)
-                .rootCause().hasMessageContaining(message).message().doesNotContain("s3cret");
+                .rootCause().hasMessageContaining(message).message().doesNotContain(SECRET);
     }
 
     private static String excludedAfterPostProcessing(Map<String, Object> properties) {

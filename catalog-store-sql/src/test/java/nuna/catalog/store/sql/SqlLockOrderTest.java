@@ -7,6 +7,7 @@ import nuna.catalog.store.Change;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.OutboxEvent;
+import nuna.catalog.store.Pointer;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import java.time.Instant;
@@ -33,6 +34,8 @@ class SqlLockOrderTest {
     private static final UUID OBJECT = UUID.randomUUID();
     private static final Change CHANGE = new Change(UUID.randomUUID(), Instant.parse("2026-11-25T09:00:00Z"),
             List.of(new OutboxEvent("test.changed", "{}")), Optional.empty());
+    /** Every pointer of the object, by branch: unregister and a removal from refs lock them before the object. */
+    private static final String POINTERS = "FROM pointer WHERE object_id = ? ORDER BY branch FOR UPDATE";
     private static final OffsetDateTime DROPPED = OffsetDateTime.of(2026, 11, 1, 9, 0, 0, 0, ZoneOffset.UTC);
 
     @Test
@@ -73,7 +76,7 @@ class SqlLockOrderTest {
     }
 
     @Test
-    void aRemovalFromRefsLocksTheCatalogTheRefsTheObjectAndTheNamespacesAboveItBeforeReadingHolds() {
+    void aRemovalFromRefsLocksTheCatalogTheRefsThePointersTheObjectAndTheNamespacesAboveItBeforeReadingHolds() {
         UUID ref = UUID.randomUUID();
         ScriptedDatabase database = new ScriptedDatabase()
                 .answer("SELECT catalog_id FROM catalog_object WHERE id = ?", row("catalog_id", CATALOG))
@@ -87,8 +90,21 @@ class SqlLockOrderTest {
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
 
         assertLockedInOrderBeforeHolds(database, "FROM catalog WHERE id = ? FOR SHARE",
-                "FROM ref WHERE id = ? AND catalog_id = ? FOR UPDATE", "SELECT namespace_path FROM catalog_object",
+                "FROM ref WHERE id = ? AND catalog_id = ? FOR UPDATE", POINTERS, "SELECT namespace_path FROM catalog_object",
                 "FROM namespace WHERE id = ANY(?) ORDER BY id FOR SHARE");
+    }
+
+    @Test
+    void anUnregisterLocksThePointersBeforeTheObjectAsARemovalFromRefsDoes() {
+        ScriptedDatabase database = new ScriptedDatabase();
+
+        assertThat(new SqlObjects(database.transactions()).unregister(OBJECT, new Pointer("s3://b/t/v1.json", 1, "",
+                new byte[0]), CHANGE)).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+
+        int pointers = database.indexOf(POINTERS);
+        assertThat(pointers).as("the object's pointers are locked").isNotNegative();
+        assertThat(pointers).as("before the object")
+                .isLessThan(database.indexOf("FROM catalog_object WHERE id = ? AND state = ? FOR UPDATE"));
     }
 
     @Test

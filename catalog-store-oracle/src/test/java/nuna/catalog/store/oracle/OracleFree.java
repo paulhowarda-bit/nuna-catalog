@@ -69,7 +69,8 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
      */
     static final int READ_TIMEOUT_SECONDS = 5;
 
-    private static final String PASSWORD = "catalog";
+    /** Every account's password, made per JVM; Oracle wants a letter first. */
+    static final String PASSWORD = "pw" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
     private static final String PDB_SERVICE = "freepdb1";
     private static final String PLAIN_SERVICE = "catalog_plain";
     /** A service whose FAILOVER_TYPE lets Application Continuity replay transactions. */
