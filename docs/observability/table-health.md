@@ -522,3 +522,12 @@ Storage setup (backlog 253) has two bites, each against `StorageSetupRoutesTest`
 - `bites/D18/storage-setup-open`: anyone signed in reads it, and no refusal is audited.
 - `bites/D30/storage-setup-settings-for-a-reached-store`: every profile gets the worker's settings, a bucket on a store
   the worker already reaches among them.
+
+A scan that could not read its storage prefixes (item 275) has three bites in `bites/D30/`:
+
+- `worker-unread-prefixes-reported-as-none` (`WorkerPrefixesTest`): the worker reports such a scan as reaching no
+  store.
+- `readiness-unread-scan-skipped` (`ReadinessUnreadPrefixesTest`): readiness and storage setup skip it and judge by
+  the scan before.
+- `storage-setup-settings-after-unread-scan` (`ReadinessUnreadPrefixesTest`): storage setup gives the worker's settings
+  after it.
