@@ -750,6 +750,30 @@ class ConsoleBrowserTest {
                 + "/tables/trades?snapshots=all", null, AUTH, api.grantAdmin(), "X-Iceberg-Access-Delegation", "none"));
     }
 
+    /**
+     * With no group named, the Grants page lists the catalog's groups, each with its duties, to a grant admin, whose own
+     * groups hold no grant (D18), and each opens its grants (Atelier's walk of backlog 248, 2026-11-24; backlog 260).
+     */
+    @Test
+    void aGrantAdminSeesTheCatalogsGroupsWithTheirDutiesAndOpensOnesGrants() {
+        signIn(gary());
+        browser.open("/ui/#p=grants&c=trading");
+        WebElement stewards = browser.await(By.cssSelector("#governance-grants table.grants-groups tr[data-group='"
+                + GovernanceServer.STEWARDS + "']"));
+        assertThat(textContent(browser.await(By.cssSelector("#grants-list h2")))).isEqualTo("Groups in trading");
+        assertThat(cell(stewards, 2)).contains("Tags");
+        assertThat(cell(stewards, 3)).contains("manage-tags");
+        assertThat(textContent(browser.await(By.cssSelector("#governance-grants .grants-configured"))))
+                .contains(GovernanceServer.GRANT_ADMINS);
+
+        stewards.findElement(By.tagName("a")).click();
+        browser.await(grantRow(GovernanceServer.STEWARDS, "manage-tags"));
+        browser.await("the link did not name the group",
+                d -> d.getCurrentUrl().endsWith("&g=" + GovernanceServer.STEWARDS));
+        assertThat(browser.await(By.cssSelector("#governance-grants input[aria-label='Group']")).getDomProperty("value"))
+                .isEqualTo(GovernanceServer.STEWARDS);
+    }
+
     @Test
     void grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownBeforeGrant() {
         String group = "console-readers-" + Api.suffix();

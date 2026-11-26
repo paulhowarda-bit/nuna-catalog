@@ -182,6 +182,15 @@ class GrantPreviewTest {
                 .containsEntry("answer", "admitted");
     }
 
+    @Test
+    void writeIsRefusedOnAViewAndAdmittedOnATable() {
+        assertThat(preview(body(viewSpec("sales", "weekly"), "builders", "write")))
+                .containsEntry("answer", "refused").containsEntry("refusal", "privilege-not-on-object")
+                .containsEntry("reason", "write means nothing on a view: it has no rows; select reads it, and modify"
+                        + " changes its definition");
+        assertThat(preview(body(tableSpec("sales", "orders"), "builders", "write"))).containsEntry("answer", "admitted");
+    }
+
     // ---- the preview and the grant agree ----
 
     @Test
@@ -294,6 +303,20 @@ class GrantPreviewTest {
         assertThat(grants).noneMatch(g -> g.grant().securable().equals(orders.securable()));
     }
 
+    @Test
+    void theGrantRouteRefusesWriteOnAViewUnauditedAndARevokeStillRemovesOne() {
+        assertThat(answer(() -> routes.grant(CATALOG, body(viewSpec("sales", "weekly"), "builders", "write"),
+                http))).isEqualTo(new Answer(400, "BadRequestException", "write means nothing on a view: it has no"
+                + " rows; select reads it, and modify changes its definition"));
+        assertThat(writes).isZero();
+        assertThat(audit).as("a mistake in the request, not a refused one").isEmpty();
+
+        grant(weekly.securable(), "builders", Privilege.WRITE);
+        assertThat(answer(() -> routes.revoke(CATALOG, body(viewSpec("sales", "weekly"), "builders", "write"),
+                http)).status()).as("one granted before backlog 258").isEqualTo(204);
+        assertThat(grants).noneMatch(g -> g.grant().securable().equals(weekly.securable()));
+    }
+
     // ---- helpers ----
 
     /** One body for each answer and each refusal. */
@@ -307,6 +330,7 @@ class GrantPreviewTest {
                 body(namespaceSpec("sales"), "analysts", "manage-grants"),
                 body(tableSpec("sales", "orders"), "builders", "create"),
                 body(viewSpec("sales", "weekly"), "builders", "create"),
+                body(viewSpec("sales", "weekly"), "builders", "write"),
                 body(namespaceSpec("sales"), "builders", "create"));
     }
 
