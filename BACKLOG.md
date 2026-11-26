@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**31 open:** 6 S, 11 M, 8 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**30 open:** 6 S, 11 M, 8 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -42,7 +42,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [266](backlog/266.md) | S | Overview says a catalog's worker has not reported while the worker reports every scan | one page's head, KPI and queue lines reading a route and words that exist (item 252's `readiness.js`), and a browser test beside `ConsoleReadinessBrowserTest` | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
-| [285](backlog/285.md) | ? | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on | 2026-11-25 |
 
 ## Open items in full
 
@@ -1999,26 +1998,6 @@ Left: the overnight heavy build has to pass the two `CommitSuite` cases on all f
 have to bite. The CockroachDB select-only bite assumes `SELECT … FOR UPDATE` on a missing key locks nothing under
 READ COMMITTED; if it reports NO BITE, record that store's bite another way. Then `./backlog.sh done 278`.
 
-### 285. Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub
-
-- Added: 2026-11-25 by Paul (work note 005, 2026-11-25)
-- Touches: none
-- Effort: M if history is rewritten (a rewrite, its proof, and every worktree, claim and cited hash moved or noted); none if snapshots go on
-
-Push protection checks every commit pushed, so once 280 to 282 clean the tree, the old values in earlier commits
-still block a push of the full history (`docs/from-work/005-github-secret-scanning.md`). Work pushed one
-history-less snapshot for that reason.
-
-The facts (catalog-security, 2026-11-25): every value is in history from the commit that added it, under keel and
-fidice spellings before the renames (a60daba, 3040ff8). A rewrite changes every hash from about M0 on: it orphans the
-worktrees, `refs/backlog/claims/*`, `.overnight/worktree` and `~/.nuna-demo/checkout`, and leaves the hashes cited in
-CLAUDE.md, the ledger and `status/` pointing at nothing. `git filter-repo` is not installed here; the fast-export
-route in the notes works, proven by a byte-identical tip tree, with rules anchored so they match nothing in the
-cleaned tip (`catalog` is an ordinary word). Work's repository started from its snapshot, so a later full-history
-push would be unrelated history there.
-
-The question for Paul: rewrite history so the whole of it can go to work's GitHub, or keep pushing snapshots.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -2273,4 +2252,5 @@ The question for Paul: rewrite history so the whole of it can go to work's GitHu
 | [282](backlog/282.md) | The demo's and the laptop runner's fixed passwords made once per machine, people's included | done | 2026-11-26 |
 | [283](backlog/283.md) | Kafka Connect's REST API is published on 8186 with no sign-in | done | 2026-11-26 |
 | [284](backlog/284.md) | The audit table writer stops for good when its table is dropped under it | done | 2026-11-25 |
+| [285](backlog/285.md) | Paul decides: take the old test credentials out of git history, or push snapshots to work's GitHub | done | 2026-11-26 |
 | [286](backlog/286.md) | demo.sh takes a deployment for gone only when kubectl says NotFound, so gen stop never stops Kafka under a running generator | done | 2026-11-25 |
