@@ -1651,6 +1651,24 @@ Done looks like:
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
+**Checked on the demo, 2026-11-26: not finished.** The demo ran Podman's kind cluster (`kind-nuna`), `main` at
+65a1d354.
+- `demo.sh ss` stopped with `ERROR 1933 … Process died unexpectedly or didn't start` at the first Iceberg pipeline in
+  `load.sql`. The cause: every container in the kind node may run at most 307 tasks. Podman gives the node
+  container a PidsLimit of 2,048, and systemd inside the node gives each container scope its DefaultTasksMax, 15% of
+  that. SingleStore runs 284 tasks idle, so the pipeline's extractor JVM cannot make its threads. With SingleStore's
+  scope set to `TasksMax=infinity` (live only; it reverts when the pod restarts), the same pipeline loaded and `ss`
+  finished: the seed and its three pipelines. This route cannot run on kind until `deploy/kind` lifts the cap.
+- Memory with `ss` on and gen not yet started: SingleStore's container held 2,388 MB by its cgroup (578 of 2,764 MB
+  by its own count) and 519 tasks. The VM had 1.6 to 1.8 GB available. Windows had 343 to 1,089 MB free and paged in
+  15,000 to 117,000 pages a second for the seven minutes measured.
+- The eleven change feeds never started: the demo went down (D49, for container tests) while gen's bootstrap ran,
+  so gen was stopped. The arithmetic says they cannot all start as made. Each change feed's extractor reserves
+  `pipelines_cdc_java_heap_size`, 384 MB, from SingleStore's memory: 4,224 MB for the eleven, plus 768 MB for the two
+  orders feeds, against a `maximum_memory` of 2,764 MB.
+- To finish: lift the task cap in `deploy/kind`. Then fit the eleven feeds, either with a smaller extractor heap or
+  more memory for SingleStore and the VM. Then run this check again.
+
 ### 259. Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete?
 
 - Added: 2026-11-24 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
