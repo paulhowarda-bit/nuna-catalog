@@ -16,10 +16,12 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param docsUrl       where the console's documentation links go: {@code /docs/} (the default) is the site the
  *                      server serves itself, an http(s) URL is a copy hosted elsewhere, and {@code none} hides every
  *                      documentation link
+ * @param grafanaUrl    the Grafana that holds nuna's dashboards, an http(s) URL; the Service page links to it, and
+ *                      without it (the default) shows no link (backlog 319)
  */
 @ConfigurationProperties("nuna.ui")
 public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc,
-                         @DefaultValue(UiSettings.OWN_DOCS) String docsUrl) {
+                         @DefaultValue(UiSettings.OWN_DOCS) String docsUrl, String grafanaUrl) {
 
     /** The documentation site this server serves (UiWiring). */
     public static final String OWN_DOCS = "/docs/";
@@ -36,6 +38,10 @@ public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc
         }
         if (!docsUrl.endsWith("/") && !docsUrl.equalsIgnoreCase("none")) {
             docsUrl = docsUrl + "/";
+        }
+        grafanaUrl = grafanaUrl == null || grafanaUrl.isBlank() ? null : grafanaUrl.strip();
+        if (grafanaUrl != null && !grafanaUrl.startsWith("https://") && !grafanaUrl.startsWith("http://")) {
+            throw new IllegalArgumentException("nuna.ui.grafana-url must be an http(s) URL, not " + grafanaUrl);
         }
     }
 

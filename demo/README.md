@@ -1119,7 +1119,8 @@ catalog, worker --OTLP--> OpenTelemetry collector --metrics--> Prometheus --> Gr
   holds all three from `deploy/grafana/dashboards`, and Explore, with data source Tempo, searches the traces. A
   chart's exemplar points (Prometheus keeps the ones Boot sends) open the trace of that request. Grafana's own admin
   signs in at <https://localhost:8188/login?disableAutoLogin=true> as `admin`, with the password in `~/.nuna-demo/secrets/grafana-admin`, which `metrics` sets again on a kept Grafana
-  database (backlog 282).
+  database (backlog 282). While `metrics` is on, the catalog's `nuna.ui.grafana-url` names this Grafana, and the
+  console's Service page links to it ("Charts over time in Grafana"; backlog 319).
 - **Prometheus** takes the metrics over OTLP, as item 43 says work's should: `translation_strategy:
   UnderscoreEscapingWithSuffixes`, native histograms off, a 30-minute out-of-order window, exemplars kept. It loads
   the alert rules in `deploy/grafana/rules`; no Alertmanager runs, so they show in Grafana's Alerting page and in

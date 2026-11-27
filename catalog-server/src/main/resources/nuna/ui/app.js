@@ -26,7 +26,7 @@ const gotoIn = $('#goto-in');
 const gotoList = $('#goto-list');
 const gotoH = $('#goto-h');
 
-let config = {'dev-token-login': false, oidc: null, 'docs-url': null};
+let config = {'dev-token-login': false, oidc: null, 'docs-url': null, 'grafana-url': null};
 let catalogs = null;
 let cat = null;
 let prev = null;
@@ -775,7 +775,7 @@ function render() {
   } else if (r.page === 'service') {
     navKey = 'service';
     title = 'Service';
-    content = operates() ? healthPage(r.tab, r.g) : closedPage('Service', 'Service health is open to platform operators.');
+    content = operates() ? healthPage(r.tab, r.g, config['grafana-url']) : closedPage('Service', 'Service health is open to platform operators.');
   } else if (!r.page && r.c) {
     // Branches and tags, and a ref's own page, are the rail's Branches and tags (Atelier, 2026-11-24; backlog 221).
     const refs = r.k === 'ref' || (r.k === 'catalog' && r.tab === 'refs');

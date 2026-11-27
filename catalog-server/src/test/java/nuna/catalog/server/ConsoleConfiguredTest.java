@@ -23,6 +23,7 @@ import org.springframework.test.context.ContextConfiguration;
         "nuna.ui.oidc.client-id=nuna-console",
         "nuna.ui.oidc.scopes=openid,api://nuna-catalog/catalog.access",
         "nuna.ui.docs-url=https://docs.nuna.example/catalog",
+        "nuna.ui.grafana-url=https://grafana.nuna.example",
 })
 @Tag("heavy")
 @ContextConfiguration(initializers = IssuerForTests.class)
@@ -39,7 +40,8 @@ class ConsoleConfiguredTest {
         HttpResponse<String> response = get("/ui/config.json");
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(JsonPath.<Map<String, Object>>read(response.body(), "$")).containsOnlyKeys("dev-token-login", "oidc",
-                "docs-url");
+                "docs-url", "grafana-url");
+        assertThat(JsonPath.<String>read(response.body(), "$['grafana-url']")).isEqualTo("https://grafana.nuna.example");
         assertThat(JsonPath.<Boolean>read(response.body(), "$['dev-token-login']")).isTrue();
         assertThat(JsonPath.<String>read(response.body(), "$['docs-url']")).isEqualTo("https://docs.nuna.example/catalog/");
         Map<String, Object> oidc = JsonPath.read(response.body(), "$.oidc");
