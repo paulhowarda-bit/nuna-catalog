@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 9 S, 10 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
+**25 open:** 7 S, 9 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,9 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [304](backlog/304.md) | S | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | one test's assertion and its bite recorded again in one module | 2026-11-27 |
-| [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
-| [306](backlog/306.md) | S | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | the bite's Test: line and a check that it still bites | 2026-11-27 |
 | [309](backlog/309.md) | S | Purging a table a ref still names answers 500, not a refusal | one missing case in one route and its test | 2026-11-27 |
 | [310](backlog/310.md) | S | OPA's row-filter and column-mask answers fail when the request names no Trino catalog | a null check at one boundary and a test | 2026-11-27 |
 | [311](backlog/311.md) | S | GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400 | a parameter's parsing and a test | 2026-11-27 |
@@ -1304,59 +1301,6 @@ marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalanc
 than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
 5xx seen in work's Grafana.
 
-### 304. Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures
-
-- Added: 2026-11-27 by overnight run 2026-11-27
-- Touches: catalog-tests-docker/src/test/java/nuna/catalog/tests/docker/FreshPipeStrategyTest.java, bites/TEST-291/connections-reused-at-any-age.patch
-- Effort: S, one test's assertion and its bite recorded again in one module
-
-In the overnight run of 2026-11-27 the bite `bites/TEST-291/connections-reused-at-any-age.patch` (item 291) was
-judged SETUP ("1 of 1 failed in setup"). The break did what it should: `FreshPipeStrategyTest#aPostAfterTwelveIdleSecondsIsAnswered`
-failed with `RuntimeException` caused by docker-java's `NoHttpResponseException` at `FreshPipeStrategyTest.java:31`,
-the stale pooled connection the bite reintroduces. But the failure is a Docker call with Testcontainers on the stack,
-which `bites/run.sh`'s judge reads as fixtures failing to start, so the bite can never be judged BITES.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\connections-reused-at-any-age.log`,
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites.log`.
-
-Done when the test asserts the call is answered (for example `assertThatCode(...).doesNotThrowAnyException()`), so the
-break fails it on an assertion, the bite is recorded again if it must move, and it is judged BITES in the overnight run.
-
-### 305. Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test
-
-- Added: 2026-11-27 by overnight run 2026-11-27
-- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, bites/UI/console-goto-lookup-overdrawn.patch
-- Effort: M, a browser test that must order the late search against the lookup's answer, plus the bite recorded again
-
-In the overnight run of 2026-11-27 the bite `bites/UI/console-goto-lookup-overdrawn.patch` (item 219) did not
-bite: with the break applied, `ConsoleBrowserTest#goToAPathOpensAFullDottedPathNotListedYet` passed ("NO BITE (1
-passed)", BUILD SUCCESSFUL). The break lets the search that comes back after Go to a path's answer draw over it, but in
-the test the search evidently comes back first, so the race the test guards is never run.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\console-goto-lookup-overdrawn.log`,
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites.log`.
-
-Done when the test holds the search back until the lookup has answered (or otherwise forces the order), so the break
-fails it, and the bite is judged BITES in the overnight run.
-
-### 306. Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9
-
-- Added: 2026-11-27 by overnight run 2026-11-27
-- Touches: bites/UI/console-readiness-grant-for-anyone-with-names.patch
-- Effort: S, the bite's Test: line and a check that it still bites
-
-In the overnight run of 2026-11-27 the bite `bites/UI/console-readiness-grant-for-anyone-with-names.patch`
-(item 252) was judged SETUP, "no test ran": Gradle said "No tests found for given includes:
-[ConsoleReadinessBrowserTest.oscarIsSentToServiceForTheStoreStepsAndAskedForTheRest]". That method no longer exists:
-b6c84ae9 (item 254) renamed it, and `ConsoleReadinessBrowserTest` now has
-`oscarOpensTheStorageDialogForTheStoreStepsAndIsAskedForTheRest`. The bite's `Test:` line was not changed with it.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\console-readiness-grant-for-anyone-with-names.log`,
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites.log`.
-
-Done when the bite names the test that now covers the break (the renamed method, if it still fails on the break, or
-another), and it is judged BITES in the overnight run.
-
 ### 309. Purging a table a ref still names answers 500, not a refusal
 
 - Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
@@ -1798,5 +1742,8 @@ document only repeats it, it may point there instead.
 | [301](backlog/301.md) | A documentation site: every console page and command, installation, configuration, API and operations, as static web pages | done | 2026-11-27 |
 | [302](backlog/302.md) | Heavy: SingleStore's dev container never becomes healthy, so ChangeFeedTest does not start | done | 2026-11-27 |
 | [303](backlog/303.md) | Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest) | done | 2026-11-27 |
+| [304](backlog/304.md) | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | done | 2026-11-27 |
+| [305](backlog/305.md) | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | done | 2026-11-27 |
+| [306](backlog/306.md) | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | done | 2026-11-27 |
 | [307](backlog/307.md) | The console links to the documentation, served at /docs/ from the server | done | 2026-11-27 |
 | [308](backlog/308.md) | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | done | 2026-11-27 |

@@ -1,6 +1,6 @@
 Breaks: Maintenance's Grant write is offered to every caller who may see names, a platform operator with no grant among them, so pressing it draws an audited refusal.
 Module: catalog-server
-Test: ConsoleReadinessBrowserTest#oscarIsSentToServiceForTheStoreStepsAndAskedForTheRest
+Test: ConsoleReadinessBrowserTest#oscarOpensTheStorageDialogForTheStoreStepsAndIsAskedForTheRest
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/readiness.js b/catalog-server/src/main/resources/nuna/ui/readiness.js
 index b6e6f963..dda8c47f 100644

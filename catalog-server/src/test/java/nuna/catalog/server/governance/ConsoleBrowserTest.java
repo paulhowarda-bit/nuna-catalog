@@ -397,9 +397,18 @@ class ConsoleBrowserTest {
                 .isEqualTo("No namespace, table or view you may see has a name like that, in any catalog. Check the "
                         + "spelling, or type fewer letters.");
         box.clear();
+        // The catalog's search for the words is held until the look-up has answered, so it comes back after it every
+        // time, and the answer must stand (backlog 305; the overnight run of 2026-11-27 had the search first).
+        driver.executeScript(HOLD_THE_SEARCH, "nothing_here");
         box.sendKeys(top + ".equities.nothing_here");
         box.sendKeys(Keys.ENTER);
-        browser.await(By.cssSelector("#goto-list [data-goto-none='" + top + ".equities.nothing_here']"));
+        By notThere = By.cssSelector("#goto-list [data-goto-none='" + top + ".equities.nothing_here']");
+        browser.await(notThere);
+        browser.await("the search was not asked", d -> (Boolean) driver.executeScript("return window.held.asked"));
+        driver.executeScript("window.held.release()");
+        browser.await("the search did not answer", d -> (Boolean) driver.executeScript("return window.held.answered"));
+        driver.executeAsyncScript("setTimeout(arguments[arguments.length - 1], 500)");
+        assertThat(driver.findElements(notThere)).as("the look-up's answer, after the search came back").hasSize(1);
         assertThat(driver.getCurrentUrl()).endsWith("#p=overview&c=trading");
 
         // A name typed alone is found though no page has listed its namespace: the catalog's search knows every name
@@ -1884,6 +1893,26 @@ class ConsoleBrowserTest {
      * {@code window.held.release()}: {@code window.held.page} is the page that asked first, and {@code window.held.filled}
      * says whether that page has drawn its head since.
      */
+    /** Holds the catalog's name search for the words `arguments[0]` until `window.held.release()` (backlog 305). */
+    private static final String HOLD_THE_SEARCH = """
+            const words = arguments[0];
+            const real = window.fetch;
+            let release;
+            const gate = new Promise(done => release = done);
+            window.held = {asked: false, answered: false, release};
+            window.fetch = (url, init) => {
+              const asked = new URL(url, location.origin);
+              if (!asked.pathname.endsWith('/management/v1/names') || asked.searchParams.get('q') !== words) {
+                return real(url, init);
+              }
+              window.held.asked = true;
+              return gate.then(() => real(url, init)).then(answer => {
+                window.held.answered = true;
+                return answer;
+              });
+            };
+            """;
+
     private static final String HOLD_THE_BRANCHS_NAMESPACES = """
             const branch = arguments[0];
             const real = window.fetch;
