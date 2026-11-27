@@ -1622,3 +1622,4 @@ document only repeats it, it may point there instead.
 | [316](backlog/316.md) | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | done | 2026-11-27 |
 | [318](backlog/318.md) | Brokerage world: fixes from the live check of items 151 to 155 and 308 | done | 2026-11-27 |
 | [319](backlog/319.md) | Console: a link to Grafana's charts on the Service page, when a Grafana URL is configured | done | 2026-11-27 |
+| [320](backlog/320.md) | demo.sh's aml_cases hold check fails at random under pipefail | done | 2026-11-27 |
