@@ -13,9 +13,36 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param devTokenLogin offer a box to paste a bearer token, for local development only; off unless set
  * @param oidc          the IdP the console signs people in with (authorization code with PKCE), or null
+ * @param docsUrl       where the console's documentation links go: {@code /docs/} (the default) is the site the
+ *                      server serves itself, an http(s) URL is a copy hosted elsewhere, and {@code none} hides every
+ *                      documentation link
  */
 @ConfigurationProperties("nuna.ui")
-public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc) {
+public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc,
+                         @DefaultValue(UiSettings.OWN_DOCS) String docsUrl) {
+
+    /** The documentation site this server serves (UiWiring). */
+    public static final String OWN_DOCS = "/docs/";
+
+    public UiSettings {
+        if (docsUrl == null || docsUrl.isBlank()) {
+            docsUrl = OWN_DOCS;
+        }
+        docsUrl = docsUrl.strip();
+        if (!docsUrl.equalsIgnoreCase("none") && !docsUrl.startsWith("/") && !docsUrl.startsWith("https://")
+                && !docsUrl.startsWith("http://")) {
+            throw new IllegalArgumentException("nuna.ui.docs-url must be a path on this server, an http(s) URL or "
+                    + "none, not " + docsUrl);
+        }
+        if (!docsUrl.endsWith("/") && !docsUrl.equalsIgnoreCase("none")) {
+            docsUrl = docsUrl + "/";
+        }
+    }
+
+    /** The documentation's root URL for the console, or null when its links are hidden. */
+    public String docsLink() {
+        return docsUrl.equalsIgnoreCase("none") ? null : docsUrl;
+    }
 
     /**
      * A public OIDC client: no client secret, PKCE instead.

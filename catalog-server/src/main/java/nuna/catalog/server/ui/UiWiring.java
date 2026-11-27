@@ -20,6 +20,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.util.DigestUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -27,6 +28,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * CORS. The files need no sign-in; every API call the console makes does. Every {@code /ui} response carries a
  * strict Content-Security-Policy: scripts, styles and fonts only from the server's own files (no inline code), and
  * connections only to the server and the configured IdP.
+ *
+ * <p>The documentation site ({@code docs/site} in the repository, copied into the jar at build time) is served the
+ * same way under {@code /docs/}, so the console's links reach the documentation of the very build that runs, on a
+ * network with no way out. It needs no sign-in and holds nothing secret: it is the published documentation. Its
+ * policy allows no connections at all.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(UiSettings.class)
@@ -38,12 +44,24 @@ public class UiWiring implements WebMvcConfigurer {
     /** The console's own paths: its page and its flat set of files. Nothing else skips authentication. */
     private static final Pattern PUBLIC = Pattern.compile("/ui/?|/ui/[a-z0-9-]+\\.(html|js|css|json|svg|woff2|txt)");
 
+    /** Where the documentation site's files are on the classpath. */
+    static final String DOCS = "classpath:/nuna/docs/";
+
+    /** The documentation site's Content-Security-Policy: its own files only, and no connections. */
+    static final String DOCS_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+            + "font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
     /** Each console file's ETag, by the file's description; the jar's files never change while the server runs. */
     private static final Map<String, String> ETAGS = new ConcurrentHashMap<>();
 
     /** Whether {@code path} (without the context path) is one of the console's files, which need no token. */
     public static boolean isConsoleFile(String path) {
         return PUBLIC.matcher(path).matches();
+    }
+
+    /** Whether {@code path} (without the context path) is in the documentation site, which needs no token. */
+    public static boolean isDocsFile(String path) {
+        return path.equals("/docs") || path.startsWith("/docs/");
     }
 
     /** The console's Content-Security-Policy; {@code idpOrigin} is null when no IdP is configured. */
@@ -62,6 +80,15 @@ public class UiWiring implements WebMvcConfigurer {
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         registry.addResourceHandler("/ui/*").addResourceLocations(FILES).setCacheControl(CacheControl.noCache())
                 .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
+        registry.addResourceHandler("/docs/**").addResourceLocations(DOCS).setCacheControl(CacheControl.noCache())
+                .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
+    }
+
+    /** The site's home is its index page; relative links in it need the trailing slash. */
+    @Override
+    public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addRedirectViewController("/docs", "/docs/");
+        registry.addViewController("/docs/").setViewName("forward:/docs/index.html");
     }
 
     /** A strong ETag of a file's bytes; the files are read from the jar, so each is hashed once. */
@@ -84,7 +111,15 @@ public class UiWiring implements WebMvcConfigurer {
         return registration;
     }
 
-    /** The security headers of every {@code /ui} response, set before anything else answers. */
+    @Bean
+    FilterRegistrationBean<ConsoleHeaders> docsHeaders() {
+        FilterRegistrationBean<ConsoleHeaders> registration = new FilterRegistrationBean<>(new ConsoleHeaders(DOCS_POLICY));
+        registration.addUrlPatterns("/docs", "/docs/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
+    }
+
+    /** The security headers of every {@code /ui} and {@code /docs} response, set before anything else answers. */
     static final class ConsoleHeaders extends OncePerRequestFilter {
 
         private final String policy;

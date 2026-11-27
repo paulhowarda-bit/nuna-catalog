@@ -4,7 +4,7 @@
   var root = document.documentElement;
   root.classList.add('js');
   try {
-    var t = localStorage.getItem('nuna-docs-theme');
+    var t = localStorage.getItem('nuna.theme');
     if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t);
   } catch (e) { /* storage blocked: Auto */ }
 })();

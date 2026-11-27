@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleTest#onlyTheConsoleFilesSkipAuthentication
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
-index b16fa9cb..caeff298 100644
+index ec589abd..5c30f1e4 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
-@@ -83,7 +83,7 @@ final class Authentication extends OncePerRequestFilter {
-         // are what a browser loads before it can sign in; the API calls they make carry a token.
+@@ -84,7 +84,7 @@ final class Authentication extends OncePerRequestFilter {
+         // site is published documentation, read before or without signing in.
          // OPA's calls from Trino carry no token of their own: OpaRoutes verifies the user's, which Trino forwards in
          // the body, and answers from it alone (D20, backlog 115).
--        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path) || path.startsWith("/opa/");
-+        return path.equals("/v1/oauth/tokens") || path.startsWith("/ui") || path.startsWith("/opa/");
+-        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path) || UiWiring.isDocsFile(path)
++        return path.equals("/v1/oauth/tokens") || path.startsWith("/ui") || UiWiring.isDocsFile(path)
+                 || path.startsWith("/opa/");
      }
  
-     @Override

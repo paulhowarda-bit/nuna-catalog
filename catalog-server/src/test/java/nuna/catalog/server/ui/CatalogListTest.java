@@ -172,7 +172,7 @@ class CatalogListTest {
         Separation separation = new Separation(Set.of(GRANT_ADMINS), Set.of(PLATFORM_OPS));
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
         Holdings holdings = new Holdings(null, store, null, separation, null);
-        UiRoutes routes = new UiRoutes(new UiSettings(false, null), storage(), http -> caller, store, holdings,
+        UiRoutes routes = new UiRoutes(new UiSettings(false, null, null), storage(), http -> caller, store, holdings,
                 authorizer, separation, auditTables);
         ResponseEntity<String> response = routes.catalogs(null);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
