@@ -122,7 +122,22 @@ class ClearingTest {
             assertThat(located.add((String) l.get("locate_id"))).isTrue();
         }
         assertThat(accepted).isNotEmpty().isEqualTo(located);
-        assertThat(p.of(Feed.LOCATES)).extracting(l -> l.get("source")).contains("easy_to_borrow_list");
+        // Easy to borrow at general collateral, or from the stock loan desk at the rate the world charges a security
+        // that is hard to borrow (15% to 45%): one or the other for every locate on a security.
+        Map<Long, Object> sources = new HashMap<>();
+        for (Map<String, Object> l : p.of(Feed.LOCATES)) {
+            boolean easy = l.get("source").equals("easy_to_borrow_list");
+            assertThat(l.get("easy_to_borrow")).isEqualTo(easy);
+            BigDecimal rate = (BigDecimal) l.get("borrow_rate");
+            if (easy) {
+                assertThat(rate).isEqualByComparingTo(Clearing.GENERAL_COLLATERAL);
+            } else {
+                assertThat(l.get("source")).isEqualTo("stock_loan_desk");
+                assertThat(rate).isBetween(new BigDecimal("0.15"), new BigDecimal("0.45"));
+            }
+            assertThat(sources.putIfAbsent(longOf(l.get("security_id")), l.get("source"))).isIn(null, l.get("source"));
+        }
+        assertThat(sources.values()).contains("easy_to_borrow_list", "stock_loan_desk");
     }
 
     private record Key(LocalDate date, long security) {}
