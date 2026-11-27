@@ -1,0 +1,16 @@
+Breaks: the change feed copies a listed table into the pipeline's namespace even where the pipeline names one of its own
+Module: singlestore-change-feed
+Test: ChangeFeedTaskTest#aListedTableMayGoToANamespaceOfItsOwn
+diff --git a/singlestore-change-feed/src/loader/java/nuna/changefeed/ChangeFeedTask.java b/singlestore-change-feed/src/loader/java/nuna/changefeed/ChangeFeedTask.java
+index f23b6e20..973f4bc3 100644
+--- a/singlestore-change-feed/src/loader/java/nuna/changefeed/ChangeFeedTask.java
++++ b/singlestore-change-feed/src/loader/java/nuna/changefeed/ChangeFeedTask.java
+@@ -152,7 +152,7 @@ public final class ChangeFeedTask extends SourceTask {
+             config.put("singlestore.table", table);
+             config.put("iceberg.table", table);
+             String namespace = props.get("iceberg.namespace." + table);
+-            if (namespace != null) {
++            if (namespace != null && namespace.isEmpty()) {
+                 config.put("iceberg.namespace", namespace);
+             }
+             configs.add(Map.copyOf(config));

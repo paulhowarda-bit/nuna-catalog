@@ -1,5 +1,8 @@
--- The CDC leg's Oracle source (demo/k8s/cdc.yaml): Oracle Database Free, PDB FREEPDB1, table TREASURY.PAYMENTS,
--- which Debezium captures through LogMiner into the Iceberg history table history.oracle.treasury.payments.
+-- The CDC leg's Oracle source (demo/k8s/cdc.yaml): Oracle Database Free, PDB FREEPDB1, table TREASURY.BANK_PAYMENTS,
+-- the brokerage world's ACH and wire payments as the firm's bank sees them (item 152), which demo-datagen's Main cdc
+-- writes at each demo.sh cdc as they stood after the lake's last business day, only what changed, and Debezium captures
+-- through LogMiner into the Iceberg history table history.oracle.treasury.bank_payments. The table is demo-datagen's
+-- (nuna.datagen.live.Sources.ddl), which a test holds this file to.
 --
 -- An initialization script (/container-entrypoint-initdb.d): it runs as SYS in the root container once, at the
 -- first start on an empty volume, onto which the pod copies the image's ready-made database (faststart); later starts
@@ -58,30 +61,28 @@ GRANT SELECT ON V_$TRANSACTION TO c##dbzuser CONTAINER = ALL;
 GRANT SELECT ON V_$MYSTAT TO c##dbzuser CONTAINER = ALL;
 GRANT SELECT ON V_$STATNAME TO c##dbzuser CONTAINER = ALL;
 
--- The application's schema and table, in the PDB.
+-- The application's schema and table, in the PDB; demo-datagen signs in as treasury.
 ALTER SESSION SET CONTAINER = FREEPDB1;
 CREATE USER treasury IDENTIFIED BY "${PASSWORD_TREASURY}" DEFAULT TABLESPACE users QUOTA UNLIMITED ON users;
 GRANT CREATE SESSION, CREATE TABLE TO treasury;
 
-CREATE TABLE treasury.payments (
-    payment_id NUMBER(10)    PRIMARY KEY,
-    account    VARCHAR2(34)  NOT NULL,
-    amount     NUMBER(18, 2) NOT NULL,
-    currency   CHAR(3)       NOT NULL,
-    status     VARCHAR2(12)  NOT NULL,
-    updated_at TIMESTAMP(3)  DEFAULT SYSTIMESTAMP NOT NULL
+CREATE TABLE treasury.bank_payments (
+    payment_id VARCHAR2(400) PRIMARY KEY,
+    version NUMBER(9),
+    brokerage_account NUMBER(18),
+    rail VARCHAR2(400),
+    direction VARCHAR2(400),
+    status VARCHAR2(400),
+    amount NUMBER(18, 2),
+    firm_bank_account VARCHAR2(400),
+    counterparty_routing_number VARCHAR2(400),
+    counterparty_account_number VARCHAR2(400),
+    counterparty_name VARCHAR2(400),
+    value_date DATE,
+    event_time TIMESTAMP(3),
+    updated_at TIMESTAMP(3) DEFAULT SYSTIMESTAMP NOT NULL
 );
-ALTER TABLE treasury.payments ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
-
-INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
-    VALUES (7001, 'DE89370400440532013000', 21900.00, 'EUR', 'SCHEDULED');
-INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
-    VALUES (7002, 'DE02120300000000202051', 41125.00, 'EUR', 'SCHEDULED');
-INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
-    VALUES (7003, 'GB33BUKB20201555555555', 18250.00, 'GBP', 'RELEASED');
-INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
-    VALUES (7004, 'FR1420041010050500013M02606', 9800.00, 'EUR', 'SCHEDULED');
-COMMIT;
+ALTER TABLE treasury.bank_payments ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
 
 -- The demo's people, with their Keycloak passwords: everyone reads every table, ana also writes, creates,
 -- alters and drops tables in any schema, and gary and presenter are DBAs.
@@ -96,5 +97,7 @@ CREATE USER stella IDENTIFIED BY "${PASSWORD_STELLA}";
 GRANT CREATE SESSION, SELECT ANY TABLE TO stella;
 CREATE USER oscar IDENTIFIED BY "${PASSWORD_OSCAR}";
 GRANT CREATE SESSION, SELECT ANY TABLE TO oscar;
+CREATE USER cora IDENTIFIED BY "${PASSWORD_CORA}";
+GRANT CREATE SESSION, SELECT ANY TABLE TO cora;
 -- Everyone also reads the data dictionary and the V$ views (SELECT_CATALOG_ROLE); gary and presenter have them through DBA.
-GRANT SELECT_CATALOG_ROLE TO ana, stella, oscar;
+GRANT SELECT_CATALOG_ROLE TO ana, stella, oscar, cora;

@@ -8,7 +8,7 @@
   "database.dbname": "FREE",
   "database.pdb.name": "FREEPDB1",
   "topic.prefix": "oracle",
-  "table.include.list": "TREASURY.PAYMENTS",
+  "table.include.list": "TREASURY.BANK_PAYMENTS",
   "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
   "schema.history.internal.kafka.topic": "oracle-schema-history",
   "schema.history.internal.store.only.captured.tables.ddl": "true",

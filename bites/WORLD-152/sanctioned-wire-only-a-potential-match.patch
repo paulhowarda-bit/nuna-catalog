@@ -1,0 +1,16 @@
+Breaks: the sanctioned wire's screen comes back a potential match, not a confirmed one
+Module: demo-datagen
+Test: BackOfficeTest#theSeededDepositsAndTheSanctionedWireMakeExactlyTheirAlertsAndCases
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java b/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java
+index 2ab141a3..6fbbe183 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java
+@@ -772,7 +772,7 @@ final class BackOffice {
+         row.put("subject_name", SEEDED_MATCH.name());
+         row.put("brokerage_account", account);
+         row.put("payment_id", id);
+-        row.put("result", "confirmed_match");
++        row.put("result", "potential_match");
+         row.put("matched_ent_num", SEEDED_MATCH.entNum());
+         row.put("match_score", new BigDecimal("100.00"));
+         row.put("disposition", "blocked");

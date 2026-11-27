@@ -47,6 +47,14 @@ class ChangeFeedTaskTest {
     }
 
     @Test
+    void aListedTableMayGoToANamespaceOfItsOwn() {
+        Map<String, String> props = Map.of("singlestore.tables", "accounts,aml_cases", "singlestore.database", "brokerage",
+                "iceberg.namespace", "brokerage.singlestore", "iceberg.namespace.aml_cases", "brokerage.compliance.singlestore");
+        assertThat(ChangeFeedTask.perTable(props)).extracting(c -> c.get("iceberg.namespace"))
+                .containsExactly("brokerage.singlestore", "brokerage.compliance.singlestore");
+    }
+
+    @Test
     void aPipelineOfOneTableStoresTheSnapshotIdAsBefore() {
         ChangeFeedTask task = new ChangeFeedTask();
         Script orders = new Script().then(receipt(11, "orders"), receipt(12, "orders"));

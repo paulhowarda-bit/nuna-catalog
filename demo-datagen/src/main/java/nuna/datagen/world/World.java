@@ -72,6 +72,12 @@ public final class World {
      * exactly as it did before them: world 1's events differ only where a new event changed a balance they read.
      */
     private final Rng rng2;
+    /**
+     * The third, the back office's (item 152): its parties, screens, alerts and complaints draw from it, so the ledger's
+     * world draws exactly as it did before them.
+     */
+    private final Rng rng3;
+    private final BackOffice office;
     private final Market market;
     private final List<Account> accounts = new ArrayList<>();
     private final Oms oms = new Oms(this::emit);
@@ -151,6 +157,7 @@ public final class World {
         this.engine = new Engine(kit);
         this.rng = new Rng(settings.seed());
         this.rng2 = new Rng(settings.seed() * 31 + 155);
+        this.rng3 = new Rng(settings.seed() * 31 + 152);
         this.market = new Market(rng, settings.securities());
         this.clearing = new Clearing(this::emit, calendar, market, true);
         String[] personas = {"dormant", "buy_and_hold", "active_trader", "short_seller"};
@@ -169,6 +176,7 @@ public final class World {
             accounts.add(new Account(70_000_001L + i, margin ? "margin" : "cash", persona,
                 settings.start().minusDays(30 + rng.below(3000)), rng.chance(0.15) ? "HIFO" : "FIFO"));
         }
+        this.office = new BackOffice(this::emit, calendar, rng3, accounts);
         this.day = calendar.isBusinessDay(settings.start()) ? settings.start() : calendar.next(settings.start());
     }
 
@@ -218,6 +226,9 @@ public final class World {
 
     private void emit(Instant at, Feed feed, Map<String, Object> row) {
         sink.accept(new Event(at, feed, row));
+        if (feed == Feed.EXECUTIONS) {
+            office.execution(row);
+        }
     }
 
     /** Plays the next business day into the sink and returns its date. */
@@ -240,6 +251,7 @@ public final class World {
             planDay(a);
         }
         planServicing();
+        planBackOffice(played);
         LocalTime t = LocalTime.of(9, 30);
         for (int b = 0; b < Market.BARS; b++) {
             LocalTime start = t;
@@ -318,8 +330,10 @@ public final class World {
             row.put("disposal_method", a.disposalMethod());
             row.put("base_currency_id", USD);
             row.put("status", "open");
+            row.put("registration_type", office.registration(a.id()));
             emit(at, Feed.ACCOUNTS, row);
         }
+        office.onboard(at, day);
     }
 
     private Map<String, Object> chartRow(int id, Integer parent, String code, String name, String naturalClass,
@@ -473,10 +487,56 @@ public final class World {
         return camel.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
     }
 
+    // ---------------------------------------------------------------- the back office (item 152)
+
+    /**
+     * The back office's day: its morning work and surveillance at 07:15, the parties' changes and complaints at noon, AML
+     * monitoring at 17:30; and on the world's second to fourth business days the seeded structuring deposits, three cash
+     * deposits just under the $10,000 of a currency transaction report, and on its third the seeded sanctions match, an
+     * incoming wire from a listed name, which is blocked and never booked.
+     */
+    private void planBackOffice(int played) {
+        schedule(at(LocalTime.of(7, 15)), () -> office.morning(current, day));
+        schedule(at(LocalTime.of(12, 0)), () -> office.servicing(current, day));
+        schedule(at(LocalTime.of(17, 30)), () -> office.monitor(current, day));
+        if (BackOffice.STRUCTURING_DAYS_PLAYED.contains(played)) {
+            Account a = account(office.structurer());
+            BigDecimal amount = office.structuringAmount();
+            schedule(at(office.seededTime()), () -> {
+                if (!closed.contains(a.id())) {
+                    cashDeposit(a, amount);
+                }
+            });
+        }
+        if (played == BackOffice.SANCTIONS_DAY_PLAYED) {
+            Account a = account(office.sanctioned());
+            BigDecimal amount = office.sanctionedWireAmount();
+            schedule(at(LocalTime.of(11, 0)), () -> office.blockedWire(current, day, a.id(), payment(), amount));
+        }
+    }
+
+    private Account account(long id) {
+        return accounts.get((int) (id - accounts.getFirst().id()));
+    }
+
+    /** The brokerage account the seeded structuring deposits go into (item 152). */
+    public long structuringAccount() {
+        return office.structurer();
+    }
+
+    /** The brokerage account the seeded sanctioned wire was sent to, and blocked (item 152). */
+    public long sanctionedAccount() {
+        return office.sanctioned();
+    }
+
     // ---------------------------------------------------------------- money movement
 
     private void cashDeposit(Account a, BigDecimal amount) {
-        book(current, ft(30, a, "payments", Map.of(10, amount, 11, "PAY-" + (50_000_000 + nextPayment++))), false);
+        String pay = "PAY-" + (50_000_000 + nextPayment++);
+        FinancialTransaction t = ft(30, a, "payments", Map.of(10, amount, 11, pay));
+        if (book(current, t, false)) {
+            office.payment(current, day, a.id(), pay, t.id(), 30, "cash", "deposit", "received", amount, null);
+        }
     }
 
     /** The business time of the task running now. */
@@ -505,8 +565,7 @@ public final class World {
             BigDecimal amount = dollars(rng.lognormal(10000, 0.8), 100);
             schedule(at(LocalTime.of(8, 30).plusSeconds(rng.below(8 * 3600))), () -> {
                 if (!closed.contains(a.id())) {
-                    book(current, ft(30, a, "payments", Map.of(10, amount, 11, "PAY-" + (50_000_000 + nextPayment++))),
-                        false);
+                    cashDeposit(a, amount);
                 }
             });
         }
@@ -523,8 +582,9 @@ public final class World {
         }
         BigDecimal goodFaith = amount.min(new BigDecimal("1000.00"));
         LocalDate expected = rng.chance(0.7) ? calendar.next(day) : calendar.next(calendar.next(day));
+        String pay = "PAY-" + (50_000_000 + nextPayment++);
         FinancialTransaction t = ft(31, a, "payments", Map.of(10, amount, 11, expected.toEpochDay(), 12, goodFaith,
-            13, "PAY-" + (50_000_000 + nextPayment++)));
+            13, pay));
         // One in forty comes back (Nacha): three in five before the deposit settles, the rest one to three business
         // days after (R10, unauthorized, can come much later; the world keeps it short).
         String returnCode = null;
@@ -534,6 +594,7 @@ public final class World {
             returnCode = returnAfter < 0 ? pickCode(RETURNS_BEFORE) : pickCode(RETURNS_AFTER);
         }
         if (book(current, t, false)) {
+            office.payment(current, day, a.id(), pay, t.id(), 31, "ach", "deposit", "initiated", amount, expected);
             depositSettlements.computeIfAbsent(expected, k -> new ArrayList<>())
                 .add(new Payment(a, t.id(), amount, goodFaith, returnCode, returnAfter));
         }
@@ -549,15 +610,21 @@ public final class World {
             return;
         }
         LocalDate expected = calendar.next(day);
-        FinancialTransaction t = ft(33, a, "payments", Map.of(10, amount, 11, expected.toEpochDay(),
-            12, "PAY-" + (50_000_000 + nextPayment++)));
+        String pay = "PAY-" + (50_000_000 + nextPayment++);
+        FinancialTransaction t = ft(33, a, "payments", Map.of(10, amount, 11, expected.toEpochDay(), 12, pay));
         if (!book(current, t, false)) {
             return;
         }
+        office.payment(current, day, a.id(), pay, t.id(), 33, "ach", "withdrawal", "initiated", amount, expected);
         if (cancel) {
             Instant later = current.plusSeconds(600 + rng.below(3600));
             Instant latest = at(LocalTime.of(16, 30));
-            schedule(later.isAfter(latest) ? latest : later, () -> book(current, ft(35, a, "payments", Map.of(9, t.id(), 10, amount)), false));
+            schedule(later.isAfter(latest) ? latest : later, () -> {
+                FinancialTransaction c = ft(35, a, "payments", Map.of(9, t.id(), 10, amount));
+                if (book(current, c, false)) {
+                    office.paymentStatus(current, day, t.id(), c.id(), 35, "cancelled");
+                }
+            });
         } else {
             withdrawalSettlements.computeIfAbsent(expected, k -> new ArrayList<>())
                 .add(new Payment(a, t.id(), amount, null, null, 0));
@@ -569,23 +636,38 @@ public final class World {
         schedule(eight, () -> {
             for (Payment p : depositSettlements.getOrDefault(day, List.of())) {
                 if (p.returnAfter() < 0) {
-                    book(current, ft(74, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount(),
-                        12, p.goodFaith(), 13, p.returnCode())), false);
+                    FinancialTransaction r = ft(74, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount(),
+                        12, p.goodFaith(), 13, p.returnCode()));
+                    if (book(current, r, false)) {
+                        office.achReturn(current, day, p.initiation(), r.id(), 74, p.returnCode());
+                    }
                     continue;
                 }
-                book(current, ft(32, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount(), 12, p.goodFaith())), false);
+                FinancialTransaction s = ft(32, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount(),
+                    12, p.goodFaith()));
+                if (book(current, s, false)) {
+                    office.paymentStatus(current, day, p.initiation(), s.id(), 32, "settled");
+                }
                 if (p.returnAfter() > 0) {
                     LocalDate back = day;
                     for (int i = 0; i < p.returnAfter(); i++) {
                         back = calendar.next(back);
                     }
-                    later(back, LocalTime.of(8, 0), () -> book(current, ft(75, p.account(), "payments",
-                        Map.of(9, p.initiation(), 10, p.amount(), 13, p.returnCode())), false));
+                    later(back, LocalTime.of(8, 0), () -> {
+                        FinancialTransaction r = ft(75, p.account(), "payments",
+                            Map.of(9, p.initiation(), 10, p.amount(), 13, p.returnCode()));
+                        if (book(current, r, false)) {
+                            office.achReturn(current, day, p.initiation(), r.id(), 75, p.returnCode());
+                        }
+                    });
                 }
             }
             for (Payment p : withdrawalSettlements.getOrDefault(day, List.of())) {
                 FinancialTransaction t = ft(34, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount()));
                 boolean posted = book(current, t, false);
+                if (posted) {
+                    office.paymentStatus(current, day, p.initiation(), t.id(), 34, "settled");
+                }
                 // Only where no other withdrawal of the account is pending, so the resubmission must go below zero.
                 if (posted && !doubleSettlementSeeded && businessDays >= 2
                     && engine.normalBalance(p.account().id(), 1405).signum() == 0) {
@@ -1126,7 +1208,12 @@ public final class World {
             BigDecimal amount = dollars(rng2.lognormal(25000, 0.9), 100);
             schedule(at(LocalTime.of(9, 0).plusSeconds(rng2.below(8 * 3600))), () -> {
                 if (!closed.contains(a.id())) {
-                    book(current, ft(70, a, "payments", Map.of(10, amount, 11, payment())), false);
+                    String pay = payment();
+                    FinancialTransaction t = ft(70, a, "payments", Map.of(10, amount, 11, pay));
+                    if (book(current, t, false)) {
+                        office.payment(current, day, a.id(), pay, t.id(), 70, "wire", "deposit", "received", amount,
+                            null);
+                    }
                 }
             });
         }
@@ -1168,13 +1255,21 @@ public final class World {
         if (!book(current, t, false)) {
             return;
         }
+        office.payment(current, day, a.id(), pay, t.id(), 71, "wire", "withdrawal", "initiated", amount, day);
         Instant release = current.plusSeconds(1800 + rng2.below(7200));
         Instant cutoff = at(LocalTime.of(16, 45));
         boolean reverseFee = rng2.chance(0.12);
         schedule(release.isAfter(cutoff) ? cutoff : release, () -> {
             if (cancel) {
-                book(current, ft(73, a, "payments", Map.of(9, t.id(), 10, amount)), false);
-            } else if (book(current, ft(72, a, "payments", Map.of(9, t.id(), 10, amount)), false)) {
+                FinancialTransaction c = ft(73, a, "payments", Map.of(9, t.id(), 10, amount));
+                if (book(current, c, false)) {
+                    office.paymentStatus(current, day, t.id(), c.id(), 73, "cancelled");
+                }
+                return;
+            }
+            FinancialTransaction s = ft(72, a, "payments", Map.of(9, t.id(), 10, amount));
+            if (book(current, s, false)) {
+                office.paymentStatus(current, day, t.id(), s.id(), 72, "settled");
                 charge(a, WIRE_FEE, "wire_out", Map.of(12, pay), reverseFee);
             }
         });
@@ -1206,8 +1301,9 @@ public final class World {
         }
         String journal = "JNL-" + (80_000_000 + nextJournal++);
         FinancialTransaction sent = ft(76, from, "payments", Map.of(10, amount, 11, journal, 12, to.id()));
-        if (book(current, sent, false)) {
-            book(current, ft(77, to, "payments", Map.of(9, sent.id(), 10, amount, 11, journal, 12, from.id())), false);
+        if (book(current, sent, false)
+            && book(current, ft(77, to, "payments", Map.of(9, sent.id(), 10, amount, 11, journal, 12, from.id())), false)) {
+            office.journal(current, day, from.id(), to.id(), journal, sent.id(), amount);
         }
     }
 
@@ -1226,9 +1322,14 @@ public final class World {
         String control = acatsControl();
         String contra = CONTRA_FIRMS.get(rng2.below(CONTRA_FIRMS.size()));
         String type = rng2.chance(0.6) ? "full" : "partial";
+        BigDecimal received = null;
+        int positionsReceived = 0;
+        BigDecimal sharesReceived = BigDecimal.ZERO;
         if (rng2.chance(0.7)) {
             BigDecimal cash = BigDecimal.valueOf(Math.max(10_000, Math.round(rng2.lognormal(6000, 1.1) * 100)), 2);
-            book(current, ft(82, a, "acats", Map.of(10, cash, 11, control, 12, contra, 13, type)), false);
+            if (book(current, ft(82, a, "acats", Map.of(10, cash, 11, control, 12, contra, 13, type)), false)) {
+                received = cash;
+            }
         }
         int positions = 1 + rng2.below(4);
         Set<Long> taken = new HashSet<>();
@@ -1253,6 +1354,8 @@ public final class World {
                 18, lots));
             if (book(current, t, false)) {
                 clearing.transfer(a.id(), s, BigDecimal.valueOf(total));
+                positionsReceived++;
+                sharesReceived = sharesReceived.add(BigDecimal.valueOf(total));
                 List<Long> held = longLots.computeIfAbsent(a.id(), k -> new TreeMap<>())
                     .computeIfAbsent(s.id(), k -> new ArrayList<>());
                 for (int k = 0; k < lots.size(); k++) {
@@ -1261,6 +1364,10 @@ public final class World {
                     acquired.put(lot, LocalDate.ofEpochDay(lots.get(k).acquired()));
                 }
             }
+        }
+        if (received != null || positionsReceived > 0) {
+            office.acats(current, day, a.id(), control, "receive", type, contra, received, positionsReceived,
+                sharesReceived, null);
         }
     }
 
@@ -1300,6 +1407,9 @@ public final class World {
         String contra = CONTRA_FIRMS.get(rng2.below(CONTRA_FIRMS.size()));
         String type = full ? "full" : "partial";
         charge(a, ACATS_FEE, "acats_out", Map.of(13, control), rng2.chance(0.12));
+        int positionsDelivered = 0;
+        BigDecimal sharesDelivered = BigDecimal.ZERO;
+        BigDecimal cashDelivered = null;
         for (long sec : deliver) {
             List<LotShares> named = new ArrayList<>();
             BigDecimal quantity = BigDecimal.ZERO;
@@ -1313,15 +1423,20 @@ public final class World {
             if (book(current, ft(84, a, "acats", Map.of(6, sec, 8, quantity, 11, control, 12, contra, 13, type,
                 18, named)), false)) {
                 clearing.transfer(a.id(), market.byIndex((int) (sec - 100001)), quantity.negate());
+                positionsDelivered++;
+                sharesDelivered = sharesDelivered.add(quantity);
             }
         }
         if (full) {
             BigDecimal cash = withdrawable(a);
-            if (cash.compareTo(BigDecimal.ONE) >= 0) {
-                book(current, ft(85, a, "acats", Map.of(10, cash, 11, control, 12, contra, 13, type)), false);
+            if (cash.compareTo(BigDecimal.ONE) >= 0
+                && book(current, ft(85, a, "acats", Map.of(10, cash, 11, control, 12, contra, 13, type)), false)) {
+                cashDelivered = cash;
             }
             closed.add(a.id());
         }
+        office.acats(current, day, a.id(), control, "deliver", type, contra, cashDelivered, positionsDelivered,
+            sharesDelivered, ACATS_FEE);
     }
 
     private String corporateAction() {

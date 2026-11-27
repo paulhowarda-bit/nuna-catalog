@@ -23,4 +23,23 @@ class SinkWatchTest {
         assertThat(SinkWatch.failed("{\"connector\":{\"state\":\"RUNNING\"},\"tasks\":[{\"state\":\"RESTARTING\"}]}"))
             .isFalse();
     }
+
+    /**
+     * The owners' sink is started again only once beneficial_owners has a classification of its own (item 152, D27): the
+     * one it inherits from brokerage.party does not open it.
+     */
+    @Test
+    void aTableIsClassifiedOnlyByAClassificationAtItsOwnLevel() {
+        String inherited = """
+            {"target":{"kind":"table","id":"7f0c"},"attributes":[
+              {"attribute":"classification","level":"namespace:11ab","value":"restricted"},
+              {"attribute":"owner","level":"table:7f0c","value":"party-operations"}],"effective":{},"holds":[]}""";
+        String own = """
+            {"target":{"kind":"table","id":"7f0c"},"attributes":[
+              {"attribute":"classification","level":"namespace:11ab","value":"restricted"},
+              {"attribute":"classification","level":"table:7f0c","value":"restricted"}],"effective":{},"holds":[]}""";
+        assertThat(SinkWatch.classified(inherited)).isFalse();
+        assertThat(SinkWatch.classified(own)).isTrue();
+        assertThat(SinkWatch.classified("{\"target\":{\"kind\":\"table\",\"id\":\"7f0c\"},\"attributes\":[]}")).isFalse();
+    }
 }

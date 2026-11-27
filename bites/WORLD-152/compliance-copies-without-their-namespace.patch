@@ -1,0 +1,16 @@
+Breaks: the compliance tables' SingleStore copies go under brokerage.singlestore, which every analyst reads
+Module: demo-datagen
+Test: SingleStoreTablesTest#theComplianceCopiesGoUnderTheComplianceNamespace
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/SingleStoreTables.java b/demo-datagen/src/main/java/nuna/datagen/live/SingleStoreTables.java
+index f6c7a8c5..7691f387 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/SingleStoreTables.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/SingleStoreTables.java
+@@ -134,7 +134,7 @@ public final class SingleStoreTables {
+         for (Feed f : copiedBy(Feed.Path.KAFKA)) {
+             String copy = f.lakeTable(Feed.Path.SINGLESTORE);
+             String namespace = copy.substring(0, copy.lastIndexOf('.'));
+-            if (!namespace.equals(Feed.SINGLESTORE_COPIES)) {
++            if (false && !namespace.equals(Feed.SINGLESTORE_COPIES)) {
+                 own.append("\n         \"iceberg.namespace.").append(f.table).append("\": \"").append(namespace)
+                     .append("\",");
+             }

@@ -79,14 +79,17 @@ public final class KafkaTopics implements Publisher.Topics, AutoCloseable {
             AdminClientConfig.CLIENT_ID_CONFIG, "brokerage-world-admin"));
     }
 
-    /** Creates each numbered feed's topic (the SingleStore feeds' too, for when it is off) and the sink's control topic, where missing. */
-    public static void create(String bootstrap, String controlTopic) throws InterruptedException, ExecutionException {
+    /** Creates each numbered feed's topic (the SingleStore feeds' too, for when it is off) and the sinks' control topics, where missing. */
+    public static void create(String bootstrap, String... controlTopics)
+            throws InterruptedException, ExecutionException {
         try (Admin admin = admin(bootstrap)) {
             List<NewTopic> topics = new ArrayList<>();
             for (Feed f : Feed.numbered()) {
                 topics.add(new NewTopic(f.topic, 1, (short) 1).configs(Map.of("retention.ms", RETENTION_MS)));
             }
-            topics.add(new NewTopic(controlTopic, 1, (short) 1));
+            for (String control : controlTopics) {
+                topics.add(new NewTopic(control, 1, (short) 1));
+            }
             for (var created : admin.createTopics(topics).values().entrySet()) {
                 try {
                     created.getValue().get();

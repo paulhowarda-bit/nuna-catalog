@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 4 S, 11 M, 5 L, 4 XL.
+**24 open:** 5 S, 11 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,7 +25,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
-| [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
@@ -36,6 +35,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [304](backlog/304.md) | S | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | one test's assertion and its bite recorded again in one module | 2026-11-27 |
 | [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
 | [306](backlog/306.md) | S | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | the bite's Test: line and a check that it still bites | 2026-11-27 |
+| [308](backlog/308.md) | S | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | registering two engines and flagging a handful of tables in demo.sh, with a check that the writers still commit | 2026-11-27 |
 
 ## Open items in full
 
@@ -941,39 +941,6 @@ table's own files; two users in different groups get different results; the copi
 expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
 table's own prefix.
 
-### 152. Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode
-
-- Decided: 2026-11-22, D48
-- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo-datagen/ demo/cdc/ demo/k8s/cdc.yaml demo/k8s/keycloak-realm.json demo/k8s/demo-values.yaml demo/CloudBeaverUsers.java demo/demo.sh demo/README.md
-- Effort: L, the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS
-
-Third phase of D48 (`docs/design/brokerage-world.md`).
-
-What to build:
-- PostgreSQL `backoffice`, replacing the toy `settlement.instructions`: parties, accounts, roles, CIP checks,
-  suitability profiles, beneficial owners, trusted contacts, payments, ACH returns, ACATS transfers, complaints, AML
-  alerts and cases. Oracle `treasury`: bank payments, replacing the toy `PAYMENTS`. Their histories land in
-  `brokerage.party`, `brokerage.money_movement` and `brokerage.compliance` through Debezium and the Iceberg sink, with
-  current-state views; the backfill writes the same histories in the sink's shape.
-- Sanctions screening against a synthetic list in OFAC's SDN layout; surveillance alerts; seeded structuring deposits
-  and one sanctions match.
-- Governance: the classifications and regulated namespaces of the design's table; tax ids, birth dates, addresses and
-  bank account numbers flagged (D20); a legal hold on `compliance.aml_cases`; `party.beneficial_owners` landing
-  unclassified, so the catalog refuses it (D27) until a steward classifies it; a new person `cora` (password
-  `cora-demo`) in a new group `demo-compliance`, the only group that reads `compliance`, in Keycloak, CloudBeaver and
-  the catalog's grants.
-- `demo.sh live`: with the CDC leg up, the sources loaded with the month's end state, Debezium started without
-  snapshotting those rows, the next business day played at a compressed clock; the ledger's transactions and postings
-  on Kafka topics the Iceberg sink writes to `brokerage.ledger`, visible in kafbat.
-- The events the demo kit adds (item 155), as its templates land.
-
-What done looks like: a live day reaches every history table with no gap and no duplicate against the backfill (a
-count per table and key); `ana` is refused `compliance` and `cora` reads it; a snapshot expiry on `aml_cases` is
-refused while the hold stands; `stella` classifying `beneficial_owners` ends its refusal.
-
-Choice made (Paul may overrule): one new person, `cora`, for compliance.
-
 ### 153. Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT
 
 - Decided: 2026-11-22, D48
@@ -1464,6 +1431,27 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\con
 Done when the bite names the test that now covers the break (the renamed method, if it still fails on the break, or
 another), and it is judged BITES in the overnight run.
 
+### 308. Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20)
+
+- Decided: 2026-11-27, D48
+- Added: 2026-11-27 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo/demo.sh demo/README.md demo/k8s/ demo-datagen/
+- Effort: S, registering two engines and flagging a handful of tables in demo.sh, with a check that the writers still commit
+
+Item 152 left out the D20 flags the design asks for (`docs/design/brokerage-world.md`, the namespace tree: tax id,
+birth date and address in `party`, bank account numbers in `money_movement`). A flagged table opens its files only to
+trusted engines in the D17 registry, and the tables are written by the Kafka Connect sink (`brokerage-lake`,
+`brokerage-lake-owners`) and SingleStore's change feed, which are not registered, so flagging them would stop the
+writes. Paul, 2026-11-27, asked whether to trust the writers and flag or leave the tables unflagged: "Trust the
+writers, flag" (D48, amended).
+
+What to build: register the sink's and the change feed's clients as trusted engines, as `demo.sh up` registers Trino's
+`trino-demo`, and flag `party.parties` (tax id, birth date, address), and the `money_movement` tables that carry bank
+account numbers, on both routes' copies.
+
+What done looks like, live: both writers still commit to the flagged tables; Trino as `ana` reads them; PyIceberg (the
+engine matrix) gets 403 on them.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1606,6 +1594,7 @@ another), and it is judged BITES in the overnight run.
 | [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [151](backlog/151.md) | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | done | 2026-11-26 |
+| [152](backlog/152.md) | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | done | 2026-11-27 |
 | [155](backlog/155.md) | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | done | 2026-11-26 |
 | [156](backlog/156.md) | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | done | 2026-11-25 |
 | [157](backlog/157.md) | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | done | 2026-11-25 |

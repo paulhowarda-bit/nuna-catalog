@@ -68,6 +68,8 @@ spec:
               valueFrom: {secretKeyRef: {name: demo-secrets, key: person-oscar}}
             - name: NUNA_PASSWORD_PRESENTER
               valueFrom: {secretKeyRef: {name: demo-secrets, key: person-presenter}}
+            - name: NUNA_PASSWORD_CORA
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: person-cora}}
           ports:
             - containerPort: 8080
             - containerPort: 9000

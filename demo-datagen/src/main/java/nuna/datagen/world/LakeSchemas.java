@@ -35,6 +35,8 @@ public final class LakeSchemas {
     static final Type AMOUNT = Types.DecimalType.of(20, 5);
     static final Type BAR_PRICE = Types.DecimalType.of(18, 4);
     static final Type RATE = Types.DecimalType.of(9, 6);
+    /** A percentage to the hundredth: a beneficial owner's share, a sanctions screen's match score. */
+    static final Type PERCENT = Types.DecimalType.of(5, 2);
     static final Type LONG = Types.LongType.get();
     static final Type INT = Types.IntegerType.get();
     static final Type TEXT = Types.StringType.get();
@@ -60,7 +62,8 @@ public final class LakeSchemas {
             case BOOKING_SCHEMES -> c.add("booking_scheme_id", INT).add("name", TEXT).add("template_id", INT)
                 .add("template_name", TEXT).add("calculations", INT).add("journal_lines", INT).add("note", TEXT);
             case ACCOUNTS -> c.add("brokerage_account", LONG).add("account_kind", TEXT).add("persona", TEXT)
-                .add("opened_on", DATE).add("disposal_method", TEXT).add("base_currency_id", LONG).add("status", TEXT);
+                .add("opened_on", DATE).add("disposal_method", TEXT).add("base_currency_id", LONG).add("status", TEXT)
+                .add("registration_type", TEXT);
             case BARS_5M -> c.add("security_id", LONG).add("symbol", TEXT).add("bar_start", TIME)
                 .add("business_date", DATE).add("open", BAR_PRICE).add("high", BAR_PRICE).add("low", BAR_PRICE)
                 .add("close", BAR_PRICE).add("volume", LONG);
@@ -132,9 +135,108 @@ public final class LakeSchemas {
                 .add("symbol", TEXT).add("quantity", LONG).add("source", TEXT).add("easy_to_borrow", FLAG)
                 .add("borrow_rate", RATE).add("order_ref", TEXT).add("business_date", DATE)
                 .add("requested_at", TIME).add("expires_at", TIME);
+            case PARTIES -> c.add("party_id", LONG).add("version", INT).add("party_type", TEXT).add("legal_name", TEXT)
+                .add("first_name", TEXT).add("last_name", TEXT).add("birth_date", DATE).add("tax_id", TEXT)
+                .add("tax_id_type", TEXT).add("address_line", TEXT).add("city", TEXT).add("state", TEXT)
+                .add("postal_code", TEXT).add("country", TEXT).add("email", TEXT).add("phone", TEXT)
+                .add("employment_status", TEXT).add("employer", TEXT).add("occupation", TEXT)
+                .add("control_person", FLAG).add("politically_exposed", FLAG).add("change_reason", TEXT)
+                .add("effective_date", DATE).add("event_time", TIME);
+            case ACCOUNT_ROLES -> c.add("role_id", LONG).add("brokerage_account", LONG).add("party_id", LONG)
+                .add("role", TEXT).add("effective_date", DATE).add("event_time", TIME);
+            case CIP_CHECKS -> c.add("cip_id", LONG).add("party_id", LONG).add("brokerage_account", LONG)
+                .add("method", TEXT).add("evidence", TEXT).add("result", TEXT).add("checked_on", DATE)
+                .add("event_time", TIME);
+            case SUITABILITY_PROFILES -> c.add("brokerage_account", LONG).add("version", INT)
+                .add("investment_objective", TEXT).add("risk_tolerance", TEXT).add("time_horizon", TEXT)
+                .add("liquidity_needs", TEXT).add("investment_experience", TEXT).add("annual_income_band", TEXT)
+                .add("net_worth_band", TEXT).add("liquid_net_worth_band", TEXT).add("change_reason", TEXT)
+                .add("effective_date", DATE).add("event_time", TIME);
+            case BENEFICIAL_OWNERS -> c.add("owner_id", LONG).add("brokerage_account", LONG)
+                .add("entity_party_id", LONG).add("full_name", TEXT).add("birth_date", DATE).add("tax_id", TEXT)
+                .add("address_line", TEXT).add("city", TEXT).add("state", TEXT).add("postal_code", TEXT)
+                .add("ownership_percent", PERCENT).add("control_person", FLAG).add("certified_on", DATE)
+                .add("event_time", TIME);
+            case TRUSTED_CONTACTS -> c.add("contact_id", LONG).add("version", INT).add("brokerage_account", LONG)
+                .add("full_name", TEXT).add("relationship", TEXT).add("phone", TEXT).add("email", TEXT)
+                .add("change_reason", TEXT).add("effective_date", DATE).add("event_time", TIME);
+            case PAYMENTS -> c.add("payment_id", TEXT).add("version", INT).add("brokerage_account", LONG)
+                .add("method", TEXT).add("direction", TEXT).add("status", TEXT).add("amount", MONEY)
+                .add("financial_transaction_id", LONG).add("template_id", INT).add("expected_settlement_date", DATE)
+                .add("bank_routing_number", TEXT).add("bank_account_number", TEXT).add("counterparty_name", TEXT)
+                .add("contra_brokerage_account", LONG).add("business_date", DATE).add("event_time", TIME);
+            case ACH_RETURNS -> c.add("return_id", TEXT).add("payment_id", TEXT).add("brokerage_account", LONG)
+                .add("return_code", TEXT).add("return_reason", TEXT).add("amount", MONEY)
+                .add("after_settlement", FLAG).add("financial_transaction_id", LONG).add("business_date", DATE)
+                .add("event_time", TIME);
+            case ACATS_TRANSFERS -> c.add("acats_control_number", TEXT).add("brokerage_account", LONG)
+                .add("direction", TEXT).add("transfer_type", TEXT).add("contra_firm_number", TEXT).add("status", TEXT)
+                .add("requested_on", DATE).add("settlement_date", DATE).add("cash_amount", MONEY)
+                .add("positions", INT).add("shares", SHARES).add("fee_amount", MONEY).add("event_time", TIME);
+            case SANCTIONS_LIST -> c.add("list_version", TEXT).add("ent_num", LONG).add("sdn_name", TEXT)
+                .add("sdn_type", TEXT).add("program", TEXT).add("title", TEXT).add("call_sign", TEXT)
+                .add("vess_type", TEXT).add("tonnage", TEXT).add("grt", TEXT).add("vess_flag", TEXT)
+                .add("vess_owner", TEXT).add("remarks", TEXT).add("published_on", DATE);
+            case SANCTIONS_SCREENS -> c.add("screen_id", LONG).add("list_version", TEXT).add("trigger", TEXT)
+                .add("subject_type", TEXT).add("subject_id", TEXT).add("subject_name", TEXT)
+                .add("brokerage_account", LONG).add("payment_id", TEXT).add("result", TEXT)
+                .add("matched_ent_num", LONG).add("match_score", PERCENT).add("disposition", TEXT)
+                .add("business_date", DATE).add("screened_at", TIME);
+            case AML_ALERTS -> c.add("alert_id", TEXT).add("version", INT).add("scenario", TEXT)
+                .add("brokerage_account", LONG).add("party_id", LONG).add("status", TEXT).add("amount", MONEY)
+                .add("detail", TEXT).add("case_id", TEXT).add("business_date", DATE).add("event_time", TIME);
+            case AML_CASES -> c.add("case_id", TEXT).add("version", INT).add("case_type", TEXT)
+                .add("brokerage_account", LONG).add("party_id", LONG).add("status", TEXT).add("alert_ids", TEXT)
+                .add("opened_on", DATE).add("filing_type", TEXT).add("filing_due", DATE).add("filed_on", DATE)
+                .add("filing_reference", TEXT).add("business_date", DATE).add("event_time", TIME);
+            case SURVEILLANCE_ALERTS -> c.add("alert_id", TEXT).add("version", INT).add("model", TEXT)
+                .add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT).add("trade_date", DATE)
+                .add("buy_quantity", LONG).add("sell_quantity", LONG).add("status", TEXT).add("disposition", TEXT)
+                .add("business_date", DATE).add("event_time", TIME);
+            case COMPLAINTS -> c.add("complaint_id", TEXT).add("version", INT).add("brokerage_account", LONG)
+                .add("party_id", LONG).add("channel", TEXT).add("category", TEXT).add("product", TEXT)
+                .add("status", TEXT).add("received_on", DATE).add("closed_on", DATE).add("disposition", TEXT)
+                .add("business_date", DATE).add("event_time", TIME);
         }
         return new Schema(c.fields);
     }
+
+    /** The table's schema, for a feed whose columns do not depend on the kit (every one but financial_transactions). */
+    public static Schema schema(Feed feed) {
+        if (feed == Feed.FINANCIAL_TRANSACTIONS) {
+            throw new IllegalArgumentException("financial_transactions' columns come from the kit's templates");
+        }
+        return schema(feed, null);
+    }
+
+    /**
+     * The column that names what a back-office row is about (item 152): a party, an account's suitability profile, a
+     * payment, an alert. A versioned feed has a row per version of it, numbered by {@code version}, and its
+     * current-state view keeps the highest; every other feed has one row per key.
+     */
+    public static String key(Feed feed) {
+        return switch (feed) {
+            case PARTIES -> "party_id";
+            case ACCOUNTS, SUITABILITY_PROFILES -> "brokerage_account";
+            case ACCOUNT_ROLES -> "role_id";
+            case CIP_CHECKS -> "cip_id";
+            case BENEFICIAL_OWNERS -> "owner_id";
+            case TRUSTED_CONTACTS -> "contact_id";
+            case PAYMENTS -> "payment_id";
+            case ACH_RETURNS -> "return_id";
+            case ACATS_TRANSFERS -> "acats_control_number";
+            case SANCTIONS_LIST -> "ent_num";
+            case SANCTIONS_SCREENS -> "screen_id";
+            case AML_ALERTS, SURVEILLANCE_ALERTS -> "alert_id";
+            case AML_CASES -> "case_id";
+            case COMPLAINTS -> "complaint_id";
+            default -> throw new IllegalArgumentException(feed + " is not a back-office feed");
+        };
+    }
+
+    /** The back-office feeds with a row per version of what they are about, and a current-state view each. */
+    public static final List<Feed> VERSIONED = List.of(Feed.PARTIES, Feed.SUITABILITY_PROFILES, Feed.TRUSTED_CONTACTS,
+        Feed.PAYMENTS, Feed.AML_ALERTS, Feed.AML_CASES, Feed.SURVEILLANCE_ALERTS, Feed.COMPLAINTS);
 
     /** The table's partitioning: the daily tables by business or trade date, small ones by month, reference data not. */
     public static PartitionSpec spec(Feed feed, Schema schema) {
@@ -142,7 +244,8 @@ public final class LakeSchemas {
             case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD, STOCK_RECORD ->
                 PartitionSpec.builderFor(schema).day("business_date").build();
             case ORDER_EVENTS, ROUTES, EXECUTIONS -> PartitionSpec.builderFor(schema).day("trade_date").build();
-            case PRICES_EOD, LOCATES -> PartitionSpec.builderFor(schema).month("business_date").build();
+            case PRICES_EOD, LOCATES, PAYMENTS, SANCTIONS_SCREENS ->
+                PartitionSpec.builderFor(schema).month("business_date").build();
             case CNS_OBLIGATIONS -> PartitionSpec.builderFor(schema).month("trade_date").build();
             case SETTLEMENTS -> PartitionSpec.builderFor(schema).month("settlement_date").build();
             default -> PartitionSpec.unpartitioned();

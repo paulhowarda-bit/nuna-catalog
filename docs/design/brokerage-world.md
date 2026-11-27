@@ -107,9 +107,9 @@ beyond margin. Books and records are not modelled as data: under D24 no Iceberg 
 | Demo technology | Plays | Holds | Path into the catalog |
 |---|---|---|---|
 | SingleStore `brokerage` (the sample `ops` it replaced is gone, item 151) | order management and intraday risk | orders (phase 1), order events, routes and executions (phase 2), intraday margin | the change feeds, `brokerage.orders` into `brokerage.trading.orders` and the order events, routes and executions, append-only, into `brokerage.trading` in one pipeline; Iceberg pipelines bring securities and closing prices back |
-| PostgreSQL `backoffice` (CDC leg) | customer master, operations apps | party, KYC, payments, ACATS, complaints, AML cases | Debezium (`pgoutput`), Kafka, the Iceberg sink |
-| Oracle `treasury` (CDC leg) | firm finance | GL, bank payments, reserve, net capital | Debezium (LogMiner), the Iceberg sink |
-| CockroachDB `custody` (CDC leg) | books of record that survive a site loss | stock record, CNS, fails, locates, as they stand after the last end of day (phase 2: loaded by `Main custody` at each `cdc`, writing what changed) | Debezium's CockroachDB connector, the Iceberg sink, into `history.cockroach.clearing` |
+| PostgreSQL `backoffice` (CDC leg) | customer master, operations apps | party, KYC, payments, ACATS, complaints, AML cases, as they stand after the last end of day (phase 3: schemas `party`, `money_movement` and `compliance`, loaded by `Main cdc` at each `cdc`, writing what changed) | Debezium (`pgoutput`), Kafka, the Iceberg sink, into `history.postgres.<schema>` |
+| Oracle `treasury` (CDC leg) | firm finance | GL, bank payments (phase 3: `TREASURY.BANK_PAYMENTS`, each ACH and wire as the bank sees it, loaded by `Main cdc`), reserve, net capital | Debezium (LogMiner), the Iceberg sink, into `history.oracle.treasury` |
+| CockroachDB `custody` (CDC leg) | books of record that survive a site loss | stock record, CNS, fails, locates, as they stand after the last end of day (phase 2: loaded by `Main cdc`, `Main custody` before phase 3, at each `cdc`, writing what changed) | Debezium's CockroachDB connector, the Iceberg sink, into `history.cockroach.clearing` |
 | Kafka | event backbone | reference data, market data, the ledger's transactions, postings, rejections and balances, clearing (CNS, settlements, fails, stock record, locates), clickstream | one Iceberg sink connector (`brokerage-lake`) on plain JSON topics, routing each record to its table by its `lake_table` field; Kafka Connect runs in the base stack |
 | The generator (`demo-datagen`: a bootstrap Job and a Deployment) | the firm's systems of origin | nothing; it sends each event as it happens | to Kafka and SingleStore; through the catalog it only makes tables and views, adds a column and tags each day's end |
 | Spark (the engine matrix's image) | month-end batch | statements, tax, CAT, Rule 606 | Spark SQL `MERGE` into v3 tables; optional, as Spark needs Trino stopped |
@@ -123,16 +123,16 @@ Under `lakehouse.brokerage`, beside the existing samples.
 |---|---|---|
 | `reference` | securities, identifiers, calendar, venues, corporate_actions, fee_schedules | public; one table under a DR freeze |
 | `markets` | prices_eod, bars_5m, quotes | internal; short snapshot retention, compaction |
-| `party` | parties, accounts, account_roles, cip_checks, suitability_profiles, beneficial_owners, trusted_contacts; `history` | restricted, regulated; tax id, birth date and address flagged (D20, item 115) |
+| `party` | parties, accounts, account_roles, cip_checks, suitability_profiles, beneficial_owners, trusted_contacts; `history` | restricted, regulated; tax id, birth date and address to be flagged (D20), which waits on Paul: the writers are not trusted engines (item 152) |
 | `trading` | orders, order_events, routes, executions, best_ex_reviews | internal |
 | `kafka` | order_events, routes, executions, as they went through Kafka while SingleStore was off (D50) | internal |
 | `ledger` | chart_of_accounts, booking_schemes, financial_transactions, journal_lines, posting_rejections, balances_eod; views buying_power, running_collected_balance | confidential, regulated; a tag per business day |
 | `clearing` | cns_obligations, settlements, fails, stock_record, locates | confidential |
 | `recon` | views stock_record_vs_ledger, executions_vs_fills, cns_vs_fills (ties 1, 3 and 4; phase 2) | confidential |
 | `margin` | house_requirements, account_margin_eod, margin_calls | confidential |
-| `money_movement` | payments, ach_returns, acats_transfers | confidential, regulated; bank account numbers flagged |
+| `money_movement` | payments, ach_returns, acats_transfers | confidential, regulated; bank account numbers to be flagged, as `party`'s columns |
 | `asset_servicing` | entitlements, income_payments | internal |
-| `compliance` | aml_alerts, aml_cases, sanctions_screens, surveillance_alerts, complaints | restricted, regulated; legal hold on aml_cases; read only by `demo-compliance` |
+| `compliance` | sanctions_list, sanctions_screens, aml_alerts, aml_cases, surveillance_alerts, complaints; `singlestore`, their copies through SingleStore (D50) | restricted, regulated; legal hold on aml_cases; read only by `demo-compliance` |
 | `tax` | tax_lots, realized_gains, form_1099b, form_1099div | confidential |
 | `client_reporting` | confirms, statements | confidential; a month-end tag |
 | `regulatory` | cat_events, rule606_routing, reserve_computation, net_capital | confidential |
@@ -147,7 +147,8 @@ Under `lakehouse.brokerage`, beside the existing samples.
 - Regulated namespaces (D27): `party.beneficial_owners` lands unclassified, is refused to everyone, and a steward
   classifies it during the demo. This replaces the refusal the toy `finance.ledger.accounts` shows today.
 - Flagged tables for trusted engines only (D20), masks once item 115 lands: Trino reads tax ids, SingleStore and
-  PyIceberg get 403.
+  PyIceberg get 403. Not set yet: the sinks and the change feed that write these tables are not trusted engines, so
+  item 152 asks Paul how to flag them.
 - A legal hold (D24) on `compliance.aml_cases`; SAR confidentiality as a grant: a new person, `cora`, in a new group,
   `demo-compliance`, alone reads `compliance`.
 - Time travel: one commit per business day; tags `eod-YYYY-MM-DD` and `month-end-YYYY-MM`; a trade busted after the
@@ -210,7 +211,8 @@ a sanctions match that raise alerts.
   through topics `brokerage.oms.*` to `brokerage.kafka.<table>`, and the orders' upserts, which the order events
   repeat, nowhere; with Kafka off, every other feed is inserted into a SingleStore table of its own keyed by `seq`,
   the record's number in its feed, and an append-only change feed per table copies it to
-  `brokerage.singlestore.<table>`, the sixteen in one pipeline so they share one extractor. Every feed but the
+  `brokerage.singlestore.<table>` (the compliance feeds' to `brokerage.compliance.singlestore.<table>`), the 31 in
+  one pipeline so they share one extractor. Every feed but the
   orders is numbered, whichever way it is at home, and the reconciliation views read both ways' tables. A restart counts what each way carried (a topic's records
   since the world began, a table's rows, or, for the way that is off, its lake table's records), so it sends nothing
   twice across a change of route; demo.sh drains a way into the lake (`Main drain`) before turning it off. The
