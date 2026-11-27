@@ -1,0 +1,17 @@
+Breaks: Every path that starts with /docs skips authentication, not only the documentation site.
+Module: catalog-server
+Test: DocsSiteTest#theSiteNeedsNoTokenAndAllowsNoConnections
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+index 2e218070..00d0d321 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+@@ -61,7 +61,7 @@ public class UiWiring implements WebMvcConfigurer {
+ 
+     /** Whether {@code path} (without the context path) is in the documentation site, which needs no token. */
+     public static boolean isDocsFile(String path) {
+-        return path.equals("/docs") || path.startsWith("/docs/");
++        return path.startsWith("/docs");
+     }
+ 
+     /** The console's Content-Security-Policy; {@code idpOrigin} is null when no IdP is configured. */
