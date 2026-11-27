@@ -1,0 +1,16 @@
+Breaks: the seeded fail is closed out a business day after Reg SHO 204(a)'s deadline
+Module: demo-datagen
+Test: ClearingTest#theSeededFailToDeliverIsClosedOutUnderRegSho204AndShowsExactlyItsRows
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+index dbbe5e36..af06d512 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+@@ -200,7 +200,7 @@ final class Clearing {
+             row.put("settled_at", at);
+             emitter.emit(at, Feed.SETTLEMENTS, row);
+             if (failed > 0) {
+-                LocalDate closeOut = calendar.next(day);
++                LocalDate closeOut = calendar.next(calendar.next(day));
+                 Fail f = new Fail("FTD-" + (95_000_000 + nextFail++), ob, failed,
+                     closeOut.atTime(LocalTime.of(9, 30)).atZone(World.NEW_YORK).toInstant());
+                 fails.put(f.id, f);

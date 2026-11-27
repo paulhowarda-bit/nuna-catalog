@@ -1,0 +1,16 @@
+Breaks: every short sale is located on the easy-to-borrow list, the world's hard-to-borrow securities too
+Module: demo-datagen
+Test: ClearingTest#eachShortSaleWasAcceptedUnderALocate
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+index dbbe5e36..77d8c8d5 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+@@ -109,7 +109,7 @@ final class Clearing {
+      */
+     void locate(Instant at, LocalDate day, String locate, long account, Security s, long quantity, String orderRef,
+                 Instant expires, BigDecimal hardToBorrowRate) {
+-        boolean easy = hardToBorrowRate == null;
++        boolean easy = true;
+         Map<String, Object> row = new LinkedHashMap<>();
+         row.put("locate_id", locate);
+         row.put("brokerage_account", account);

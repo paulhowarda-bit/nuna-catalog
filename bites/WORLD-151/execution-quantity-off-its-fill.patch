@@ -1,0 +1,16 @@
+Breaks: an execution's last quantity is one share more than the ledger fill it carries
+Module: demo-datagen
+Test: ClearingTest#everyExecutionIsOneLedgerFillWithItsIdPriceAndQuantity
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Oms.java b/demo-datagen/src/main/java/nuna/datagen/world/Oms.java
+index 9399b377..c5ae4629 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Oms.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Oms.java
+@@ -93,7 +93,7 @@ final class Oms {
+         row.put("symbol", o.security().symbol());
+         row.put("side", o.side());
+         row.put("venue", venue);
+-        row.put("last_quantity", quantity);
++        row.put("last_quantity", quantity + 1);
+         row.put("last_price", price);
+         row.put("gross_amount", price.multiply(BigDecimal.valueOf(quantity)));
+         row.put("cum_quantity", o.filled());

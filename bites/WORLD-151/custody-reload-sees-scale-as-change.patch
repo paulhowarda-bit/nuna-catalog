@@ -1,0 +1,16 @@
+Breaks: custody compares a decimal with its scale, so every row CockroachDB returns at its own scale reads as changed
+Module: demo-datagen
+Test: CustodyTest#theBooksHoldTheLastDaysStockRecordFiveDaysOfObligationsAndLocatesAndEachFailsLatestState
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Custody.java b/demo-datagen/src/main/java/nuna/datagen/live/Custody.java
+index eb09a144..37a2957c 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/Custody.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/Custody.java
+@@ -280,7 +280,7 @@ public final class Custody implements AutoCloseable {
+     static String normal(Object v) {
+         return switch (v) {
+             case null -> null;
+-            case BigDecimal d -> d.signum() == 0 ? "0" : d.stripTrailingZeros().toPlainString();
++            case BigDecimal d -> d.toPlainString();
+             case java.sql.Date d -> d.toLocalDate().toString();
+             case Number n -> String.valueOf(n.longValue());
+             default -> Objects.toString(v);
