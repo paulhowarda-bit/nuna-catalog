@@ -108,11 +108,11 @@ beyond margin. Books and records are not modelled as data: under D24 no Iceberg 
 |---|---|---|---|
 | SingleStore `brokerage` (the sample `ops` it replaced is gone, item 151) | order management and intraday risk | orders (phase 1), order events, routes and executions (phase 2), intraday margin | the change feeds, `brokerage.orders` into `brokerage.trading.orders` and the order events, routes and executions, append-only, into `brokerage.trading` in one pipeline; Iceberg pipelines bring securities and closing prices back |
 | PostgreSQL `backoffice` (CDC leg) | customer master, operations apps | party, KYC, payments, ACATS, complaints, AML cases, as they stand after the last end of day (phase 3: schemas `party`, `money_movement` and `compliance`, loaded by `Main cdc` at each `cdc`, writing what changed) | Debezium (`pgoutput`), Kafka, the Iceberg sink, into `history.postgres.<schema>` |
-| Oracle `treasury` (CDC leg) | firm finance | GL, bank payments (phase 3: `TREASURY.BANK_PAYMENTS`, each ACH and wire as the bank sees it, loaded by `Main cdc`), reserve, net capital | Debezium (LogMiner), the Iceberg sink, into `history.oracle.treasury` |
+| Oracle `treasury` (CDC leg) | firm finance | GL, bank payments (phase 3: `TREASURY.BANK_PAYMENTS`, each ACH and wire as the bank sees it, loaded by `Main cdc`; phase 4: `GL_JOURNAL` and `GL_BALANCES`, one control account per customer money definition), reserve, net capital (phase 4 keeps these two in the lake, `brokerage.regulatory`) | Debezium (LogMiner), the Iceberg sink, into `history.oracle.treasury` |
 | CockroachDB `custody` (CDC leg) | books of record that survive a site loss | stock record, CNS, fails, locates, as they stand after the last end of day (phase 2: loaded by `Main cdc`, `Main custody` before phase 3, at each `cdc`, writing what changed) | Debezium's CockroachDB connector, the Iceberg sink, into `history.cockroach.clearing` |
 | Kafka | event backbone | reference data, market data, the ledger's transactions, postings, rejections and balances, clearing (CNS, settlements, fails, stock record, locates), clickstream | one Iceberg sink connector (`brokerage-lake`) on plain JSON topics, routing each record to its table by its `lake_table` field; Kafka Connect runs in the base stack |
 | The generator (`demo-datagen`: a bootstrap Job and a Deployment) | the firm's systems of origin | nothing; it sends each event as it happens | to Kafka and SingleStore; through the catalog it only makes tables and views, adds a column and tags each day's end |
-| Spark (the engine matrix's image) | month-end batch | statements, tax, CAT, Rule 606 | Spark SQL `MERGE` into v3 tables; optional, as Spark needs Trino stopped |
+| Spark (the engine matrix's image) | month-end batch | statements, tax, CAT, Rule 606 | Spark SQL `MERGE` into v3 tables; optional, as Spark needs Trino stopped. Phase 4 writes the close with the generator's Java writer (`MonthEndWriter`, one `/transactions/commit`) instead |
 | Trino and CloudBeaver | analysts, each as themselves | reconciliation views, ad hoc | reads with each person's token |
 
 ## The namespace tree
@@ -128,7 +128,7 @@ Under `lakehouse.brokerage`, beside the existing samples.
 | `kafka` | order_events, routes, executions, as they went through Kafka while SingleStore was off (D50) | internal |
 | `ledger` | chart_of_accounts, booking_schemes, financial_transactions, journal_lines, posting_rejections, balances_eod; views buying_power, running_collected_balance | confidential, regulated; a tag per business day |
 | `clearing` | cns_obligations, settlements, fails, stock_record, locates | confidential |
-| `recon` | views stock_record_vs_ledger, executions_vs_fills, cns_vs_fills (ties 1, 3 and 4; phase 2) | confidential |
+| `recon` | views stock_record_vs_ledger, executions_vs_fills, cns_vs_fills (ties 1, 3 and 4; phase 2); tax_lots_vs_ledger, payments_vs_ledger, bank_vs_ledger, gl_vs_subledger, statements_vs_ledger, realized_vs_1099b, cat_vs_orders (ties 2 and 5 to 9; phase 4) | confidential |
 | `margin` | house_requirements, account_margin_eod, margin_calls | confidential |
 | `money_movement` | payments, ach_returns, acats_transfers | confidential, regulated; payments, which holds bank account numbers, flagged, as `party`'s tables |
 | `asset_servicing` | entitlements, income_payments | internal |
@@ -136,7 +136,7 @@ Under `lakehouse.brokerage`, beside the existing samples.
 | `tax` | tax_lots, realized_gains, form_1099b, form_1099div | confidential |
 | `client_reporting` | confirms, statements | confidential; a month-end tag |
 | `regulatory` | cat_events, rule606_routing, reserve_computation, net_capital | confidential |
-| `finance` | gl_journal, gl_balances, bank_accounts, bank_payments | confidential, regulated |
+| `finance` | gl_journal, gl_balances, bank_accounts, bank_payments; phase 4 makes the first two and bank_payments as views over the CDC leg's Oracle histories, without the counterparty's bank details, and no bank_accounts | confidential, regulated |
 | `digital` | sessions, events | internal; 7-day snapshot retention, frequent compaction |
 | `recon` | views only, one per tie | internal |
 
@@ -173,7 +173,11 @@ exactly the seeded rows. A demo run checks both counts.
 3. Every OMS execution is one ledger fill (41, 44, 61, 64) with the same fill id, price and quantity.
 4. The firm's CNS net obligation per security and settlement date equals the net of its customers' fills.
 5. Settled payments equal the ledger's money transactions; the bank's net equals net deposits per day.
+   (`payments_vs_ledger`: each payment version the ledger booked is one money transaction, same template and amount;
+   `bank_vs_ledger`: per value date, the bank's settled ACH and wires, in less out, against the ledger's 32 and 70
+   less 34 and 72, up to the treasury's last load, a returned deposit in neither.)
 6. The GL's Customer Cash Balances [Control] equals the sum of every account's Cash (1001) (ControlOfTotal).
+   (`gl_vs_subledger` checks every control, each money definition of 1000 to 1999, per day.)
 7. Statements equal the ledger balances at the month-end tag.
 8. 1099-B gains equal Realized Gain/Loss (1202) movements less wash-sale adjustments, per lot.
 9. Every order, route and fill has its CAT event.
