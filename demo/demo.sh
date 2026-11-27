@@ -845,14 +845,32 @@ FLAGGED_TABLES="brokerage.party.parties brokerage.party.beneficial_owners broker
   brokerage.singlestore.parties brokerage.singlestore.beneficial_owners brokerage.singlestore.payments
   history.postgres.party.parties history.postgres.party.beneficial_owners history.postgres.money_movement.payments
   history.oracle.treasury.bank_payments"
-# Flags, as stella, each table of FLAGGED_TABLES under a namespace (brokerage.party, say); setting it again changes
-# nothing. Fails at the first table the catalog does not have.
+# Each flagged table's sensitive columns, by its name, the same under every namespace: what gary masks for ana's
+# demo-analysts. FlaggedTablesTest holds them to the tables' columns.
+FLAGGED_MASKS="parties:birth_date,tax_id,address_line beneficial_owners:birth_date,tax_id,address_line
+  payments:bank_account_number bank_payments:counterparty_account_number"
+# Flags, as stella, each table of FLAGGED_TABLES under a namespace (brokerage.party, say), and gary sets its rules:
+# ana's demo-analysts read every row with the sensitive columns (FLAGGED_MASKS) NULL, stella's demo-stewards read
+# them in clear, and any other group no rows (D20). Without rules a flagged table filters and masks nothing, so
+# through Trino every reader saw the tax ids (item 318). Setting them again changes nothing. Fails at the first table
+# the catalog does not have.
 flag_tables() {
-  local m=/management/v1/catalogs/$CATALOG table ns
+  local m=/management/v1/catalogs/$CATALOG table ns entry cols c masks spec
   for table in $FLAGGED_TABLES; do
     [[ "$table" == "$1".* ]] || continue
     ns=${table%.*}
     api stella PUT "$m/namespaces/${ns//./%1F}/tables/${table##*.}/attributes/row-column-policy"       '{"value":"true","provenance":"demo-seed: data catalogue"}' || return 1
+    cols='' masks=''
+    for entry in $FLAGGED_MASKS; do
+      [[ "${entry%%:*}" == "${table##*.}" ]] && cols=${entry#*:}
+    done
+    for c in ${cols//,/ }; do
+      masks+="${masks:+,}\"$c\":\"NULL\""
+    done
+    spec="{\"type\":\"table\",\"namespace\":[\"${ns//./\",\"}\"],\"name\":\"${table##*.}\"}"
+    api gary POST "$m/row-column-rules" "{\"table\":$spec,\"group\":\"demo-analysts\",\"column-masks\":{$masks}}" &&
+    api gary POST "$m/row-column-rules" "{\"table\":$spec,\"group\":\"demo-stewards\",\"row-filter\":\"true\"}" ||
+      return 1
   done
 }
 
