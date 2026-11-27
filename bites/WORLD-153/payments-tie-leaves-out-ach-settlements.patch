@@ -1,8 +1,8 @@
-Breaks: tie 5's ledger side leaves out cash journals (76), so their payment versions have no money transaction
+Breaks: tie 5's ledger side leaves out the ACH settlements and cancellations (32 to 35), so their payment versions have no money transaction
 Module: demo-datagen
 Test: ReconTest#onACleanWorldEveryViewIsEmpty
 diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Recon.java b/demo-datagen/src/main/java/nuna/datagen/live/Recon.java
-index e6057f41..3d77ff03 100644
+index e6057f41..7a245dce 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/live/Recon.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/live/Recon.java
 @@ -194,7 +194,7 @@ final class Recon {
@@ -10,7 +10,7 @@ index e6057f41..3d77ff03 100644
                SELECT business_date, financial_transaction_id, template_id, CAST(0 AS bigint), CAST(1 AS bigint),
                  CAST(0 AS decimal(20, 2)), CAST(amount AS decimal(20, 2))
 -              FROM %s f WHERE template_id BETWEEN 30 AND 35 OR template_id BETWEEN 70 AND 76
-+              FROM %s f WHERE template_id BETWEEN 30 AND 35 OR template_id BETWEEN 70 AND 75
++              FROM %s f WHERE template_id BETWEEN 30 AND 31 OR template_id BETWEEN 70 AND 76
              ) t
              WHERE business_date < current_date
              GROUP BY business_date, financial_transaction_id, template_id
