@@ -522,6 +522,9 @@ class DemoKitTemplatesTest {
         // 100 shares 1 for 3: 33.333... shares, which no unit of 10^-5 holds.
         assertThat(refuse(tx(86, 6, XYZ, 8, d("100"), 10, "CA-5", 11, 1L, 12, 3L, 13, DAY)))
             .isEqualTo("FractionalShares");
+        // 1 for 100,000,000: an exact 0.000001 shares, a digit finer than the units hold.
+        assertThat(refuse(tx(86, 6, XYZ, 8, d("100"), 10, "CA-5", 11, 1L, 12, 100_000_000L, 13, DAY)))
+            .isEqualTo("FractionalShares");
         assertThat(refuse(tx(86, 6, XYZ, 8, d("100"), 10, "CA-5", 11, 0L, 12, 3L, 13, DAY)))
             .isEqualTo("NegativeAmount");
         assertThat(refuse(tx(86, 6, XYZ, 8, d("100"), 10, "CA-5", 11, -2L, 12, 1L, 13, DAY)))
