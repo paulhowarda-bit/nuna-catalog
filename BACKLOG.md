@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 2 S, 8 M, 5 L, 4 XL.
+**24 open:** 4 S, 11 M, 5 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -31,6 +31,11 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
+| [302](backlog/302.md) | M | Heavy: SingleStore's dev container never becomes healthy, so ChangeFeedTest does not start | the cause is not known yet: finding why the container never reports healthy (memory beside the other module under test, the image's own start, or Podman), then the fix | 2026-11-27 |
+| [303](backlog/303.md) | M | Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest) | the cause is not known yet: finding whether the archive writer is late or the reconcile's proof is wrong, then the fix | 2026-11-27 |
+| [304](backlog/304.md) | S | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | one test's assertion and its bite recorded again in one module | 2026-11-27 |
+| [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
+| [306](backlog/306.md) | S | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | the bite's Test: line and a check that it still bites | 2026-11-27 |
 
 ## Open items in full
 
@@ -1368,6 +1373,96 @@ left off, and forcing a 5xx on an Iceberg route in the shared demo means breakin
 marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalancing` tier in front if work runs more
 than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
 5xx seen in work's Grafana.
+
+### 302. Heavy: SingleStore's dev container never becomes healthy, so ChangeFeedTest does not start
+
+- Added: 2026-11-27 by overnight run 2026-11-27
+- Touches: singlestore-change-feed/src/test/java/nuna/changefeed/engine/ChangeFeedTest.java
+- Effort: M, the cause is not known yet: finding why the container never reports healthy (memory beside the other module under test, the image's own start, or Podman), then the fix
+
+In the heavy build of the overnight run of 2026-11-27 (commit a7a929ac), `ChangeFeedTest#initializationError` failed:
+`ContainerLaunchException: Container startup failed for image ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88`,
+caused by `Timed out waiting for container to become healthy` (`ChangeFeedTest.java:66`, its `@BeforeAll`, which waits
+up to 5 minutes on the health check and gives the container 3 GB). None of the module's 39 tests but this class ran
+into it; the class's two bites (`bites/SingleStore/lost-receipts-not-sent-again.patch`,
+`stale-offset-not-resnapshotted.patch`) were not run that night. The fix agent started for the module ended at once
+(the claude CLI's OAuth session had expired) and claimed nothing.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\heavy.log` (line 378 on), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\heavy-results\singlestore-change-feed`, `podman-info.txt` beside it.
+
+Done when the cause is known and ChangeFeedTest starts and passes in the overnight run's heavy build.
+
+### 303. Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest)
+
+- Added: 2026-11-27 by overnight run 2026-11-27
+- Touches: catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java, and the archive writer or DR reconcile if the cause is there
+- Effort: M, the cause is not known yet: finding whether the archive writer is late or the reconcile's proof is wrong, then the fix
+
+In the nightly leg of the overnight run of 2026-11-27 (commit a7a929ac),
+`DrDrillTest#reconcileFromStorageRecoversEveryAcknowledgedCommit` failed at `DrDrillTest.java:218`: "the archive
+proves each acknowledged tip" was false after the test's 3-minute wait on `POST …/dr-reconcile`
+(`apply: false, accept-archived: true`). The last dry run reported 3 chains and 275 commit records in the archive, with
+table `dr.drill.tables.a` walked from version 22 by successor proofs; the full answer is in the test's message. The
+fix agent started for catalog-tests-load ended at once (the claude CLI's OAuth session had expired) and claimed
+nothing.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\nightly.log`,
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\nightly-results\catalog-tests-load\build\test-results\test\TEST-nuna.catalog.load.DrDrillTest.xml`.
+
+Done when the test passes in the overnight run's nightly leg, with the cause named.
+
+### 304. Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures
+
+- Added: 2026-11-27 by overnight run 2026-11-27
+- Touches: catalog-tests-docker/src/test/java/nuna/catalog/tests/docker/FreshPipeStrategyTest.java, bites/TEST-291/connections-reused-at-any-age.patch
+- Effort: S, one test's assertion and its bite recorded again in one module
+
+In the overnight run of 2026-11-27 the bite `bites/TEST-291/connections-reused-at-any-age.patch` (item 291) was
+judged SETUP ("1 of 1 failed in setup"). The break did what it should: `FreshPipeStrategyTest#aPostAfterTwelveIdleSecondsIsAnswered`
+failed with `RuntimeException` caused by docker-java's `NoHttpResponseException` at `FreshPipeStrategyTest.java:31`,
+the stale pooled connection the bite reintroduces. But the failure is a Docker call with Testcontainers on the stack,
+which `bites/run.sh`'s judge reads as fixtures failing to start, so the bite can never be judged BITES.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\connections-reused-at-any-age.log`,
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites.log`.
+
+Done when the test asserts the call is answered (for example `assertThatCode(...).doesNotThrowAnyException()`), so the
+break fails it on an assertion, the bite is recorded again if it must move, and it is judged BITES in the overnight run.
+
+### 305. Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test
+
+- Added: 2026-11-27 by overnight run 2026-11-27
+- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, bites/UI/console-goto-lookup-overdrawn.patch
+- Effort: M, a browser test that must order the late search against the lookup's answer, plus the bite recorded again
+
+In the overnight run of 2026-11-27 the bite `bites/UI/console-goto-lookup-overdrawn.patch` (item 219) did not
+bite: with the break applied, `ConsoleBrowserTest#goToAPathOpensAFullDottedPathNotListedYet` passed ("NO BITE (1
+passed)", BUILD SUCCESSFUL). The break lets the search that comes back after Go to a path's answer draw over it, but in
+the test the search evidently comes back first, so the race the test guards is never run.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\console-goto-lookup-overdrawn.log`,
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites.log`.
+
+Done when the test holds the search back until the lookup has answered (or otherwise forces the order), so the break
+fails it, and the bite is judged BITES in the overnight run.
+
+### 306. Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9
+
+- Added: 2026-11-27 by overnight run 2026-11-27
+- Touches: bites/UI/console-readiness-grant-for-anyone-with-names.patch
+- Effort: S, the bite's Test: line and a check that it still bites
+
+In the overnight run of 2026-11-27 the bite `bites/UI/console-readiness-grant-for-anyone-with-names.patch`
+(item 252) was judged SETUP, "no test ran": Gradle said "No tests found for given includes:
+[ConsoleReadinessBrowserTest.oscarIsSentToServiceForTheStoreStepsAndAskedForTheRest]". That method no longer exists:
+b6c84ae9 (item 254) renamed it, and `ConsoleReadinessBrowserTest` now has
+`oscarOpensTheStorageDialogForTheStoreStepsAndIsAskedForTheRest`. The bite's `Test:` line was not changed with it.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\console-readiness-grant-for-anyone-with-names.log`,
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites.log`.
+
+Done when the bite names the test that now covers the break (the renamed method, if it still fails on the break, or
+another), and it is judged BITES in the overnight run.
 
 ## Done and dropped
 
