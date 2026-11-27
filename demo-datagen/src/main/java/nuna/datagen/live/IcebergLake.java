@@ -42,7 +42,7 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
         Namespace.of("brokerage", "kafka"), Namespace.of("brokerage", "money_movement"),
         Namespace.of("brokerage", "compliance"), Namespace.of("brokerage", "margin"),
         Namespace.of("brokerage", "tax"), Namespace.of("brokerage", "client_reporting"),
-        Namespace.of("brokerage", "regulatory"), Namespace.of("brokerage", "asset_servicing"));
+        Namespace.of("brokerage", "regulatory"), Namespace.of("brokerage", "asset_servicing"), Finance.NAMESPACE);
     static final Namespace LEDGER = Namespace.of("brokerage", "ledger");
 
     /**
@@ -150,11 +150,25 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
      * view already reading those tables is left as it is.
      */
     public void views() {
-        for (Recon.View v : Recon.views(TRINO_CATALOG, t -> catalog.tableExists(id(t)))) {
+        // The treasury's histories are the CDC leg's (item 153): the finance views, and the ties that read them, wait
+        // for it to make them. Its namespace is not the world's, so a refusal there counts as not there yet.
+        for (Finance.View v : Finance.views(TRINO_CATALOG, this::readable)) {
+            derived(Finance.NAMESPACE, v.name(), v.comment(), v.schema(), v.sql());
+        }
+        for (Recon.View v : Recon.views(TRINO_CATALOG, this::readable)) {
             derived(Recon.NAMESPACE, v.name(), v.comment(), v.schema(), v.sql());
         }
         for (Current.View v : Current.views(TRINO_CATALOG, t -> catalog.tableExists(id(t)))) {
             derived(v.namespace(), v.name(), v.comment(), v.schema(), v.sql());
+        }
+    }
+
+    private boolean readable(String table) {
+        try {
+            return catalog.tableExists(id(table));
+        } catch (ForbiddenException e) {
+            System.out.println("WARN the catalog refuses " + table + ", so no view reads it yet: " + e.getMessage());
+            return false;
         }
     }
 

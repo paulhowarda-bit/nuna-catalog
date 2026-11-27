@@ -38,9 +38,10 @@ class ReconTest {
     private static final Kit KIT = Kit.load();
     private static final List<Feed> READ = List.of(Feed.BALANCES_EOD, Feed.STOCK_RECORD,
         Feed.FINANCIAL_TRANSACTIONS, Feed.EXECUTIONS, Feed.CNS_OBLIGATIONS, Feed.TAX_LOTS, Feed.JOURNAL_LINES,
-        Feed.ORDER_EVENTS, Feed.ROUTES, Feed.CAT_EVENTS);
+        Feed.ORDER_EVENTS, Feed.ROUTES, Feed.CAT_EVENTS, Feed.PAYMENTS);
     private static final List<String> VIEWS = List.of("stock_record_vs_ledger", "executions_vs_fills", "cns_vs_fills",
-        "tax_lots_vs_ledger", "statements_vs_ledger", "realized_vs_1099b", "cat_vs_orders");
+        "tax_lots_vs_ledger", "statements_vs_ledger", "realized_vs_1099b", "cat_vs_orders", "payments_vs_ledger",
+        "bank_vs_ledger", "gl_vs_subledger");
 
     @Test
     void onACleanWorldEveryViewIsEmpty() throws SQLException {
@@ -103,6 +104,12 @@ class ReconTest {
         assertThat(views.get("stock_record_vs_ledger")).isEmpty();
         assertThat(views.get("executions_vs_fills")).isEmpty();
         assertThat(views.get("cns_vs_fills")).hasSize(1);
+        // The payment settled twice was refused (J16): neither the bank nor the General Ledger sees it.
+        assertThat(Played.seeded().book.size(Sources.Table.GL_BALANCES)).isPositive();
+        assertThat(Played.seeded().book.size(Sources.Table.BANK_PAYMENTS)).isPositive();
+        for (String v : List.of("payments_vs_ledger", "bank_vs_ledger", "gl_vs_subledger")) {
+            assertThat(views.get(v)).as(v).isEmpty();
+        }
 
         Map<String, Object> close = Played.seeded().of(Feed.FAILS).stream()
             .filter(f -> f.get("event_type").equals("closed_out")).findFirst().orElseThrow();
@@ -141,6 +148,22 @@ class ReconTest {
                     rows.addAll(month);
                 }
                 create(c, t.lakeTable(), MonthEnd.schema(t).columns(), rows);
+            }
+            // The treasury's tables as brokerage.finance's views give them: each record as Main cdc last loaded it.
+            for (Sources.Table t : List.of(Sources.Table.GL_BALANCES, Sources.Table.BANK_PAYMENTS)) {
+                List<Types.NestedField> columns = new ArrayList<>();
+                for (Sources.Column col : t.columns) {
+                    columns.add(Types.NestedField.optional(columns.size() + 1, col.name(), col.type()));
+                }
+                List<Map<String, Object>> rows = new ArrayList<>();
+                for (List<Object> values : p.book.rows.get(t).values()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (int i = 0; i < values.size(); i++) {
+                        row.put(columns.get(i).name(), values.get(i));
+                    }
+                    rows.add(row);
+                }
+                create(c, String.join(".", Finance.NAMESPACE.levels()) + "." + t.table, columns, rows);
             }
             Map<String, List<Map<String, Object>>> views = new LinkedHashMap<>();
             for (Recon.View v : Recon.views("lakehouse", t -> true)) {

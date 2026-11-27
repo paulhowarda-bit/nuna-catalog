@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import nuna.datagen.kit.Kit;
 import nuna.datagen.world.Event;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.LakeSchemas;
@@ -33,7 +34,9 @@ import org.apache.iceberg.types.Types;
  * and ACATS transfer; each AML alert and case and each complaint), and Oracle {@code treasury}, the firm's bank payments
  * (each ACH and wire as its bank sees it). Each table holds its rows as they stand after the lake's last business day:
  * a record's latest version, the same row the lake's {@code <table>_current} view gives. Debezium captures each change
- * into {@code history.postgres.<schema>.<table>} and {@code history.oracle.treasury.bank_payments}.
+ * into {@code history.postgres.<schema>.<table>} and {@code history.oracle.treasury.bank_payments}. Item 153 adds the
+ * General Ledger to treasury ({@link GeneralLedger}): {@code gl_journal} and {@code gl_balances}, captured into
+ * {@code history.oracle.treasury.gl_journal} and {@code gl_balances}, read through views in {@code brokerage.finance}.
  *
  * <p>As {@link Custody} does for CockroachDB, Main's {@code cdc} command replays the world to the lake's last tagged day,
  * collecting the rows in a {@link Book}, and writes only what differs from what the tables hold: rows changed or new are
@@ -86,7 +89,14 @@ public final class Sources implements AutoCloseable {
         AML_CASES(Db.BACKOFFICE, "compliance", Feed.AML_CASES),
         COMPLAINTS(Db.BACKOFFICE, "compliance", Feed.COMPLAINTS),
         /** Each ACH and wire as the firm's bank sees it, from the payments' rows ({@link Book#bankPayment}). */
-        BANK_PAYMENTS(Db.TREASURY, "treasury", Feed.PAYMENTS);
+        BANK_PAYMENTS(Db.TREASURY, "treasury", Feed.PAYMENTS),
+        /**
+         * The General Ledger's journal (item 153): per business day and GL control account, the day's debits and credits
+         * of the sub-ledger definition it controls ({@link Book}).
+         */
+        GL_JOURNAL(Db.TREASURY, "treasury", Feed.JOURNAL_LINES),
+        /** The General Ledger's balances (item 153): each GL control account at each day's end. */
+        GL_BALANCES(Db.TREASURY, "treasury", Feed.JOURNAL_LINES);
 
         public final Db db;
         public final String schema;
@@ -98,13 +108,23 @@ public final class Sources implements AutoCloseable {
             this.db = db;
             this.schema = schema;
             this.feed = feed;
-            this.table = db == Db.TREASURY ? "bank_payments" : feed.table;
-            this.columns = db == Db.TREASURY ? bankColumns() : LakeSchemas.schema(feed).columns().stream()
-                .map(c -> new Column(c.name(), c.type())).toList();
+            this.table = db == Db.TREASURY ? name().toLowerCase(java.util.Locale.ROOT) : feed.table;
+            this.columns = switch (name()) {
+                case "BANK_PAYMENTS" -> bankColumns();
+                case "GL_JOURNAL" -> glJournalColumns();
+                case "GL_BALANCES" -> glBalanceColumns();
+                default -> LakeSchemas.schema(feed).columns().stream().map(c -> new Column(c.name(), c.type())).toList();
+            };
         }
 
-        String key() {
-            return db == Db.TREASURY ? "payment_id" : LakeSchemas.key(feed);
+        /** The table's primary key. */
+        public String key() {
+            return switch (name()) {
+                case "BANK_PAYMENTS" -> "payment_id";
+                case "GL_JOURNAL" -> "journal_id";
+                case "GL_BALANCES" -> "balance_id";
+                default -> LakeSchemas.key(feed);
+            };
         }
 
         /** The table's columns, in order, without the load's {@code updated_at}. */
@@ -136,6 +156,23 @@ public final class Sources implements AutoCloseable {
             new Column("counterparty_routing_number", text), new Column("counterparty_account_number", text),
             new Column("counterparty_name", text), new Column("value_date", Types.DateType.get()),
             new Column("event_time", Types.TimestampType.withZone()));
+    }
+
+    private static List<Column> glJournalColumns() {
+        Type text = Types.StringType.get(), money = Types.DecimalType.of(20, 2);
+        return List.of(new Column("journal_id", text), new Column("business_date", Types.DateType.get()),
+            new Column("gl_account", text), new Column("gl_account_name", text),
+            new Column("definition_id", Types.IntegerType.get()), new Column("debit_total", money),
+            new Column("credit_total", money), new Column("line_count", Types.LongType.get()),
+            new Column("posted_at", Types.TimestampType.withZone()));
+    }
+
+    private static List<Column> glBalanceColumns() {
+        Type text = Types.StringType.get();
+        return List.of(new Column("balance_id", text), new Column("business_date", Types.DateType.get()),
+            new Column("gl_account", text), new Column("gl_account_name", text),
+            new Column("definition_id", Types.IntegerType.get()), new Column("normal_side", text),
+            new Column("balance", Types.DecimalType.of(20, 2)));
     }
 
     /**
@@ -175,6 +212,7 @@ public final class Sources implements AutoCloseable {
     public static final class Book implements Sink {
         final Map<Table, Map<String, List<Object>>> rows = new EnumMap<>(Table.class);
         private LocalDate last;
+        private final GeneralLedger gl = new GeneralLedger(Kit.load());
 
         public Book() {
             for (Table t : Table.values()) {
@@ -203,6 +241,9 @@ public final class Sources implements AutoCloseable {
                 if (bank != null) {
                     put(Table.BANK_PAYMENTS, bank);
                 }
+            }
+            if (e.feed() == Feed.JOURNAL_LINES) {
+                gl.line(e.row());
             }
             // A full ACATS delivery takes everything out: the account is closed.
             if (e.feed() == Feed.ACATS_TRANSFERS && "deliver".equals(e.row().get("direction"))
@@ -253,6 +294,12 @@ public final class Sources implements AutoCloseable {
         @Override
         public void endOfDay(LocalDate day) {
             last = day;
+            for (Map<String, Object> r : gl.journal(day)) {
+                put(Table.GL_JOURNAL, r);
+            }
+            for (Map<String, Object> r : gl.balances(day)) {
+                put(Table.GL_BALANCES, r);
+            }
         }
     }
 

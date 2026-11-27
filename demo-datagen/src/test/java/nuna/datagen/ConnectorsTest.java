@@ -89,20 +89,41 @@ class ConnectorsTest {
     }
 
     @Test
-    void treasurysConnectorsCaptureBankPaymentsWithLowerCaseColumns() throws IOException {
+    void treasurysConnectorsCaptureItsTablesWithLowerCaseColumnsEachIntoItsHistoryTable() throws IOException {
         Map<String, String> source = config("cdc/connectors/oracle-source.json");
         Map<String, String> sink = config("cdc/connectors/oracle-history.json");
-        Sources.Table t = Sources.Table.BANK_PAYMENTS;
-        assertThat(of(Sources.Db.TREASURY)).containsExactly(t);
-        String upper = t.qualified().toUpperCase(Locale.ROOT);
-        assertThat(source.get("table.include.list")).isEqualTo(upper);
-        assertThat(sink.get("topics")).isEqualTo(source.get("topic.prefix") + "." + upper);
-        assertThat(sink.get("iceberg.tables")).isEqualTo(t.history());
-        List<String> columns = new ArrayList<>(t.columnNames());
-        columns.add("updated_at");
+        List<Sources.Table> tables = of(Sources.Db.TREASURY);
+        assertThat(tables).containsExactly(Sources.Table.BANK_PAYMENTS, Sources.Table.GL_JOURNAL,
+            Sources.Table.GL_BALANCES);
+        List<String> upper = tables.stream().map(t -> t.qualified().toUpperCase(Locale.ROOT)).toList();
+        assertThat(list(source.get("table.include.list"))).isEqualTo(upper);
+        assertThat(list(sink.get("topics"))).isEqualTo(upper.stream().map(u -> source.get("topic.prefix") + "." + u)
+            .toList());
+        assertThat(list(sink.get("iceberg.tables"))).isEqualTo(tables.stream().map(Sources.Table::history).toList());
+        assertThat(sink.get("iceberg.tables.route-field")).isEqualTo("_cdc.source");
+        List<String> columns = new ArrayList<>();
+        for (Sources.Table t : tables) {
+            String regex = sink.get("iceberg.table." + t.history() + ".route-regex");
+            assertThat(regex).as(t.history()).isNotNull();
+            // Oracle's _cdc.source is SCHEMA.TABLE in upper case: each regex takes its own table's and no other's.
+            for (Sources.Table other : tables) {
+                assertThat(other.qualified().toUpperCase(Locale.ROOT).matches(regex)).as(regex + " on " + other)
+                    .isEqualTo(other == t);
+            }
+            for (String c : t.columnNames()) {
+                if (!columns.contains(c)) {
+                    columns.add(c);
+                }
+            }
+            if (!columns.contains("updated_at")) {
+                columns.add("updated_at");
+            }
+        }
+        // Oracle's names come upper case: one rename list lowers every table's columns, and each table's key.
         assertThat(list(sink.get("transforms.lowercase.renames")))
             .isEqualTo(columns.stream().map(c -> c.toUpperCase(Locale.ROOT) + ":" + c).toList());
-        assertThat(sink.get("transforms.lowercasekey.renames")).isEqualTo("PAYMENT_ID:payment_id");
+        assertThat(list(sink.get("transforms.lowercasekey.renames")))
+            .isEqualTo(tables.stream().map(t -> t.key().toUpperCase(Locale.ROOT) + ":" + t.key()).toList());
     }
 
     /** demo.sh waits on each source table's history and makes each history namespace before its sink writes. */
@@ -111,7 +132,8 @@ class ConnectorsTest {
         String sh = Files.readString(DEMO.resolve("demo.sh"));
         assertThat(quoted(array(sh, "BACKOFFICE_TABLES")))
             .isEqualTo(of(Sources.Db.BACKOFFICE).stream().map(t -> t.schema + " " + t.table).toList());
-        assertThat(array(sh, "TREASURY_TABLES").trim()).isEqualTo(Sources.Table.BANK_PAYMENTS.table);
+        assertThat(array(sh, "TREASURY_TABLES").trim().split("\\s+"))
+            .containsExactlyElementsOf(of(Sources.Db.TREASURY).stream().map(t -> t.table).toList());
         Matcher m = Pattern.compile("(?m)^HISTORY_NAMESPACES=\"([^\"]*)\"").matcher(sh);
         assertThat(m.find()).isTrue();
         List<String> namespaces = Arrays.stream(m.group(1).trim().split("\\s+")).map(e -> e.substring(0, e.indexOf(':')))

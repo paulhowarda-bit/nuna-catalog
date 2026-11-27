@@ -28,8 +28,9 @@ import org.apache.iceberg.types.Types;
  * rows reach the lake by two ways at two paces until its end. The SQL is portable (UNION ALL and GROUP BY, explicit
  * casts), so the fast build runs it in H2 against the world's own rows; Trino runs it in the demo.
  *
- * <p>Item 153 adds ties 2 and 7 to 9: {@code tax_lots_vs_ledger}, {@code statements_vs_ledger},
- * {@code realized_vs_1099b} and {@code cat_vs_orders}; and tie 4 counts a trade bust (template 92) against its buy.
+ * <p>Item 153 adds ties 2 and 5 to 9: {@code tax_lots_vs_ledger}, {@code payments_vs_ledger} and
+ * {@code bank_vs_ledger}, {@code gl_vs_subledger}, {@code statements_vs_ledger}, {@code realized_vs_1099b} and
+ * {@code cat_vs_orders}; and tie 4 counts a trade bust (template 92) against its buy.
  */
 final class Recon {
 
@@ -149,6 +150,113 @@ final class Recon {
             HAVING SUM(cns_quantity) <> SUM(fill_quantity) OR SUM(cns_amount) <> SUM(fill_amount)""".formatted(cns,
                 fills)));
         views.addAll(books(catalog, exists, balances, fills));
+        views.addAll(finance(catalog, exists));
+        return views;
+    }
+
+    /** A view of {@code brokerage.finance} ({@link Finance}), by its name. */
+    private static String finance(String catalog, String view) {
+        return catalog + ".\"" + String.join(".", Finance.NAMESPACE.levels()) + "\"." + view;
+    }
+
+    /**
+     * Ties 5 and 6 (item 153), over the treasury's histories once the CDC leg has made them: the bank's payments and
+     * the General Ledger, read through their views in {@code brokerage.finance}. The treasury holds what the last load
+     * wrote (Main cdc, after a business day's end), which the General Ledger's last day marks: tie 5's bank side and
+     * tie 6 compare only the days up to it.
+     */
+    private static List<View> finance(String catalog, Predicate<String> exists) {
+        List<View> views = new ArrayList<>();
+        if (!exists(exists, Feed.PAYMENTS) || !exists(exists, Feed.FINANCIAL_TRANSACTIONS)) {
+            return views;
+        }
+        String payments = union(catalog, exists, Feed.PAYMENTS,
+            "payment_id, financial_transaction_id, template_id, status, amount, business_date");
+        String transactions = union(catalog, exists, Feed.FINANCIAL_TRANSACTIONS,
+            "financial_transaction_id, template_id, amount, business_date");
+        views.add(new View("payments_vs_ledger",
+            "Tie 5: every payment version the ledger booked (templates 30 to 35, 70 to 76) is one money transaction"
+                + " with the same template and amount. No rows when they agree.",
+            schema(field("business_date", Types.DateType.get()), field("financial_transaction_id", Types.LongType.get()),
+                field("template_id", Types.IntegerType.get()), field("payment_versions", Types.LongType.get()),
+                field("ledger_transactions", Types.LongType.get()), field("payment_amount", MONEY_SUM),
+                field("ledger_amount", MONEY_SUM)),
+            """
+            SELECT business_date, financial_transaction_id, template_id,
+              CAST(SUM(payment) AS bigint) AS payment_versions, CAST(SUM(ledger) AS bigint) AS ledger_transactions,
+              CAST(SUM(payment_amount) AS decimal(20, 2)) AS payment_amount,
+              CAST(SUM(ledger_amount) AS decimal(20, 2)) AS ledger_amount
+            FROM (
+              SELECT business_date, financial_transaction_id, template_id, CAST(1 AS bigint) AS payment,
+                CAST(0 AS bigint) AS ledger, CAST(amount AS decimal(20, 2)) AS payment_amount,
+                CAST(0 AS decimal(20, 2)) AS ledger_amount
+              FROM %s p WHERE financial_transaction_id IS NOT NULL
+              UNION ALL
+              SELECT business_date, financial_transaction_id, template_id, CAST(0 AS bigint), CAST(1 AS bigint),
+                CAST(0 AS decimal(20, 2)), CAST(amount AS decimal(20, 2))
+              FROM %s f WHERE template_id BETWEEN 30 AND 35 OR template_id BETWEEN 70 AND 76
+            ) t
+            WHERE business_date < current_date
+            GROUP BY business_date, financial_transaction_id, template_id
+            HAVING SUM(payment) <> 1 OR SUM(ledger) <> 1 OR SUM(payment_amount) <> SUM(ledger_amount)"""
+                .formatted(payments, transactions)));
+        boolean gl = exists.test(Sources.Table.GL_BALANCES.history());
+        if (gl && exists.test(Sources.Table.BANK_PAYMENTS.history())) {
+            String bank = finance(catalog, Sources.Table.BANK_PAYMENTS.table);
+            String last = "(SELECT MAX(business_date) FROM " + finance(catalog, Sources.Table.GL_BALANCES.table) + ")";
+            views.add(new View("bank_vs_ledger",
+                "Tie 5: per value date, the bank's net of the ACH and wires it settled (in less out) against the"
+                    + " ledger's settlements of them (templates 32 and 70 less 34 and 72), up to the treasury's last"
+                    + " load; a deposit returned is in neither. No rows when they agree.",
+                schema(field("value_date", Types.DateType.get()), field("bank_net", MONEY_SUM),
+                    field("ledger_net", MONEY_SUM)),
+                """
+                SELECT value_date, CAST(SUM(bank) AS decimal(20, 2)) AS bank_net,
+                  CAST(SUM(ledger) AS decimal(20, 2)) AS ledger_net
+                FROM (
+                  SELECT value_date,
+                    CAST(CASE WHEN direction = 'incoming' THEN amount ELSE -amount END AS decimal(20, 2)) AS bank,
+                    CAST(0 AS decimal(20, 2)) AS ledger
+                  FROM %1$s b WHERE status = 'settled'
+                  UNION ALL
+                  SELECT f.business_date, CAST(0 AS decimal(20, 2)),
+                    CAST(CASE WHEN f.template_id IN (32, 70) THEN f.amount ELSE -f.amount END AS decimal(20, 2))
+                  FROM %2$s f JOIN %3$s p ON p.financial_transaction_id = f.financial_transaction_id
+                  WHERE f.template_id IN (32, 34, 70, 72)
+                    AND p.payment_id NOT IN (SELECT r.payment_id FROM %3$s r
+                      WHERE r.status = 'returned' AND r.business_date <= %4$s)
+                ) t
+                WHERE value_date < current_date AND value_date <= %4$s
+                GROUP BY value_date
+                HAVING SUM(bank) <> SUM(ledger)""".formatted(bank, transactions, payments, last)));
+        }
+        if (gl && exists(exists, Feed.BALANCES_EOD)) {
+            String balances = union(catalog, exists, Feed.BALANCES_EOD, "business_date, definition_id, measure, balance");
+            String ledger = finance(catalog, Sources.Table.GL_BALANCES.table);
+            views.add(new View("gl_vs_subledger",
+                "Tie 6 (ControlOfTotal): each General Ledger control account at each day's end against the sum of every"
+                    + " brokerage account's balance of the definition it controls; Customer Cash Balances [Control]"
+                    + " (GL-1001) against Cash (1001). No rows when they agree.",
+                schema(field("business_date", Types.DateType.get()), field("gl_account", Types.StringType.get()),
+                    field("definition_id", Types.IntegerType.get()), field("gl_balance", MONEY_SUM),
+                    field("subledger_balance", MONEY_SUM)),
+                """
+                SELECT business_date, 'GL-' || CAST(definition_id AS varchar) AS gl_account, definition_id,
+                  CAST(SUM(gl) AS decimal(20, 2)) AS gl_balance, CAST(SUM(sub) AS decimal(20, 2)) AS subledger_balance
+                FROM (
+                  SELECT business_date, definition_id, CAST(balance AS decimal(20, 2)) AS gl,
+                    CAST(0 AS decimal(20, 2)) AS sub
+                  FROM %1$s g
+                  UNION ALL
+                  SELECT business_date, definition_id, CAST(0 AS decimal(20, 2)), CAST(balance AS decimal(20, 2))
+                  FROM %2$s b
+                  WHERE measure = 'Money' AND definition_id BETWEEN 1000 AND 1999
+                    AND business_date IN (SELECT business_date FROM %1$s d)
+                ) t
+                WHERE business_date < current_date
+                GROUP BY business_date, definition_id
+                HAVING SUM(gl) <> SUM(sub)""".formatted(ledger, balances)));
+        }
         return views;
     }
 

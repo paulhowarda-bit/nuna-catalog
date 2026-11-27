@@ -2,7 +2,9 @@
 -- the brokerage world's ACH and wire payments as the firm's bank sees them (item 152), which demo-datagen's Main cdc
 -- writes at each demo.sh cdc as they stood after the lake's last business day, only what changed, and Debezium captures
 -- through LogMiner into the Iceberg history table history.oracle.treasury.bank_payments. The table is demo-datagen's
--- (nuna.datagen.live.Sources.ddl), which a test holds this file to.
+-- (nuna.datagen.live.Sources.ddl), which a test holds this file to. Item 153 adds the firm's General Ledger beside it,
+-- TREASURY.GL_JOURNAL and TREASURY.GL_BALANCES (one control account per customer money definition), captured the
+-- same way into history.oracle.treasury.gl_journal and gl_balances.
 --
 -- An initialization script (/container-entrypoint-initdb.d): it runs as SYS in the root container once, at the
 -- first start on an empty volume, onto which the pod copies the image's ready-made database (faststart); later starts
@@ -61,7 +63,7 @@ GRANT SELECT ON V_$TRANSACTION TO c##dbzuser CONTAINER = ALL;
 GRANT SELECT ON V_$MYSTAT TO c##dbzuser CONTAINER = ALL;
 GRANT SELECT ON V_$STATNAME TO c##dbzuser CONTAINER = ALL;
 
--- The application's schema and table, in the PDB; demo-datagen signs in as treasury.
+-- The application's schema and tables, in the PDB; demo-datagen signs in as treasury.
 ALTER SESSION SET CONTAINER = FREEPDB1;
 CREATE USER treasury IDENTIFIED BY "${PASSWORD_TREASURY}" DEFAULT TABLESPACE users QUOTA UNLIMITED ON users;
 GRANT CREATE SESSION, CREATE TABLE TO treasury;
@@ -83,6 +85,30 @@ CREATE TABLE treasury.bank_payments (
     updated_at TIMESTAMP(3) DEFAULT SYSTIMESTAMP NOT NULL
 );
 ALTER TABLE treasury.bank_payments ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+CREATE TABLE treasury.gl_journal (
+    journal_id VARCHAR2(400) PRIMARY KEY,
+    business_date DATE,
+    gl_account VARCHAR2(400),
+    gl_account_name VARCHAR2(400),
+    definition_id NUMBER(9),
+    debit_total NUMBER(20, 2),
+    credit_total NUMBER(20, 2),
+    line_count NUMBER(18),
+    posted_at TIMESTAMP(3),
+    updated_at TIMESTAMP(3) DEFAULT SYSTIMESTAMP NOT NULL
+);
+ALTER TABLE treasury.gl_journal ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+CREATE TABLE treasury.gl_balances (
+    balance_id VARCHAR2(400) PRIMARY KEY,
+    business_date DATE,
+    gl_account VARCHAR2(400),
+    gl_account_name VARCHAR2(400),
+    definition_id NUMBER(9),
+    normal_side VARCHAR2(400),
+    balance NUMBER(20, 2),
+    updated_at TIMESTAMP(3) DEFAULT SYSTIMESTAMP NOT NULL
+);
+ALTER TABLE treasury.gl_balances ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
 
 -- The demo's people, with their Keycloak passwords: everyone reads every table, ana also writes, creates,
 -- alters and drops tables in any schema, and gary and presenter are DBAs.

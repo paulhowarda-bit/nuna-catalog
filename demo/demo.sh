@@ -1478,6 +1478,8 @@ gen_start() {
   brokerage_bootstrap
   brokerage_governance
   brokerage_clearing_governance || say "brokerage.clearing, recon and kafka are not all governed: gen carries on"
+  brokerage_books_governance || say "the firm's books (margin, tax, client_reporting, regulatory, asset_servicing," \
+    "finance) are not all governed: gen carries on; the next gen tries again"
   brokerage_backoffice_governance || say "brokerage.party, money_movement and compliance are not all governed: the" \
     "world's sink stops at a table the catalog closes until it is; the next gen tries again"
   lake_grants
@@ -1630,6 +1632,26 @@ brokerage_backoffice_governance() {
     api stella POST "$m/namespaces/brokerage%1Fcompliance/tables/aml_cases/holds" \
       '{"reason":"Matter 2026-152: AML case files and SARs kept five years (31 CFR 1023.320(d))"}' || return 1
   fi
+}
+
+# Governance of the firm's books (item 153; docs/design/brokerage-world.md, the namespace tree), by stella after the
+# bootstrap; setting a value again changes nothing. Margin, tax, client reporting and the regulatory reports are
+# confidential, asset servicing internal, each table taking its namespace's classification; brokerage.finance, the
+# General Ledger's and the bank's views over the CDC leg's treasury histories, is confidential and regulated. Each has
+# the owner a firm's org chart would give it.
+brokerage_books_governance() {
+  local m=/management/v1/catalogs/$CATALOG entry ns class owner
+  for entry in margin:confidential:margin-department tax:confidential:tax-operations \
+      client_reporting:confidential:client-reporting regulatory:confidential:regulatory-reporting \
+      asset_servicing:internal:asset-servicing finance:confidential:finance-controller; do
+    IFS=: read -r ns class owner <<<"$entry"
+    api stella PUT "$m/namespaces/brokerage%1F$ns/attributes/classification" \
+      "{\"value\":\"$class\",\"provenance\":\"demo-seed: data catalogue\"}" || return 1
+    api stella PUT "$m/namespaces/brokerage%1F$ns/attributes/owner" \
+      "{\"value\":\"$owner\",\"provenance\":\"demo-seed: HR feed\"}" || return 1
+  done
+  api stella PUT "$m/namespaces/brokerage%1Ffinance/attributes/regulated" \
+    '{"value":"true","provenance":"demo-seed: compliance register"}'
 }
 
 # Kafka Connect (connect.yaml), applied and waited for until its REST API answers through the front door.
@@ -1812,21 +1834,22 @@ connect_api() {
 }
 
 # The source tables, as schema and table. CockroachDB's are the clearing books' (item 151); PostgreSQL's the back
-# office's and Oracle's the bank payments (item 152; demo/cdc/backoffice.sql and oracle.sql, made from demo-datagen's
-# Sources, which a test holds these lists to).
+# office's and Oracle's the bank payments (item 152) and the General Ledger (item 153; demo/cdc/backoffice.sql and
+# oracle.sql, made from demo-datagen's Sources, which a test holds these lists to).
 CUSTODY_TABLES=(stock_record cns_obligations fails locates)
 BACKOFFICE_TABLES=("party parties" "party accounts" "party account_roles" "party cip_checks"
   "party suitability_profiles" "party beneficial_owners" "party trusted_contacts" "money_movement payments"
   "money_movement ach_returns" "money_movement acats_transfers" "compliance aml_alerts" "compliance aml_cases"
   "compliance complaints")
-TREASURY_TABLES=(bank_payments)
+TREASURY_TABLES=(bank_payments gl_journal gl_balances)
 # The history tables, as namespace path and table name for the catalog's API. The toy tables before items 151 and 152
 # (settlement instructions, treasury payments, positions holdings) are listed so a new leg removes them.
 HISTORY_TABLES=("history%1Fpostgres%1Fsettlement instructions" "history%1Foracle%1Ftreasury payments"
   "history%1Fcockroach%1Fpositions holdings" "history%1Fcockroach%1Fclearing stock_record"
   "history%1Fcockroach%1Fclearing cns_obligations" "history%1Fcockroach%1Fclearing fails"
-  "history%1Fcockroach%1Fclearing locates" "history%1Foracle%1Ftreasury bank_payments")
+  "history%1Fcockroach%1Fclearing locates")
 for entry in "${BACKOFFICE_TABLES[@]}"; do HISTORY_TABLES+=("history%1Fpostgres%1F$entry"); done
+for entry in "${TREASURY_TABLES[@]}"; do HISTORY_TABLES+=("history%1Foracle%1Ftreasury $entry"); done
 unset entry
 # The history namespaces the leg's sinks write, each classified as the lake namespace whose rows it records (item 152):
 # made, and closed to all but compliance's readers (lake_grants), before Debezium sends a change.
@@ -2047,19 +2070,19 @@ cdc_start() {
   running connect || start_connect
   # A leg that ran before (configmap cdc-begun, which its first run writes once its changes reached Iceberg) carries
   # on: its databases start from their volumes and its connectors from their offsets, into the history tables it
-  # wrote (D52, amended 2026-11-26, backlog 293). One begun before item 152 (no world=152 in cdc-begun) holds the toy
-  # settlement instructions and treasury payments, not the back office and the bank payments, which backoffice.sql and
-  # oracle.sql make only on an empty volume: it starts anew, once.
+  # wrote (D52, amended 2026-11-26, backlog 293). One begun before item 153 (no world=153 in cdc-begun) lacks tables
+  # that backoffice.sql and oracle.sql make only on an empty volume (before 152 the back office and the bank payments,
+  # before 153 the General Ledger): it starts anew, once.
   if k get configmap cdc-begun >/dev/null 2>&1; then
-    if [[ "$(k get configmap cdc-begun -o jsonpath='{.data.world}')" == 152 ]]; then
+    if [[ "$(k get configmap cdc-begun -o jsonpath='{.data.world}')" == 153 ]]; then
       say "starting the CDC leg from its kept databases; the connectors carry on from where they stopped"
       cdc_apply
       history_flags
       cdc_access
       return
     fi
-    say "the CDC leg was begun before its databases held the back office and the bank payments (item 152): it" \
-      "starts anew, once"
+    say "the CDC leg was begun before its databases held the back office, the bank payments and the General" \
+      "Ledger (items 152 and 153): it starts anew, once"
     cdc_delete
   fi
   # A first run that did not finish leaves volumes, connectors or topics: they go, and the leg starts anew.
@@ -2092,7 +2115,7 @@ cdc_start() {
     wait_for_rows "history%1Fcockroach%1Fclearing" "$custody" "$(cockroach_count "$custody")"
   done
   k create configmap cdc-begun --from-literal=began="$(date -u +%FT%TZ)" --from-literal=custody=clearing \
-    --from-literal=world=152 >/dev/null
+    --from-literal=world=153 >/dev/null
   history_flags
   cdc_access
 }
@@ -2111,8 +2134,9 @@ The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
                                   ->  history.postgres.{party,money_movement,compliance}.*   (demo/demo.sh psql)
     the back office: parties, accounts, roles, CIP checks, suitability, beneficial owners, trusted contacts;
     payments, ACH returns, ACATS transfers; AML alerts and cases, complaints (compliance: cora alone reads it)
-  Oracle FREEPDB1, TREASURY.BANK_PAYMENTS  ->  history.oracle.treasury.bank_payments   (demo/demo.sh sqlplus)
-    each ACH and wire as the firm's bank sees it
+  Oracle FREEPDB1, TREASURY.*              ->  history.oracle.treasury.*               (demo/demo.sh sqlplus)
+    each ACH and wire as the firm's bank sees it (bank_payments); the General Ledger's daily journal and balances
+    of each customer control account (gl_journal, gl_balances), read in brokerage.finance
   CockroachDB custody, clearing.*          ->  history.cockroach.clearing.*            (demo/demo.sh cockroach)
     the clearing books: stock_record, cns_obligations, fails, locates
   All three are loaded at each cdc as the brokerage world stands after its last end of day, only what changed
