@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**33 open:** 10 S, 13 M, 4 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
+**32 open:** 9 S, 13 M, 4 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -35,7 +35,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [304](backlog/304.md) | S | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | one test's assertion and its bite recorded again in one module | 2026-11-27 |
 | [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
 | [306](backlog/306.md) | S | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | the bite's Test: line and a check that it still bites | 2026-11-27 |
-| [308](backlog/308.md) | S | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | registering two engines and flagging a handful of tables in demo.sh, with a check that the writers still commit | 2026-11-27 |
 | [309](backlog/309.md) | S | Purging a table a ref still names answers 500, not a refusal | one missing case in one route and its test | 2026-11-27 |
 | [310](backlog/310.md) | S | OPA's row-filter and column-mask answers fail when the request names no Trino catalog | a null check at one boundary and a test | 2026-11-27 |
 | [311](backlog/311.md) | S | GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400 | a parameter's parsing and a test | 2026-11-27 |
@@ -1440,27 +1439,6 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\con
 Done when the bite names the test that now covers the break (the renamed method, if it still fails on the break, or
 another), and it is judged BITES in the overnight run.
 
-### 308. Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20)
-
-- Decided: 2026-11-27, D48
-- Added: 2026-11-27 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo/demo.sh demo/README.md demo/k8s/ demo-datagen/
-- Effort: S, registering two engines and flagging a handful of tables in demo.sh, with a check that the writers still commit
-
-Item 152 left out the D20 flags the design asks for (`docs/design/brokerage-world.md`, the namespace tree: tax id,
-birth date and address in `party`, bank account numbers in `money_movement`). A flagged table opens its files only to
-trusted engines in the D17 registry, and the tables are written by the Kafka Connect sink (`brokerage-lake`,
-`brokerage-lake-owners`) and SingleStore's change feed, which are not registered, so flagging them would stop the
-writes. Paul, 2026-11-27, asked whether to trust the writers and flag or leave the tables unflagged: "Trust the
-writers, flag" (D48, amended).
-
-What to build: register the sink's and the change feed's clients as trusted engines, as `demo.sh up` registers Trino's
-`trino-demo`, and flag `party.parties` (tax id, birth date, address), and the `money_movement` tables that carry bank
-account numbers, on both routes' copies.
-
-What done looks like, live: both writers still commit to the flagged tables; Trino as `ana` reads them; PyIceberg (the
-engine matrix) gets 403 on them.
-
 ### 309. Purging a table a ref still names answers 500, not a refusal
 
 - Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
@@ -1899,3 +1877,4 @@ document only repeats it, it may point there instead.
 | [300](backlog/300.md) | Console: on a phone the Reading menu may run past the window and main may end in an ellipsis (from 299) | done | 2026-11-26 |
 | [301](backlog/301.md) | A documentation site: every console page and command, installation, configuration, API and operations, as static web pages | done | 2026-11-27 |
 | [307](backlog/307.md) | The console links to the documentation, served at /docs/ from the server | done | 2026-11-27 |
+| [308](backlog/308.md) | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | done | 2026-11-27 |

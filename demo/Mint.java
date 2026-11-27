@@ -50,6 +50,10 @@ public final class Mint {
         USERS.put("presenter", new String[] {"nuna-console", "demo-analysts", "demo-grant-admins", "demo-stewards",
                 "demo-operators", "demo-auditors", "demo-compliance", "demo-presenters"});
         USERS.put("singlestore", new String[] {"singlestore-demo", "demo-loaders"});
+        // SingleStore's change feeds of the brokerage world's tables (brokerage-feeds-pipelines.sql), apart from its
+        // own reads: demo.sh registers this client alone as a trusted engine, as the feeds write flagged tables, so
+        // SingleStore's reads of those tables, with the singlestore token, are still refused (D20, item 308).
+        USERS.put("singlestore-feed", new String[] {"singlestore-feed-demo", "demo-loaders"});
         USERS.put("lake", new String[] {"lake-writer-demo", "demo-loaders"});
         // The brokerage world's generator (demo-datagen): its bootstrap Job makes its namespaces, tables and views.
         USERS.put("brokerage", new String[] {"brokerage-world-demo", "demo-loaders"});
