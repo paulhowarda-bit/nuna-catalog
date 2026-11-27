@@ -2,16 +2,16 @@ Breaks: demo.sh's list of back office tables leaves out complaints, so cdc never
 Module: demo-datagen
 Test: ConnectorsTest#demoShListsEverySourceTableAndHistoryNamespace
 diff --git a/demo/demo.sh b/demo/demo.sh
-index 54fe4ca5..363f6c51 100644
+index 4d382d8c..0b41a776 100644
 --- a/demo/demo.sh
 +++ b/demo/demo.sh
-@@ -1784,8 +1784,7 @@ connect_api() {
+@@ -1839,8 +1839,7 @@ connect_api() {
  CUSTODY_TABLES=(stock_record cns_obligations fails locates)
  BACKOFFICE_TABLES=("party parties" "party accounts" "party account_roles" "party cip_checks"
    "party suitability_profiles" "party beneficial_owners" "party trusted_contacts" "money_movement payments"
 -  "money_movement ach_returns" "money_movement acats_transfers" "compliance aml_alerts" "compliance aml_cases"
 -  "compliance complaints")
 +  "money_movement ach_returns" "money_movement acats_transfers" "compliance aml_alerts" "compliance aml_cases")
- TREASURY_TABLES=(bank_payments)
+ TREASURY_TABLES=(bank_payments gl_journal gl_balances)
  # The history tables, as namespace path and table name for the catalog's API. The toy tables before items 151 and 152
  # (settlement instructions, treasury payments, positions holdings) are listed so a new leg removes them.
