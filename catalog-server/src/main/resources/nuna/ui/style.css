@@ -1335,6 +1335,12 @@ details.tech[open] > summary { margin-bottom: 4px; }
   .pick-wrap, .reading-slot, .reading-slot .ref-wrap, .nc-top .ref-pick .cref { min-width: 0; }
   .nc-pick, .nc-top .ref-pick { max-width: 100%; padding: 0 8px; gap: 4px; }
   .nc-top .ref-pick .cref .at { display: none; }
+  /* main is four letters and never ends in an ellipsis: the catalog's name gives way instead (backlog 300) */
+  .nc-top .reading-slot:has(> .ref-wrap > .ref-pick .cref.m) { flex: none; }
+  .nc-top .ref-pick .cref.m .nm { min-width: max-content; }
+  /* the chip sits mid-header, so its menu hangs from the header, inside the window, not from the chip (backlog 300) */
+  .nc-top .reading-slot .ref-wrap { position: static; }
+  .nc-top .reading-slot .ref-menu { left: 12px; right: auto; width: min(380px, calc(100% - 24px)); min-width: 0; }
   .nc-pick b, .nc-top .ref-pick .cref .nm { min-width: 0; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .reading-slot .main-only { position: absolute; top: calc(100% + 1px); left: 0; right: 0; height: 28px; display: flex; align-items: center; margin: 0; padding: 0 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nc-app:has(.reading-slot .main-only) .slot > .nc-main { padding-top: 44px; }

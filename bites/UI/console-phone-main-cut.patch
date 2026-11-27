@@ -1,0 +1,17 @@
+Breaks: On a phone, the Reading chip's main shares the room with a long catalog name and ends in an ellipsis.
+Module: catalog-server
+Test: ConsoleBrowserTest#onAPhoneTheReadingChipShowsMainWholeAndItsMenuOpensInTheWindow
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index d42cc6c8..b4df8215 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1336,8 +1336,6 @@ details.tech[open] > summary { margin-bottom: 4px; }
+   .nc-pick, .nc-top .ref-pick { max-width: 100%; padding: 0 8px; gap: 4px; }
+   .nc-top .ref-pick .cref .at { display: none; }
+   /* main is four letters and never ends in an ellipsis: the catalog's name gives way instead (backlog 300) */
+-  .nc-top .reading-slot:has(> .ref-wrap > .ref-pick .cref.m) { flex: none; }
+-  .nc-top .ref-pick .cref.m .nm { min-width: max-content; }
+   /* the chip sits mid-header, so its menu hangs from the header, inside the window, not from the chip (backlog 300) */
+   .nc-top .reading-slot .ref-wrap { position: static; }
+   .nc-top .reading-slot .ref-menu { left: 12px; right: auto; width: min(380px, calc(100% - 24px)); min-width: 0; }
