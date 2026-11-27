@@ -1759,6 +1759,52 @@ class ConsoleBrowserTest {
         }
     }
 
+    /**
+     * On a phone the Reading chip shows main whole beside a long catalog name, and its menu opens inside the window
+     * (backlog 300). Atelier found both going wrong in her prototype under rules the console shares: at 361 px "main"
+     * ended in an ellipsis while the catalog's name kept its room, and the menu, hung from the chip, ran out of the
+     * window. The test's catalog is "trading", so the picker is given a long name, as a long warehouse name would show.
+     */
+    @Test
+    void onAPhoneTheReadingChipShowsMainWholeAndItsMenuOpensInTheWindow() {
+        signIn(tester());
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#catalog-page table.contents tr[data-kind='namespace'][data-name='" + top + "']"));
+        WebElement chip = browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]"));
+        HasCdp cdp = (HasCdp) new Augmenter().augment(driver);
+        for (int frame : new int[] {361, 390}) {
+            phoneFrame(cdp, frame);
+            driver.executeScript("document.querySelector('#catalog-pick [data-cat]').textContent = 'trading_archive_emea_2026'");
+            assertThat(headerFits()).as("the header fits at %d px", frame).isTrue();
+            assertThat((String) driver.executeScript(HEADER_OVERLAPS)).as("the header's parts at %d px", frame).isEmpty();
+            assertThat((String) driver.executeScript(MAIN_AND_CATALOG)).as("at %d px", frame).isEqualTo("main whole, catalog cut");
+
+            chip.click();
+            browser.await("the Reading menu did not open", d -> "true".equals(chip.getDomAttribute("aria-expanded")));
+            assertThat((String) driver.executeScript(MENU_IN_THE_WINDOW)).as("the Reading menu at %d px", frame).isEmpty();
+            chip.click();
+            browser.await("the Reading menu did not close", d -> "false".equals(chip.getDomAttribute("aria-expanded")));
+        }
+        cdp.executeCdpCommand("Emulation.clearDeviceMetricsOverride", Map.of());
+    }
+
+    /** Whether the header's Reading chip shows its ref's name whole and the catalog picker's name ends in an ellipsis. */
+    private static final String MAIN_AND_CATALOG = """
+            const nm = document.querySelector('#top .ref-pick .cref .nm');
+            const cat = document.querySelector('#catalog-pick [data-cat]');
+            const main = nm.scrollWidth <= nm.clientWidth ? 'main whole' : 'main cut to ' + nm.clientWidth + ' of ' + nm.scrollWidth + ' px';
+            return main + ', catalog ' + (cat.scrollWidth > cat.clientWidth ? 'cut' : 'whole');
+            """;
+
+    /** Empty when the open Reading menu lies inside the window and the page does not scroll sideways, else what is wrong. */
+    private static final String MENU_IN_THE_WINDOW = """
+            const w = document.documentElement.clientWidth;
+            const m = document.getElementById('ref-menu').getBoundingClientRect();
+            if (m.left < -0.5 || m.right > w + 0.5) return 'the menu spans ' + m.left.toFixed(1) + '-' + m.right.toFixed(1) + ' in ' + w;
+            if (document.documentElement.scrollWidth > w) return 'the page is ' + document.documentElement.scrollWidth + ' px wide in ' + w;
+            return '';
+            """;
+
     /** Emulates a screen on which the console's frame is {@code frame} wide. */
     private void phoneFrame(HasCdp cdp, int frame) {
         int width = frame;
