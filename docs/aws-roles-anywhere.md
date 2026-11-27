@@ -141,7 +141,7 @@ on the role's own page, in two more screens.
         {
           "Sid": "SignIntoTestRoles",
           "Effect": "Allow",
-          "Action": "sts:AssumeRole",
+          "Action": ["sts:AssumeRole", "sts:TagSession", "sts:SetSourceIdentity"],
           "Resource": "arn:aws:iam::*:role/nuna-test-*"
         },
         {
@@ -149,6 +149,12 @@ on the role's own page, in two more screens.
           "Effect": "Allow",
           "Action": ["sts:GetCallerIdentity", "s3:ListAllMyBuckets"],
           "Resource": "*"
+        },
+        {
+          "Sid": "NeverTheRunnerItself",
+          "Effect": "Deny",
+          "Action": ["iam:*", "sts:AssumeRole", "sts:TagSession", "sts:SetSourceIdentity"],
+          "Resource": "arn:aws:iam::*:role/nuna-test-runner"
         }
       ]
     }
@@ -194,9 +200,15 @@ Send the three ARNs from your note. They are names, not secrets.
 3. Checks it: `aws sts get-caller-identity --profile nuna-test` should name `assumed-role/nuna-test-runner/...`.
 4. From then on the AWS tests run with `-Ps3=aws -Pnuna.aws.profile=nuna-test`, with no sign-in.
 
-The inline policy was written from the calls the tests make and has not yet been tried against AWS. If a test is
-refused, its log names the action (`... is not authorized to perform: <action>`), and that action is added to the
-policy.
+A session from Roles Anywhere carries a source identity (the certificate's name), and AWS passes it on to every role
+the tests sign into from it, with its session tags, so the runner needs `sts:SetSourceIdentity` and `sts:TagSession`
+on those roles, and their trust policies must allow both (`TestS3` and `DeletePolicyAwsTest` write them into theirs).
+The runner's own name matches `nuna-test-*`, so the last statement denies it every IAM action on itself: without it,
+the runner could rewrite its own policy. Checked 2026-11-26: `DeletePolicyAwsTest` (2) and `KmsKeyAwsTest` (1) pass
+through `-Pnuna.aws.profile=nuna-test`, the runner is refused a change to its own policy, and the runs leave no
+`nuna-test-*` role or bucket but the runner. If a test is
+refused later, its log names the action (`... is not authorized to perform: <action>`), and that action is added to
+the policy.
 
 ## Later
 

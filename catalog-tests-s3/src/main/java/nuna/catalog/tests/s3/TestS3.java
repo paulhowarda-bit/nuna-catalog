@@ -461,7 +461,7 @@ public final class TestS3 implements AutoCloseable {
                 .description("nuna test run " + run + "; deleted when the run ends")
                 .assumeRolePolicyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
                         + "\"Principal\":{\"AWS\":\"arn:aws:iam::" + account + ":root\"},"
-                        + "\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\"]}]}")).role().arn();
+                        + "\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\",\"sts:SetSourceIdentity\"]}]}")).role().arn();
         String buckets = "[\"arn:aws:s3:::" + prefix + "*\",\"arn:aws:s3:::" + prefix + "*/*\"]";
         iam.putRolePolicy(r -> r.roleName(role).policyName("everything-in-this-run")
                 .policyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
@@ -471,7 +471,7 @@ public final class TestS3 implements AutoCloseable {
                 .description("nuna test run " + run + ": the maintenance worker; deleted when the run ends")
                 .assumeRolePolicyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
                         + "\"Principal\":{\"AWS\":\"arn:aws:iam::" + account + ":root\"},"
-                        + "\"Action\":\"sts:AssumeRole\"}]}")).role().arn();
+                        + "\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\",\"sts:SetSourceIdentity\"]}]}")).role().arn();
         iam.putRolePolicy(r -> r.roleName(worker).policyName("maintenance-in-this-run")
                 .policyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":"
                         + "[\"s3:ListBucket\",\"s3:DeleteObject\",\"s3:DeleteObjectVersion\",\"s3:GetBucketPolicy\","
