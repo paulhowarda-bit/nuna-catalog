@@ -23,7 +23,7 @@
 #   demo/demo.sh metrics stop  turn it off; its series, traces and Grafana's database stay on their volumes
 #   demo/demo.sh engines  run the engine matrix (Spark, Kafka Connect, PyIceberg, SingleStore) against the stack
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
-#   demo/demo.sh sql      open a SingleStore prompt (databases ops, lake and brokerage)
+#   demo/demo.sh sql      open a SingleStore prompt in database brokerage (lake is the other)
 #   demo/demo.sh rate     append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
 #   demo/demo.sh brokerage logs  follow the brokerage world's generator
 #   demo/demo.sh cdc      start the CDC leg: PostgreSQL, Oracle and CockroachDB, through Debezium and Kafka
@@ -2538,7 +2538,7 @@ case "${1:-}" in
       echo "SingleStore is off: demo/demo.sh ss first" >&2
       exit 1
     fi
-    MSYS_NO_PATHCONV=1 k exec -it deployment/singlestore -- sh -c 'exec singlestore -uroot -p"$ROOT_PASSWORD" ops'
+    MSYS_NO_PATHCONV=1 k exec -it deployment/singlestore -- sh -c 'exec singlestore -uroot -p"$ROOT_PASSWORD" brokerage'
     ;;
   rate)
     refuse_while_cdc "the lake writer"
