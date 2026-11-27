@@ -1,0 +1,16 @@
+Breaks: the masks of a flagged table, so ana reads parties' tax ids in clear through Trino
+Module: demo-datagen
+Test: FlaggedTablesTest#demoShMasksEachFlaggedTablesSensitiveColumns
+diff --git a/demo/demo.sh b/demo/demo.sh
+index de0551d1..38d3b533 100644
+--- a/demo/demo.sh
++++ b/demo/demo.sh
+@@ -847,7 +847,7 @@ FLAGGED_TABLES="brokerage.party.parties brokerage.party.beneficial_owners broker
+   history.oracle.treasury.bank_payments"
+ # Each flagged table's sensitive columns, by its name, the same under every namespace: what gary masks for ana's
+ # demo-analysts. FlaggedTablesTest holds them to the tables' columns.
+-FLAGGED_MASKS="parties:birth_date,tax_id,address_line beneficial_owners:birth_date,tax_id,address_line
++FLAGGED_MASKS="parties:birth_date,address_line beneficial_owners:birth_date,tax_id,address_line
+   payments:bank_account_number bank_payments:counterparty_account_number"
+ # Flags, as stella, each table of FLAGGED_TABLES under a namespace (brokerage.party, say), and gary sets its rules:
+ # ana's demo-analysts read every row with the sensitive columns (FLAGGED_MASKS) NULL, stella's demo-stewards read
