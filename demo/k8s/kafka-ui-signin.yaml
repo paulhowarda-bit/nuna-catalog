@@ -10,7 +10,9 @@
 # (ana, gary, stella) administer topics: create, change settings, produce and clear messages, and delete. They
 # only read the topics the demo runs on: the catalog's nuna.*, the Connect worker's connect-*, the brokerage
 # world's brokerage.* and its sink's brokerage-lake-control, and those whose names start with "_". A person's rights on a topic are those of every pattern that matches its whole
-# name. They read consumer groups, schemas, connectors and the cluster's settings.
+# name. They read consumer groups, schemas, connectors and the cluster's settings. The compliance topics, the brokerage
+# world's brokerage.compliance.* and the CDC leg's backoffice.compliance.*, are cora's (demo-compliance) alone, who only
+# reads them, as she alone reads the compliance namespaces in the catalog (item 152).
 #
 # kafbat's audit log records every change made through it (topics, messages, consumer groups, connectors, ACLs),
 # with who made it and whether it was refused, in topic __kui-audit-log and in its own log (kubectl logs
@@ -71,12 +73,23 @@ spec:
                       ],
                       "permissions": [
                         {"resource": "clusterconfig", "actions": ["VIEW"]},
-                        {"resource": "topic", "value": "(?!nuna\\.|connect-|brokerage[.-]|_).*", "actions": ["all"]},
-                        {"resource": "topic", "value": "(nuna\\.|connect-|brokerage[.-]|_).*",
+                        {"resource": "topic", "value": "(?!nuna\\.|connect-|brokerage[.-]|backoffice\\.compliance\\.|_).*",
+                         "actions": ["all"]},
+                        {"resource": "topic", "value": "(?!brokerage\\.compliance\\.)(nuna\\.|connect-|brokerage[.-]|_).*",
                          "actions": ["VIEW", "MESSAGES_READ", "ANALYSIS_VIEW"]},
                         {"resource": "consumer", "value": ".*", "actions": ["VIEW"]},
                         {"resource": "schema", "value": ".*", "actions": ["VIEW"]},
                         {"resource": "connect", "value": ".*", "actions": ["VIEW"]}
+                      ]
+                    },
+                    {
+                      "name": "compliance",
+                      "clusters": ["nuna"],
+                      "subjects": [{"provider": "oauth", "type": "role", "value": "demo-compliance"}],
+                      "permissions": [
+                        {"resource": "clusterconfig", "actions": ["VIEW"]},
+                        {"resource": "topic", "value": "(brokerage|backoffice)\\.compliance\\..*",
+                         "actions": ["VIEW", "MESSAGES_READ", "ANALYSIS_VIEW"]}
                       ]
                     }
                   ]}

@@ -32,7 +32,8 @@
     {"name": "demo-auditors"},
     {"name": "demo-audit-writers"},
     {"name": "demo-maintenance"},
-    {"name": "demo-presenters"}
+    {"name": "demo-presenters"},
+    {"name": "demo-compliance"}
   ],
   "users": [
     {
@@ -81,6 +82,17 @@
       "groups": ["/demo-operators"]
     },
     {
+      "username": "cora",
+      "enabled": true,
+      "firstName": "Cora",
+      "lastName": "Compliance",
+      "email": "cora@nuna.demo",
+      "emailVerified": true,
+      "realmRoles": ["default-roles-nuna"],
+      "credentials": [{"type": "password", "value": "${NUNA_PASSWORD_CORA}", "temporary": false}],
+      "groups": ["/demo-compliance"]
+    },
+    {
       "username": "presenter",
       "enabled": true,
       "firstName": "Demo",
@@ -91,7 +103,7 @@
       "credentials": [{"type": "password", "value": "${NUNA_PASSWORD_PRESENTER}", "temporary": false}],
       "clientRoles": {"silo": ["warehouse-read", "consoleAdmin"], "realm-management": ["realm-admin"]},
       "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators", "/demo-auditors",
-                 "/demo-presenters"]
+                 "/demo-compliance", "/demo-presenters"]
     },
     {
       "username": "service-account-nuna-audit-tables",

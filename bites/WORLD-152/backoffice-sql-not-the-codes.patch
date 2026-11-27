@@ -1,0 +1,16 @@
+Breaks: the back office tables the load writes no longer keep the whole row on delete, unlike demo/cdc/backoffice.sql
+Module: demo-datagen
+Test: SourcesTest#theSqlFilesMakeTheTablesTheLoadWrites
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+index f9fb16c9..a8201f58 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+@@ -157,7 +157,7 @@ public final class Sources implements AutoCloseable {
+             }
+             sql.append(db == Db.BACKOFFICE ? "    updated_at timestamp(3) NOT NULL DEFAULT now()\n);\n"
+                 : "    updated_at TIMESTAMP(3) DEFAULT SYSTIMESTAMP NOT NULL\n);\n");
+-            sql.append(db == Db.BACKOFFICE ? "ALTER TABLE " + t.qualified() + " REPLICA IDENTITY FULL;\n"
++            sql.append(db == Db.BACKOFFICE ? "ALTER TABLE " + t.qualified() + " REPLICA IDENTITY DEFAULT;\n"
+                 : "ALTER TABLE " + t.qualified() + " ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;\n");
+         }
+         return sql.toString();

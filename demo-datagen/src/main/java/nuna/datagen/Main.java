@@ -1,9 +1,11 @@
 package nuna.datagen;
 
-import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +22,11 @@ import nuna.datagen.live.Route;
 import nuna.datagen.live.SingleStore;
 import nuna.datagen.live.SingleStoreTables;
 import nuna.datagen.live.SinkWatch;
+import nuna.datagen.live.Sources;
+import nuna.datagen.world.Event;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.MarketCalendar;
+import nuna.datagen.world.Sink;
 import nuna.datagen.world.World;
 
 /**
@@ -37,8 +42,8 @@ import nuna.datagen.world.World;
  *   <li>{@code drain kafka|singlestore}: waits until what went that way is all in the lake ({@link #drain}).</li>
  *   <li>{@code sql <dir>}: writes brokerage-feeds.sql and brokerage-feeds-pipelines.sql into {@code dir}
  *       ({@link SingleStoreTables}).</li>
- *   <li>{@code custody}: brings the CDC leg's CockroachDB {@code custody} up to the lake's last business day
- *       ({@link Custody}).</li>
+ *   <li>{@code cdc}: brings the CDC leg's databases (CockroachDB {@code custody}, PostgreSQL {@code backoffice}, Oracle
+ *       {@code treasury}) up to the lake's last business day ({@link #cdc}).</li>
  *   <li>{@code history <dir>}: writes the custody tables' history tables, one create-table request each, into
  *       {@code dir}.</li>
  * </ul>
@@ -55,6 +60,14 @@ public final class Main {
     /** The sink connector's name (demo.sh registers demo/brokerage/connector.json under it). */
     static final String SINK = "brokerage-lake";
 
+    /**
+     * The sink of brokerage.party.beneficial_owners alone (demo/brokerage/owners-connector.json), and its control topic:
+     * the table lands unclassified in a regulated namespace, which the catalog refuses (D27), and a sink stops every
+     * table's commits at one refused table, so it has a sink of its own, which its watch restarts once a steward
+     * classifies the table (item 152).
+     */
+    static final String OWNERS_SINK = "brokerage-lake-owners", OWNERS_CONTROL_TOPIC = "brokerage-owners-control";
+
     private Main() {
     }
 
@@ -64,10 +77,10 @@ public final class Main {
             case "run" -> run();
             case "sql" -> sql(Path.of(args.length > 1 ? args[1] : "."));
             case "drain" -> drain(args.length > 1 ? args[1] : "");
-            case "custody" -> custody();
+            case "cdc" -> cdc();
             case "history" -> history(Path.of(args.length > 1 ? args[1] : "."));
             default -> {
-                System.err.println("usage: Main bootstrap | run | sql <dir> | drain kafka|singlestore | custody"
+                System.err.println("usage: Main bootstrap | run | sql <dir> | drain kafka|singlestore | cdc"
                     + " | history <dir>");
                 System.exit(2);
             }
@@ -88,28 +101,67 @@ public final class Main {
     }
 
     /**
-     * Replays the world to the last business day the lake tagged and writes the clearing books into the CDC leg's
-     * CockroachDB, as user {@code clearing} ({@code COCKROACH_URL}, {@code COCKROACH_USER}, {@code COCKROACH_PASSWORD}).
-     * demo.sh runs it each time the leg starts, while the generator is stopped.
+     * Replays the world to the last business day the lake tagged and writes its books of record into the CDC leg's three
+     * databases, each only what changed: the clearing books into CockroachDB {@code custody}, as user {@code clearing}
+     * ({@code COCKROACH_URL}, {@code COCKROACH_USER}, {@code COCKROACH_PASSWORD}; {@link Custody}); the back office into
+     * PostgreSQL {@code backoffice}, as its owner {@code backoffice} ({@code BACKOFFICE_*}); the bank payments into Oracle
+     * {@code treasury}, as its schema's user ({@code TREASURY_*}; {@link Sources}). demo.sh runs it each time the leg
+     * starts, while the generator is stopped. A database that does not load leaves its tables as they were; the others
+     * still load, and the command exits 1.
      */
-    static void custody() throws Exception {
+    static void cdc() throws Exception {
         Kit kit = Kit.load();
         try (IcebergLake lake = lake()) {
             LocalDate last = lake.lastEndOfDay(List.of(Feed.BALANCES_EOD.lakeTable(Feed.Path.KAFKA),
                 Feed.BALANCES_EOD.lakeTable(Feed.Path.SINGLESTORE)));
             if (last == null) {
-                System.out.println("custody: no business day has ended in the lake yet, so the books are empty");
+                System.out.println("cdc: no business day has ended in the lake yet, so the books are empty");
                 return;
             }
             World world = new World(lake.settings(), kit);
-            Custody.Book book = new Custody.Book();
+            Custody.Book custody = new Custody.Book();
+            Sources.Book sources = new Sources.Book();
+            Sink both = new Sink() {
+                @Override
+                public void accept(Event e) {
+                    custody.accept(e);
+                    sources.accept(e);
+                }
+
+                @Override
+                public void endOfDay(LocalDate day) {
+                    custody.endOfDay(day);
+                    sources.endOfDay(day);
+                }
+            };
             while (!world.day().isAfter(last)) {
-                world.runDay(book);
+                world.runDay(both);
             }
+            List<String> failed = new ArrayList<>();
             try (Custody db = Custody.open(env("COCKROACH_URL", "jdbc:postgresql://cockroach:26257/custody?sslmode=disable"),
                      env("COCKROACH_USER", "clearing"), env("COCKROACH_PASSWORD", null))) {
-                System.out.println(db.load(book));
+                System.out.println(db.load(custody));
+            } catch (SQLException e) {
+                failed.add("custody (" + e.getMessage() + ")");
             }
+            load(Sources.Db.BACKOFFICE, "BACKOFFICE", "jdbc:postgresql://backoffice:5432/backoffice", "backoffice",
+                sources, failed);
+            load(Sources.Db.TREASURY, "TREASURY", "jdbc:oracle:thin:@//oracle:1521/FREEPDB1", "treasury", sources,
+                failed);
+            if (!failed.isEmpty()) {
+                System.out.println("cdc: not loaded, so their tables keep what they held: " + failed);
+                System.exit(1);
+            }
+        }
+    }
+
+    private static void load(Sources.Db db, String prefix, String url, String user, Sources.Book book,
+                             List<String> failed) {
+        try (Sources source = Sources.open(db, env(prefix + "_URL", url), env(prefix + "_USER", user),
+                 env(prefix + "_PASSWORD", null))) {
+            System.out.println(db.name().toLowerCase() + " after " + book.last() + ": " + source.load(book));
+        } catch (SQLException e) {
+            failed.add(db.name().toLowerCase() + " (" + e.getMessage() + ")");
         }
     }
 
@@ -117,7 +169,7 @@ public final class Main {
         Route route = Route.of(env("BROKERAGE_ROUTE", "both"));
         String bootstrap = route.kafka() ? env("KAFKA_BOOTSTRAP", null) : null;
         if (route.kafka()) {
-            KafkaTopics.create(bootstrap, CONTROL_TOPIC);
+            KafkaTopics.create(bootstrap, CONTROL_TOPIC, OWNERS_CONTROL_TOPIC);
         }
         MarketCalendar calendar = new MarketCalendar();
         LocalDate today = LocalDate.now(World.NEW_YORK);
@@ -151,8 +203,12 @@ public final class Main {
             Map<Feed, Long> viaSingleStore = new EnumMap<>(Feed.class);
             if (route.kafka()) {
                 Runtime.getRuntime().addShutdownHook(new Thread(topics::close));
-                KafkaTopics.create(bootstrap, CONTROL_TOPIC);
-                SinkWatch.start(env("CONNECT_URL", "http://connect:8083"), SINK);
+                KafkaTopics.create(bootstrap, CONTROL_TOPIC, OWNERS_CONTROL_TOPIC);
+                String connect = env("CONNECT_URL", "http://connect:8083");
+                SinkWatch.start(connect, SINK);
+                SinkWatch.start(connect, OWNERS_SINK, SinkWatch.whenClassified(env("NUNA_CATALOG_URI",
+                    "http://nuna-catalog:8181"), env("NUNA_WAREHOUSE", "lakehouse"), env("NUNA_TOKEN", null),
+                    Feed.BENEFICIAL_OWNERS.lakeTable(Feed.Path.KAFKA)));
                 Map<Feed, Long> ends = KafkaTopics.endOffsets(bootstrap);
                 Map<Feed, Long> start = lake.startOffsets(ends);
                 ends.forEach((feed, end) -> {
@@ -177,7 +233,7 @@ public final class Main {
             }
             // The reconciliation views read every lake table each feed has; a change feed makes its copy as it first
             // runs, which on a new lake is after the bootstrap made the views.
-            lake.reconViews();
+            lake.views();
             System.out.println("the world: " + settings + ", live from " + lake.pacedFrom() + " on the real clock, route "
                 + route + "; already sent through Kafka " + viaKafka + ", through SingleStore " + viaSingleStore);
             Publisher publisher = new Publisher(route, topics, store, store, lake, pacer::await, viaKafka,

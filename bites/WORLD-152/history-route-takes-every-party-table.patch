@@ -1,0 +1,16 @@
+Breaks: the parties history route takes every party table's changes
+Module: demo-datagen
+Test: ConnectorsTest#theBackOfficesConnectorsCaptureEachTableIntoItsHistoryTable
+diff --git a/demo/cdc/connectors/backoffice-history.json b/demo/cdc/connectors/backoffice-history.json
+index d2d7794c..b72460a9 100644
+--- a/demo/cdc/connectors/backoffice-history.json
++++ b/demo/cdc/connectors/backoffice-history.json
+@@ -6,7 +6,7 @@
+   "transforms.debezium.type": "org.apache.iceberg.connect.transforms.DebeziumTransform",
+   "iceberg.tables": "history.postgres.party.parties,history.postgres.party.accounts,history.postgres.party.account_roles,history.postgres.party.cip_checks,history.postgres.party.suitability_profiles,history.postgres.party.beneficial_owners,history.postgres.party.trusted_contacts,history.postgres.money_movement.payments,history.postgres.money_movement.ach_returns,history.postgres.money_movement.acats_transfers,history.postgres.compliance.aml_alerts,history.postgres.compliance.aml_cases,history.postgres.compliance.complaints",
+   "iceberg.tables.route-field": "_cdc.source",
+-  "iceberg.table.history.postgres.party.parties.route-regex": ".*[.]parties",
++  "iceberg.table.history.postgres.party.parties.route-regex": ".*part.*",
+   "iceberg.table.history.postgres.party.accounts.route-regex": ".*[.]accounts",
+   "iceberg.table.history.postgres.party.account_roles.route-regex": ".*[.]account_roles",
+   "iceberg.table.history.postgres.party.cip_checks.route-regex": ".*[.]cip_checks",

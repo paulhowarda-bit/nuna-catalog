@@ -39,7 +39,7 @@ class SingleStoreTablesTest {
                 fed.add(f.table);
             }
         }
-        assertThat(fed).hasSize(28);
+        assertThat(fed).hasSize(43);
         assertThat(pipelines.split("CREATE OR REPLACE PIPELINE ", -1)).hasSize(2);
         assertThat(pipelines).contains("CREATE OR REPLACE PIPELINE brokerage_world_to_lake AS LOAD DATA CONNECTOR 'ChangeFeedConnector'")
             .contains("\"singlestore.append-only\": \"true\"")
@@ -48,6 +48,26 @@ class SingleStoreTablesTest {
         assertThat(tables).contains("  lots JSON,").contains("  event_time DATETIME(6),")
             .contains("  locate_id TEXT,\n  PRIMARY KEY (seq)");
         assertThat(SingleStoreTables.columns(KIT).get(Feed.FINANCIAL_TRANSACTIONS)).last().isEqualTo("locate_id");
+    }
+
+    /**
+     * The compliance feeds' copies go under brokerage.compliance.singlestore, which only compliance's readers read (item
+     * 152); every other copy under brokerage.singlestore.
+     */
+    @Test
+    void theComplianceCopiesGoUnderTheComplianceNamespace() {
+        String pipelines = SingleStoreTables.pipelines();
+        java.util.List<String> own = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"iceberg\\.namespace\\.(\\w+)\": \"([\\w.]+)\"")
+            .matcher(pipelines);
+        while (m.find()) {
+            assertThat(m.group(2)).isEqualTo(Feed.COMPLIANCE_COPIES);
+            own.add(m.group(1));
+        }
+        assertThat(own).containsExactlyElementsOf(java.util.Arrays.stream(Feed.values())
+            .filter(f -> f.namespace.equals(Feed.COMPLIANCE)).map(f -> f.table).toList());
+        assertThat(own).hasSize(6);
+        assertThat(pipelines).contains("\"iceberg.namespace\": \"" + Feed.SINGLESTORE_COPIES + "\"");
     }
 
     /**

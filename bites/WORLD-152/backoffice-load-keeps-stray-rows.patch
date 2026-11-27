@@ -1,0 +1,16 @@
+Breaks: the back office load leaves rows the books no longer hold
+Module: demo-datagen
+Test: SourcesTest#theBackOfficeLoadWritesEveryRowOnceThenOnlyWhatChanged
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+index f9fb16c9..dd1c61d6 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+@@ -311,7 +311,7 @@ public final class Sources implements AutoCloseable {
+                     merge.addBatch();
+                     written++;
+                 }
+-                for (List<String> gone : held.values()) {
++                for (List<String> gone : List.<List<String>>of()) {
+                     set(delete, 1, typed(gone.get(key), t.columns.get(key).type()), t.columns.get(key).type());
+                     delete.addBatch();
+                     deleted++;

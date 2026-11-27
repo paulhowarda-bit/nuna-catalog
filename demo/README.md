@@ -198,26 +198,28 @@ The console offers two ways in:
   authorization code with PKCE, `nuna.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
   It names a user by `preferred_username`, so `ana` from Keycloak is the same user as `ana`'s token below.
 - **The token box** (`nuna.ui.dev-token-login=true`, off by default): paste a token minted by `demo/Mint.java`.
-  Machine users (`singlestore`, `lake`, `brokerage`, `cdc`, `engine-matrix`, `trino`) have tokens only.
+  Machine users (`singlestore`, `singlestore-feed`, `lake`, `brokerage`, `cdc`, `engine-matrix`, `trino`) have tokens only.
 
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
-| `ana` | in `~/.nuna-demo/people` | `demo-analysts` | create and modify on both catalogs: create namespaces, tables and views, read and write data, change, rename and drop them; make, merge and delete branches and tags, as `up` does as her (Branches and tags of the catalog, below) |
+| `ana` | in `~/.nuna-demo/people` | `demo-analysts` | create and modify on both catalogs, but nothing in `lakehouse`'s compliance namespaces (`cora`, below): create namespaces, tables and views, read and write data, change, rename and drop them; make, merge and delete branches and tags, as `up` does as her (Branches and tags of the catalog, below) |
 | `gary` | in `~/.nuna-demo/people` | `demo-grant-admins`, `demo-auditors` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused. As an auditor, the console's Audit page, and the audit table itself (below) |
-| `stella` | in `~/.nuna-demo/people` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
+| `stella` | in `~/.nuna-demo/people` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs, but not on `lakehouse`'s compliance namespaces |
 | `oscar` | in `~/.nuna-demo/people` | `demo-operators` | platform operator: DR freeze |
-| `presenter` | in `~/.nuna-demo/people` | all five groups above, and `demo-presenters` | everything, in one sign-in, for showing the demo (below) |
-| `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
+| `cora` | in `~/.nuna-demo/people` | `demo-compliance` | compliance (item 152): the only group that reads a `lakehouse` namespace named `compliance` and everything below it (`brokerage.compliance`, `history.postgres.compliance`), and the compliance topics in kafbat; describe on the rest of `lakehouse`, so she sees every name but no other data |
+| `presenter` | in `~/.nuna-demo/people` | all six groups above, and `demo-presenters` | everything, in one sign-in, for showing the demo (below) |
+| `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways, all but the brokerage world's change feeds. Its client, `singlestore-demo`, is no trusted engine, so SingleStore's reads of a flagged table get 403 (D20) |
+| `singlestore-feed` | token only | `demo-loaders` | create and modify; the brokerage world's change feeds in SingleStore (`brokerage_world_to_lake`) alone. Its client, `singlestore-feed-demo`, is a trusted engine (D17, item 308), so they write the flagged tables |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
-| `brokerage` | token only | `demo-loaders` | create and modify; the brokerage world's generator, whose bootstrap makes its namespaces, tables and views |
-| `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks: the brokerage world's `brokerage-lake`, and the CDC leg's |
+| `brokerage` | token only | `demo-loaders` | create and modify; the brokerage world's generator, whose bootstrap makes its namespaces, tables and views. Its client, `brokerage-world-demo`, is a trusted engine (item 308), as it counts and tags the flagged tables |
+| `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks: the brokerage world's `brokerage-lake`, and the CDC leg's. Its client, `kafka-connect-demo`, is a trusted engine (item 308), so they write the flagged tables |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 | `service-account-nuna-audit-tables` | Keycloak client `nuna-audit-tables`, client-credentials grant | `demo-audit-writers` | create and write on `nuna_audit` only: the audit table writer |
 | `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them, which Trino's own vouches for, so they read flagged tables with their row filter and column masks (D20) |
 
 Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
 plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
-data in the catalog, and of the four people only `ana` changes it. Try the console as `ana` and as `gary`.
+data in the catalog, and of the five people only `ana` changes it. Try the console as `ana` and as `gary`.
 Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token and ends
 Keycloak's session too (D16): Keycloak asks "Do you want to log out?" (the console keeps no ID token to skip
 that), then sends you back to the console, and the next sign-in asks for a password, so it changes user.
@@ -342,13 +344,13 @@ Accounts that run the demo rather than people in it:
 | SingleStore `root` | `~/.nuna-demo/secrets/singlestore-root` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
 | Silo `nunatest` | `~/.nuna-demo/secrets/silo-root` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>, by its access-key form: every bucket, its objects, users, policies and settings |
 | PostgreSQL `catalog` | none: the catalog's client certificate | the catalog's database, which only the catalog reaches over the network; not published outside the cluster (The catalog's database, above) |
-| PostgreSQL `backoffice` | `~/.nuna-demo/secrets/backoffice` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
-| Oracle `treasury` | `~/.nuna-demo/secrets/treasury` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
+| PostgreSQL `backoffice` | `~/.nuna-demo/secrets/backoffice` | the CDC leg's PostgreSQL, its owner, the back office's loader (`demo-datagen`'s `Main cdc`) and Debezium's login; `demo/demo.sh psql` |
+| Oracle `treasury` | `~/.nuna-demo/secrets/treasury` | the CDC leg's Oracle schema, owner of `BANK_PAYMENTS`, which `Main cdc` loads as it; `demo/demo.sh sqlplus` |
 | Oracle `SYS`, `SYSTEM` | `~/.nuna-demo/secrets/oracle` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
 | Oracle `c##dbzuser` | `~/.nuna-demo/secrets/debezium` | Debezium's LogMiner user |
 | CockroachDB `root` | none: the node's client certificate | the CDC leg's CockroachDB; `demo/demo.sh cockroach` |
 | CockroachDB `debezium` | `~/.nuna-demo/secrets/debezium` | Debezium's login: `SELECT` and `CHANGEFEED` on the `clearing` tables |
-| CockroachDB `clearing` | `~/.nuna-demo/secrets/clearing` | the clearing books' loader (`demo-datagen`'s `Main custody`, run by `cdc`): reads and writes the `clearing` tables |
+| CockroachDB `clearing` | `~/.nuna-demo/secrets/clearing` | the clearing books' loader (`demo-datagen`'s `Main cdc`, run by `cdc`): reads and writes the `clearing` tables |
 
 Tokens are valid for 7 days, and `up` mints new ones only when they are about to expire. Print them again
 (re-minted if they are about to expire; SingleStore's running pipelines are then replaced and Trino,
@@ -378,11 +380,12 @@ vended credentials, as any engine would):
   `eod-2026-11-09` and branch `surveillance-review` in the table; classified `internal` and under a legal hold.
 - `markets.fx.rates` (v3, evolved), `markets.equities.us.quotes` (v3) and `reference.countries` (v2, under a
   DR freeze).
-- No table is closed until classified (D27) for now: the toy `finance.ledger` tables that showed it are gone,
-  and item 152 brings it back on `brokerage.party.beneficial_owners`.
+- The toy `finance.ledger` tables that showed a table closed until classified (D27) are gone:
+  `brokerage.party.beneficial_owners` shows it now (The brokerage world, below).
 - View `markets.equities.eu.xetra_daily`, with two versions, in SingleStore's dialect.
 - Grants by SQL for the groups, plus two made through the API by `gary`.
-- Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`.
+- Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`; and the
+  brokerage world's writers' clients, `kafka-connect-demo`, `singlestore-feed-demo` and `brokerage-world-demo` (item 308).
 - The catalog's branch `dev`, with the next day's trades and rates committed on it, and its tag `sample`, made by
   `ana` through the API (Branches and tags of the catalog, below).
 
@@ -409,7 +412,7 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   time. A trading day's events fall between 07:00 and 17:00, so the world is quiet overnight, over weekends and on
   market holidays (the log says `quiet until <time>`). Every minute the generator also asks Kafka Connect whether
   the sink's task has failed, as it does when the catalog restarts, and restarts it if so.
-- Kafka: the generator writes plain JSON to nineteen topics, and Kafka Connect's Iceberg sink `brokerage-lake`
+- Kafka: the generator writes plain JSON to 34 topics, and Kafka Connect's Iceberg sink `brokerage-lake`
   (`demo/brokerage/connector.json`, as user `cdc`) routes each record to the table its `lake_table` field names,
   committing every 15 seconds. The tables must exist: the sink neither makes nor changes them.
 
@@ -417,7 +420,10 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   |---|---|
   | `brokerage.reference.calendar`, `.securities` | `brokerage.reference.calendar`, `.securities` |
   | `brokerage.markets.bars-5m`, `.prices-eod` | `brokerage.markets.bars_5m`, `.prices_eod` |
-  | `brokerage.party.accounts` | `brokerage.party.accounts` |
+  | `brokerage.party.accounts`, `.parties`, `.account-roles`, `.cip-checks`, `.suitability-profiles`, `.trusted-contacts` | `brokerage.party.accounts`, `.parties`, `.account_roles`, `.cip_checks`, `.suitability_profiles`, `.trusted_contacts` |
+  | `brokerage.party.beneficial-owners`, through a sink of its own, `brokerage-lake-owners` (`demo/brokerage/owners-connector.json`) | `brokerage.party.beneficial_owners` |
+  | `brokerage.money-movement.payments`, `.ach-returns`, `.acats-transfers` | `brokerage.money_movement.payments`, `.ach_returns`, `.acats_transfers` |
+  | `brokerage.compliance.sanctions-list`, `.sanctions-screens`, `.aml-alerts`, `.aml-cases`, `.surveillance-alerts`, `.complaints` | `brokerage.compliance.sanctions_list`, `.sanctions_screens`, `.aml_alerts`, `.aml_cases`, `.surveillance_alerts`, `.complaints` |
   | `brokerage.ledger.chart-of-accounts`, `.booking-schemes`, `.financial-transactions`, `.journal-lines`, `.posting-rejections`, `.balances-eod` | `brokerage.ledger.chart_of_accounts`, `.booking_schemes`, `.financial_transactions`, `.journal_lines`, `.posting_rejections`, `.balances_eod` |
   | `brokerage.clearing.cns-obligations`, `.settlements`, `.fails`, `.stock-record`, `.locates` | `brokerage.clearing.cns_obligations`, `.settlements`, `.fails`, `.stock_record`, `.locates` |
   | `brokerage.oms.order-events`, `.routes`, `.executions`, only while SingleStore is off | `brokerage.kafka.order_events`, `.routes`, `.executions` |
@@ -449,13 +455,44 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   SELECT * FROM lakehouse."brokerage.recon".cns_vs_fills;
   SELECT * FROM lakehouse."brokerage.clearing".fails ORDER BY fail_event_id;
   ```
+- The back office (item 152, `world/BackOffice.java`): the parties behind the accounts and their KYC records (roles,
+  CIP checks, suitability profiles, beneficial owners, trusted contacts), each change of a party, a suitability profile
+  or a trusted contact a new version; every payment the ledger books, with the ledger's payment id, template and
+  amount, through each change of status, ACH returns and ACATS transfers; and compliance: a synthetic sanctions list in
+  OFAC's SDN layout (never OFAC's data), screening at onboarding and of every wire, AML alerts and cases (structuring,
+  wires of $100,000 or more), wash-trade surveillance and complaints. Each versioned table has a view
+  `<table>_current`, beside it, of each key's latest version. Seeded: three cash deposits just under $10,000 on the
+  world's first three days, which open a structuring alert and a case closed with a SAR, and on its second day a wire
+  from a listed name, blocked and never booked, with its own case.
+  ```sql
+  SELECT case_type, status FROM lakehouse."brokerage.compliance".aml_cases_current;   -- as cora
+  SELECT * FROM lakehouse."brokerage.money_movement".payments WHERE status = 'blocked';
+  ```
 - Governance, once per lake: `brokerage.reference`'s tables are `public`, `brokerage.markets`' `internal`,
   `brokerage.party.accounts` `restricted` and `brokerage.ledger`'s tables and views `confidential`; namespaces
   `brokerage.party` and `brokerage.ledger` are regulated, marked after their tables are classified, and
   `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. On every `gen`, as item 151
   added them: `brokerage.clearing` and `brokerage.recon` are `confidential`, `brokerage.kafka` `internal`, and
   `brokerage.clearing` and `brokerage.kafka` have owners. The grants on all of
-  `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino.
+  `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino. On every `gen`, as item 152
+  added them: `brokerage.party`'s new tables are `restricted`, all but `beneficial_owners`; `brokerage.money_movement`
+  is `confidential` and `brokerage.compliance` `restricted`, both regulated and owned, each table classified first;
+  `brokerage.compliance.aml_cases` is under a legal hold. `brokerage.party.beneficial_owners` lands unclassified, so
+  the catalog refuses it to everyone (D27) and its sink, `brokerage-lake-owners`, fails at it while every other table
+  commits; once `stella` classifies the table (the console's Governance, or the classification attribute through the
+  API), the generator restarts that sink within a minute and the table fills. The tables with tax ids, birth dates,
+  addresses or bank account numbers are flagged (D20, item 308; `demo.sh`'s `FLAGGED_TABLES`):
+  `brokerage.party.parties` and `beneficial_owners`, `brokerage.money_movement.payments`, their copies under
+  `brokerage.singlestore`, and the CDC leg's `history.postgres` copies of the three and
+  `history.oracle.treasury.bank_payments` (flagged at each `cdc`, once its sinks have made them). Their writers, the
+  sinks, SingleStore's change feeds and the generator, are registered as trusted engines on every `up`, so they still
+  write them; Trino reads them for `ana`, and any client that is no trusted engine, SingleStore's own pipelines
+  among them, gets 403 on their data, as on
+  `markets.desks.positions` (below). No group has a row filter or column mask on them.
+- Grants (item 152): only `demo-compliance` (`cora`, and `presenter`) reads a namespace named `compliance` and all
+  below it. So `demo-analysts`' modify and `demo-stewards`' select are granted on each of `lakehouse`'s namespaces
+  beside the compliance ones (`demo.sh`'s `lake_grants`, on every `up`, `gen` and `cdc`), no longer on the catalog. A
+  namespace `ana` makes at the top of `lakehouse` gets her grant only at the next `up`, `gen` or `cdc`.
 - Routes (D50, amended 2026-11-24; backlog 238): the generator writes through the ways the switches give it, and
   takes the other way when one goes off.
 
@@ -463,14 +500,14 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   |---|---|---|---|---|
   | on | on | SingleStore, to `brokerage.trading.orders` | SingleStore, to `brokerage.trading.<table>` | Kafka, to its table above |
   | off | on | nowhere: the order events carry every state | topics `brokerage.oms.*`, through the sink to `brokerage.kafka.<table>` | Kafka |
-  | on | off | SingleStore | SingleStore | a SingleStore table of its own in database `brokerage` (`demo/singlestore/brokerage-feeds.sql`), keyed by `seq`, whose change feed copies it to `brokerage.singlestore.<table>`; the sixteen feeds run in one pipeline, `brokerage_world_to_lake` |
+  | on | off | SingleStore | SingleStore | a SingleStore table of its own in database `brokerage` (`demo/singlestore/brokerage-feeds.sql`), keyed by `seq`, whose change feed copies it to `brokerage.singlestore.<table>` (the compliance feeds' to `brokerage.compliance.singlestore.<table>`); the 31 feeds run in one pipeline, `brokerage_world_to_lake` |
 
   The tables are made from `demo-datagen` (`Main sql demo/singlestore`; a test checks the committed files match).
   Before a way goes off, demo.sh stops the generator and runs the bootstrap job again as `drain kafka` or
   `drain singlestore`, which waits (up to three minutes) until what went that way is all in the lake; if it is not,
   the way stays on; SingleStore going off always drains, as the order management system's tables are its. The
   generator then starts on its new route and counts what each way carried, so a restart still sends nothing twice.
-  The sixteen change feeds share one pipeline (`singlestore.tables` lists them), so one
+  The 31 change feeds share one pipeline (`singlestore.tables` lists them), so one
   Java extractor in SingleStore's memory: a pipeline each would reserve 384 MB apiece, 4.2 GB against SingleStore's
   2,764 MB. They run only while Kafka is off. `brokerage.singlestore` is `restricted` and regulated, as it holds
   copies of the party, ledger and clearing tables.
@@ -628,7 +665,7 @@ all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 (`pipelines_iceberg_data_workers_heap_size`). Each change feed's extractor gets 384 MB
 (`pipelines_cdc_java_heap_size`), so the brokerage world's two running feeds, the orders' and the order management
 system's (which took the place of the toy `ops.orders_to_lake`, item 151), reserve 768 MB, and
-`brokerage_world_to_lake`, while Kafka is off, a third 384 MB: it runs the sixteen feeds of the Kafka-off route in
+`brokerage_world_to_lake`, while Kafka is off, a third 384 MB: it runs the 31 feeds of the Kafka-off route in
 one extractor for that reason (backlog 238).
 
 ## Trino and CloudBeaver
@@ -837,16 +874,23 @@ demo/demo.sh cdc
 starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino, the audit table writer, the maintenance
 worker and the brokerage world's generator to make room for it:
 
-- `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
-- `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
-  in PDB `FREEPDB1` (`demo/cdc/oracle.sql`, run as the database starts; it restarts the database once).
+- `backoffice`: a PostgreSQL with logical WAL, database `backoffice` with the brokerage world's back office (item
+  152; `demo/cdc/backoffice.sql`): schema `party` (`parties`, `accounts`, `account_roles`, `cip_checks`,
+  `suitability_profiles`, `beneficial_owners`, `trusted_contacts`), `money_movement` (`payments`, `ach_returns`,
+  `acats_transfers`) and `compliance` (`aml_alerts`, `aml_cases`, `complaints`), each record at its latest version.
+- `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.BANK_PAYMENTS`
+  (each ACH and wire as the firm's bank sees it) in PDB `FREEPDB1` (`demo/cdc/oracle.sql`, run as the database
+  starts; it restarts the database once).
 - `cockroach`: CockroachDB 25.4.20 (the version the tests use), one node, database `custody` with the brokerage
   world's clearing books in schema `clearing` (`demo/cdc/cockroach.sql`, run as the node first starts; item 151):
   `stock_record` (the last end of day's), `cns_obligations` and `locates` (the last five days'), and `fails`
-  (each fail's latest state). Each `cdc` loads them as they stand after the world's last end of day, as login
-  `clearing`, writing only what changed (`demo-datagen`'s `Main custody`, the brokerage world's job), so each
-  change is one row of its history. A leg begun before item 151, whose CockroachDB held a toy
-  `positions.holdings`, starts anew once. The node runs secure, so
+  (each fail's latest state).
+- Each `cdc` loads all three as they stand after the world's last end of day, writing only what changed
+  (`demo-datagen`'s `Main cdc`, the brokerage world's job; CockroachDB as login `clearing`, PostgreSQL as
+  `backoffice`, Oracle as `treasury`), so each change is one row of its history. The first `cdc` writes each record
+  once; the world's earlier versions are only in the lake's own tables. A leg begun before item 152, whose databases
+  held the toy `settlement.instructions` and `TREASURY.PAYMENTS`, starts anew once.
+- CockroachDB's node runs secure, so
   passwords are checked, but accepts SQL without TLS. A single development node needs no licence key and is
   not throttled, and its diagnostics reporting is off.
 - On `connect`, the stack's Kafka Connect 4.2.2 (distributed mode, in every `up`), six connectors
@@ -856,17 +900,16 @@ worker and the brokerage world's generator to make room for it:
 
 | Source | Kafka topic | Iceberg table in `lakehouse` |
 |---|---|---|
-| `settlement.instructions` | `backoffice.settlement.instructions` | `history.postgres.settlement.instructions` |
-| `TREASURY.PAYMENTS` | `oracle.TREASURY.PAYMENTS` | `history.oracle.treasury.payments` |
+| `party.parties` and the rest of the back office | `backoffice.party.parties` and so on | `history.postgres.party.parties` and so on, in `history.postgres.party`, `.money_movement` and `.compliance` |
+| `TREASURY.BANK_PAYMENTS` | `oracle.TREASURY.BANK_PAYMENTS` | `history.oracle.treasury.bank_payments` |
 | `clearing.stock_record`, `.cns_obligations`, `.fails`, `.locates` | `cockroach.clearing.stock_record` and so on | `history.cockroach.clearing.stock_record` and so on |
 
 Each table is a history: one row per change, appended, never updated. The sink's `DebeziumTransform` adds a
 struct column `_cdc`: `op` (`I`, `U` or `D`), `ts` (when Debezium read the change), `offset` (its Kafka
 offset), `source` and `target` (the source table and the Iceberg table) and `key`. A deleted row is written
-as it was before the delete. `cdc` waits for each snapshot (4 rows in PostgreSQL's and Oracle's tables, and as
-many as the clearing books loaded in CockroachDB's), then updates, deletes and inserts in PostgreSQL and Oracle
-and waits for those changes: 8 rows in the PostgreSQL history and 7 in Oracle's. CockroachDB's change with the
-world: each later `cdc` loads the days since.
+as it was before the delete. `cdc` makes the history namespaces first, classified as the lake namespaces whose
+rows they record, and waits for each table's snapshot: as many rows as the job loaded into it. Every table changes
+with the world: each later `cdc` loads the days since.
 
 Make more changes and watch them arrive within about 10 seconds (the sinks commit every 5 seconds): kafbat
 shows Debezium's change events in the topics above, and the console shows each sink commit as a snapshot of
@@ -885,12 +928,13 @@ The people have accounts in all three databases, with their Keycloak passwords:
 
 | | PostgreSQL `backoffice` | Oracle `FREEPDB1` | CockroachDB `custody` |
 |---|---|---|---|
-| `ana` | reads and writes every table; creates in the database and its schemas; alters and drops `settlement` and its table (a member of their owner, `settlement_owner`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` | every privilege on schema `clearing` and its tables; creates schemas in the database |
+| `ana` | reads and writes `party` and `money_movement`; creates in the database and its schemas; alters and drops them and their tables (a member of their owner, `backoffice_owner`); not `compliance` | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` | every privilege on schema `clearing` and its tables; creates schemas in the database |
 | `gary` | superuser | DBA | `admin` |
-| `stella`, `oscar` | read every table (`pg_read_all_data`) | `SELECT ANY TABLE` | `SELECT` on the `clearing` tables and on every table `ana` creates |
+| `stella`, `oscar` | read `party` and `money_movement` | `SELECT ANY TABLE` | `SELECT` on the `clearing` tables and on every table `ana` creates |
+| `cora` | reads `compliance` only | `SELECT ANY TABLE` | as `stella` |
 | everyone | metadata: statistics, settings and activity (`pg_monitor`) | metadata: the data dictionary and `V$` views (`SELECT_CATALOG_ROLE`) | |
 
-`backoffice` (owner of the database, Debezium's login), `treasury` (owner of `PAYMENTS`), `c##dbzuser`
+`backoffice` (owner of the database, the loader's and Debezium's login), `treasury` (owner of `BANK_PAYMENTS`), `c##dbzuser`
 (Debezium's LogMiner user), and CockroachDB's `debezium`, `clearing` and `root` run the leg. In PostgreSQL and
 CockroachDB a table `ana` creates is hers: besides her, only `gary` can alter or drop it.
 
@@ -902,8 +946,9 @@ statement as it runs. CloudBeaver Community has no CockroachDB driver, so the cu
 PostgreSQL driver, whose protocol CockroachDB speaks.
 
 ```sql
-SELECT * FROM settlement.instructions ORDER BY instruction_id;   -- backoffice
-SELECT * FROM treasury.payments ORDER BY payment_id;             -- treasury
+SELECT * FROM money_movement.payments ORDER BY payment_id;       -- backoffice
+SELECT * FROM compliance.aml_cases ORDER BY case_id;             -- backoffice, as cora
+SELECT * FROM treasury.bank_payments ORDER BY payment_id;        -- treasury
 SELECT * FROM clearing.fails ORDER BY fail_id;                   -- custody
 ```
 
@@ -913,16 +958,17 @@ No query engine runs beside the leg: Trino is stopped for its memory. After `dem
 history in CloudBeaver's Trino connection, oldest change first (`offset` is a keyword in Trino, so it is quoted):
 
 ```sql
-SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
+SELECT "_cdc".op, "_cdc".ts, payment_id, version, status FROM lakehouse."history.postgres.money_movement".payments
 ORDER BY "_cdc"."offset";
-SELECT "_cdc".op, "_cdc".ts, payment_id, status FROM lakehouse."history.oracle.treasury".payments
+SELECT "_cdc".op, "_cdc".ts, payment_id, status FROM lakehouse."history.oracle.treasury".bank_payments
 ORDER BY "_cdc"."offset";
 SELECT "_cdc".op, "_cdc".ts, fail_id, status FROM lakehouse."history.cockroach.clearing".fails
 ORDER BY "_cdc"."offset";
 ```
 
 - History only: the Apache Iceberg sink appends, so there is no table of the rows as they are now. A view
-  over the history (the newest row per key that is not a `D`) gives that.
+  over the history (the newest row per key that is not a `D`) gives that; the lake's own `<table>_current` views
+  (The brokerage world, above) give each record's latest version as the world sent it.
 - Types: the sink maps only Kafka Connect's own logical types, so both connectors send times as those
   (`time.precision.mode=connect`, milliseconds), and every timestamp lands as `timestamptz`. A PostgreSQL
   `timestamptz` column would arrive as a string instead, so the source table uses `timestamp(3)`. Numbers
@@ -934,7 +980,8 @@ ORDER BY "_cdc"."offset";
   PostgreSQL's.
 - Oracle's upper-case column names are renamed to lower case in the sink (`oracle-history.json`), column by
   column, the key's too: a column added later arrives in upper case.
-- The history tables are written as `cdc`, group `demo-loaders`: `ana` reads them like any other table.
+- The history tables are written as `cdc`, group `demo-loaders`: `ana` reads them like any other table, except
+  `history.postgres.compliance`, which only `cora` reads.
 - The first `cdc` starts the databases from their SQL files on new volumes, and writes configmap `cdc-begun` once
   its changes reach Iceberg. Every later `cdc` starts the databases from their volumes, and the connectors carry
   on from their offsets into the same history tables, without snapshotting again. CockroachDB's connector carries

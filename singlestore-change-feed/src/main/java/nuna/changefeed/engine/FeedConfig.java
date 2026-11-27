@@ -21,7 +21,8 @@ import org.apache.iceberg.catalog.TableIdentifier;
  *   <li>{@code iceberg.catalog.*}: the Iceberg catalog's properties, without the prefix. A REST catalog unless
  *       {@code type} or {@code catalog-impl} says otherwise: {@code uri}, {@code warehouse}, {@code token},
  *       {@code header.X-Iceberg-Access-Delegation}, ...
- *   <li>{@code iceberg.namespace} (levels separated by dots) and {@code iceberg.table}: the table written.
+ *   <li>{@code iceberg.namespace} (levels separated by dots) and {@code iceberg.table}: the table written. With
+ *       {@code singlestore.tables}, {@code iceberg.namespace.<table>} names one table's namespace instead.
  *   <li>{@code iceberg.format-version} (default 2) and {@code iceberg.partition-by} (default none): used only
  *       when the connector creates the table.
  *   <li>{@code commit.interval.ms} (default 5000): how long changes collect before a commit.

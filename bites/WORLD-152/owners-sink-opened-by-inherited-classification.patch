@@ -1,0 +1,16 @@
+Breaks: the owners' sink restarts on the classification beneficial_owners inherits from brokerage.party (D27)
+Module: demo-datagen
+Test: SinkWatchTest#aTableIsClassifiedOnlyByAClassificationAtItsOwnLevel
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/SinkWatch.java b/demo-datagen/src/main/java/nuna/datagen/live/SinkWatch.java
+index 99033887..d4b72713 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/SinkWatch.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/SinkWatch.java
+@@ -80,7 +80,7 @@ public final class SinkWatch {
+         JsonNode body = JSON.readTree(governance);
+         String own = body.path("target").path("kind").asString() + ":" + body.path("target").path("id").asString();
+         for (JsonNode a : body.path("attributes")) {
+-            if (a.path("attribute").asString().equals("classification") && a.path("level").asString().equals(own)) {
++            if (a.path("attribute").asString().equals("classification")) {
+                 return true;
+             }
+         }

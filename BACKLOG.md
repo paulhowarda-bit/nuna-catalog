@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 4 S, 11 M, 5 L, 4 XL.
+**32 open:** 9 S, 13 M, 4 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,7 +25,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
-| [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
@@ -36,6 +35,15 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [304](backlog/304.md) | S | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | one test's assertion and its bite recorded again in one module | 2026-11-27 |
 | [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
 | [306](backlog/306.md) | S | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | the bite's Test: line and a check that it still bites | 2026-11-27 |
+| [309](backlog/309.md) | S | Purging a table a ref still names answers 500, not a refusal | one missing case in one route and its test | 2026-11-27 |
+| [310](backlog/310.md) | S | OPA's row-filter and column-mask answers fail when the request names no Trino catalog | a null check at one boundary and a test | 2026-11-27 |
+| [311](backlog/311.md) | S | GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400 | a parameter's parsing and a test | 2026-11-27 |
+| [312](backlog/312.md) | ? | The console says a grants export is audited, but the export writes no audit record |  | 2026-11-27 |
+| [313](backlog/313.md) | M | Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240) | some dozen messages across four modules, and the tests that quote them | 2026-11-27 |
+| [314](backlog/314.md) | S | Grafana dashboards and demo.sh messages name backlog items and D rows | text only | 2026-11-27 |
+| [315](backlog/315.md) | S | Console: small faults the documentation writers found | five small changes in the console, Atelier's to settle where they touch design | 2026-11-27 |
+| [316](backlog/316.md) | ? | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | one investigation and one command | 2026-11-27 |
+| [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
 
 ## Open items in full
 
@@ -941,39 +949,6 @@ table's own files; two users in different groups get different results; the copi
 expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
 table's own prefix.
 
-### 152. Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode
-
-- Decided: 2026-11-22, D48
-- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo-datagen/ demo/cdc/ demo/k8s/cdc.yaml demo/k8s/keycloak-realm.json demo/k8s/demo-values.yaml demo/CloudBeaverUsers.java demo/demo.sh demo/README.md
-- Effort: L, the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS
-
-Third phase of D48 (`docs/design/brokerage-world.md`).
-
-What to build:
-- PostgreSQL `backoffice`, replacing the toy `settlement.instructions`: parties, accounts, roles, CIP checks,
-  suitability profiles, beneficial owners, trusted contacts, payments, ACH returns, ACATS transfers, complaints, AML
-  alerts and cases. Oracle `treasury`: bank payments, replacing the toy `PAYMENTS`. Their histories land in
-  `brokerage.party`, `brokerage.money_movement` and `brokerage.compliance` through Debezium and the Iceberg sink, with
-  current-state views; the backfill writes the same histories in the sink's shape.
-- Sanctions screening against a synthetic list in OFAC's SDN layout; surveillance alerts; seeded structuring deposits
-  and one sanctions match.
-- Governance: the classifications and regulated namespaces of the design's table; tax ids, birth dates, addresses and
-  bank account numbers flagged (D20); a legal hold on `compliance.aml_cases`; `party.beneficial_owners` landing
-  unclassified, so the catalog refuses it (D27) until a steward classifies it; a new person `cora` (password
-  `cora-demo`) in a new group `demo-compliance`, the only group that reads `compliance`, in Keycloak, CloudBeaver and
-  the catalog's grants.
-- `demo.sh live`: with the CDC leg up, the sources loaded with the month's end state, Debezium started without
-  snapshotting those rows, the next business day played at a compressed clock; the ledger's transactions and postings
-  on Kafka topics the Iceberg sink writes to `brokerage.ledger`, visible in kafbat.
-- The events the demo kit adds (item 155), as its templates land.
-
-What done looks like: a live day reaches every history table with no gap and no duplicate against the backfill (a
-count per table and key); `ana` is refused `compliance` and `cora` reads it; a snapshot expiry on `aml_cases` is
-refused while the hold stands; `stella` classifying `beneficial_owners` ends its refusal.
-
-Choice made (Paul may overrule): one new person, `cora`, for compliance.
-
 ### 153. Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT
 
 - Decided: 2026-11-22, D48
@@ -1464,6 +1439,160 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\bites\con
 Done when the bite names the test that now covers the break (the renamed method, if it still fails on the break, or
 another), and it is judged BITES in the overnight run.
 
+### 309. Purging a table a ref still names answers 500, not a refusal
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/test/
+- Effort: S, one missing case in one route and its test
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+`CatalogObjectStore.claimPurge` answers `Refused(REFERENCED)` while a ref's cut names the object (its Javadoc,
+`catalog-store-api/src/main/java/nuna/catalog/store/CatalogObjectStore.java:109`), but
+`LifecycleRoutes.claimPurge` (`catalog-server/.../governance/LifecycleRoutes.java:232-242`) has cases for HELD,
+FROZEN, NOT_DUE and NOT_HOLDER only, so REFERENCED falls to `default -> throw new IllegalStateException(...)`: very
+likely a 500 to the maintenance worker. Read from the code, not reproduced. `RefRoutes` and `NamespaceRoutes`
+already answer REFERENCED as a refusal.
+
+What done looks like: claimPurge answers REFERENCED with a 409 that names the ref, audited as the other refusals
+are, and a test (on every store) claims the purge of a table a tag names and gets it.
+
+### 310. OPA's row-filter and column-mask answers fail when the request names no Trino catalog
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java, catalog-server/src/test/
+- Effort: S, a null check at one boundary and a test
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+`OpaAnswers.answer` (`catalog-server/.../security/OpaAnswers.java:115`) calls
+`table.catalog().toLowerCase(Locale.ROOT)` on the `catalogName` read from Trino's body (line 78), with no check that
+it is there. A body without it throws NullPointerException: very likely a 500 to Trino rather than "no filter".
+Read from the code, not reproduced. `/opa/v1` takes no token, so this is reachable by any caller.
+
+What done looks like: a missing or blank catalog, schema or table name answers as for an unknown catalog (no
+filter, no mask) or as a 400, whichever OPA's contract asks for, with a test for each.
+
+### 311. GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java, catalog-server/src/test/
+- Effort: S, a parameter's parsing and a test
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+`MaintenanceRoutes` binds `jobs` (and `days`) as `Integer` (`catalog-server/.../governance/MaintenanceRoutes.java:412`).
+A docs writer found `?jobs=abc` answers 500: the type mismatch is not turned into the catalog's 400 error shape.
+Seen by the writer; check whether other routes with numeric parameters do the same.
+
+What done looks like: a malformed number answers 400 BadRequestException naming the parameter, here and on any other
+route that binds a number, with a test.
+
+### 312. The console says a grants export is audited, but the export writes no audit record
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/resources/nuna/ui/governance.js, or catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java and RowColumnReadRoutes.java
+- Effort: S to M: either the console's words or an audit record for each export
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+The export dialog says "The export is audited." (`catalog-server/src/main/resources/nuna/ui/governance.js:270`),
+but `GrantRoutes.export` and `RowColumnReadRoutes` write no audit record when grants or rules are exported. The
+console promises what the server does not do.
+
+What done looks like: catalog-security decides whether an export must be audited. If so, each export writes a
+record (who, which catalog, how many grants) with a test; if not, the console's sentence goes.
+
+### 313. Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240)
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/, catalog-security/src/main/java/, catalog-audit-tables/src/main/java/, their tests
+- Effort: M, some dozen messages across four modules, and the tests that quote them
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+Messages that reach API clients carry internal decision and backlog tags, which mean nothing to a reader
+outside the project: `GrantRoutes.java:469`, `RuleRoutes.java:144` and `:238`, `TokenAuthenticator.java:153`,
+`RuleColumns.java:81`, `:96` and `:128`, `AuditTrail.java:85`, `FlagsAboveTables.java:90`, `CatalogStorage.java:239`,
+`StoreWiring.java:94`, `EventsReader.java:569` (a grep for a quoted string with `(D<n>` or `(backlog <n>`). The
+documentation quotes these messages up to the tag and then "…".
+
+What done looks like: no message a client or an operator reads names a D row, a backlog item or a milestone; the
+tags stay in comments. A test (or a check in the fast build) scans message strings for them.
+
+### 314. Grafana dashboards and demo.sh messages name backlog items and D rows
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: deploy/grafana/, demo/demo.sh
+- Effort: S, text only
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+Panel titles and descriptions in `deploy/grafana/dashboards/nuna-catalog.json` name "backlog 44, D43" (line 125),
+"build plan R7, M8" (131), "backlog 261" (408, 475, 542) and "D14" (996, 1204); check the alert rules in
+`deploy/grafana/rules/` too. `demo/demo.sh` says "backlog 281" in two messages the user reads (lines 2211 and 2214).
+An operator at work reads these with no access to the backlog.
+
+What done looks like: the words say what the tag stood for (a draft target, a shared credential epoch) and name no
+internal item; `AlertRulesTest` still passes.
+
+### 315. Console: small faults the documentation writers found
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/resources/nuna/ui/
+- Effort: S, five small changes in the console, Atelier's to settle where they touch design
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+- The Maintenance page's "Last night" time axis draws its labels over each other.
+- `health.js:428` maps a source `default` to "built-in", but the server sends `built-in` for built-in values, so
+  the mapping is dead and a real `default` would be misnamed.
+- The merge preview says "Needs create on … and write on each table." (`refs.js:1120`), but views and definition
+  changes need modify.
+- The console's favicon is still the old "F" mark.
+- `browse.js`'s header comment still names the old Governance and Grants tabs.
+
+What done looks like: each fixed, or Atelier says why it stays.
+
+### 316. Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: demo/
+- Effort: S to M, one investigation and one command
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+- In the running demo (commit a9c7ea81), `nuna_audit.audit.events` has no snapshot although the audit tables
+  pod is Running: the audit summary's snapshot id is null and Audit shows nothing. Find why the writer commits
+  nothing.
+- `demo/demo.sh sql` opens a SingleStore prompt in database `ops` (line 26), which the feed setup drops
+  (lines 1088-1090 and 1207). Not tested.
+
+What done looks like: the writer commits within its interval and Audit shows records; `demo.sh sql` opens a
+database that exists.
+
+### 317. Internal documents disagree with the code
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: demo/README.md, deploy/README.md, deploy/helm/, deploy/local/, docs/, catalog-maintenance/README.md, catalog-tests-engines/README.md, build-plan.md
+- Effort: M, many small corrections across the internal Markdown, each checked against the code
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+The documentation site was written from the code; these internal documents say otherwise:
+- `demo/README.md`: a "Snapshots" tab (now History); 3.8 GB (4,210 MiB) and 1.5 GB (1,472 MiB); the pinned list
+  misses metrics, and metrics are tail-sampled, not sampled at 1; ana's access from `print_access` is not "select on
+  both"; sign-out sends `id_token_hint` (`auth.js`), not "no ID token".
+- `deploy/README.md` and the chart's `values.yaml` comments miss the settings classes; `deploy/README.md` misses the
+  `pg_monitor` and `VIEWCLUSTERSETTING` grants; `deploy/local` values comments still name Docker Desktop.
+- `docs/observability/health-page.md` uses `#p=health` (now `#p=service`); `docs/observability/dashboards-and-alerts.md`
+  gives old counts (29 alert rules); `catalog-maintenance/README.md` says "Health tab"; `docs/refs.md` uses old
+  console words; `docs/install-at-work.md`'s image table is out of date; `build-plan.md` M8's SLO lines and
+  `catalog-tests-engines/README.md` are stale.
+
+What done looks like: each corrected from the code. The public documentation is `docs/site/`; where an internal
+document only repeats it, it may point there instead.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1606,6 +1735,7 @@ another), and it is judged BITES in the overnight run.
 | [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [151](backlog/151.md) | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | done | 2026-11-26 |
+| [152](backlog/152.md) | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | done | 2026-11-27 |
 | [155](backlog/155.md) | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | done | 2026-11-26 |
 | [156](backlog/156.md) | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | done | 2026-11-25 |
 | [157](backlog/157.md) | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | done | 2026-11-25 |
@@ -1747,3 +1877,4 @@ another), and it is judged BITES in the overnight run.
 | [300](backlog/300.md) | Console: on a phone the Reading menu may run past the window and main may end in an ellipsis (from 299) | done | 2026-11-26 |
 | [301](backlog/301.md) | A documentation site: every console page and command, installation, configuration, API and operations, as static web pages | done | 2026-11-27 |
 | [307](backlog/307.md) | The console links to the documentation, served at /docs/ from the server | done | 2026-11-27 |
+| [308](backlog/308.md) | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | done | 2026-11-27 |

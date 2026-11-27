@@ -40,6 +40,29 @@ public enum Feed {
     FAILS(Path.KAFKA, "brokerage.clearing.fails", "brokerage.clearing", "fails"),
     STOCK_RECORD(Path.KAFKA, "brokerage.clearing.stock-record", "brokerage.clearing", "stock_record"),
     LOCATES(Path.KAFKA, "brokerage.clearing.locates", "brokerage.clearing", "locates"),
+    // The back office (item 152): the parties behind the accounts and their KYC records, each change of a party, a
+    // suitability profile or a trusted contact a new version; beneficial_owners has a sink connector of its own
+    // (demo/brokerage/owners-connector.json), as its table lands unclassified in a regulated namespace (D27).
+    PARTIES(Path.KAFKA, "brokerage.party.parties", "brokerage.party", "parties"),
+    ACCOUNT_ROLES(Path.KAFKA, "brokerage.party.account-roles", "brokerage.party", "account_roles"),
+    CIP_CHECKS(Path.KAFKA, "brokerage.party.cip-checks", "brokerage.party", "cip_checks"),
+    SUITABILITY_PROFILES(Path.KAFKA, "brokerage.party.suitability-profiles", "brokerage.party", "suitability_profiles"),
+    BENEFICIAL_OWNERS(Path.KAFKA, "brokerage.party.beneficial-owners", "brokerage.party", "beneficial_owners"),
+    TRUSTED_CONTACTS(Path.KAFKA, "brokerage.party.trusted-contacts", "brokerage.party", "trusted_contacts"),
+    // Money movement (item 152): each payment's every change of status, tied to the ledger's money transactions (kit
+    // templates 30 to 35 and 70 to 77: the same payment id and amount), ACH returns (74, 75) and ACATS transfers (82
+    // to 85: the same control number).
+    PAYMENTS(Path.KAFKA, "brokerage.money-movement.payments", "brokerage.money_movement", "payments"),
+    ACH_RETURNS(Path.KAFKA, "brokerage.money-movement.ach-returns", "brokerage.money_movement", "ach_returns"),
+    ACATS_TRANSFERS(Path.KAFKA, "brokerage.money-movement.acats-transfers", "brokerage.money_movement", "acats_transfers"),
+    // Compliance (item 152): the synthetic sanctions list in OFAC's SDN layout and every screen against it, AML alerts
+    // and cases, surveillance alerts and complaints. Read only by demo-compliance (demo.sh lake_grants).
+    SANCTIONS_LIST(Path.KAFKA, "brokerage.compliance.sanctions-list", "brokerage.compliance", "sanctions_list"),
+    SANCTIONS_SCREENS(Path.KAFKA, "brokerage.compliance.sanctions-screens", "brokerage.compliance", "sanctions_screens"),
+    AML_ALERTS(Path.KAFKA, "brokerage.compliance.aml-alerts", "brokerage.compliance", "aml_alerts"),
+    AML_CASES(Path.KAFKA, "brokerage.compliance.aml-cases", "brokerage.compliance", "aml_cases"),
+    SURVEILLANCE_ALERTS(Path.KAFKA, "brokerage.compliance.surveillance-alerts", "brokerage.compliance", "surveillance_alerts"),
+    COMPLAINTS(Path.KAFKA, "brokerage.compliance.complaints", "brokerage.compliance", "complaints"),
     // The firm's books and reporting (item 153). Asset servicing: each corporate action as announced, each account's
     // entitlement at the ex-date and each payment.
     CORPORATE_ACTIONS(Path.KAFKA, "brokerage.reference.corporate-actions", "brokerage.reference", "corporate_actions"),
@@ -72,6 +95,12 @@ public enum Feed {
     /** Where the SingleStore feeds land when they go through Kafka: the mirror of {@link #SINGLESTORE_COPIES}. */
     public static final String KAFKA_COPIES = "brokerage.kafka";
 
+    /**
+     * Where the compliance feeds' SingleStore copies land (item 152): under {@code brokerage.compliance}, whose grants,
+     * classification and regulated mark they inherit, so only its readers (demo-compliance) read them.
+     */
+    public static final String COMPLIANCE = "brokerage.compliance", COMPLIANCE_COPIES = COMPLIANCE + ".singlestore";
+
     /** The path the feed takes while both are up. */
     public final Path path;
     /** The Kafka topic the feed goes out on when it goes through Kafka; none for the orders. */
@@ -94,8 +123,9 @@ public enum Feed {
 
     /**
      * The lake table the feed lands in through a path: through its home path, {@code namespace.table}; through the other,
-     * the copy under {@link #SINGLESTORE_COPIES} (a Kafka feed through SingleStore) or {@link #KAFKA_COPIES} (a
-     * SingleStore feed through Kafka). The orders go through SingleStore only.
+     * the copy under {@link #SINGLESTORE_COPIES} (a Kafka feed through SingleStore; a compliance feed's under
+     * {@link #COMPLIANCE_COPIES}) or {@link #KAFKA_COPIES} (a SingleStore feed through Kafka). The orders go
+     * through SingleStore only.
      */
     public String lakeTable(Path via) {
         if (via == path) {
@@ -104,13 +134,16 @@ public enum Feed {
         if (this == ORDERS) {
             throw new IllegalArgumentException("the orders go through SingleStore only");
         }
+        if (namespace.equals(COMPLIANCE)) {
+            return COMPLIANCE_COPIES + "." + table;
+        }
         return (path == Path.KAFKA ? SINGLESTORE_COPIES : KAFKA_COPIES) + "." + table;
     }
 
     /** Whether the feed carries the world's days (and is tagged at each end of day), not reference data sent once. */
     public boolean daily() {
         return switch (this) {
-            case CALENDAR, SECURITIES, CHART_OF_ACCOUNTS, BOOKING_SCHEMES, ACCOUNTS, ORDERS -> false;
+            case CALENDAR, SECURITIES, CHART_OF_ACCOUNTS, BOOKING_SCHEMES, ACCOUNTS, SANCTIONS_LIST, ORDERS -> false;
             default -> true;
         };
     }

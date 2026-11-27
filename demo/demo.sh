@@ -118,7 +118,7 @@ JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # people's passwords, which up writes to $PEOPLE_FILE.
 SECRETS="$RUN/secrets"
 PEOPLE_FILE="$RUN/people"
-PEOPLE=(ana gary stella oscar presenter)
+PEOPLE=(ana gary stella oscar presenter cora)
 # The catalog's database's CA and certificates (db_tls), kept by down and wipe.
 DB_TLS="$RUN/db-tls"
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
@@ -300,10 +300,11 @@ s2() {
     2> >(grep -v -e 'getopt: command not found' -e 'Using a password on the command line' >&2)
 }
 
-# A SQL file from demo/singlestore, with the singlestore user's catalog token and the root password put in (the
-# pipelines' CREDENTIALS).
+# A SQL file from demo/singlestore, with the singlestore user's catalog token, the singlestore-feed user's (the
+# brokerage world's change feeds', item 308) and the root password put in (the pipelines' CREDENTIALS).
 s2_file() {
   sed -e "s|\${SINGLESTORE_TOKEN}|$(token_of singlestore)|g" \
+    -e "s|\${SINGLESTORE_FEED_TOKEN}|$(token_of singlestore-feed)|g" \
     -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$(secret_of singlestore-root)|g" "$REPO/demo/singlestore/$1" | s2
 }
 
@@ -411,7 +412,7 @@ publish_tokens() {
   k create secret generic demo-trino-token --from-literal=token="$(token_of trino)" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-people-tokens --from-literal=ana="$(token_of ana)" --from-literal=gary="$(token_of gary)" \
     --from-literal=stella="$(token_of stella)" --from-literal=oscar="$(token_of oscar)" \
-    --from-literal=presenter="$(token_of presenter)" --dry-run=client -o yaml \
+    --from-literal=presenter="$(token_of presenter)" --from-literal=cora="$(token_of cora)" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
   k create secret generic demo-cdc-token --from-literal=token="$(token_of cdc)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
@@ -717,16 +718,25 @@ wait_for_console() {
 # demo-grant-admins and oscar's demo-operators may hold no grant at all, so they hold none. The maintenance worker's
 # demo-maintenance holds write on lakehouse, which it maintains (D30). presenter's demo-presenters holds every
 # privilege on every catalog, the audit tables' included, against the separation of duties (Paul, 2026-11-25: D18
-# amended; backlog 273).
+# amended; backlog 273). In lakehouse, ana's and stella's groups read and change every namespace but the compliance
+# namespaces, which only cora's demo-compliance reads (item 152): with no DENY, their grants go on the namespaces
+# around compliance rather than on the catalog (lake_grants).
 grants() {
   say "granting the demo groups and the engine matrix their privileges (by SQL)"
   k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
+-- Before item 152 demo-analysts held modify and demo-stewards select on all of lakehouse; lake_grants grants them
+-- namespace by namespace instead.
+DELETE FROM grant_record g USING catalog c
+WHERE c.name_norm = 'lakehouse' AND g.securable_kind = 'CATALOG' AND g.securable_id = c.id
+  AND g.granted_by = 'demo-setup'
+  AND ((g.group_name = 'demo-analysts' AND g.privilege = 'modify')
+    OR (g.group_name = 'demo-stewards' AND g.privilege = 'select'));
 INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, privilege, granted_by, granted_at)
 SELECT c.id, 'CATALOG', c.id, g.group_name, g.privilege, 'demo-setup', now()
 FROM catalog c,
      (VALUES ('lakehouse', 'demo-loaders', 'create'), ('lakehouse', 'demo-loaders', 'modify'),
-             ('lakehouse', 'demo-analysts', 'create'), ('lakehouse', 'demo-analysts', 'modify'),
-             ('lakehouse', 'demo-stewards', 'manage-tags'), ('lakehouse', 'demo-stewards', 'select'),
+             ('lakehouse', 'demo-analysts', 'create'),
+             ('lakehouse', 'demo-stewards', 'manage-tags'), ('lakehouse', 'demo-compliance', 'describe'),
              ('lakehouse', 'demo-maintenance', 'write'),
              ('engines', 'engine-clients', 'create'), ('engines', 'engine-clients', 'modify'),
              ('engines', 'demo-analysts', 'create'), ('engines', 'demo-analysts', 'modify'),
@@ -740,6 +750,41 @@ FROM catalog c,
 WHERE c.name_norm = g.catalog_name
 ON CONFLICT DO NOTHING;
 SQL
+  lake_grants
+}
+
+# lakehouse's namespace grants (item 152), by SQL as grants are, on every up after the seed, on every gen after the
+# brokerage world's bootstrap, and on every cdc once the history namespaces are made: before anything writes into a
+# compliance namespace, so no grant
+# above it ever reads it. A namespace named compliance, and all below it, is read only by demo-compliance (select);
+# every namespace at the top of its branch with no compliance namespace in it gets demo-analysts' modify and
+# demo-stewards' select, which its tables, views and namespaces inherit. Everyone still sees every name: each of the
+# three groups holds a privilege on lakehouse itself (create, manage-tags, describe), which implies describe below it.
+# What this granted earlier on a namespace now above or inside a compliance namespace goes. A namespace ana makes at
+# the top of lakehouse, or beside a compliance namespace, gets her group's grant only at the next up, gen or cdc.
+lake_grants() {
+  k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
+CREATE TEMP TABLE lake AS SELECT id FROM catalog WHERE name_norm = 'lakehouse';
+CREATE TEMP TABLE ns AS SELECT n.id, n.parent_id, n.ancestors, n.name_norm FROM namespace n JOIN lake ON n.catalog_id = lake.id;
+CREATE TEMP TABLE compliance AS SELECT id, ancestors FROM ns WHERE name_norm = 'compliance';
+CREATE TEMP TABLE closed AS
+  SELECT id FROM ns WHERE name_norm = 'compliance' OR EXISTS (SELECT 1 FROM compliance c WHERE c.id = ANY (ns.ancestors));
+CREATE TEMP TABLE above AS SELECT DISTINCT unnest(ancestors) AS id FROM compliance;
+CREATE TEMP TABLE opened AS
+  SELECT ns.id FROM ns, lake
+  WHERE ns.id NOT IN (SELECT id FROM closed) AND ns.id NOT IN (SELECT id FROM above)
+    AND (ns.parent_id = lake.id OR ns.parent_id IN (SELECT id FROM above));
+DELETE FROM grant_record g USING lake
+WHERE g.catalog_id = lake.id AND g.securable_kind = 'NAMESPACE' AND g.granted_by = 'demo-setup'
+  AND g.group_name IN ('demo-analysts', 'demo-stewards')
+  AND (g.securable_id IN (SELECT id FROM closed) OR g.securable_id IN (SELECT id FROM above));
+INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, privilege, granted_by, granted_at)
+SELECT lake.id, 'NAMESPACE', w.id, w.group_name, w.privilege, 'demo-setup', now()
+FROM lake, (SELECT id, 'demo-analysts' AS group_name, 'modify' AS privilege FROM opened
+            UNION ALL SELECT id, 'demo-stewards', 'select' FROM opened
+            UNION ALL SELECT id, 'demo-compliance', 'select' FROM compliance) w
+ON CONFLICT DO NOTHING;
+SQL
 }
 
 # Trino's own client, trino-demo (Mint.java), registered as a trusted engine (D17) by oscar, a platform operator.
@@ -748,9 +793,37 @@ SQL
 # PostgreSQL's pod, and registering it again leaves the registry as it was. Registered, it vouches for the user of
 # each query, whose own token the query carries (trino.yaml), so a flagged table's data reaches them through Trino
 # with their row filter and column masks applied (D20, backlog 115).
+# The brokerage world's writers too (item 308; D48, amended 2026-11-27): Kafka Connect's (kafka-connect-demo: the
+# world's sinks and the CDC leg's), SingleStore's change feeds' (singlestore-feed-demo, their own: SingleStore's
+# other pipelines sign in as singlestore-demo, which stays untrusted, so its reads of flagged tables get 403) and the
+# generator's (brokerage-world-demo: it counts each table's rows and tags its ends of day), since FLAGGED_TABLES opens
+# its files only to trusted engines. Each acts as itself, with its own grants; none names an end user.
+TRUSTED_CLIENTS="trino-demo kafka-connect-demo singlestore-feed-demo brokerage-world-demo"
 trusted_engines() {
-  say "registering Trino's client, trino-demo, as a trusted engine (as oscar, the platform operator)"
-  api oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
+  local client
+  say "registering the trusted engines, as oscar, the platform operator: $TRUSTED_CLIENTS"
+  for client in $TRUSTED_CLIENTS; do
+    api oscar PUT /management/v1/engines "{\"issuer\": \"https://idp.demo/nuna\", \"client-id\": \"$client\"}" 204
+  done
+}
+
+# The tables that hold tax ids, birth dates, addresses or bank account numbers, flagged (D20; item 308), as catalog
+# lakehouse names them: both routes' copies and the CDC leg's histories. A flagged table opens its files only to
+# trusted engines (TRUSTED_CLIENTS, which hold every writer of these), so Trino reads them, with any row filter and
+# column masks, and any other client gets 403. demo-datagen's FlaggedTablesTest holds the list to the tables' columns.
+FLAGGED_TABLES="brokerage.party.parties brokerage.party.beneficial_owners brokerage.money_movement.payments
+  brokerage.singlestore.parties brokerage.singlestore.beneficial_owners brokerage.singlestore.payments
+  history.postgres.party.parties history.postgres.party.beneficial_owners history.postgres.money_movement.payments
+  history.oracle.treasury.bank_payments"
+# Flags, as stella, each table of FLAGGED_TABLES under a namespace (brokerage.party, say); setting it again changes
+# nothing. Fails at the first table the catalog does not have.
+flag_tables() {
+  local m=/management/v1/catalogs/$CATALOG table ns
+  for table in $FLAGGED_TABLES; do
+    [[ "$table" == "$1".* ]] || continue
+    ns=${table%.*}
+    api stella PUT "$m/namespaces/${ns//./%1F}/tables/${table##*.}/attributes/row-column-policy"       '{"value":"true","provenance":"demo-seed: data catalogue"}' || return 1
+  done
 }
 
 # Keycloak's realm (keycloak-realm.json) and Keycloak: a changed realm replaces its pod, which imports it as it starts.
@@ -1078,15 +1151,25 @@ oms_copies_free() {
 # classified as the table it copies (brokerage_governance). A table in a regulated namespace is closed until it is
 # classified, and the connector makes the copies on its first start and stops at the first closed one, so the
 # namespace is marked regulated only once every copy is classified, as brokerage.party and brokerage.ledger are. A copy
-# new since then (the clearing books', item 151) is closed as the connector makes it, so the loop below starts the
-# pipeline again once it is classified.
+# new since then (the clearing books', item 151; the back office's, item 152) is closed as the connector makes it, so
+# the loop below starts the pipeline again once it is classified. The copies with tax ids, birth dates, addresses or
+# bank account numbers are flagged last (FLAGGED_TABLES), which the change feed, a trusted engine, still writes.
+# beneficial_owners' copy is classified with the rest:
+# one closed copy would stop the pipeline's every feed, so the unclassified table (D27) is the Kafka route's moment
+# alone (brokerage_backoffice_governance).
 WORLD_COPIES="calendar:public securities:public bars_5m:internal prices_eod:internal accounts:restricted
   chart_of_accounts:confidential booking_schemes:confidential financial_transactions:confidential journal_lines:confidential
   posting_rejections:confidential balances_eod:confidential cns_obligations:confidential settlements:confidential
-  fails:confidential stock_record:confidential locates:confidential"
+  fails:confidential stock_record:confidential locates:confidential parties:restricted account_roles:restricted
+  cip_checks:restricted suitability_profiles:restricted beneficial_owners:restricted trusted_contacts:restricted
+  payments:confidential ach_returns:confidential acats_transfers:confidential"
+# The compliance feeds' copies (item 152), under brokerage.compliance.singlestore, which only compliance's readers read:
+# a table there is closed until it is classified, as brokerage.compliance is regulated.
+COMPLIANCE_COPIES="sanctions_list:restricted sanctions_screens:restricted aml_alerts:restricted aml_cases:restricted
+  surveillance_alerts:restricted complaints:restricted"
 world_tables() { s2_file brokerage-feeds.sql >/dev/null; }
 world_feeds_start() {
-  local m=/management/v1/catalogs/$CATALOG copy left next
+  local m=/management/v1/catalogs/$CATALOG copy left next table
   say "SingleStore: the brokerage world's feeds, a change feed per table into brokerage.singlestore (Kafka is off)"
   world_tables
   api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fsinglestore" '' 200 2>/dev/null \
@@ -1094,15 +1177,22 @@ world_feeds_start() {
     || api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fsinglestore" '' 200
   api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/classification" \
     '{"value":"restricted","provenance":"demo-seed: data catalogue"}'
+  api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fcompliance%1Fsinglestore" '' 200 2>/dev/null \
+    || api brokerage POST "/v1/$CATALOG/namespaces" '{"namespace": ["brokerage", "compliance", "singlestore"]}' 200 \
+      2>/dev/null \
+    || api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fcompliance%1Fsinglestore" '' 200
   s2_file brokerage-feeds-pipelines.sql >/dev/null
   start_pipeline brokerage brokerage_world_to_lake
   # Each copy is classified as soon as the catalog takes it: at once where the copy is there, else once the connector
   # has made it; for about five minutes.
-  left=$WORLD_COPIES
+  left=
+  for copy in $WORLD_COPIES; do left+=" brokerage%1Fsinglestore/$copy"; done
+  for copy in $COMPLIANCE_COPIES; do left+=" brokerage%1Fcompliance%1Fsinglestore/$copy"; done
   for _ in $(seq 1 60); do
     next=
     for copy in $left; do
-      api stella PUT "$m/namespaces/brokerage%1Fsinglestore/tables/${copy%%:*}/attributes/classification" \
+      table=${copy%%:*}
+      api stella PUT "$m/namespaces/${table%/*}/tables/${table#*/}/attributes/classification" \
         "{\"value\":\"${copy#*:}\",\"provenance\":\"demo-seed: data catalogue\"}" 2>/dev/null || next+=" $copy"
     done
     left=$next
@@ -1112,12 +1202,13 @@ world_feeds_start() {
   done
   if [[ -n "${left// }" ]]; then
     next=
-    for copy in $left; do next+=" ${copy%%:*}"; done
-    echo "the change feed made no copy in brokerage.singlestore for:$next (SingleStore: PIPELINES_ERRORS)" >&2
+    for copy in $left; do table=${copy%%:*}; next+=" ${table//[%]1F/.}"; done
+    echo "the change feed made no copy:${next//\//.} (SingleStore: PIPELINES_ERRORS)" >&2
     return 1
   fi
   api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/regulated" \
-    '{"value":"true","provenance":"demo-seed: compliance register"}'
+    '{"value":"true","provenance":"demo-seed: compliance register"}' &&
+  flag_tables brokerage.singlestore
 }
 world_feeds_stop() {
   local name stopped=
@@ -1387,6 +1478,9 @@ gen_start() {
   brokerage_bootstrap
   brokerage_governance
   brokerage_clearing_governance || say "brokerage.clearing, recon and kafka are not all governed: gen carries on"
+  brokerage_backoffice_governance || say "brokerage.party, money_movement and compliance are not all governed: the" \
+    "world's sink stops at a table the catalog closes until it is; the next gen tries again"
+  lake_grants
   if is_on ss; then
     world_tables
   fi
@@ -1412,6 +1506,7 @@ gen_stop() {
   fi
   if cdc_running; then
     connect_api DELETE /connectors/brokerage-lake >/dev/null 2>&1 || true
+    connect_api DELETE /connectors/brokerage-lake-owners >/dev/null 2>&1 || true
   fi
   world_feeds_stop
   stop_kafka
@@ -1493,6 +1588,50 @@ brokerage_clearing_governance() {
   api stella PUT "$m/namespaces/brokerage%1Fkafka/attributes/owner" '{"value":"trading-desk","provenance":"demo-seed: HR feed"}'
 }
 
+# Governance of the back office (item 152; docs/design/brokerage-world.md, the namespace tree), by stella after the
+# bootstrap and before anything writes; setting a value again changes nothing. brokerage.party is restricted and
+# regulated (brokerage_governance), so each of its new tables is classified restricted, all but beneficial_owners:
+# it lands unclassified, so the catalog closes it to everyone (D27), its own sink (brokerage-lake-owners) stops at it,
+# and a steward classifying it during the demo opens it. brokerage.money_movement is confidential and brokerage.compliance
+# restricted, both regulated, each table classified first, as a regulated namespace closes an unclassified table to
+# its writers; the current-state views take their namespace's classification. aml_cases is under a legal hold (D24),
+# placed once. The tables with tax ids, birth dates, addresses or bank account numbers are flagged (D20, item 308:
+# FLAGGED_TABLES); their writers are trusted engines (TRUSTED_CLIENTS), so they still write them.
+brokerage_backoffice_governance() {
+  local m=/management/v1/catalogs/$CATALOG ns table
+  classify() {
+    api stella PUT "$m/namespaces/$1/attributes/classification" "{\"value\":\"$2\",\"provenance\":\"demo-seed: data catalogue\"}"
+  }
+  for table in parties account_roles cip_checks suitability_profiles trusted_contacts; do
+    classify "brokerage%1Fparty/tables/$table" restricted || return 1
+  done
+  for table in parties suitability_profiles trusted_contacts; do
+    classify "brokerage%1Fparty/views/${table}_current" restricted || return 1
+  done
+  classify brokerage%1Fmoney_movement confidential || return 1
+  for table in payments ach_returns acats_transfers; do
+    classify "brokerage%1Fmoney_movement/tables/$table" confidential || return 1
+  done
+  classify brokerage%1Fcompliance restricted || return 1
+  for table in sanctions_list sanctions_screens aml_alerts aml_cases surveillance_alerts complaints; do
+    classify "brokerage%1Fcompliance/tables/$table" restricted || return 1
+  done
+  for ns in money_movement compliance; do
+    api stella PUT "$m/namespaces/brokerage%1F$ns/attributes/regulated" \
+      '{"value":"true","provenance":"demo-seed: compliance register"}' || return 1
+  done
+  flag_tables brokerage.party && flag_tables brokerage.money_movement || return 1
+  api stella PUT "$m/namespaces/brokerage%1Fmoney_movement/attributes/owner" \
+    '{"value":"money-movement-operations","provenance":"demo-seed: HR feed"}' &&
+  api stella PUT "$m/namespaces/brokerage%1Fcompliance/attributes/owner" \
+    '{"value":"compliance-office","provenance":"demo-seed: HR feed"}' || return 1
+  if ! tls_curl -fs -H "Authorization: Bearer $(token_of stella)" \
+      "$URL$m/namespaces/brokerage%1Fcompliance/tables/aml_cases/governance" | grep -q '"placed-by"'; then
+    api stella POST "$m/namespaces/brokerage%1Fcompliance/tables/aml_cases/holds" \
+      '{"reason":"Matter 2026-152: AML case files and SARs kept five years (31 CFR 1023.320(d))"}' || return 1
+  fi
+}
+
 # Kafka Connect (connect.yaml), applied and waited for until its REST API answers through the front door.
 start_connect() {
   say "starting Kafka Connect ($CONNECT_IMAGE)"
@@ -1510,13 +1649,17 @@ wait_for_connect() {
   return 1
 }
 
-# The brokerage world's sink, brokerage-lake (demo/brokerage/connector.json: the world's topics into its Iceberg
-# tables, through the catalog), put in place on the running worker (the same config twice changes nothing), then its
-# generator (brokerage.yaml), last.
+# The brokerage world's sinks, brokerage-lake (demo/brokerage/connector.json: the world's topics into its Iceberg
+# tables, through the catalog) and brokerage-lake-owners (owners-connector.json: party.beneficial_owners alone, which
+# lands unclassified and so closed (D27); a sink stops every table's commits at one it may not write, so this one has
+# its own, and the generator starts it again once a steward has classified the table), put in place on the running
+# worker (the same config twice changes nothing), then its generator (brokerage.yaml), last.
 start_brokerage() {
   if is_on kafka; then
-    say "the brokerage world: its Iceberg sink brokerage-lake, and its generator ($BROKERAGE_IMAGE, route $(world_route))"
+    say "the brokerage world: its Iceberg sinks brokerage-lake and brokerage-lake-owners, and its generator" \
+      "($BROKERAGE_IMAGE, route $(world_route))"
     connect_api PUT /connectors/brokerage-lake/config < "$REPO/demo/brokerage/connector.json" >/dev/null
+    connect_api PUT /connectors/brokerage-lake-owners/config < "$REPO/demo/brokerage/owners-connector.json" >/dev/null
   else
     say "the brokerage world's generator ($BROKERAGE_IMAGE, route $(world_route): Kafka is off)"
   fi
@@ -1544,7 +1687,7 @@ EOF
   cat <<EOF
 
 The demo's people sign in once, through Keycloak ($DEMO_HOST:8180), and the console, kafbat, CloudBeaver, Studio
-and Grafana ask no password after that: ana, gary, stella and oscar, with the passwords in $PEOPLE_FILE,
+and Grafana ask no password after that: ana, gary, stella, oscar and cora, with the passwords in $PEOPLE_FILE,
 made on this machine. Studio asks only the username, then "Sign in with SAML". To change user, use the console's Sign out or
 CloudBeaver's Logout (both end Keycloak's session too), or sign out of each UI and of Keycloak
 ($web:8180/realms/nuna/protocol/openid-connect/logout, then Logout), or use a private window.
@@ -1555,18 +1698,23 @@ Studio's too.
 The console:  $URL/ui/   (catalogs lakehouse and engines)
 Sign in, or paste one of these tokens (valid until $expires).
 
-Data user  ana   (group demo-analysts: select on both catalogs)
+Data user  ana   (group demo-analysts: select on both catalogs, but not lakehouse's compliance namespaces)
 $(token_of ana)
 
 Grant admin  gary  (groups demo-grant-admins: manage grants and read the audit trail, no data access; and
                     demo-auditors: the Audit page, from the audit table nuna_audit.audit.events)
 $(token_of gary)
 
+Compliance  cora  (group demo-compliance: with the presenter's, the only group that reads the compliance
+                   namespaces, lakehouse.brokerage.compliance and the CDC leg's history.postgres.compliance)
+$(token_of cora)
+
 Tag steward stella, platform operator oscar, SingleStore, the lake writer, the brokerage world, the engine matrix,
-Kafka Connect and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,brokerage,engine-matrix,cdc,trino}.jwt
+Kafka Connect and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,singlestore-feed,lake,brokerage,engine-matrix,cdc,trino}.jwt
 oscar administers kafbat, Studio and CloudBeaver; in kafbat, ana, gary and stella administer topics, but only
-read the catalog's (nuna.*), the Connect worker's, the brokerage world's and those starting with _. oscar reads
-kafbat's audit log.
+read the catalog's (nuna.*), the Connect worker's, the brokerage world's and those starting with _, and none of
+the compliance topics (brokerage.compliance.*, backoffice.compliance.*), which cora reads. oscar reads kafbat's
+audit log.
 Refs:         lakehouse has branch dev (the next day's trades and rates) and tag sample (the sample data);
               the console's Branches and tags tab merges dev, and Trino's catalog lakehouse_dev reads and writes it
 Trino:        CloudBeaver on $web:8185: each person's connections sign in as them, to nuna through
@@ -1663,17 +1811,32 @@ connect_api() {
   rm -f "$out"
 }
 
-# The history tables, as namespace path and table name for the catalog's API.
-# CockroachDB's are the clearing books' (item 151); the toy holdings before them is listed so a new leg removes it.
+# The source tables, as schema and table. CockroachDB's are the clearing books' (item 151); PostgreSQL's the back
+# office's and Oracle's the bank payments (item 152; demo/cdc/backoffice.sql and oracle.sql, made from demo-datagen's
+# Sources, which a test holds these lists to).
 CUSTODY_TABLES=(stock_record cns_obligations fails locates)
+BACKOFFICE_TABLES=("party parties" "party accounts" "party account_roles" "party cip_checks"
+  "party suitability_profiles" "party beneficial_owners" "party trusted_contacts" "money_movement payments"
+  "money_movement ach_returns" "money_movement acats_transfers" "compliance aml_alerts" "compliance aml_cases"
+  "compliance complaints")
+TREASURY_TABLES=(bank_payments)
+# The history tables, as namespace path and table name for the catalog's API. The toy tables before items 151 and 152
+# (settlement instructions, treasury payments, positions holdings) are listed so a new leg removes them.
 HISTORY_TABLES=("history%1Fpostgres%1Fsettlement instructions" "history%1Foracle%1Ftreasury payments"
   "history%1Fcockroach%1Fpositions holdings" "history%1Fcockroach%1Fclearing stock_record"
   "history%1Fcockroach%1Fclearing cns_obligations" "history%1Fcockroach%1Fclearing fails"
-  "history%1Fcockroach%1Fclearing locates")
+  "history%1Fcockroach%1Fclearing locates" "history%1Foracle%1Ftreasury bank_payments")
+for entry in "${BACKOFFICE_TABLES[@]}"; do HISTORY_TABLES+=("history%1Fpostgres%1F$entry"); done
+unset entry
+# The history namespaces the leg's sinks write, each classified as the lake namespace whose rows it records (item 152):
+# made, and closed to all but compliance's readers (lake_grants), before Debezium sends a change.
+HISTORY_NAMESPACES="postgres.party:restricted postgres.money_movement:confidential postgres.compliance:restricted
+  oracle.treasury:confidential"
 
-# Rows in a table of catalog lakehouse (its newest snapshot's total-records; 0 before the first commit).
+# Rows in a table of catalog lakehouse (its newest snapshot's total-records; 0 before the first commit), read as user
+# cdc, who reads every history table: ana does not read the compliance ones.
 table_rows() {
-  curl -s "${CURL_TLS[@]}" -H "Authorization: Bearer $(token_of ana)" "$URL/v1/$CATALOG/namespaces/$1/tables/$2" \
+  curl -s "${CURL_TLS[@]}" -H "Authorization: Bearer $(token_of cdc)" "$URL/v1/$CATALOG/namespaces/$1/tables/$2" \
     | grep -o '"total-records" *: *"[0-9]*"' | tail -1 | grep -o '[0-9]*' || echo 0
 }
 
@@ -1703,6 +1866,15 @@ cockroach_sql() {
   MSYS_NO_PATHCONV=1 k exec -i deployment/cockroach -- ./cockroach sql --certs-dir=certs --host=127.0.0.1 \
     -d custody >/dev/null
 }
+# The rows of a back-office table (schema.table), as the database's owner, and of a TREASURY table, as its user.
+backoffice_count() {
+  k exec deployment/backoffice -- psql -tA -U backoffice -d backoffice -c "SELECT count(*) FROM $1" | tr -d '\r'
+}
+treasury_count() {
+  printf 'SET HEADING OFF FEEDBACK OFF PAGESIZE 0\nSELECT count(*) FROM treasury.%s;\nEXIT\n' "$1" \
+    | MSYS_NO_PATHCONV=1 k exec -i deployment/oracle -- sh -c \
+      'exec sqlplus -s -l "treasury/\"$TREASURY_PASSWORD\"@//localhost:1521/FREEPDB1"' | tr -d ' \r\n'
+}
 # The rows of a custody table, as root.
 cockroach_count() {
   MSYS_NO_PATHCONV=1 k exec deployment/cockroach -- ./cockroach sql --certs-dir=certs --host=127.0.0.1 -d custody \
@@ -1724,6 +1896,29 @@ cockroach_history_table() {
   done
   for table in "${CUSTODY_TABLES[@]}"; do
     api cdc POST "/v1/$CATALOG/namespaces/$path/tables" "$(cat "$REPO/demo/cdc/custody-history/$table.json")" 200
+  done
+}
+
+# The history namespaces of PostgreSQL's and Oracle's sinks (HISTORY_NAMESPACES), made as user cdc and classified by
+# stella, the steward; making or classifying one again changes nothing. Classified, not regulated: a history table is
+# made by its sink, which a regulated namespace would close to it until a steward classified the table.
+cdc_history_namespaces() {
+  local m=/management/v1/catalogs/$CATALOG entry path names level
+  for entry in $HISTORY_NAMESPACES; do
+    path=history
+    names='"history"'
+    api cdc GET "/v1/$CATALOG/namespaces/$path" '' 200 2>/dev/null \
+      || api cdc POST "/v1/$CATALOG/namespaces" "{\"namespace\": [$names]}" 200 || return 1
+    for level in ${entry%%:*}; do
+      for level in ${level//./ }; do
+        path+="%1F$level"
+        names+=", \"$level\""
+        api cdc GET "/v1/$CATALOG/namespaces/$path" '' 200 2>/dev/null \
+          || api cdc POST "/v1/$CATALOG/namespaces" "{\"namespace\": [$names]}" 200 || return 1
+      done
+    done
+    api stella PUT "$m/namespaces/$path/attributes/classification" \
+      "{\"value\":\"${entry#*:}\",\"provenance\":\"demo-seed: data catalogue\"}" || return 1
   done
 }
 
@@ -1757,10 +1952,17 @@ cdc_apply() {
   # The first time, Oracle's database is copied onto its volume and restarts once into archive log mode
   # (demo/cdc/oracle.sql): a few minutes.
   k rollout status deployment/oracle --timeout=15m >/dev/null
-  # The brokerage world's clearing books as they stand after its last end of day, into CockroachDB's custody: only
-  # what changed since the last load, so each change is one row of its history table (Main custody).
-  brokerage_job custody || say "the clearing books did not load into CockroachDB: its tables keep what they held"
+  # The brokerage world's books as they stand after its last end of day, into the leg's databases: the clearing books
+  # into CockroachDB's custody (item 151), the back office into PostgreSQL's backoffice and the bank payments into
+  # Oracle's treasury (item 152). Only what changed since the last load, so each change is one row of its history
+  # table (Main cdc).
+  brokerage_job cdc || say "the brokerage world's books did not all load into the leg's databases (see the Job's" \
+    "log above): their tables keep what they held"
   wait_for_connect
+  # The history namespaces, made and closed before a sink writes into them.
+  cdc_history_namespaces || say "the history namespaces were not all made and classified (see the answer above):" \
+    "the sinks make them, and lake_grants closes the compliance one at the next cdc"
+  lake_grants
   # A connector cdc stop stopped keeps its offsets, and resume starts it from them; on a new one resume does nothing.
   local connector
   for connector in "${CDC_CONNECTORS[@]}"; do
@@ -1809,6 +2011,7 @@ cdc_start() {
   if cdc_running; then
     say "the CDC leg is running: bringing it up to date"
     cdc_apply
+    history_flags
     cdc_access
     return
   fi
@@ -1844,17 +2047,19 @@ cdc_start() {
   running connect || start_connect
   # A leg that ran before (configmap cdc-begun, which its first run writes once its changes reached Iceberg) carries
   # on: its databases start from their volumes and its connectors from their offsets, into the history tables it
-  # wrote (D52, amended 2026-11-26, backlog 293). One begun before item 151 (no custody=clearing in cdc-begun) holds
-  # CockroachDB's toy holdings, not the clearing books, which cockroach.sql makes only on an empty volume: it starts
-  # anew, once.
+  # wrote (D52, amended 2026-11-26, backlog 293). One begun before item 152 (no world=152 in cdc-begun) holds the toy
+  # settlement instructions and treasury payments, not the back office and the bank payments, which backoffice.sql and
+  # oracle.sql make only on an empty volume: it starts anew, once.
   if k get configmap cdc-begun >/dev/null 2>&1; then
-    if [[ "$(k get configmap cdc-begun -o jsonpath='{.data.custody}')" == clearing ]]; then
+    if [[ "$(k get configmap cdc-begun -o jsonpath='{.data.world}')" == 152 ]]; then
       say "starting the CDC leg from its kept databases; the connectors carry on from where they stopped"
       cdc_apply
+      history_flags
       cdc_access
       return
     fi
-    say "the CDC leg was begun before CockroachDB held the clearing books (item 151): it starts anew, once"
+    say "the CDC leg was begun before its databases held the back office and the bank payments (item 152): it" \
+      "starts anew, once"
     cdc_delete
   fi
   # A first run that did not finish leaves volumes, connectors or topics: they go, and the leg starts anew.
@@ -1865,7 +2070,7 @@ cdc_start() {
   local entry ns table
   for entry in "${HISTORY_TABLES[@]}"; do
     read -r ns table <<<"$entry"
-    if api ana GET "/v1/$CATALOG/namespaces/$ns/tables/$table" '' 200 2>/dev/null; then
+    if api cdc GET "/v1/$CATALOG/namespaces/$ns/tables/$table" '' 200 2>/dev/null; then
       api cdc DELETE "/v1/$CATALOG/namespaces/$ns/tables/$table?purgeRequested=true" '' 204
     fi
   done
@@ -1874,45 +2079,44 @@ cdc_start() {
   say "starting the CDC leg: PostgreSQL backoffice, Oracle Free, CockroachDB and their connectors (a few minutes)"
   cdc_apply
   say "waiting for Debezium's snapshots of the source tables to reach Iceberg"
-  wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 4
-  wait_for_rows "history%1Foracle%1Ftreasury" payments 4
-  # The clearing books were loaded into empty tables: each row is one insert, so one row of its history table.
-  local custody
+  # Each source table was loaded empty, before its connector started: each row is one row of its history table.
+  local custody schema
+  for entry in "${BACKOFFICE_TABLES[@]}"; do
+    read -r schema table <<<"$entry"
+    wait_for_rows "history%1Fpostgres%1F$schema" "$table" "$(backoffice_count "$schema.$table")"
+  done
+  for table in "${TREASURY_TABLES[@]}"; do
+    wait_for_rows "history%1Foracle%1Ftreasury" "$table" "$(treasury_count "$table")"
+  done
   for custody in "${CUSTODY_TABLES[@]}"; do
     wait_for_rows "history%1Fcockroach%1Fclearing" "$custody" "$(cockroach_count "$custody")"
   done
-
-  # CockroachDB's custody changes with the clearing books, at each cdc's load.
-  say "changing rows in PostgreSQL and Oracle: each change is a row in its history table"
-  backoffice_sql >/dev/null <<'SQL'
-UPDATE settlement.instructions SET status = 'MATCHED', updated_at = now() WHERE instruction_id = 5001;
-UPDATE settlement.instructions SET status = 'SETTLED', updated_at = now() WHERE instruction_id = 5003;
-DELETE FROM settlement.instructions WHERE instruction_id = 5004;
-INSERT INTO settlement.instructions (instruction_id, trade_ref, isin, quantity, amount, currency, status)
-VALUES (5005, 'XETR-2026-11-10-000201', 'DE0007164600', 60, 10950.00, 'EUR', 'PENDING');
-SQL
-  oracle_sql <<'SQL'
-UPDATE treasury.payments SET status = 'RELEASED', updated_at = SYSTIMESTAMP WHERE payment_id = 7001;
-DELETE FROM treasury.payments WHERE payment_id = 7002;
-INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
-VALUES (7005, 'DE89370400440532013000', 10950.00, 'EUR', 'SCHEDULED');
-COMMIT;
-SQL
-  wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 8
-  wait_for_rows "history%1Foracle%1Ftreasury" payments 7
-  k create configmap cdc-begun --from-literal=began="$(date -u +%FT%TZ)" --from-literal=custody=clearing >/dev/null
+  k create configmap cdc-begun --from-literal=began="$(date -u +%FT%TZ)" --from-literal=custody=clearing \
+    --from-literal=world=152 >/dev/null
+  history_flags
   cdc_access
+}
+
+# The leg's history tables that hold tax ids, birth dates, addresses or bank account numbers, flagged (D20, item 308):
+# its sinks make them with their first change, and, trusted engines, still write them once flagged.
+history_flags() {
+  flag_tables history || say "the CDC leg's history tables were not all flagged (see the answer above); the next cdc"     "tries again"
 }
 
 cdc_access() {
   cat <<EOF
 
 The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
-  PostgreSQL backoffice, settlement.instructions  ->  history.postgres.settlement.instructions   (demo/demo.sh psql)
-  Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
-  CockroachDB custody, clearing.*                  ->  history.cockroach.clearing.*              (demo/demo.sh cockroach)
-    the brokerage world's clearing books (stock_record, cns_obligations, fails, locates), loaded at each cdc as
-    they stand after its last end of day, only what changed (demo-datagen's Main custody)
+  PostgreSQL backoffice, party.*, money_movement.*, compliance.*
+                                  ->  history.postgres.{party,money_movement,compliance}.*   (demo/demo.sh psql)
+    the back office: parties, accounts, roles, CIP checks, suitability, beneficial owners, trusted contacts;
+    payments, ACH returns, ACATS transfers; AML alerts and cases, complaints (compliance: cora alone reads it)
+  Oracle FREEPDB1, TREASURY.BANK_PAYMENTS  ->  history.oracle.treasury.bank_payments   (demo/demo.sh sqlplus)
+    each ACH and wire as the firm's bank sees it
+  CockroachDB custody, clearing.*          ->  history.cockroach.clearing.*            (demo/demo.sh cockroach)
+    the clearing books: stock_record, cns_obligations, fails, locates
+  All three are loaded at each cdc as the brokerage world stands after its last end of day, only what changed
+  since the last load (demo-datagen's Main cdc), so each cdc after the first adds the days the world played since.
 Kafka Connect: in kafbat (https://$DEMO_HOST:8182), or curl -s --cacert '$TLS/ca.crt' --ssl-revoke-best-effort
   -K '$SECRETS/connect.curlrc' '$CONNECT_URL/connectors?expand=status' (8186 asks for that password).
 kafbat (https://$DEMO_HOST:8182) shows Debezium's change events as they arrive, and the console shows each sink
@@ -1920,7 +2124,7 @@ commit as a snapshot of its history table.
 Query the source databases in CloudBeaver (https://$DEMO_HOST:8185): each person's backoffice, treasury and
 custody connections sign in as them. Trino and the brokerage world are stopped meanwhile: demo/demo.sh cdc stop
 pauses the leg, keeping its databases, and starts them again; demo/demo.sh cdc reset deletes it. Then read the history in CloudBeaver's Trino connection, oldest change first:
-  SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
+  SELECT "_cdc".op, "_cdc".ts, payment_id, version, status FROM lakehouse."history.postgres.money_movement".payments
   ORDER BY "_cdc"."offset";
 EOF
 }
@@ -2060,6 +2264,7 @@ up() {
   # Before the brokerage world's bootstrap (gen), so a new lake's tag holds the sample data alone; and, as its lake
   # writer's Job needs, while Kafka Connect and the generator are stopped. A failure in it never stops up.
   seed
+  lake_grants
   refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
   maintenance_policy || say "maintenance was not turned on in $CATALOG's policy (see the answer above); the next up tries again (backlog 230)"
   row_column_rules || say "the row filters and column masks on markets.desks.positions were not set (see the answer above); the next up tries again (backlog 115)"
