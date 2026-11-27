@@ -131,7 +131,8 @@ final class LogWriter {
      * @throws Busy if twice {@code maxRows} wait already; nothing is taken
      */
     synchronized Taken offer(List<Logged> records) {
-        if (rows.size() >= 2 * maxRows) {
+        // In long: twice a maxRows past 2^30 overflows an int to a negative bound that refuses every offer (backlog 303).
+        if (rows.size() >= 2L * maxRows) {
             throw new Busy(rows.size());
         }
         Instant now = clock.instant();
