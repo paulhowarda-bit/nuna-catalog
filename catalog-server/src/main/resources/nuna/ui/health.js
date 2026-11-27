@@ -423,9 +423,11 @@ async function policyFacts(target) {
         : [setting.value, ' · ', sourceWords(setting.source)])]))));
 }
 
-/** Where a policy key was set: built in, a guardrail, or the level's kind. */
+/** Where a policy key was set: built in, the server's default, a guardrail, or the level's kind. */
 export function sourceWords(source) {
-  if (!source || source === 'default') return muted('built-in');
+  if (!source || source === 'built-in') return muted('built-in');
+  // The deployment's own maintenance defaults, above the built-in values and below every level's.
+  if (source === 'default') return muted("the server's default");
   if (source === 'guardrail') return 'guardrail';
   const [kind] = String(source).split(':');
   return h('span', {class: 'muted', title: source}, kind === 'catalog' ? 'the catalog' : kind === 'namespace' ? 'a namespace above'
