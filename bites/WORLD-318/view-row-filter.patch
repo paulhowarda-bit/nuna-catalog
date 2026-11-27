@@ -1,0 +1,17 @@
+Breaks: a view's row filter, so Trino reads every view as closed, no rows for anyone
+Module: catalog-server
+Test: SecurityGateTest#aViewTheUserMayReadHasNoRowFilterOfItsOwn
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/OpaRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/OpaRoutes.java
+index 0ec9b560..d3a8fe81 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/OpaRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/OpaRoutes.java
+@@ -135,8 +135,7 @@ class OpaRoutes {
+                         .filter(found -> found.state() != CatalogObject.State.UNREGISTERED);
+         // A view as well as a table: Trino asks a view's filter as it reads it, then each table's under it as the same
+         // user, so a view the user may read answers its own rules, none unless set (item 318: every view was closed).
+-        return object.filter(found -> found.kind() == CatalogObject.Kind.TABLE
+-                        || found.kind() == CatalogObject.Kind.VIEW)
++        return object.filter(found -> found.kind() == CatalogObject.Kind.TABLE)
+                 .filter(found -> holdings.something(user, new Target.TableOrView(found)));
+     }
+ }

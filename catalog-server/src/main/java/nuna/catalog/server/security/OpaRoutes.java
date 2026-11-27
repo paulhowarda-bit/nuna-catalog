@@ -129,10 +129,14 @@ class OpaRoutes {
                 : store.findRef(catalog.get().id(), Names.normalize(ref.get()))
                         .filter(found -> !found.expiredAt(clock.instant()))
                         .flatMap(found -> store.resolveOnRef(found.id(), path, name))
-                        .filter(entry -> entry.kind() == RefEntry.of(CatalogObject.Kind.TABLE))
+                        .filter(entry -> entry.kind() == RefEntry.of(CatalogObject.Kind.TABLE)
+                                || entry.kind() == RefEntry.of(CatalogObject.Kind.VIEW))
                         .flatMap(entry -> store.readObject(entry.id()))
                         .filter(found -> found.state() != CatalogObject.State.UNREGISTERED);
-        return object.filter(found -> found.kind() == CatalogObject.Kind.TABLE)
+        // A view as well as a table: Trino asks a view's filter as it reads it, then each table's under it as the same
+        // user, so a view the user may read answers its own rules, none unless set (item 318: every view was closed).
+        return object.filter(found -> found.kind() == CatalogObject.Kind.TABLE
+                        || found.kind() == CatalogObject.Kind.VIEW)
                 .filter(found -> holdings.something(user, new Target.TableOrView(found)));
     }
 }
