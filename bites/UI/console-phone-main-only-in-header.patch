@@ -3,12 +3,12 @@ Module: catalog-server
 Test: ConsoleBrowserTest#onAPhoneABranchCarriedOntoAPageThatShowsMainOnlyKeepsTheHeaderInTheWindow
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
-index 5fe1dbac..4783682e 100644
+index d42cc6c8..f693d901 100644
 --- a/catalog-server/src/main/resources/nuna/ui/style.css
 +++ b/catalog-server/src/main/resources/nuna/ui/style.css
-@@ -1336,7 +1336,6 @@ details.tech[open] > summary { margin-bottom: 4px; }
-   .nc-pick, .nc-top .ref-pick { max-width: 100%; padding: 0 8px; gap: 4px; }
-   .nc-top .ref-pick .cref .at { display: none; }
+@@ -1342,7 +1342,6 @@ details.tech[open] > summary { margin-bottom: 4px; }
+   .nc-top .reading-slot .ref-wrap { position: static; }
+   .nc-top .reading-slot .ref-menu { left: 12px; right: auto; width: min(380px, calc(100% - 24px)); min-width: 0; }
    .nc-pick b, .nc-top .ref-pick .cref .nm { min-width: 0; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 -  .reading-slot .main-only { position: absolute; top: calc(100% + 1px); left: 0; right: 0; height: 28px; display: flex; align-items: center; margin: 0; padding: 0 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
    .nc-app:has(.reading-slot .main-only) .slot > .nc-main { padding-top: 44px; }
