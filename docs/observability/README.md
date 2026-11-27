@@ -92,9 +92,15 @@ properties do the same: `management.otlp.metrics.export.url`, `management.opente
     `loadbalancing` exporter tier routes spans by trace ID, and a `tail_sampling` tier keeps every trace with status
     ERROR, those slower than their SLO bound and 10 % of the rest. Traces then show about 30 s late (`decision_wait`).
     Every 5xx answer's server span ends with status ERROR (spans.md, "The server span's status"), so a policy on
-    status ERROR alone keeps every failed call; a 4xx leaves it unset. nuna ships no collector configuration: whether
-    a deployment can run the two tiers is found where it is installed (backlog 43), and until then it keeps head
-    sampling.
+    status ERROR alone keeps every failed call; a 4xx leaves it unset. Whether a deployment can run the two tiers is
+    found where it is installed (backlog 43), and until then it keeps head sampling. The demo's collector
+    (`demo/k8s/metrics.yaml`, the switch `metrics`) runs the `tail_sampling` tier as a deployment would: policies
+    `errors` (status ERROR), `slow` (over 300 ms, the commit SLO's bound) and `a-tenth-of-the-rest`, on the contrib
+    image (the core image has no `tail_sampling`). It has one collector, so it needs no `loadbalancing` tier; a
+    deployment with more than one copies the processor and adds that tier in front. Checked 2026-11-26 by running
+    that configuration with a file exporter and sending it 202 single-span traces: the ERROR one and the 500 ms one
+    were kept, and 19 of the 200 others. `otelcol validate` passes a misspelt policy type, so a change to the
+    policies is checked by running them.
 - The OTLP exporter sends over the JDK's HTTP client (`opentelemetry-exporter-sender-jdk`); OkHttp is excluded from
   every module (`build.gradle.kts`).
 

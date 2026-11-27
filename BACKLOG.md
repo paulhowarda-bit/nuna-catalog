@@ -1411,6 +1411,19 @@ at work with item 43: the collector's `loadbalancing` and `tail_sampling` tiers,
 values for the deployment, README.md saying which mode work runs, and a forced 5xx seen as a trace in work's Grafana
 (or the doc saying why the deployment keeps head sampling). The item stays open for that.
 
+**Progress, 2026-11-26 (secret-scanning): the tail-sampling tier, built and checked in the demo's configuration.** The
+demo's collector (`demo/k8s/metrics.yaml`) now runs `tail_sampling` in its traces pipeline: every trace with status
+ERROR, every one over 300 ms (the commit SLO's bound) and 10 % of the rest, with `decision_wait` 10 s and
+`num_traces` 5,000; its image is the contrib build (`demo/demo.sh`, `OTEL_COLLECTOR_IMAGE`), as the core build has no
+`tail_sampling`, and its memory limit is 256 MiB (memory_limiter 200). Checked by running that configuration in the
+contrib collector 0.166.0 with a file exporter in place of Tempo and sending 202 single-span traces: the ERROR one and
+the 500 ms one kept, 19 of the 200 others. `otelcol validate` passed a misspelt policy type, so it proves nothing about
+the policies. README.md, "Sampling", points work at it. Not checked live: the demo's metrics switch was off and is
+left off, and forcing a 5xx on an Iceberg route in the shared demo means breaking its database; the catalog's ERROR
+marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalancing` tier in front if work runs more
+than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
+5xx seen in work's Grafana.
+
 ## Done and dropped
 
 | # | Item | Status | On |
