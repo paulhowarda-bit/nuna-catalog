@@ -35,16 +35,9 @@ class SourcesTest {
     }
 
     /** The books of two weeks of the world: its events fed in feed by feed, each feed's in the order it sent them. */
+    /** The books as the world played them, every event in its order, each day's end closing the General Ledger's day. */
     private static Sources.Book book() {
-        Played p = Played.seeded();
-        Sources.Book book = new Sources.Book();
-        for (Feed f : Feed.values()) {
-            for (Map<String, Object> row : p.of(f)) {
-                book.accept(new Event(null, f, row));
-            }
-        }
-        book.endOfDay(p.days.getLast());
-        return book;
+        return Played.seeded().book;
     }
 
     private static Connection database(Sources.Db db) throws SQLException {
@@ -124,7 +117,10 @@ class SourcesTest {
         }
     }
 
-    /** The firm's bank sees the ACH and wire payments alone, each at its latest status, the blocked wire as blocked. */
+    /**
+     * The firm's bank sees the ACH and wire payments alone, each at its latest status, the blocked wire as blocked; the
+     * General Ledger (item 153) has a journal entry per control that moved each day and every control's balance.
+     */
     @Test
     void treasuryHoldsEachAchAndWirePaymentAsTheBankSeesIt() throws SQLException {
         Sources.Book book = book();
@@ -136,9 +132,27 @@ class SourcesTest {
         }
         try (Connection c = database(Sources.Db.TREASURY)) {
             Sources sources = new Sources(Sources.Db.TREASURY, c);
-            assertThat(sources.load(book)).containsExactly(Map.entry(Sources.Table.BANK_PAYMENTS,
-                new Sources.Counts(bankable.size(), 0, bankable.size())));
-            assertThat(sources.load(book).get(Sources.Table.BANK_PAYMENTS).written()).isZero();
+            int journal = book.size(Sources.Table.GL_JOURNAL), balances = book.size(Sources.Table.GL_BALANCES);
+            assertThat(sources.load(book)).containsExactly(
+                Map.entry(Sources.Table.BANK_PAYMENTS, new Sources.Counts(bankable.size(), 0, bankable.size())),
+                Map.entry(Sources.Table.GL_JOURNAL, new Sources.Counts(journal, 0, journal)),
+                Map.entry(Sources.Table.GL_BALANCES, new Sources.Counts(balances, 0, balances)));
+            assertThat(sources.load(book)).allSatisfy((t, n) -> assertThat(n.written()).as(t.name()).isZero());
+            // A control's balance appears from the day its definition first moves, then every day.
+            try (Statement s = c.createStatement(); ResultSet r = s.executeQuery(
+                    "SELECT count(DISTINCT business_date), count(DISTINCT gl_account),"
+                        + " count(CASE WHEN business_date = (SELECT max(business_date) FROM treasury.gl_balances)"
+                        + " THEN 1 END) FROM treasury.gl_balances")) {
+                r.next();
+                assertThat(r.getInt(1)).isEqualTo(Played.DAYS);
+                assertThat(r.getInt(3)).isEqualTo(r.getInt(2)).isGreaterThan(1);
+            }
+            try (Statement s = c.createStatement(); ResultSet r = s.executeQuery(
+                    "SELECT gl_account_name, normal_side FROM treasury.gl_balances WHERE gl_account = 'GL-1001'")) {
+                assertThat(r.next()).isTrue();
+                assertThat(r.getString(1)).isEqualTo("Customer Cash Balances [Control]");
+                assertThat(r.getString(2)).isEqualTo("Debit");
+            }
             try (Statement s = c.createStatement(); ResultSet r = s.executeQuery(
                     "SELECT rail, firm_bank_account, status, count(*) FROM treasury.bank_payments"
                         + " GROUP BY rail, firm_bank_account, status")) {

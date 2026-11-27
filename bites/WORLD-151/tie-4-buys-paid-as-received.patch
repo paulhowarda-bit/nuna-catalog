@@ -2,15 +2,15 @@ Breaks: tie 4 counts the money of a customer's buy as received instead of paid
 Module: demo-datagen
 Test: ReconTest#onACleanWorldEveryViewIsEmpty
 diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Recon.java b/demo-datagen/src/main/java/nuna/datagen/live/Recon.java
-index 0863df59..e8f77543 100644
+index e6057f41..d87fb7fe 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/live/Recon.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/live/Recon.java
-@@ -135,7 +135,7 @@ final class Recon {
+@@ -141,7 +141,7 @@ final class Recon {
                SELECT trade_date, security_id, CAST(NULL AS date), CAST(0 AS decimal(20, 5)),
                  CAST(CASE WHEN template_id IN (41, 64) THEN quantity ELSE -quantity END AS decimal(20, 5)),
                  CAST(0 AS decimal(20, 2)),
--                CAST(CASE WHEN template_id IN (41, 64) THEN -fill_amount ELSE gross_amount END AS decimal(20, 2))
-+                CAST(CASE WHEN template_id IN (41, 64) THEN fill_amount ELSE gross_amount END AS decimal(20, 2))
-               FROM %s f WHERE template_id IN (41, 44, 61, 64)
+-                CAST(CASE WHEN template_id IN (41, 64) THEN -fill_amount WHEN template_id = 92 THEN fill_amount
++                CAST(CASE WHEN template_id IN (41, 64) THEN fill_amount WHEN template_id = 92 THEN fill_amount
+                   ELSE gross_amount END AS decimal(20, 2))
+               FROM %s f WHERE template_id IN (41, 44, 61, 64, 92)
              ) t
-             WHERE trade_date < current_date

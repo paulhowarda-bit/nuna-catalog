@@ -345,7 +345,7 @@ Accounts that run the demo rather than people in it:
 | Silo `nunatest` | `~/.nuna-demo/secrets/silo-root` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>, by its access-key form: every bucket, its objects, users, policies and settings |
 | PostgreSQL `catalog` | none: the catalog's client certificate | the catalog's database, which only the catalog reaches over the network; not published outside the cluster (The catalog's database, above) |
 | PostgreSQL `backoffice` | `~/.nuna-demo/secrets/backoffice` | the CDC leg's PostgreSQL, its owner, the back office's loader (`demo-datagen`'s `Main cdc`) and Debezium's login; `demo/demo.sh psql` |
-| Oracle `treasury` | `~/.nuna-demo/secrets/treasury` | the CDC leg's Oracle schema, owner of `BANK_PAYMENTS`, which `Main cdc` loads as it; `demo/demo.sh sqlplus` |
+| Oracle `treasury` | `~/.nuna-demo/secrets/treasury` | the CDC leg's Oracle schema, owner of `BANK_PAYMENTS`, `GL_JOURNAL` and `GL_BALANCES`, which `Main cdc` loads as it; `demo/demo.sh sqlplus` |
 | Oracle `SYS`, `SYSTEM` | `~/.nuna-demo/secrets/oracle` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
 | Oracle `c##dbzuser` | `~/.nuna-demo/secrets/debezium` | Debezium's LogMiner user |
 | CockroachDB `root` | none: the node's client certificate | the CDC leg's CockroachDB; `demo/demo.sh cockroach` |
@@ -468,12 +468,41 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   SELECT case_type, status FROM lakehouse."brokerage.compliance".aml_cases_current;   -- as cora
   SELECT * FROM lakehouse."brokerage.money_movement".payments WHERE status = 'blocked';
   ```
+- The firm's books (item 153): margin (`brokerage.margin`: each security's house requirement, each margin account at
+  the day's end with its Reg T, FINRA 4210 and house requirements and its intraday margin deficit, and the calls),
+  tax (`brokerage.tax`: the open tax lots, each lot's part of a sale, wash sales), confirms
+  (`brokerage.client_reporting.confirms`), CAT events of every order, route and fill and the weekly 15c3-3 reserve
+  computation (`brokerage.regulatory`), and asset servicing (`brokerage.reference.corporate_actions`,
+  `brokerage.asset_servicing`). At the end of a month's last business day the generator writes the month-end close
+  (statements and their positions, 1099-B and 1099-DIV lines, the Rule 606 report, net capital, best-execution
+  reviews) as one multi-table commit and tags it `month-end-YYYY-MM`. Seeded: at 07:15 on the first business day
+  after a close, a buy of the month's last day is busted (template 92); the restated statements go on a branch
+  `restate-YYYY-MM`, which is merged, while the tag keeps what they first said. The tag and the branch are the
+  catalog's refs (item 26), not each table's: the console lists them, and a client reads the tag as warehouse
+  `lakehouse@month-end-YYYY-MM`, the same way the writer writes the branch.
+  ```sql
+  SELECT * FROM lakehouse."brokerage.recon".statements_vs_ledger;   -- the restated account's corrected lines
+  ```
+- The General Ledger (item 153): one control account per customer money definition of the ledger (`GL-1001`,
+  Customer Cash Balances [Control], and the rest of 1000 to 1999), each day's debits and credits
+  (`treasury.gl_journal`) and each control's balance at the day's end (`treasury.gl_balances`), in the CDC leg's
+  Oracle, loaded by `Main cdc` beside the bank's payments. `brokerage.finance` has views of each as the treasury holds
+  it now, and of the bank's payments without the counterparty's bank details: `gl_journal`, `gl_balances`,
+  `bank_payments`, made once the CDC leg has made their histories.
+- Reconciliation (item 153): ties 2 and 5 to 9 join the three of item 151 in `brokerage.recon`: `tax_lots_vs_ledger`,
+  `payments_vs_ledger` and `bank_vs_ledger` (tie 5, the second up to the treasury's last load), `gl_vs_subledger`
+  (tie 6, each GL control against the sum of its definition), `statements_vs_ledger`, `realized_vs_1099b` and
+  `cat_vs_orders`. Each is empty on a consistent world; the seeded bust shows in `statements_vs_ledger` as the
+  restated account's unsettled purchases and position, and at the tag `statements_vs_ledger` is empty. Ties 5 and 6
+  appear once the CDC leg has run.
 - Governance, once per lake: `brokerage.reference`'s tables are `public`, `brokerage.markets`' `internal`,
   `brokerage.party.accounts` `restricted` and `brokerage.ledger`'s tables and views `confidential`; namespaces
   `brokerage.party` and `brokerage.ledger` are regulated, marked after their tables are classified, and
   `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. On every `gen`, as item 151
   added them: `brokerage.clearing` and `brokerage.recon` are `confidential`, `brokerage.kafka` `internal`, and
-  `brokerage.clearing` and `brokerage.kafka` have owners. The grants on all of
+  `brokerage.clearing` and `brokerage.kafka` have owners. On every `gen`, as item 153 added them:
+  `brokerage.margin`, `.tax`, `.client_reporting` and `.regulatory` are `confidential`, `brokerage.asset_servicing`
+  `internal`, and `brokerage.finance` `confidential` and regulated, each with an owner. The grants on all of
   `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino. On every `gen`, as item 152
   added them: `brokerage.party`'s new tables are `restricted`, all but `beneficial_owners`; `brokerage.money_movement`
   is `confidential` and `brokerage.compliance` `restricted`, both regulated and owned, each table classified first;
@@ -878,8 +907,9 @@ worker and the brokerage world's generator to make room for it:
   152; `demo/cdc/backoffice.sql`): schema `party` (`parties`, `accounts`, `account_roles`, `cip_checks`,
   `suitability_profiles`, `beneficial_owners`, `trusted_contacts`), `money_movement` (`payments`, `ach_returns`,
   `acats_transfers`) and `compliance` (`aml_alerts`, `aml_cases`, `complaints`), each record at its latest version.
-- `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.BANK_PAYMENTS`
-  (each ACH and wire as the firm's bank sees it) in PDB `FREEPDB1` (`demo/cdc/oracle.sql`, run as the database
+- `oracle`: Oracle Database Free in archive log mode with supplemental logging, tables `TREASURY.BANK_PAYMENTS`
+  (each ACH and wire as the firm's bank sees it), `GL_JOURNAL` and `GL_BALANCES` (the General Ledger, item 153) in PDB
+  `FREEPDB1` (`demo/cdc/oracle.sql`, run as the database
   starts; it restarts the database once).
 - `cockroach`: CockroachDB 25.4.20 (the version the tests use), one node, database `custody` with the brokerage
   world's clearing books in schema `clearing` (`demo/cdc/cockroach.sql`, run as the node first starts; item 151):
@@ -889,7 +919,8 @@ worker and the brokerage world's generator to make room for it:
   (`demo-datagen`'s `Main cdc`, the brokerage world's job; CockroachDB as login `clearing`, PostgreSQL as
   `backoffice`, Oracle as `treasury`), so each change is one row of its history. The first `cdc` writes each record
   once; the world's earlier versions are only in the lake's own tables. A leg begun before item 152, whose databases
-  held the toy `settlement.instructions` and `TREASURY.PAYMENTS`, starts anew once.
+  held the toy `settlement.instructions` and `TREASURY.PAYMENTS`, or before item 153, whose Oracle had no General
+  Ledger, starts anew once.
 - CockroachDB's node runs secure, so
   passwords are checked, but accepts SQL without TLS. A single development node needs no licence key and is
   not throttled, and its diagnostics reporting is off.
@@ -901,7 +932,7 @@ worker and the brokerage world's generator to make room for it:
 | Source | Kafka topic | Iceberg table in `lakehouse` |
 |---|---|---|
 | `party.parties` and the rest of the back office | `backoffice.party.parties` and so on | `history.postgres.party.parties` and so on, in `history.postgres.party`, `.money_movement` and `.compliance` |
-| `TREASURY.BANK_PAYMENTS` | `oracle.TREASURY.BANK_PAYMENTS` | `history.oracle.treasury.bank_payments` |
+| `TREASURY.BANK_PAYMENTS`, `.GL_JOURNAL`, `.GL_BALANCES` | `oracle.TREASURY.BANK_PAYMENTS` and so on | `history.oracle.treasury.bank_payments`, `.gl_journal`, `.gl_balances`, routed by `_cdc.source` |
 | `clearing.stock_record`, `.cns_obligations`, `.fails`, `.locates` | `cockroach.clearing.stock_record` and so on | `history.cockroach.clearing.stock_record` and so on |
 
 Each table is a history: one row per change, appended, never updated. The sink's `DebeziumTransform` adds a

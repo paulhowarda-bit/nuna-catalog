@@ -38,9 +38,10 @@ class ClearingTest {
         assertThat(Played.clean().unexpectedRejections).isZero();
         assertThat(Played.seeded().breakSeeded).isTrue();
         assertThat(Played.clean().breakSeeded).isFalse();
-        // The fail changes clearing alone: every other feed is the same with it or without it.
+        // The fail changes clearing alone, and the reserve computation, whose debits count fails to deliver (item
+        // 153): every other feed is the same with it or without it.
         for (Feed f : Feed.values()) {
-            if (f.namespace.equals("brokerage.clearing")) {
+            if (f.namespace.equals("brokerage.clearing") || f == Feed.RESERVE_COMPUTATION) {
                 continue;
             }
             assertThat(Played.seeded().of(f)).as(f.name()).isEqualTo(Played.clean().of(f));

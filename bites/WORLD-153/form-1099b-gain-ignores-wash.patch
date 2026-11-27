@@ -1,0 +1,16 @@
+Breaks: a 1099-B line's gain or loss leaves out the loss a wash sale disallowed (box 1g)
+Module: demo-datagen
+Test: ReconTest#aCleanWorldThatClosesAMonthTiesOut
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Tax.java b/demo-datagen/src/main/java/nuna/datagen/world/Tax.java
+index 3acf99fa..cd3b873c 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Tax.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Tax.java
+@@ -408,7 +408,7 @@ final class Tax {
+             row.put("proceeds", r.proceeds);
+             row.put("cost_basis", basis);
+             row.put("wash_sale_loss_disallowed", r.disallowed);
+-            row.put("gain_or_loss", r.proceeds.subtract(basis).add(r.disallowed));
++            row.put("gain_or_loss", r.proceeds.subtract(basis));
+             row.put("basis_wash_adjustment", r.basisAdjustment);
+             row.put("term", r.term);
+             row.put("covered", r.covered);

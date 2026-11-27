@@ -1,0 +1,16 @@
+Breaks: the bank's copy of a wire received keeps it pending, so the bank's net misses the deposits the ledger settled
+Module: demo-datagen
+Test: ReconTest#onACleanWorldEveryViewIsEmpty
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+index 28874b9c..1fbf7df7 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+@@ -269,7 +269,7 @@ public final class Sources implements AutoCloseable {
+             bank.put("direction", "deposit".equals(p.get("direction")) ? "incoming" : "outgoing");
+             bank.put("status", switch ((String) p.get("status")) {
+                 case "initiated" -> "pending";
+-                case "received", "settled" -> "settled";
++                case "settled" -> "settled";
+                 default -> p.get("status");
+             });
+             bank.put("amount", p.get("amount"));

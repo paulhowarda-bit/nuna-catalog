@@ -259,6 +259,42 @@ final class Clearing {
         emitter.emit(at, Feed.FAILS, row);
     }
 
+    /**
+     * A customer buy execution the venue broke before its settlement (item 153): the customer's position, and the
+     * obligation of its trade date, reduced; an adjusting CNS row carries the change, so the obligation's rows still
+     * net to its customers' fills (tie 4, which counts the bust, template 92, against the buy).
+     */
+    void bust(Instant at, long account, Security s, long quantity, BigDecimal value, LocalDate tradeDate) {
+        move(account, s, BigDecimal.valueOf(-quantity));
+        LocalDate settlement = calendar.settlement(tradeDate);
+        List<Obligation> obligations = due.get(settlement);
+        for (int i = 0; obligations != null && i < obligations.size(); i++) {
+            Obligation ob = obligations.get(i);
+            if (ob.security().id() == s.id() && ob.tradeDate().equals(tradeDate)) {
+                obligations.set(i, new Obligation(ob.id(), s, tradeDate, settlement, ob.net() - quantity,
+                    ob.netAmount().add(value), ob.shortQuantity()));
+                break;
+            }
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("obligation_id", "CNS-" + settlement.format(BASIC) + "-" + s.id() + "-B");
+        row.put("security_id", s.id());
+        row.put("symbol", s.symbol());
+        row.put("cusip", s.cusip());
+        row.put("trade_date", tradeDate);
+        row.put("settlement_date", settlement);
+        row.put("buy_quantity", -quantity);
+        row.put("buy_amount", value.negate());
+        row.put("sell_quantity", 0L);
+        row.put("sell_amount", BigDecimal.ZERO);
+        row.put("short_sale_quantity", 0L);
+        row.put("net_quantity", -quantity);
+        row.put("net_amount", value);
+        row.put("direction", "adjustment");
+        row.put("computed_at", at);
+        emitter.emit(at, Feed.CNS_OBLIGATIONS, row);
+    }
+
     /** 17:00: the day's CNS obligations, one per security traded, then the stock record. */
     void endOfDay(Instant at, LocalDate day) {
         LocalDate settlement = calendar.settlement(day);

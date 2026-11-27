@@ -285,9 +285,9 @@ class KitChecksTest {
     }
 
     @Test
-    @DisplayName("B20 (v13): all 44 booking schemes (v14's 22, item 155's 22) pass the mirror proof: every line on a mirrored definition has its counterpart from the same source")
+    @DisplayName("B20 (v13): all 45 booking schemes (v14's 22, item 155's 22, item 153's bust) pass the mirror proof: every line on a mirrored definition has its counterpart from the same source")
     void allBookingSchemesPassTheMirrorProof() {
-        assertThat(kit.schemes().bookingSchemes()).hasSize(44);
+        assertThat(kit.schemes().bookingSchemes()).hasSize(45);
         assertThat(kit.validateMirrors()).isEmpty();
     }
 

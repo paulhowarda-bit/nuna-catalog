@@ -39,7 +39,7 @@ class SingleStoreTablesTest {
                 fed.add(f.table);
             }
         }
-        assertThat(fed).hasSize(31);
+        assertThat(fed).hasSize(43);
         assertThat(pipelines.split("CREATE OR REPLACE PIPELINE ", -1)).hasSize(2);
         assertThat(pipelines).contains("CREATE OR REPLACE PIPELINE brokerage_world_to_lake AS LOAD DATA CONNECTOR 'ChangeFeedConnector'")
             .contains("\"singlestore.append-only\": \"true\"")

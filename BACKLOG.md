@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**32 open:** 9 S, 13 M, 4 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
+**31 open:** 9 S, 13 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,7 +25,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
-| [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
@@ -949,30 +948,6 @@ table's own files; two users in different groups get different results; the copi
 expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
 table's own prefix.
 
-### 153. Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT
-
-- Decided: 2026-11-22, D48
-- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo-datagen/ demo/cdc/oracle.sql demo/demo.sh demo/README.md
-- Effort: L, the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits
-
-Fourth phase of D48 (`docs/design/brokerage-world.md`).
-
-What to build:
-- The General Ledger in Oracle (`brokerage.finance`) and its tie to the sub-ledgers (ControlOfTotal); margin
-  (`brokerage.margin`: house requirements, account snapshots with the intraday margin level of FINRA 4210 as amended
-  from 2026-06-04, calls); the 15c3-3 reserve computation and net capital (`brokerage.regulatory`).
-- Tax lots and realizations with wash sales, 1099-B lines (`brokerage.tax`); confirms and month-end statements
-  (`brokerage.client_reporting`); best-execution reviews; CAT order events and a Rule 606 report.
-- Asset servicing (`brokerage.reference.corporate_actions`, `brokerage.asset_servicing`) once the demo kit books it (item 155).
-- The month-end close as one multi-table commit (`/transactions/commit`) with a tag `month-end-YYYY-MM`; a trade bust
-  after the close corrected on a branch and merged, while the tag keeps what the statements said.
-- Spark as the month-end batch where the demo's memory allows (it needs Trino stopped); the Java writer otherwise.
-- The remaining ties of the design (2 and 5 to 9) as `brokerage.recon` views.
-
-What done looks like: every tie holds on a clean world and returns exactly the seeded rows otherwise; reading the
-statements at the month-end tag after the bust's correction gives what they said before it.
-
 ### 154. Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting
 
 - Decided: 2026-11-22, D48
@@ -1736,6 +1711,7 @@ document only repeats it, it may point there instead.
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [151](backlog/151.md) | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | done | 2026-11-26 |
 | [152](backlog/152.md) | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | done | 2026-11-27 |
+| [153](backlog/153.md) | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | done | 2026-11-27 |
 | [155](backlog/155.md) | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | done | 2026-11-26 |
 | [156](backlog/156.md) | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | done | 2026-11-25 |
 | [157](backlog/157.md) | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | done | 2026-11-25 |

@@ -10,6 +10,7 @@ import java.util.Set;
 import nuna.datagen.world.Event;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.LakeSchemas;
+import nuna.datagen.world.MonthEnd;
 import nuna.datagen.world.Sink;
 
 /**
@@ -54,6 +55,12 @@ public final class Publisher implements Sink {
 
         /** Tags each table {@code eod-<day>} once it holds its total, where it is not tagged already. */
         void endOfDay(LocalDate day, Map<String, Long> totals);
+
+        /** Writes a month-end close and tags it (item 153), unless it is done already. */
+        default void monthEnd(MonthEnd close) {}
+
+        /** Restates a closed month on a branch merged into main (item 153), unless it is done already. */
+        default void restated(MonthEnd.Restatement restatement) {}
     }
 
     /** The wall clock the events wait for. */
@@ -179,5 +186,21 @@ public final class Publisher implements Sink {
             lake.endOfDay(day, today);
         }
         changedToday.clear();
+    }
+
+    @Override
+    public void monthEnd(MonthEnd close) {
+        lake.monthEnd(close);
+    }
+
+    @Override
+    public void restated(MonthEnd.Restatement restatement) {
+        try {
+            clock.await(restatement.at());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted", interrupted);
+        }
+        lake.restated(restatement);
     }
 }

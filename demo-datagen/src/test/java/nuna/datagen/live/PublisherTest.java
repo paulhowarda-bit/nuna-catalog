@@ -172,8 +172,9 @@ class PublisherTest {
 
     /** A feed's records as an unbroken run on route both sends them: through its topic, or into its SingleStore table. */
     private static List<String> expected(Feed f, Topics whole, Rows wholeRows) {
+        // A feed the days played never used (an entitlement, say) has no records either way.
         return f.path == Feed.Path.KAFKA ? whole.records.getOrDefault(f, List.of())
-            : new ArrayList<>(wholeRows.rows.get(f).values());
+            : new ArrayList<>(wholeRows.rows.getOrDefault(f, new TreeMap<>()).values());
     }
 
     @Test

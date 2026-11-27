@@ -1,0 +1,16 @@
+Breaks: the General Ledger's control accounts take only their definitions' debits, so a control no longer sums its sub-ledger
+Module: demo-datagen
+Test: ReconTest#onACleanWorldEveryViewIsEmpty
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/GeneralLedger.java b/demo-datagen/src/main/java/nuna/datagen/live/GeneralLedger.java
+index c3c73c4c..2e3352d3 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/GeneralLedger.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/GeneralLedger.java
+@@ -63,7 +63,7 @@ final class GeneralLedger {
+         if ("Debit".equals(row.get("side"))) {
+             day.debit = day.debit.add(amount);
+         } else {
+-            day.credit = day.credit.add(amount);
++            day.credit = day.credit.add(BigDecimal.ZERO);
+         }
+         day.lines++;
+     }
