@@ -67,6 +67,14 @@ dependencies {
 }
 
 // The runnable jar gets a classifier so other modules can still depend on the plain jar.
+// The documentation site, served under /docs/ (UiWiring): its pages, chrome and images, not its tools or design notes.
+tasks.processResources {
+    from(rootProject.file("docs/site")) {
+        into("nuna/docs")
+        exclude("tools/**", "**/*.md")
+    }
+}
+
 tasks.bootJar {
     archiveClassifier = "exec"
 }

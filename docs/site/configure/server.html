@@ -192,6 +192,19 @@
       </section>
 
       <section class="setting">
+        <h3 id="nuna-ui-docs-url"><code>nuna.ui.docs-url</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string: a path on the server, an http(s) URL, or <code>none</code></dd>
+          <dt>Default</dt><dd><code>/docs/</code>: the documentation this server serves</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_DOCSURL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.docs-url</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the console's documentation links go: the Docs button in its header, which opens the documentation of the page shown, the line in its keys dialog, the link on its sign-in screen, and the next step on a page your groups cannot use. The server serves this documentation under <code>/docs/</code> with no sign-in, so the default works on a network with no way out. Set a URL to send readers to a copy hosted elsewhere; a value without a trailing slash gets one. Set <code>none</code> to hide every link. Any other value stops the server from starting.</p>
+      </section>
+
+      <section class="setting">
         <h3 id="nuna-ui-oidc-issuer"><code>nuna.ui.oidc.issuer</code></h3>
         <dl class="facts">
           <dt>Type</dt><dd>URI</dd>

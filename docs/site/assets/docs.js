@@ -79,8 +79,8 @@
   function themeNow() { return html.getAttribute('data-theme') || 'auto'; }
   function isDark() { var t = themeNow(); return t === 'dark' || (t === 'auto' && mq && mq.matches); }
   function setTheme(t) {
-    if (t === 'auto') { html.removeAttribute('data-theme'); store('nuna-docs-theme', null); }
-    else { html.setAttribute('data-theme', t); store('nuna-docs-theme', t); }
+    if (t === 'auto') { html.removeAttribute('data-theme'); store('nuna.theme', null); }
+    else { html.setAttribute('data-theme', t); store('nuna.theme', t); }
     $$('.seg button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-theme-pick') === t)); });
     shots();
   }

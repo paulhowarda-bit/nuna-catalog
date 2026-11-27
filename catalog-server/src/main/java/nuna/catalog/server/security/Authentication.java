@@ -80,10 +80,12 @@ final class Authentication extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
         // The fixed OAuth error names the IdP for clients that have no token yet (D13). The console's own files
-        // are what a browser loads before it can sign in; the API calls they make carry a token.
+        // are what a browser loads before it can sign in; the API calls they make carry a token. The documentation
+        // site is published documentation, read before or without signing in.
         // OPA's calls from Trino carry no token of their own: OpaRoutes verifies the user's, which Trino forwards in
         // the body, and answers from it alone (D20, backlog 115).
-        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path) || path.startsWith("/opa/");
+        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path) || UiWiring.isDocsFile(path)
+                || path.startsWith("/opa/");
     }
 
     @Override

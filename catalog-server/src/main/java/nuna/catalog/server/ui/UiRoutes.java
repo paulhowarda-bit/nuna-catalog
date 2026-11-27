@@ -87,6 +87,7 @@ class UiRoutes {
     ResponseEntity<String> config() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("dev-token-login", settings.devTokenLogin());
+        out.put("docs-url", settings.docsLink());
         if (settings.oidc() == null) {
             out.put("oidc", null);
         } else {
