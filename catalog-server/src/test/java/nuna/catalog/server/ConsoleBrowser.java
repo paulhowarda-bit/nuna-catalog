@@ -1,8 +1,15 @@
 package nuna.catalog.server;
 
+import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.async.ResultCallback;
+import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.Frame;
+import com.github.dockerjava.api.model.StreamType;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.openqa.selenium.By;
 import org.openqa.selenium.SessionNotCreatedException;
@@ -111,16 +118,51 @@ public final class ConsoleBrowser implements AutoCloseable {
         if (Boolean.getBoolean("nuna.demo-beside")) {
             return;
         }
-        int demo = DockerClientFactory.instance().client().listContainersCmd()
-                .withLabelFilter(Map.of("io.kubernetes.pod.namespace", "nuna-demo")).exec().size();
+        DockerClient docker = DockerClientFactory.instance().client();
+        int demo = docker.listContainersCmd()
+                .withLabelFilter(Map.of("io.kubernetes.pod.namespace", "nuna-demo")).exec().size()
+                + demoPodsInKind(docker);
         if (demo > 0) {
-            throw new IllegalStateException("The nuna-demo stack is running (" + demo + " of its containers). Beside "
+            throw new IllegalStateException("The nuna-demo stack is running (" + demo + " of its pods). Beside "
                     + "it Docker and Windows run short of memory, and the console's browser tests have run past half an "
                     + "hour with Chrome unreachable and their waits running out (backlog 209). Take the demo down and "
                     + "run them (D49, backlog 218): tell every active session, run demo/demo.sh down, run these tests "
                     + "again, then run demo/demo.sh up from the main checkout and tell them again. "
                     + "-Pnuna.demo-beside runs them beside it anyway.");
         }
+    }
+
+    /**
+     * The demo's ready pods in kind cluster {@code nuna} (backlog 287), where they run inside the kind node container,
+     * which Docker lists, rather than as containers of their own: asked of the node's own {@code crictl}. None when no
+     * node runs (the demo's cluster is absent, as at work) or the node cannot answer (backlog 296).
+     */
+    private static int demoPodsInKind(DockerClient docker) {
+        int pods = 0;
+        for (Container node : docker.listContainersCmd()
+                .withLabelFilter(Map.of("io.x-k8s.kind.cluster", "nuna")).exec()) {
+            StringBuilder out = new StringBuilder();
+            try {
+                String exec = docker.execCreateCmd(node.getId()).withAttachStdout(true).withAttachStderr(true)
+                        .withCmd("crictl", "pods", "--namespace", "nuna-demo", "--state", "ready", "--quiet")
+                        .exec().getId();
+                docker.execStartCmd(exec).exec(new ResultCallback.Adapter<Frame>() {
+                    @Override
+                    public void onNext(Frame frame) {
+                        if (frame.getStreamType() == StreamType.STDOUT) {
+                            out.append(new String(frame.getPayload(), StandardCharsets.UTF_8));
+                        }
+                    }
+                }).awaitCompletion(30, TimeUnit.SECONDS);
+            } catch (RuntimeException e) {
+                continue;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return pods;
+            }
+            pods += (int) out.toString().lines().filter(line -> !line.isBlank()).count();
+        }
+        return pods;
     }
 
     /**
