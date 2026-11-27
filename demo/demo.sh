@@ -792,9 +792,36 @@ SQL
 # PostgreSQL's pod, and registering it again leaves the registry as it was. Registered, it vouches for the user of
 # each query, whose own token the query carries (trino.yaml), so a flagged table's data reaches them through Trino
 # with their row filter and column masks applied (D20, backlog 115).
+# The brokerage world's writers too (item 308; D48, amended 2026-11-27): Kafka Connect's (kafka-connect-demo: the
+# world's sinks and the CDC leg's), SingleStore's (singlestore-demo: its change feeds) and the generator's
+# (brokerage-world-demo: it counts each table's rows and tags its ends of day), since FLAGGED_TABLES opens its files only
+# to trusted engines. Each acts as itself, with its own grants; none names an end user.
+TRUSTED_CLIENTS="trino-demo kafka-connect-demo singlestore-demo brokerage-world-demo"
 trusted_engines() {
-  say "registering Trino's client, trino-demo, as a trusted engine (as oscar, the platform operator)"
-  api oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
+  local client
+  say "registering the trusted engines, as oscar, the platform operator: $TRUSTED_CLIENTS"
+  for client in $TRUSTED_CLIENTS; do
+    api oscar PUT /management/v1/engines "{\"issuer\": \"https://idp.demo/nuna\", \"client-id\": \"$client\"}" 204
+  done
+}
+
+# The tables that hold tax ids, birth dates, addresses or bank account numbers, flagged (D20; item 308), as catalog
+# lakehouse names them: both routes' copies and the CDC leg's histories. A flagged table opens its files only to
+# trusted engines (TRUSTED_CLIENTS, which hold every writer of these), so Trino reads them, with any row filter and
+# column masks, and any other client gets 403. demo-datagen's FlaggedTablesTest holds the list to the tables' columns.
+FLAGGED_TABLES="brokerage.party.parties brokerage.party.beneficial_owners brokerage.money_movement.payments
+  brokerage.singlestore.parties brokerage.singlestore.beneficial_owners brokerage.singlestore.payments
+  history.postgres.party.parties history.postgres.party.beneficial_owners history.postgres.money_movement.payments
+  history.oracle.treasury.bank_payments"
+# Flags, as stella, each table of FLAGGED_TABLES under a namespace (brokerage.party, say); setting it again changes
+# nothing. Fails at the first table the catalog does not have.
+flag_tables() {
+  local m=/management/v1/catalogs/$CATALOG table ns
+  for table in $FLAGGED_TABLES; do
+    [[ "$table" == "$1".* ]] || continue
+    ns=${table%.*}
+    api stella PUT "$m/namespaces/${ns//./%1F}/tables/${table##*.}/attributes/row-column-policy"       '{"value":"true","provenance":"demo-seed: data catalogue"}' || return 1
+  done
 }
 
 # Keycloak's realm (keycloak-realm.json) and Keycloak: a changed realm replaces its pod, which imports it as it starts.
@@ -1123,7 +1150,9 @@ oms_copies_free() {
 # classified, and the connector makes the copies on its first start and stops at the first closed one, so the
 # namespace is marked regulated only once every copy is classified, as brokerage.party and brokerage.ledger are. A copy
 # new since then (the clearing books', item 151; the back office's, item 152) is closed as the connector makes it, so
-# the loop below starts the pipeline again once it is classified. beneficial_owners' copy is classified with the rest:
+# the loop below starts the pipeline again once it is classified. The copies with tax ids, birth dates, addresses or
+# bank account numbers are flagged last (FLAGGED_TABLES), which the change feed, a trusted engine, still writes.
+# beneficial_owners' copy is classified with the rest:
 # one closed copy would stop the pipeline's every feed, so the unclassified table (D27) is the Kafka route's moment
 # alone (brokerage_backoffice_governance).
 WORLD_COPIES="calendar:public securities:public bars_5m:internal prices_eod:internal accounts:restricted
@@ -1176,7 +1205,8 @@ world_feeds_start() {
     return 1
   fi
   api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/regulated" \
-    '{"value":"true","provenance":"demo-seed: compliance register"}'
+    '{"value":"true","provenance":"demo-seed: compliance register"}' &&
+  flag_tables brokerage.singlestore
 }
 world_feeds_stop() {
   local name stopped=
@@ -1563,8 +1593,8 @@ brokerage_clearing_governance() {
 # and a steward classifying it during the demo opens it. brokerage.money_movement is confidential and brokerage.compliance
 # restricted, both regulated, each table classified first, as a regulated namespace closes an unclassified table to
 # its writers; the current-state views take their namespace's classification. aml_cases is under a legal hold (D24),
-# placed once. Tax ids, birth dates, addresses and bank account numbers are not flagged (D20): a flagged table opens
-# its files only to trusted engines, and the sinks that write these tables are not one (item 152 asks Paul).
+# placed once. The tables with tax ids, birth dates, addresses or bank account numbers are flagged (D20, item 308:
+# FLAGGED_TABLES); their writers are trusted engines (TRUSTED_CLIENTS), so they still write them.
 brokerage_backoffice_governance() {
   local m=/management/v1/catalogs/$CATALOG ns table
   classify() {
@@ -1588,6 +1618,7 @@ brokerage_backoffice_governance() {
     api stella PUT "$m/namespaces/brokerage%1F$ns/attributes/regulated" \
       '{"value":"true","provenance":"demo-seed: compliance register"}' || return 1
   done
+  flag_tables brokerage.party && flag_tables brokerage.money_movement || return 1
   api stella PUT "$m/namespaces/brokerage%1Fmoney_movement/attributes/owner" \
     '{"value":"money-movement-operations","provenance":"demo-seed: HR feed"}' &&
   api stella PUT "$m/namespaces/brokerage%1Fcompliance/attributes/owner" \
@@ -1978,6 +2009,7 @@ cdc_start() {
   if cdc_running; then
     say "the CDC leg is running: bringing it up to date"
     cdc_apply
+    history_flags
     cdc_access
     return
   fi
@@ -2020,6 +2052,7 @@ cdc_start() {
     if [[ "$(k get configmap cdc-begun -o jsonpath='{.data.world}')" == 152 ]]; then
       say "starting the CDC leg from its kept databases; the connectors carry on from where they stopped"
       cdc_apply
+      history_flags
       cdc_access
       return
     fi
@@ -2058,7 +2091,14 @@ cdc_start() {
   done
   k create configmap cdc-begun --from-literal=began="$(date -u +%FT%TZ)" --from-literal=custody=clearing \
     --from-literal=world=152 >/dev/null
+  history_flags
   cdc_access
+}
+
+# The leg's history tables that hold tax ids, birth dates, addresses or bank account numbers, flagged (D20, item 308):
+# its sinks make them with their first change, and, trusted engines, still write them once flagged.
+history_flags() {
+  flag_tables history || say "the CDC leg's history tables were not all flagged (see the answer above); the next cdc"     "tries again"
 }
 
 cdc_access() {

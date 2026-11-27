@@ -123,14 +123,14 @@ Under `lakehouse.brokerage`, beside the existing samples.
 |---|---|---|
 | `reference` | securities, identifiers, calendar, venues, corporate_actions, fee_schedules | public; one table under a DR freeze |
 | `markets` | prices_eod, bars_5m, quotes | internal; short snapshot retention, compaction |
-| `party` | parties, accounts, account_roles, cip_checks, suitability_profiles, beneficial_owners, trusted_contacts; `history` | restricted, regulated; tax id, birth date and address to be flagged (D20), which waits on Paul: the writers are not trusted engines (item 152) |
+| `party` | parties, accounts, account_roles, cip_checks, suitability_profiles, beneficial_owners, trusted_contacts; `history` | restricted, regulated; parties and beneficial_owners, which hold tax id, birth date and address, flagged (D20, item 308), their writers registered as trusted engines |
 | `trading` | orders, order_events, routes, executions, best_ex_reviews | internal |
 | `kafka` | order_events, routes, executions, as they went through Kafka while SingleStore was off (D50) | internal |
 | `ledger` | chart_of_accounts, booking_schemes, financial_transactions, journal_lines, posting_rejections, balances_eod; views buying_power, running_collected_balance | confidential, regulated; a tag per business day |
 | `clearing` | cns_obligations, settlements, fails, stock_record, locates | confidential |
 | `recon` | views stock_record_vs_ledger, executions_vs_fills, cns_vs_fills (ties 1, 3 and 4; phase 2) | confidential |
 | `margin` | house_requirements, account_margin_eod, margin_calls | confidential |
-| `money_movement` | payments, ach_returns, acats_transfers | confidential, regulated; bank account numbers to be flagged, as `party`'s columns |
+| `money_movement` | payments, ach_returns, acats_transfers | confidential, regulated; payments, which holds bank account numbers, flagged, as `party`'s tables |
 | `asset_servicing` | entitlements, income_payments | internal |
 | `compliance` | sanctions_list, sanctions_screens, aml_alerts, aml_cases, surveillance_alerts, complaints; `singlestore`, their copies through SingleStore (D50) | restricted, regulated; legal hold on aml_cases; read only by `demo-compliance` |
 | `tax` | tax_lots, realized_gains, form_1099b, form_1099div | confidential |
@@ -146,9 +146,10 @@ Under `lakehouse.brokerage`, beside the existing samples.
   from Debezium and from plain topics, the Java library, Spark.
 - Regulated namespaces (D27): `party.beneficial_owners` lands unclassified, is refused to everyone, and a steward
   classifies it during the demo. This replaces the refusal the toy `finance.ledger.accounts` shows today.
-- Flagged tables for trusted engines only (D20), masks once item 115 lands: Trino reads tax ids, SingleStore and
-  PyIceberg get 403. Not set yet: the sinks and the change feed that write these tables are not trusted engines, so
-  item 152 asks Paul how to flag them.
+- Flagged tables for trusted engines only (D20), masks once item 115 lands: Trino reads tax ids, PyIceberg gets 403.
+  The writers of these tables, the Iceberg sinks, SingleStore's change feed and the generator, are registered as
+  trusted engines (D48, amended 2026-11-27; item 308), so they still write them, and so SingleStore's own reads of
+  them are not refused either: it signs in as one client both ways.
 - A legal hold (D24) on `compliance.aml_cases`; SAR confidentiality as a grant: a new person, `cora`, in a new group,
   `demo-compliance`, alone reads `compliance`.
 - Time travel: one commit per business day; tags `eod-YYYY-MM-DD` and `month-end-YYYY-MM`; a trade busted after the

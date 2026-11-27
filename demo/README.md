@@ -208,10 +208,10 @@ The console offers two ways in:
 | `oscar` | in `~/.nuna-demo/people` | `demo-operators` | platform operator: DR freeze |
 | `cora` | in `~/.nuna-demo/people` | `demo-compliance` | compliance (item 152): the only group that reads a `lakehouse` namespace named `compliance` and everything below it (`brokerage.compliance`, `history.postgres.compliance`), and the compliance topics in kafbat; describe on the rest of `lakehouse`, so she sees every name but no other data |
 | `presenter` | in `~/.nuna-demo/people` | all six groups above, and `demo-presenters` | everything, in one sign-in, for showing the demo (below) |
-| `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
+| `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways. Its client, `singlestore-demo`, is a trusted engine (D17, item 308), so its change feeds write the flagged tables (D20) |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
-| `brokerage` | token only | `demo-loaders` | create and modify; the brokerage world's generator, whose bootstrap makes its namespaces, tables and views |
-| `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks: the brokerage world's `brokerage-lake`, and the CDC leg's |
+| `brokerage` | token only | `demo-loaders` | create and modify; the brokerage world's generator, whose bootstrap makes its namespaces, tables and views. Its client, `brokerage-world-demo`, is a trusted engine (item 308), as it counts and tags the flagged tables |
+| `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks: the brokerage world's `brokerage-lake`, and the CDC leg's. Its client, `kafka-connect-demo`, is a trusted engine (item 308), so they write the flagged tables |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 | `service-account-nuna-audit-tables` | Keycloak client `nuna-audit-tables`, client-credentials grant | `demo-audit-writers` | create and write on `nuna_audit` only: the audit table writer |
 | `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them, which Trino's own vouches for, so they read flagged tables with their row filter and column masks (D20) |
@@ -383,7 +383,8 @@ vended credentials, as any engine would):
   `brokerage.party.beneficial_owners` shows it now (The brokerage world, below).
 - View `markets.equities.eu.xetra_daily`, with two versions, in SingleStore's dialect.
 - Grants by SQL for the groups, plus two made through the API by `gary`.
-- Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`.
+- Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`; and the
+  brokerage world's writers' clients, `kafka-connect-demo`, `singlestore-demo` and `brokerage-world-demo` (item 308).
 - The catalog's branch `dev`, with the next day's trades and rates committed on it, and its tag `sample`, made by
   `ana` through the API (Branches and tags of the catalog, below).
 
@@ -478,8 +479,14 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   `brokerage.compliance.aml_cases` is under a legal hold. `brokerage.party.beneficial_owners` lands unclassified, so
   the catalog refuses it to everyone (D27) and its sink, `brokerage-lake-owners`, fails at it while every other table
   commits; once `stella` classifies the table (the console's Governance, or the classification attribute through the
-  API), the generator restarts that sink within a minute and the table fills. No column is flagged (D20): the sinks
-  that write these tables are not trusted engines, and item 152 asks Paul how to flag them.
+  API), the generator restarts that sink within a minute and the table fills. The tables with tax ids, birth dates,
+  addresses or bank account numbers are flagged (D20, item 308; `demo.sh`'s `FLAGGED_TABLES`):
+  `brokerage.party.parties` and `beneficial_owners`, `brokerage.money_movement.payments`, their copies under
+  `brokerage.singlestore`, and the CDC leg's `history.postgres` copies of the three and
+  `history.oracle.treasury.bank_payments` (flagged at each `cdc`, once its sinks have made them). Their writers, the
+  sinks, SingleStore's change feeds and the generator, are registered as trusted engines on every `up`, so they still
+  write them; Trino reads them for `ana`, and any client that is no trusted engine gets 403 on their data, as on
+  `markets.desks.positions` (below). No group has a row filter or column mask on them.
 - Grants (item 152): only `demo-compliance` (`cora`, and `presenter`) reads a namespace named `compliance` and all
   below it. So `demo-analysts`' modify and `demo-stewards`' select are granted on each of `lakehouse`'s namespaces
   beside the compliance ones (`demo.sh`'s `lake_grants`, on every `up`, `gen` and `cdc`), no longer on the catalog. A
