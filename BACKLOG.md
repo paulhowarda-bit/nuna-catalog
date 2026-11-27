@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 5 S, 11 M, 4 L, 4 XL.
+**33 open:** 10 S, 13 M, 4 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -36,6 +36,15 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
 | [306](backlog/306.md) | S | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | the bite's Test: line and a check that it still bites | 2026-11-27 |
 | [308](backlog/308.md) | S | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | registering two engines and flagging a handful of tables in demo.sh, with a check that the writers still commit | 2026-11-27 |
+| [309](backlog/309.md) | S | Purging a table a ref still names answers 500, not a refusal | one missing case in one route and its test | 2026-11-27 |
+| [310](backlog/310.md) | S | OPA's row-filter and column-mask answers fail when the request names no Trino catalog | a null check at one boundary and a test | 2026-11-27 |
+| [311](backlog/311.md) | S | GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400 | a parameter's parsing and a test | 2026-11-27 |
+| [312](backlog/312.md) | ? | The console says a grants export is audited, but the export writes no audit record |  | 2026-11-27 |
+| [313](backlog/313.md) | M | Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240) | some dozen messages across four modules, and the tests that quote them | 2026-11-27 |
+| [314](backlog/314.md) | S | Grafana dashboards and demo.sh messages name backlog items and D rows | text only | 2026-11-27 |
+| [315](backlog/315.md) | S | Console: small faults the documentation writers found | five small changes in the console, Atelier's to settle where they touch design | 2026-11-27 |
+| [316](backlog/316.md) | ? | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | one investigation and one command | 2026-11-27 |
+| [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
 
 ## Open items in full
 
@@ -1451,6 +1460,160 @@ account numbers, on both routes' copies.
 
 What done looks like, live: both writers still commit to the flagged tables; Trino as `ana` reads them; PyIceberg (the
 engine matrix) gets 403 on them.
+
+### 309. Purging a table a ref still names answers 500, not a refusal
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/test/
+- Effort: S, one missing case in one route and its test
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+`CatalogObjectStore.claimPurge` answers `Refused(REFERENCED)` while a ref's cut names the object (its Javadoc,
+`catalog-store-api/src/main/java/nuna/catalog/store/CatalogObjectStore.java:109`), but
+`LifecycleRoutes.claimPurge` (`catalog-server/.../governance/LifecycleRoutes.java:232-242`) has cases for HELD,
+FROZEN, NOT_DUE and NOT_HOLDER only, so REFERENCED falls to `default -> throw new IllegalStateException(...)`: very
+likely a 500 to the maintenance worker. Read from the code, not reproduced. `RefRoutes` and `NamespaceRoutes`
+already answer REFERENCED as a refusal.
+
+What done looks like: claimPurge answers REFERENCED with a 409 that names the ref, audited as the other refusals
+are, and a test (on every store) claims the purge of a table a tag names and gets it.
+
+### 310. OPA's row-filter and column-mask answers fail when the request names no Trino catalog
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java, catalog-server/src/test/
+- Effort: S, a null check at one boundary and a test
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+`OpaAnswers.answer` (`catalog-server/.../security/OpaAnswers.java:115`) calls
+`table.catalog().toLowerCase(Locale.ROOT)` on the `catalogName` read from Trino's body (line 78), with no check that
+it is there. A body without it throws NullPointerException: very likely a 500 to Trino rather than "no filter".
+Read from the code, not reproduced. `/opa/v1` takes no token, so this is reachable by any caller.
+
+What done looks like: a missing or blank catalog, schema or table name answers as for an unknown catalog (no
+filter, no mask) or as a 400, whichever OPA's contract asks for, with a test for each.
+
+### 311. GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java, catalog-server/src/test/
+- Effort: S, a parameter's parsing and a test
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+`MaintenanceRoutes` binds `jobs` (and `days`) as `Integer` (`catalog-server/.../governance/MaintenanceRoutes.java:412`).
+A docs writer found `?jobs=abc` answers 500: the type mismatch is not turned into the catalog's 400 error shape.
+Seen by the writer; check whether other routes with numeric parameters do the same.
+
+What done looks like: a malformed number answers 400 BadRequestException naming the parameter, here and on any other
+route that binds a number, with a test.
+
+### 312. The console says a grants export is audited, but the export writes no audit record
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/resources/nuna/ui/governance.js, or catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java and RowColumnReadRoutes.java
+- Effort: S to M: either the console's words or an audit record for each export
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+The export dialog says "The export is audited." (`catalog-server/src/main/resources/nuna/ui/governance.js:270`),
+but `GrantRoutes.export` and `RowColumnReadRoutes` write no audit record when grants or rules are exported. The
+console promises what the server does not do.
+
+What done looks like: catalog-security decides whether an export must be audited. If so, each export writes a
+record (who, which catalog, how many grants) with a test; if not, the console's sentence goes.
+
+### 313. Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240)
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/java/, catalog-security/src/main/java/, catalog-audit-tables/src/main/java/, their tests
+- Effort: M, some dozen messages across four modules, and the tests that quote them
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+Messages that reach API clients carry internal decision and backlog tags, which mean nothing to a reader
+outside the project: `GrantRoutes.java:469`, `RuleRoutes.java:144` and `:238`, `TokenAuthenticator.java:153`,
+`RuleColumns.java:81`, `:96` and `:128`, `AuditTrail.java:85`, `FlagsAboveTables.java:90`, `CatalogStorage.java:239`,
+`StoreWiring.java:94`, `EventsReader.java:569` (a grep for a quoted string with `(D<n>` or `(backlog <n>`). The
+documentation quotes these messages up to the tag and then "…".
+
+What done looks like: no message a client or an operator reads names a D row, a backlog item or a milestone; the
+tags stay in comments. A test (or a check in the fast build) scans message strings for them.
+
+### 314. Grafana dashboards and demo.sh messages name backlog items and D rows
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: deploy/grafana/, demo/demo.sh
+- Effort: S, text only
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+Panel titles and descriptions in `deploy/grafana/dashboards/nuna-catalog.json` name "backlog 44, D43" (line 125),
+"build plan R7, M8" (131), "backlog 261" (408, 475, 542) and "D14" (996, 1204); check the alert rules in
+`deploy/grafana/rules/` too. `demo/demo.sh` says "backlog 281" in two messages the user reads (lines 2211 and 2214).
+An operator at work reads these with no access to the backlog.
+
+What done looks like: the words say what the tag stood for (a draft target, a shared credential epoch) and name no
+internal item; `AlertRulesTest` still passes.
+
+### 315. Console: small faults the documentation writers found
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: catalog-server/src/main/resources/nuna/ui/
+- Effort: S, five small changes in the console, Atelier's to settle where they touch design
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+- The Maintenance page's "Last night" time axis draws its labels over each other.
+- `health.js:428` maps a source `default` to "built-in", but the server sends `built-in` for built-in values, so
+  the mapping is dead and a real `default` would be misnamed.
+- The merge preview says "Needs create on … and write on each table." (`refs.js:1120`), but views and definition
+  changes need modify.
+- The console's favicon is still the old "F" mark.
+- `browse.js`'s header comment still names the old Governance and Grants tabs.
+
+What done looks like: each fixed, or Atelier says why it stays.
+
+### 316. Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: demo/
+- Effort: S to M, one investigation and one command
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+- In the running demo (commit a9c7ea81), `nuna_audit.audit.events` has no snapshot although the audit tables
+  pod is Running: the audit summary's snapshot id is null and Audit shows nothing. Find why the writer commits
+  nothing.
+- `demo/demo.sh sql` opens a SingleStore prompt in database `ops` (line 26), which the feed setup drops
+  (lines 1088-1090 and 1207). Not tested.
+
+What done looks like: the writer commits within its interval and Audit shows records; `demo.sh sql` opens a
+database that exists.
+
+### 317. Internal documents disagree with the code
+
+- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
+- Touches: demo/README.md, deploy/README.md, deploy/helm/, deploy/local/, docs/, catalog-maintenance/README.md, catalog-tests-engines/README.md, build-plan.md
+- Effort: M, many small corrections across the internal Markdown, each checked against the code
+
+Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
+
+The documentation site was written from the code; these internal documents say otherwise:
+- `demo/README.md`: a "Snapshots" tab (now History); 3.8 GB (4,210 MiB) and 1.5 GB (1,472 MiB); the pinned list
+  misses metrics, and metrics are tail-sampled, not sampled at 1; ana's access from `print_access` is not "select on
+  both"; sign-out sends `id_token_hint` (`auth.js`), not "no ID token".
+- `deploy/README.md` and the chart's `values.yaml` comments miss the settings classes; `deploy/README.md` misses the
+  `pg_monitor` and `VIEWCLUSTERSETTING` grants; `deploy/local` values comments still name Docker Desktop.
+- `docs/observability/health-page.md` uses `#p=health` (now `#p=service`); `docs/observability/dashboards-and-alerts.md`
+  gives old counts (29 alert rules); `catalog-maintenance/README.md` says "Health tab"; `docs/refs.md` uses old
+  console words; `docs/install-at-work.md`'s image table is out of date; `build-plan.md` M8's SLO lines and
+  `catalog-tests-engines/README.md` are stale.
+
+What done looks like: each corrected from the code. The public documentation is `docs/site/`; where an internal
+document only repeats it, it may point there instead.
 
 ## Done and dropped
 
