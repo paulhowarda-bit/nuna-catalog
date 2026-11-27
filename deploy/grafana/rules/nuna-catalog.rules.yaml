@@ -49,7 +49,7 @@ groups:
           summary: "Loads answered 200 miss 50 ms fast enough to spend the SLO's error budget in days ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of loads answered 200 took longer than 50 ms; the SLO allows 1%
-            (p99 under 50 ms, build plan R7). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
+            (p99 under 50 ms). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
             over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
       - alert: NunaLoadSloBurnSlow
         expr: |
@@ -69,7 +69,7 @@ groups:
           summary: "Loads answered 200 miss 50 ms more often than the SLO allows ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of loads answered 200 took longer than 50 ms over the last 3 days and
-            6 h; the SLO allows 1% (p99 under 50 ms, build plan R7). docs/observability/dashboards-and-alerts.md.
+            6 h; the SLO allows 1% (p99 under 50 ms). docs/observability/dashboards-and-alerts.md.
       - alert: NunaNotModifiedSloBurnFast
         expr: |
           (
@@ -102,7 +102,7 @@ groups:
           summary: "Loads answered 304 miss 10 ms fast enough to spend the SLO's error budget in days ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of loads answered 304 took longer than 10 ms; the SLO allows 1%
-            (p99 under 10 ms, build plan R7). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
+            (p99 under 10 ms). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
             over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
       - alert: NunaNotModifiedSloBurnSlow
         expr: |
@@ -122,7 +122,7 @@ groups:
           summary: "Loads answered 304 miss 10 ms more often than the SLO allows ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of loads answered 304 took longer than 10 ms over the last 3 days and
-            6 h; the SLO allows 1% (p99 under 10 ms, build plan R7). docs/observability/dashboards-and-alerts.md.
+            6 h; the SLO allows 1% (p99 under 10 ms). docs/observability/dashboards-and-alerts.md.
       - alert: NunaCommitSloBurnFast
         expr: |
           (
@@ -155,7 +155,7 @@ groups:
           summary: "Commits answered 200 miss 300 ms fast enough to spend the SLO's error budget in days ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of commits answered 200 (updateTable and commitTransaction) took longer than 300 ms; the SLO allows 1%
-            (p99 under 300 ms, build plan R7). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
+            (p99 under 300 ms). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
             over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
       - alert: NunaCommitSloBurnSlow
         expr: |
@@ -175,7 +175,7 @@ groups:
           summary: "Commits answered 200 miss 300 ms more often than the SLO allows ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of commits answered 200 (updateTable and commitTransaction) took longer than 300 ms over the last 3 days and
-            6 h; the SLO allows 1% (p99 under 300 ms, build plan R7). docs/observability/dashboards-and-alerts.md.
+            6 h; the SLO allows 1% (p99 under 300 ms). docs/observability/dashboards-and-alerts.md.
   - name: nuna-catalog-availability
     # Availability SLOs (backlog 261), with the latency SLOs' windows, factors and severities: 99.9% of loads
     # (loadTable), of commits (updateTable, commitTransaction) and of every call nuna.catalog.requests times are not
@@ -216,7 +216,7 @@ groups:
           summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of loads were answered 5xx (4xx answers left out); the SLO allows
-            0.1%, a draft target (backlog 261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over
+            0.1%, a draft target. Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over
             6 h and 30 min. The catalog dashboard's "Failed loads" names the error types.
             docs/observability/dashboards-and-alerts.md.
       - alert: NunaLoadAvailabilityBurnSlow
@@ -237,7 +237,7 @@ groups:
           summary: "Loads fail with 5xx more often than the availability SLO allows ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of loads were answered 5xx (4xx answers left out) over the last 3 days
-            and 6 h; the SLO allows 0.1%, a draft target (backlog 261). docs/observability/dashboards-and-alerts.md.
+            and 6 h; the SLO allows 0.1%, a draft target. docs/observability/dashboards-and-alerts.md.
       - alert: NunaCommitAvailabilityBurnFast
         expr: |
           (
@@ -270,7 +270,7 @@ groups:
           summary: "Commits fail with 5xx fast enough to spend the availability SLO's error budget in days ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of commits (updateTable and commitTransaction) were answered 5xx (4xx
-            answers, 409 conflicts among them, left out); the SLO allows 0.1%, a draft target (backlog 261). Burning
+            answers, 409 conflicts among them, left out); the SLO allows 0.1%, a draft target. Burning
             at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. A 5xx commit may or may not
             have happened (CommitStateUnknownException): the dashboard's "Refused, unknown and failed commits" says
             which. docs/observability/dashboards-and-alerts.md.
@@ -292,7 +292,7 @@ groups:
           summary: "Commits fail with 5xx more often than the availability SLO allows ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of commits (updateTable and commitTransaction) were answered 5xx (4xx
-            answers left out) over the last 3 days and 6 h; the SLO allows 0.1%, a draft target (backlog 261).
+            answers left out) over the last 3 days and 6 h; the SLO allows 0.1%, a draft target.
             docs/observability/dashboards-and-alerts.md.
       - alert: NunaRequestAvailabilityBurnFast
         expr: |
@@ -326,7 +326,7 @@ groups:
           summary: "Iceberg calls fail with 5xx fast enough to spend the availability SLO's error budget in days ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of the Iceberg REST calls nuna.catalog.requests times were answered 5xx
-            (4xx answers left out); the SLO allows 0.1%, a draft target (backlog 261). Burning at 14.4 times the
+            (4xx answers left out); the SLO allows 0.1%, a draft target. Burning at 14.4 times the
             budget over 1 h and 5 min, or 6 times over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
       - alert: NunaRequestAvailabilityBurnSlow
         expr: |
@@ -346,7 +346,7 @@ groups:
           summary: "Iceberg calls fail with 5xx more often than the availability SLO allows ({{ $labels.job }})"
           description: >-
             {{ $value | humanizePercentage }} of the Iceberg REST calls nuna.catalog.requests times were answered 5xx
-            (4xx answers left out) over the last 3 days and 6 h; the SLO allows 0.1%, a draft target (backlog 261).
+            (4xx answers left out) over the last 3 days and 6 h; the SLO allows 0.1%, a draft target.
             docs/observability/dashboards-and-alerts.md.
   - name: nuna-catalog-alerts
     # nuna's own alert kinds (catalog-metrics.md, "The alerts"): metadata integrity pages, the others warn.
@@ -375,7 +375,7 @@ groups:
         annotations:
           summary: "A loaded table's metadata is over the size or snapshot limit ({{ $labels.job }})"
           description: >-
-            The limits are D14's. The nuna.alerts log line (large-metadata) names the table, its size and snapshot count; each file is alerted once per server. catalog-metrics.md, "The alerts".
+            The nuna.alerts log line (large-metadata) names the table, its size and snapshot count; each file is alerted once per server. catalog-metrics.md, "The alerts".
   - name: nuna-catalog-absence
     # Pushed series have no `up` and no staleness marker, so when a catalog stops pushing, or its request series
     # arrive under other names, the rules above return nothing: no page fires, and one firing resolves (backlog 261).

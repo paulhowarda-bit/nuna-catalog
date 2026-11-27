@@ -1,0 +1,17 @@
+Breaks: A message a client reads names a decision-ledger row again.
+Module: catalog-server
+Test: MessagesNameNoInternalTagsTest#noStringInMainCodeNamesAnInternalTag
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 56ffdfa7..c4e8db58 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -472,7 +472,7 @@ class GrantRoutes {
+         GrantSpec spec = read(body, GrantSpec.class);
+         if (spec.group() == null || spec.group().isBlank()) {
+             // The rule behind this message: D19.
+-            throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals");
++            throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals (D19)");
+         }
+         Privilege privilege = privilege(spec.privilege());
+         Securables securables = new Securables(store, record);

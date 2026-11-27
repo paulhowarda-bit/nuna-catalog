@@ -1,7 +1,7 @@
 {
   "uid": "nuna-client-reports",
   "title": "nuna client reports",
-  "description": "What engines report about their own scans and commits (reportMetrics, D13), by engine (backlog 44).",
+  "description": "What engines report about their own scans and commits (reportMetrics), by engine.",
   "tags": [
     "nuna"
   ],
@@ -151,7 +151,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Draft (backlog 44, D43).** Written at home against nuna's own meter names and Prometheus' default OTLP translation (dots to underscores, unit and `_total` suffixes); not yet run against live data. The names it assumes, and what to rename if work's Prometheus differs, are in `docs/observability/dashboards-and-alerts.md`. Engines are the report's `engine-name`, as the client sent it: the first 20 a server sees, then `other`; `none` when a report names none."
+        "content": "**Draft.** Written at home against nuna's own meter names and Prometheus' default OTLP translation (dots to underscores, unit and `_total` suffixes); not yet run against live data. The names it assumes, and what to rename if work's Prometheus differs, are in `docs/observability/dashboards-and-alerts.md`. Engines are the report's `engine-name`, as the client sent it: the first 20 a server sees, then `other`; `none` when a report names none."
       }
     },
     {
@@ -819,7 +819,7 @@
       "id": 14,
       "type": "timeseries",
       "title": "Attempts per commit",
-      "description": "attempts: above 1 means the engine retried, usually losing to another writer (contention, backlog 25).",
+      "description": "attempts: above 1 means the engine retried, usually losing to another writer (contention).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

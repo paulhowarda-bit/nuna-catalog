@@ -122,13 +122,13 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Draft (backlog 44, D43).** Written at home against nuna's own meter names and Prometheus' default OTLP translation (dots to underscores, unit and `_total` suffixes); not yet run against live data. The names it assumes, and what to rename if work's Prometheus differs, are in `docs/observability/dashboards-and-alerts.md`."
+        "content": "**Draft.** Written at home against nuna's own meter names and Prometheus' default OTLP translation (dots to underscores, unit and `_total` suffixes); not yet run against live data. The names it assumes, and what to rename if work's Prometheus differs, are in `docs/observability/dashboards-and-alerts.md`."
       }
     },
     {
       "id": 2,
       "type": "row",
-      "title": "SLOs (build plan R7, M8)",
+      "title": "SLOs",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -343,7 +343,7 @@
       "id": 6,
       "type": "stat",
       "title": "Commits a second, now",
-      "description": "updateTable and commitTransaction answered 200, a second, summed over the servers (5-minute rate). The build plan's target is at least 500 a second under the M8 SLO run's load; traffic below that in production is demand, not a breach, so no alert reads it.",
+      "description": "updateTable and commitTransaction answered 200, a second, summed over the servers (5-minute rate). The target is at least 500 a second under the SLO load test's load; traffic below that in production is demand, not a breach, so no alert reads it.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -405,7 +405,7 @@
       "id": 42,
       "type": "stat",
       "title": "Loads not answered 5xx",
-      "description": "The share of loads not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target (backlog 261).",
+      "description": "The share of loads not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -472,7 +472,7 @@
       "id": 43,
       "type": "stat",
       "title": "Commits not answered 5xx",
-      "description": "The share of commits (updateTable and commitTransaction) not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target (backlog 261).",
+      "description": "The share of commits (updateTable and commitTransaction) not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -539,7 +539,7 @@
       "id": 44,
       "type": "stat",
       "title": "Iceberg calls not answered 5xx",
-      "description": "The share of every Iceberg REST call nuna.catalog.requests times not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target (backlog 261).",
+      "description": "The share of every Iceberg REST call nuna.catalog.requests times not answered 5xx over the time range, summed over the servers; 4xx answers, 409 commit conflicts among them, are left out. The availability SLO holds at 99.9% or more, a draft target.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -838,7 +838,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Commits a second, against the 500 target",
-      "description": "updateTable and commitTransaction answered 200, a second, summed over the servers. The line is the M8 SLO run's target of at least 500 a second.",
+      "description": "updateTable and commitTransaction answered 200, a second, summed over the servers. The line is the SLO load test's target of at least 500 a second.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -993,7 +993,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "Share of loads answered 304",
-      "description": "Loads answered 304 over loads answered 200 or 304 (D14). Before backlog 15's shared credential epoch (D14, amended 2026-11-19) a conditional load answered by another server is a 200, so behind a balancer that is not sticky this share stays low.",
+      "description": "Loads answered 304 over loads answered 200 or 304. The servers share a credential epoch, so an ETag one server gave holds on another and a conditional load can be a 304 behind a balancer that is not sticky.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1201,7 +1201,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "Metadata cache: share of lookups found in memory",
-      "description": "nuna.catalog.metadata.cache.lookups, hit over all (D14): loads and commits reading a table's current metadata file. Per server and for every catalog: the counter has no catalog label.",
+      "description": "nuna.catalog.metadata.cache.lookups, hit over all: loads and commits reading a table's current metadata file. Per server and for every catalog: the counter has no catalog label.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1353,7 +1353,7 @@
       "id": 18,
       "type": "timeseries",
       "title": "Requirement failures a second, by requirement",
-      "description": "Commits refused 409 because a requirement did not hold, by the requirement's type: contention with another writer, or a stale client (backlog 25).",
+      "description": "Commits refused 409 because a requirement did not hold, by the requirement's type: contention with another writer, or a stale client.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2070,7 +2070,7 @@
       "id": 30,
       "type": "timeseries",
       "title": "Mean acknowledgement time, by event",
-      "description": "nuna.audit.publish: a synchronous audit record (D23), from the send to Kafka's acknowledgement. The p99 is beside it.",
+      "description": "nuna.audit.publish: a synchronous audit record, from the send to Kafka's acknowledgement. The p99 is beside it.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2139,7 +2139,7 @@
       "id": 38,
       "type": "timeseries",
       "title": "p99 acknowledgement time, by event",
-      "description": "histogram_quantile over nuna.audit.publish's buckets, 5 ms to 5 s (backlog 71): an estimate within the bucket the p99 falls in, and 5 s when it falls past 5 s. The console's health page names the bucket.",
+      "description": "histogram_quantile over nuna.audit.publish's buckets, 5 ms to 5 s: an estimate within the bucket the p99 falls in, and 5 s when it falls past 5 s. The console's health page names the bucket.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2277,7 +2277,7 @@
       "id": 32,
       "type": "timeseries",
       "title": "Failed publishes a second, by exception",
-      "description": "Each refused the request it audited: audit fails closed (D23).",
+      "description": "Each refused the request it audited: audit fails closed.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2359,7 +2359,7 @@
       "id": 40,
       "type": "timeseries",
       "title": "Records logged two hours ago and still not archived, by server run",
-      "description": "What each server run had logged two hours ago, less the highest number the archive check has verified in that run. Above zero: records the server logged then never reached the archive, though it still runs (backlog 272). The check runs hourly, so the newest hour or so always waits for it.",
+      "description": "What each server run had logged two hours ago, less the highest number the archive check has verified in that run. Above zero: records the server logged then never reached the archive, though it still runs. The check runs hourly, so the newest hour or so always waits for it.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2655,7 +2655,7 @@
       "id": 36,
       "type": "stat",
       "title": "Large metadata (warns)",
-      "description": "A loaded table's metadata is over the size or snapshot limit (D14), once per file a server loads. The rule NunaLargeMetadata warns. Fired in the time range, summed over the servers; the nuna.alerts log line names the table and file.",
+      "description": "A loaded table's metadata is over the size or snapshot limit, once per file a server loads. The rule NunaLargeMetadata warns. Fired in the time range, summed over the servers; the nuna.alerts log line names the table and file.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

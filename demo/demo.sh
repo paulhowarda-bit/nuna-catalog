@@ -94,7 +94,7 @@ if [[ -z "${NUNA_DEMO_COMMIT:-}" ]]; then
           # Forced twice: a locked worktree whose folder is gone stays registered.
           git -C "$REPO" worktree add --quiet --force --force --detach "$RUN/checkout" "$commit"
         fi
-        git -C "$REPO" worktree lock --reason "demo.sh's checkout (backlog 274)" "$RUN/checkout" 2>/dev/null || true
+        git -C "$REPO" worktree lock --reason "demo.sh's checkout" "$RUN/checkout" 2>/dev/null || true
         git -C "$RUN/checkout" checkout --quiet --force --detach "$commit"
         git -C "$RUN/checkout" clean -q -fd
         NUNA_DEMO_COMMIT=$commit exec bash "$RUN/checkout/demo/demo.sh" "$@"
@@ -543,7 +543,7 @@ demo_secrets() {
   done
   printf '%s' "$users" > "$SECRETS/cloudbeaver-users"
   {
-    echo "# The demo's people and their passwords, made once on this machine by demo/demo.sh up (backlog 282)."
+    echo "# The demo's people and their passwords, made once on this machine by demo/demo.sh up."
     echo "# Each signs in through Keycloak, and to the CDC leg's databases, with the same password."
     for person in "${PEOPLE[@]}"; do printf '%-10s %s\n' "$person" "$(password_of "$person")"; done
   } > "$PEOPLE_FILE"
@@ -936,7 +936,7 @@ metrics_apply() {
   # (backlog 282). Setting the same one again changes nothing.
   k exec -i deployment/grafana -- grafana cli admin reset-admin-password --password-from-stdin \
       < "$SECRETS/grafana-admin" >/dev/null \
-    || say "Grafana's administrator password was not set (see above); the next metrics or up tries again (backlog 282)"
+    || say "Grafana's administrator password was not set (see above); the next metrics or up tries again"
 }
 
 # The switch metrics (backlog 233) turned on: the stack, Keycloak's client grafana (a realm from before it replaces
@@ -1044,7 +1044,7 @@ maintenance_worker() {
   say "starting the maintenance worker (chart deploy/helm/nuna-maintenance), its compaction Jobs in namespace $NS-compaction"
   k exec -i deployment/s3 -c silo -- sh -c 'mc alias set l http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null &&
     { read -r key || [ -n "$key" ]; } && mc admin user add l nuna-maintenance "$key" >/dev/null' < "$SECRETS/silo-maintenance"
-  worker_policy || say "the worker's Silo policy was not applied (see above): its scans may be refused, and readiness says so; the next up tries again (backlog 255)"
+  worker_policy || say "the worker's Silo policy was not applied (see above): its scans may be refused, and readiness says so; the next up tries again"
   fill maintenance-jobs.yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
   fill maintenance-values.yaml > "$RUN/maintenance-values.yaml"
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-maintenance "$REPO/deploy/helm/nuna-maintenance" \
@@ -1348,7 +1348,7 @@ row_column_rules() {
     say "writing markets.desks.positions, the sample for row filters and column masks (demo/LakeWriter.java)"
     lake positions
   fi
-  say "row filters and column masks on markets.desks.positions: flagged by stella, each group's rule set by gary (D20)"
+  say "row filters and column masks on markets.desks.positions: flagged by stella, each group's rule set by gary"
   api stella PUT "$m/namespaces/$ns/tables/positions/attributes/row-column-policy" \
     '{"value":"true","provenance":"demo-seed: data catalogue"}' &&
   api gary POST "$m/row-column-rules" \
@@ -2295,7 +2295,7 @@ cdc_others_start() {
   say "starting Trino again"
   k scale deployment/trino --replicas=1 >/dev/null
   audit_writer
-  maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
+  maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again"
   if is_on gen; then
     gen_start
   fi
@@ -2357,10 +2357,10 @@ up() {
     k rollout status "deployment/$RELEASE" --timeout=10m >/dev/null
   fi
   # Once the catalog has its tables, so PostgreSQL is past its image's first setup on a new volume.
-  db_no_passwords || say "the catalog's PostgreSQL role was not left without a password (see above); the next up tries again (backlog 281)"
+  db_no_passwords || say "the catalog's PostgreSQL role was not left without a password (see above); the next up tries again"
   apply ports.yaml
   wait_for_console
-  db_check || say "WARNING: the catalog's database does not sign in as backlog 281 sets it (see above); the demo carries on"
+  db_check || say "WARNING: the catalog's database does not take only client-certificate sign-ins without a password (see above); the demo carries on"
   grants
   trusted_engines
   if cdc_running && is_on ss; then
@@ -2372,9 +2372,9 @@ up() {
   # writer's Job needs, while Kafka Connect and the generator are stopped. A failure in it never stops up.
   seed
   lake_grants
-  refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
-  maintenance_policy || say "maintenance was not turned on in $CATALOG's policy (see the answer above); the next up tries again (backlog 230)"
-  row_column_rules || say "the row filters and column masks on markets.desks.positions were not set (see the answer above); the next up tries again (backlog 115)"
+  refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again"
+  maintenance_policy || say "maintenance was not turned on in $CATALOG's policy (see the answer above); the next up tries again"
+  row_column_rules || say "the row filters and column masks on markets.desks.positions were not set (see the answer above); the next up tries again"
 
   # The switches (D50) as they were: SingleStore, then Kafka for the generator or the CDC leg.
   if is_on ss; then
@@ -2410,7 +2410,7 @@ up() {
   if cdc_running; then
     say "the CDC leg is running: the maintenance worker stays stopped until demo/demo.sh cdc stop"
   else
-    maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
+    maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again"
   fi
   print_access
 }
