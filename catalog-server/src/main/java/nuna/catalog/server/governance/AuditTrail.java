@@ -82,7 +82,8 @@ public final class AuditTrail {
     static void requireLogged(Logger logger) {
         if (!logger.isInfoEnabled()) {
             throw new IllegalStateException("logging.level." + LOGGER + " must be INFO or finer: every audit record"
-                    + " is written to the log " + LOGGER + ", and that log is the record of audit (D23)");
+                    // The rule behind this message: D23.
+                    + " is written to the log " + LOGGER + ", and that log is the record of audit");
         }
     }
 

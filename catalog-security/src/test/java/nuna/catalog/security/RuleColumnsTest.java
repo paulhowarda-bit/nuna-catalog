@@ -30,7 +30,7 @@ class RuleColumnsTest {
     void aMaskOnAColumnTheSchemaLacksIsRefusedNamingIt() {
         assertThat(check(null, Map.of("pnl", "NULL", "tradr", "'***'"))).isEqualTo(new Checked.Unfit(
                 "column-masks names tradr, which the table's current schema does not have; a mask names a column of"
-                        + " the table as it is now (D20)"));
+                        + " the table as it is now"));
     }
 
     @Test
@@ -48,7 +48,7 @@ class RuleColumnsTest {
     void aFilterOnAColumnTheSchemaLacksIsRefusedNamingIt() {
         assertThat(check("dsk = 'EQ' AND quantity > 0", Map.of())).isEqualTo(new Checked.Unfit(
                 "row-filter names dsk, which the table's current schema does not have; a filter's columns are the"
-                        + " table's as it is now (D20)"));
+                        + " table's as it is now"));
         assertThat(check("\"Desk\" = 'EQ' OR \"book\" = 'x'", Map.of())).isInstanceOf(Checked.Unfit.class);
     }
 
@@ -95,7 +95,7 @@ class RuleColumnsTest {
         assertThat(RuleColumns.taken(POSITIONS, List.of("desk", "trader_name", "symbol", "quantity", "pnl"), rules))
                 .contains("The change renames or drops a column a row filter or column mask names: group analysts's"
                         + " rule names trader. A rename would leave the column unmasked; the grant admin changes or"
-                        + " removes the rule first (D20, backlog 240)");
+                        + " removes the rule first");
         assertThat(RuleColumns.taken(POSITIONS, List.of("desk", "Trader", "symbol", "quantity"), rules)).get()
                 .asString().contains("group stewards's rule names pnl").doesNotContain("analysts");
     }

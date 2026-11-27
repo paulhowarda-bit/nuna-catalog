@@ -87,7 +87,8 @@ class FlagsAboveTables {
             switch (result) {
                 case WriteResult.Applied applied -> {
                     LOG.warn("Removed the row-column-policy flag ({}, set by {} at {}, provenance {}) from {}: the flag"
-                            + " goes on a table, and only a table's own is enforced (backlog 239)", flag.value(),
+                            // The rule behind this message: backlog 239.
+                            + " goes on a table, and only a table's own is enforced", flag.value(),
                             flag.setBy(), flag.setAt(), flag.provenance(), where);
                     removed.add(on);
                 }

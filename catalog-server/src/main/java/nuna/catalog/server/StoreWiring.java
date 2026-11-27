@@ -91,7 +91,8 @@ class StoreWiring {
             }
         }
         if (!refused.isEmpty()) {
-            throw new IllegalStateException("The catalog's database is unsafe, so the server does not start (D8.2): "
+            // The rule behind this message: D8.2.
+            throw new IllegalStateException("The catalog's database is unsafe, so the server does not start: "
                     + refused.stream().map(finding -> finding.code() + ": " + finding.detail())
                     .collect(Collectors.joining("; "))
                     + ". Make the database safe. Only a test or demo database may run so, by naming each code in"

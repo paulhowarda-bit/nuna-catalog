@@ -78,7 +78,8 @@ public final class RuleColumns {
         }
         if (!lacking.isEmpty()) {
             return new Checked.Unfit("column-masks names " + listed(lacking) + ", which the table's current schema"
-                    + " does not have; a mask names a column of the table as it is now (D20)");
+                    // The rule behind this message: D20.
+                    + " does not have; a mask names a column of the table as it is now");
         }
         Set<String> referenced = new LinkedHashSet<>();
         if (filter.isPresent()) {
@@ -93,7 +94,8 @@ public final class RuleColumns {
         List<String> unknown = referenced.stream().filter(name -> !known.contains(name)).toList();
         if (!unknown.isEmpty()) {
             return new Checked.Unfit("row-filter names " + listed(unknown) + ", which the table's current schema"
-                    + " does not have; a filter's columns are the table's as it is now (D20)");
+                    // The rule behind this message: D20.
+                    + " does not have; a filter's columns are the table's as it is now");
         }
         return new Checked.Fits(kept);
     }
@@ -125,7 +127,8 @@ public final class RuleColumns {
         }
         return Optional.of("The change renames or drops a column a row filter or column mask names: "
                 + String.join("; ", each) + ". A rename would leave the column unmasked; the grant admin changes or"
-                + " removes the rule first (D20, backlog 240)");
+                // The rule behind this message: D20, backlog 240.
+                + " removes the rule first");
     }
 
     /** The schema's name for {@code name}: the column spelled so, else the one column that matches ignoring case. */
