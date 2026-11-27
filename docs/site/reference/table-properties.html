@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/table-properties">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Table properties · nuna docs</title>
+  <meta name="description" content="The Iceberg table properties nuna sets, refuses or reads, and the ones the console offers to change.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Table properties</h1>
+        <p class="lead">The Iceberg table properties nuna sets, refuses or reads, and the ones the console offers to change.</p>
+      </header>
+
+      <p>Iceberg table properties are set by engines and by the console. Most are read only by the engines that write the table; nuna stores them as given. This page lists the properties nuna itself sets, refuses or reads, and the ones the console offers to change.</p>
+
+      <h2 id="properties-nuna-sets">Properties nuna sets</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Properties nuna sets</caption>
+          <thead><tr><th scope="col">Property</th><th scope="col">When</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><td><code>format-version</code></td><td>A table is created without it.</td><td><code>3</code>. A create request that names a format version keeps its own.</td></tr>
+            <tr><td><code>write.data.path</code></td><td>A writer on a branch loads the table.</td><td><code><var>table root</var>/branches/<var>ref id</var>/data</code>, in the load's answer to that writer only. Its vended credentials write only beneath the branch's place.</td></tr>
+            <tr><td><code>write.metadata.path</code></td><td>The same.</td><td><code><var>table root</var>/branches/<var>ref id</var>/metadata</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="properties-nuna-refuses">Properties nuna refuses</h2>
+
+      <p>A commit that breaks one of these rules is refused with 400 and the message shown.</p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Properties nuna refuses</caption>
+          <thead><tr><th scope="col">Property</th><th scope="col">Rule</th><th scope="col">Message</th></tr></thead>
+          <tbody>
+            <tr><td><code>write.data.path</code>, <code>write.metadata.path</code>, <code>write.object-storage.path</code>, <code>write.folder-storage.path</code></td><td>A value set or changed must lie within the table's location.</td><td><code>Property <var>key</var> must lie within the table location <var>root</var>, not <var>value</var></code></td></tr>
+            <tr><td><code>encryption.key-id</code></td><td>Fixed when the table is created.</td><td><code>Property encryption.key-id is fixed when the table is created</code></td></tr>
+            <tr><td>The table's location (not a property, but set the same way)</td><td>The catalog assigns it: the table root and the table's UUID. A location named in a create request is ignored; a later change is refused.</td><td><code>Location is assigned by the catalog: <var>root</var>, not <var>location</var></code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="properties-nuna-reads">Properties nuna reads</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Properties nuna reads</caption>
+          <thead><tr><th scope="col">Property</th><th scope="col">Read by</th><th scope="col">What for</th></tr></thead>
+          <tbody>
+            <tr><td><code>write.metadata.previous-versions-max</code></td><td>The server, at a branch merge</td><td>How many earlier metadata files the merged table's metadata log lists (Iceberg's default, 100, when unset). The commit journal keeps every commit whatever it says.</td></tr>
+            <tr><td><code>commit.manifest.target-size-bytes</code></td><td>The maintenance worker, rewriting manifests</td><td>The size it writes manifests to (Iceberg's default when unset).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Compaction does not read <code>write.target-file-size-bytes</code>: it aims for the maintenance policy's <a href="../configure/governance.html#nuna-governance-maintenance-defaults"><code>compaction.target-file-size-bytes</code></a>. Snapshot expiry follows the maintenance policy, not <code>history.expire.*</code>.</p>
+
+      <h2 id="properties-the-console-offers">Properties the console offers</h2>
+
+      <p>The console's Settings tab offers these, with the choices and ranges shown. The choices and ranges are set by the console; nuna adds no check of its own on these values when a commit sets them.</p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Table properties the console offers</caption>
+          <thead><tr><th scope="col">Property</th><th scope="col">Choices or range</th><th scope="col">Default shown</th></tr></thead>
+          <tbody>
+            <tr><td><code>write.format.default</code></td><td><code>parquet</code>, <code>avro</code>, <code>orc</code></td><td><code>parquet</code></td></tr>
+            <tr><td><code>write.parquet.compression-codec</code></td><td><code>zstd</code>, <code>snappy</code>, <code>gzip</code>, <code>uncompressed</code></td><td><code>zstd</code></td></tr>
+            <tr><td><code>write.parquet.compression-level</code></td><td>1 to 22 for zstd, 1 to 9 for gzip; none for the others</td><td>the codec's own</td></tr>
+            <tr><td><code>write.target-file-size-bytes</code></td><td>16 MB to 4 GB</td><td><code>536870912</code> (512 MB)</td></tr>
+            <tr><td><code>write.distribution-mode</code></td><td><code>none</code>, <code>hash</code>, <code>range</code></td><td>the engine's choice</td></tr>
+            <tr><td><code>write.delete.mode</code>, <code>write.update.mode</code>, <code>write.merge.mode</code></td><td><code>copy-on-write</code>, <code>merge-on-read</code> (format version 2 or later)</td><td><code>copy-on-write</code></td></tr>
+            <tr><td><code>write.metadata.metrics.default</code></td><td><code>none</code>, <code>counts</code>, <code>truncate(16)</code>, <code>full</code></td><td><code>truncate(16)</code></td></tr>
+            <tr><td><code>write.metadata.previous-versions-max</code></td><td>1 to 10000</td><td><code>100</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>For a namespace the console offers <code>comment</code>, up to 1000 characters. It notes that a namespace's <code>location</code> changes nothing, since the catalog assigns every table's location itself, and that its <code>owner</code> property is not the owner the catalog enforces.</p>
+
+      <p>The console shows <code>write.metadata.delete-after-commit.enabled</code> as changing nothing: the catalog writes every metadata file, and the orphan scan removes those that fall off the log.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/table-settings.html">Change table settings</a>: the console's Settings tab</li>
+          <li><a href="../configure/governance.html">Governance and refs settings</a>: the maintenance policy keys</li>
+          <li><a href="../concepts/branches-and-tags.html">Branches and tags</a>: where branch writers write</li>
+          <li><a href="iceberg-support.html">Iceberg support</a>: format versions and spec features</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/BranchPlaces.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/TableJobs.java</code> and <code>catalog-server/src/main/resources/nuna/ui/settings.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No table was created or committed to for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

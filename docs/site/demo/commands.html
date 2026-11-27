@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/commands">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>demo.sh reference · nuna docs</title>
+  <meta name="description" content="Every subcommand of demo/demo.sh: what it does, what it refuses and prints, the environment variables it reads and its exit status.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="command">
+      <header class="doc-head">
+        <h1>demo.sh reference</h1>
+        <p class="lead"><code>demo/demo.sh</code> starts, stops and inspects the local demo. Run it from Git Bash in the root folder of a checkout.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For developers</span></p>
+      </header>
+
+      <h2 id="synopsis">Synopsis</h2>
+      <div class="code" data-lang="text">
+<pre><code>demo/demo.sh up | down | wipe | status | token | engines | rate | sql
+demo/demo.sh gen | ss | kafka | metrics [stop]
+demo/demo.sh cdc [stop | reset]
+demo/demo.sh brokerage logs
+demo/demo.sh psql | sqlplus | cockroach [user]</code></pre>
+      </div>
+      <p>Any other subcommand, or a second word a subcommand does not take, prints the usage and exits with status 2.</p>
+      <p>Run in the repository's main checkout, <code>up</code>, <code>engines</code>, <code>gen</code>, <code>ss</code>, <code>kafka</code>, <code>cdc</code>, <code>metrics</code>, <code>token</code> and <code>rate</code> run from <code>~/.nuna-demo/checkout</code>, a second checkout held at the commit the main checkout's <code>HEAD</code> named when they started (<a href="start-stop.html#the-commit-the-demo-runs">The commit the demo runs</a>). Only one of them runs at a time; another prints <code>another demo.sh (pid <var>n</var>) is running from …/checkout: wait for it to end</code> and stops.</p>
+      <p><code>gen</code>, <code>ss</code>, <code>kafka</code> and <code>cdc</code> start images that <code>up</code> builds. Before the first <code>up</code> they print <code>demo/demo.sh up first: it builds the images the switches start</code>.</p>
+
+      <h2 id="subcommands">Subcommands</h2>
+
+      <h3 id="demo-sh-up"><code>demo.sh up</code></h3>
+      <p>Builds the jars and images from the checkout, starts the core, writes the sample data on a new lake with the catalog's branch <code>dev</code> and tag <code>sample</code>, turns <code>gen</code>, <code>ss</code>, <code>kafka</code> and <code>metrics</code> back on if they were on, and prints how to sign in with the tokens. It prints <code>building commit <var>commit</var> <var>subject</var></code> as it starts. <a href="start-stop.html#start-the-demo">Start the demo</a> lists its steps.</p>
+
+      <h3 id="demo-sh-down"><code>demo.sh down</code></h3>
+      <p>Stops and deletes everything but the data. The volumes of PostgreSQL, Silo, Kafka, SingleStore, CloudBeaver, the CDC leg and the metrics stack stay, and the next <code>up</code> carries on from them. A running CDC leg pauses, as <code>cdc stop</code> pauses it.</p>
+
+      <h3 id="demo-sh-wipe"><code>demo.sh wipe</code></h3>
+      <p>Runs <code>down</code>, then deletes namespace <code>nuna-demo</code> with its volumes: all the demo's data. It keeps the signing key, tokens, Keycloak's keys, the passwords and the certificates in <code>~/.nuna-demo</code>. The next <code>up</code> writes fresh sample data.</p>
+
+      <h3 id="demo-sh-status"><code>demo.sh status</code></h3>
+      <p>Shows the deployments, pods and services in <code>nuna-demo</code>, the switches, and the state of each of Kafka Connect's connectors and its tasks. It changes nothing.</p>
+      <div class="code" data-lang="text">
+<pre><code>Switches: gen off, ss off, kafka on, metrics off, cdc off
+
+Kafka Connect's connectors (the connector's state, then its tasks'):
+  Kafka Connect is off (it runs while gen or cdc is on)</code></pre>
+      </div>
+
+      <h3 id="demo-sh-token"><code>demo.sh token</code></h3>
+      <p>Prints the addresses, how to sign in and the tokens again. When the tokens expire within an hour, the token-minting code changed, or Trino's token is missing, it mints them again, then replaces SingleStore's running pipelines and restarts Trino, CloudBeaver, Kafka Connect and the brokerage world's generator so they use the new tokens. Its output starts with <code>The demo runs commit <var>commit</var> <var>subject</var></code>.</p>
+
+      <h3 id="demo-sh-gen"><code>demo.sh gen</code>, <code>demo.sh gen stop</code></h3>
+      <p><code>gen</code> turns on the brokerage world: its tables and its live generator, which writes through Kafka with Kafka Connect, or SingleStore, or both, as the switches <code>kafka</code> and <code>ss</code> say. It turns <code>kafka</code> on if neither is. <code>gen stop</code> turns the generator off, and Kafka with it unless the CDC leg runs. See <a href="brokerage-world.html">The brokerage world</a>.</p>
+
+      <h3 id="demo-sh-ss"><code>demo.sh ss</code>, <code>demo.sh ss stop</code></h3>
+      <p><code>ss</code> turns on SingleStore, with its sample databases and change feeds; the generator's orders go to it again. It asks for 1,536 MiB and is refused when the cluster has less free, with <code>demo/demo.sh metrics stop first</code> as the hint. <code>ss stop</code> turns it off; its databases stay on its volume, and the generator carries on through Kafka, turning <code>kafka</code> on if it is off. See <a href="singlestore.html">SingleStore in the demo</a>.</p>
+
+      <h3 id="demo-sh-kafka"><code>demo.sh kafka</code>, <code>demo.sh kafka stop</code></h3>
+      <p><code>kafka</code> lets the generator use Kafka: every feed but the orders goes through Kafka and its sink. <code>kafka stop</code> stops Kafka; the generator carries on through SingleStore, with a change feed per table into <code>brokerage.singlestore</code>, or stops if <code>ss</code> is off. While the CDC leg runs, <code>kafka stop</code> is refused: <code>the CDC leg needs Kafka: demo/demo.sh cdc stop first</code>.</p>
+
+      <h3 id="demo-sh-metrics"><code>demo.sh metrics</code>, <code>demo.sh metrics stop</code></h3>
+      <p><code>metrics</code> starts an OpenTelemetry collector, Prometheus, Tempo and Grafana on port 8188 with nuna's dashboards, and has the server and the maintenance worker send their metrics and traces to it. It needs 1,472 MiB free: 704 MiB for its pods and 768 MiB for the server's new pod, which starts before the old one stops. Otherwise it is refused with <code>metrics asks for … MiB of the cluster's memory, and only … MiB is free: turn a switch off first (demo/demo.sh ss stop frees 1.5 GB)</code>. With the demo down it only sets the switch, so the next <code>up</code> starts it. <code>metrics stop</code> turns it off; its series, traces and Grafana's database stay on their volumes. See <a href="kafka-metrics.html">Kafka, metrics and traces in the demo</a>.</p>
+
+      <h3 id="demo-sh-cdc"><code>demo.sh cdc</code>, <code>cdc stop</code>, <code>cdc reset</code></h3>
+      <p><code>cdc</code> starts the CDC leg: PostgreSQL, Oracle and CockroachDB, captured by Debezium through Kafka Connect into Iceberg history tables. It starts Kafka and stops Trino, the maintenance worker and the generator while it runs, and the audit table writer too when SingleStore is on. The first run pulls Oracle's image, about 5 GB. A leg run before carries on from its kept databases.</p>
+      <p><code>cdc stop</code> pauses the leg, keeping its databases, offsets, topics and history tables, and starts Trino and the writer again, and the generator if <code>gen</code> is on; Kafka stops unless <code>gen</code> is on. <code>cdc reset</code> deletes the leg with its databases' volumes, so the next <code>cdc</code> starts it anew. See <a href="cdc.html">Change data capture in the demo</a>.</p>
+
+      <h3 id="demo-sh-engines"><code>demo.sh engines</code></h3>
+      <p>Runs the engine matrix (Spark, Kafka Connect, PyIceberg and SingleStore) against the demo's catalog <code>engines</code>, with Gradle. It stops Trino, CloudBeaver, Kafka Connect, the generator and the maintenance worker while it runs, and starts them again. The results are in <code>catalog-tests-engines/build/engines-run/results.txt</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Refusal</th><th scope="col">When</th></tr></thead>
+          <tbody>
+            <tr><td><code>the engine matrix needs Kafka and SingleStore: demo/demo.sh gen first, with kafka and ss on</code></td><td>Kafka or SingleStore is not running.</td></tr>
+            <tr><td><code>the CDC leg is running, and the engine matrix does not fit beside it: demo/demo.sh cdc stop first</code></td><td>The CDC leg runs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="demo-sh-rate"><code>demo.sh rate</code></h3>
+      <p>Appends an FX rate to the Iceberg table <code>markets.fx.rates</code>, with the lake writer Job; SingleStore loads it into <code>lake.fx_rates</code>. Kafka Connect and the generator stop while the Job runs and start again after. While the CDC leg runs it is refused: <code>the CDC leg is running, and the lake writer does not fit beside it: demo/demo.sh cdc stop first</code>.</p>
+
+      <h3 id="demo-sh-sql"><code>demo.sh sql</code></h3>
+      <p>Opens a SingleStore prompt as <code>root</code>. When SingleStore is off it prints <code>SingleStore is off: demo/demo.sh ss first</code> and exits with status 1.</p>
+      <p class="gap">The prompt opens database <code>ops</code>, but the script drops <code>ops</code> when it sets up SingleStore's feeds, so the prompt may fail to start. Not tried while SingleStore was on; connect to <code>lake</code> or <code>brokerage</code> instead with <code>USE</code>.</p>
+
+      <h3 id="demo-sh-brokerage-logs"><code>demo.sh brokerage logs</code></h3>
+      <p>Follows the generator's log, starting from its last 100 lines.</p>
+
+      <h3 id="demo-sh-psql"><code>demo.sh psql</code>, <code>sqlplus</code>, <code>cockroach</code> [<var>user</var>]</h3>
+      <p>Open a prompt on one of the CDC leg's databases, inside its pod. Each takes a user name; a person signs in with their Keycloak password, and <code>sqlplus</code> and <code>cockroach</code> print <code><var>user</var>'s password is in …/people</code> first.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Subcommand</th><th scope="col">Database</th><th scope="col">Default user</th></tr></thead>
+          <tbody>
+            <tr><td><code>psql</code></td><td>PostgreSQL, database <code>backoffice</code></td><td><code>backoffice</code>, no password asked</td></tr>
+            <tr><td><code>sqlplus</code></td><td>Oracle, PDB <code>FREEPDB1</code></td><td><code>treasury</code>, with the password in the pod</td></tr>
+            <tr><td><code>cockroach</code></td><td>CockroachDB, database <code>custody</code></td><td><code>root</code>, by client certificate</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="environment-variables">Environment variables</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">What it sets</th></tr></thead>
+          <tbody>
+            <tr><td><code>NUNA_DEMO_HOME</code></td><td><code>~/.nuna-demo</code></td><td>Where the demo keeps its checkout, tokens, keys, passwords, certificates and switches.</td></tr>
+            <tr><td><code>NUNA_DEMO_CONTEXT</code></td><td><code>kind-nuna</code></td><td>The kubectl context.</td></tr>
+            <tr><td><code>NUNA_DEMO_NAMESPACE</code></td><td><code>nuna-demo</code></td><td>The namespace.</td></tr>
+            <tr><td><code>NUNA_DEMO_HOST</code></td><td><code>localhost</code></td><td>The host name every address uses; anything else needs your own certificate in <code>~/.nuna-demo/tls</code>.</td></tr>
+            <tr><td><code>JAVA_HOME</code></td><td><code>java</code> on <code>PATH</code></td><td>The JDK 25 the script runs its Java programs with, such as the token minter.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="files">Files</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Path in <code>~/.nuna-demo</code></th><th scope="col">What it holds</th></tr></thead>
+          <tbody>
+            <tr><td><code>checkout/</code></td><td>The checkout the pinned subcommands run from.</td></tr>
+            <tr><td><code>switches</code></td><td>Which switches are on.</td></tr>
+            <tr><td><code>people</code></td><td>The demo's people and their passwords.</td></tr>
+            <tr><td><code>tokens/</code></td><td>A token per user, <code><var>user</var>.jwt</code>, and <code>expires.txt</code>.</td></tr>
+            <tr><td><code>secrets/</code></td><td>The services' passwords (<a href="sign-in.html#secrets">Where the passwords are</a>).</td></tr>
+            <tr><td><code>tls/</code></td><td>The front door's certificate (<a href="start-stop.html#https-and-the-certificate">HTTPS and the certificate</a>).</td></tr>
+            <tr><td><code>db-tls/</code></td><td>The certificates the server uses to sign in to PostgreSQL.</td></tr>
+            <tr><td><code>idp/</code>, <code>keycloak/</code></td><td>The token signing key and Keycloak's keys.</td></tr>
+            <tr><td><code>built-commit.txt</code></td><td>The commit the running demo was built from.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="exit-status">Exit status</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>0</code></td><td>Done.</td></tr>
+            <tr><td><code>1</code></td><td>Refused; the message says why. A command the script runs that fails ends it with that command's status.</td></tr>
+            <tr><td><code>2</code></td><td>Unknown subcommand or second word; the usage was printed.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="start-stop.html">Start, stop and reset the demo</a></li>
+          <li><a href="sign-in.html">Demo users and sign-in</a></li>
+          <li><a href="index.html">The local demo</a></li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/demo.sh</code> (its usage comment, the subcommand dispatch at its end, the checkout pinning, <code>room_for</code>, <code>metrics_start</code>, <code>ss_on</code>, <code>cdc_start</code>, <code>engines</code>, <code>tokens_expired</code>), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Only <code>status</code> and <code>token</code>, which change nothing while the tokens are current, were run: the demo is shared.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

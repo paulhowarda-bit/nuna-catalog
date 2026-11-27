@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/governance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Governance · nuna docs</title>
+  <meta name="description" content="Read a catalog's governance summary, set governance attributes, place and release legal holds, and freeze objects for DR, under /management/v1/catalogs/{catalog}.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Governance</h1>
+        <p class="lead">Read a catalog's governance summary, set governance attributes, place and release legal holds, and freeze objects for DR, under <code>/management/v1/catalogs/{catalog}</code>.</p>
+      </header>
+
+      <p>Attributes, holds and freezes sit on a catalog, a namespace, a table or a view, and the routes for them are served on each of the four paths. On this page, <var>object</var> stands for one of <code>/management/v1/catalogs/{catalog}</code>, <code>…/namespaces/{namespace}</code>, <code>…/namespaces/{namespace}/tables/{table}</code> and <code>…/namespaces/{namespace}/views/{view}</code>. The <code>{namespace}</code> segment joins its levels with the unit separator, <code>%1F</code> in a URL: <code>equities%1Fdaily</code>. See <a href="../concepts/governance.html">Governance</a> for what each attribute, hold and freeze does. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+      <p>Every refusal is audited. A caller who holds nothing on the object is answered with its not-found error: <code>NoSuchWarehouseException</code>, <code>NoSuchNamespaceException</code> (<code>Namespace does not exist: equities.daily</code>), <code>NoSuchTableException</code> or <code>NoSuchViewException</code>.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Governance endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-governance-summary"><code>/management/v1/catalogs/{catalog}/governance/summary</code></a></td><td>Counts the catalog's classified, regulated, held, frozen and flagged tables.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-governance-holds"><code>/management/v1/catalogs/{catalog}/governance/holds</code></a></td><td>Lists standing holds and freezes, and those lifted in the last 30 days.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-governance"><code><var>object</var>/governance</code></a></td><td>Reads an object's attributes, the values it inherits, and its holds.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-attributes-attribute"><code><var>object</var>/attributes/{attribute}</code></a></td><td>Sets a governance attribute.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-attributes-attribute"><code><var>object</var>/attributes/{attribute}</code></a></td><td>Removes a governance attribute.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-holds"><code><var>object</var>/holds</code></a></td><td>Places a legal hold.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-holds-holdid"><code><var>object</var>/holds/{holdId}</code></a></td><td>Releases a legal hold.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-dr-freeze"><code><var>object</var>/dr-freeze</code></a></td><td>Freezes an object for DR reconcile.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-dr-freeze"><code><var>object</var>/dr-freeze</code></a></td><td>Lifts a DR freeze.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The maintenance policy, which is stored as a governance attribute, has its own routes on the <a href="maintenance.html#maintenance-policy">Maintenance</a> page.</p>
+
+      <h2 id="reading-governance">Reading governance</h2>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-governance-summary"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/governance/summary</code></h3>
+        <p>Counts the catalog's tables by their governance, and lists where the catalog is regulated, closed and flagged. A read writes no audit record.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the catalog</span></p>
+        <h4 id="get-catalog-governance-summary-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#governance-summary">governance summary</a> follows.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something in the catalog but not <code>describe</code> on it.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-governance-summary-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/governance/summary" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "tables": {"total": 4, "classified": 3, "closed": 1, "held": 1, "frozen": 1, "flagged": 1},
+  "holds": 1,
+  "freezes": 1,
+  "regulated": [
+    {
+      "on": {"kind": "namespace", "id": "2c4e6a80-1b3d-4f5a-8c7e-9a0b1c2d3e4f", "path": ["equities"]},
+      "tables": 3,
+      "closed": 1,
+      "provenance": "MiFID II record keeping",
+      "set-by": "kim",
+      "set-at": "2026-11-20T10:04:00.120411Z"
+    }
+  ],
+  "closed": [],
+  "flagged": [
+    {"on": {"kind": "table", "id": "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c", "path": ["equities", "daily", "positions"]}, "rules": 2}
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-governance-holds"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/governance/holds</code></h3>
+        <p>Lists the holds and freezes standing anywhere in the catalog, and those lifted in the last 30 days.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the catalog</span></p>
+        <h4 id="get-catalog-governance-holds-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalog", "standing": [<var>hold or freeze</var>, …], "lifted": [<var>hold or freeze</var>, …], "history": {"days": 30, "since"}}</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something in the catalog but not <code>describe</code> on it.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-governance-holds-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/governance/holds" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "standing": [
+    {
+      "kind": "freeze",
+      "on": {"kind": "namespace", "id": "4b5c6d7e-8f90-4a1b-9c2d-3e4f5a6b7c8d", "path": ["reference"]},
+      "reason": "reconcile after failover",
+      "placed-by": "ops-lee",
+      "placed-at": "2026-11-25T08:00:12.551Z"
+    },
+    {
+      "kind": "hold",
+      "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+      "on": {"kind": "table", "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", "path": ["equities", "fills"]},
+      "reason": "case 2026-114",
+      "placed-by": "kim",
+      "placed-at": "2026-11-24T16:40:03.918Z"
+    }
+  ],
+  "lifted": [],
+  "history": {"days": 30, "since": "2026-10-27T09:00:00Z"}
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-governance"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/governance</code></h3>
+        <p>Also served on the namespace, table and view paths. Reads the attributes set on the object and on every level above it, the value of each attribute that applies to the object (<code>effective</code>), and the holds on it and above it. The <code>row-column-policy</code> flag is not inherited: only a table's own flag counts, so it does not appear in <code>effective</code> from a level above. On a table, a caller who holds <code>manage-tags</code> or <code>manage-grants</code> also gets how many row and column rules it has, and for which groups.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the object</span></p>
+        <h4 id="get-governance-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#object-governance">object's governance</a> follows.</td></tr>
+              <tr><td><code>400</code></td><td>The namespace segment has an empty level: <code>Invalid namespace: …</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the object but not <code>describe</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The object is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-governance-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/governance" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "target": {"kind": "table", "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d"},
+  "attributes": [
+    {
+      "attribute": "regulated",
+      "level": "namespace:2c4e6a80-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "value": "true",
+      "provenance": "MiFID II record keeping",
+      "set-by": "kim",
+      "set-at": "2026-11-20T10:04:00.120411Z"
+    }
+  ],
+  "effective": {"regulated": "true"},
+  "holds": [
+    {
+      "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+      "level": "table:7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+      "reason": "case 2026-114",
+      "placed-by": "kim",
+      "placed-at": "2026-11-24T16:40:03.918Z"
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="attributes">Attributes</h2>
+
+      <section class="endpoint">
+        <h3 id="put-attributes-attribute"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/catalogs/{catalog}/attributes/{attribute}</code></h3>
+        <p>Also served on the namespace, table and view paths. Sets one governance attribute on the object, with the value and where it comes from (<code>provenance</code>). The attributes are <code>classification</code>, <code>owner</code>, <code>retention-class</code>, <code>regulated</code> and <code>row-column-policy</code>. A value set on a catalog or namespace applies to everything beneath it, except <code>row-column-policy</code>, which goes on a table only.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-tags</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="put-attributes-attribute-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>attribute</code></td><td>path</td><td>string</td><td>Yes</td><td>One of the five attributes.</td></tr>
+              <tr><td><code>value</code></td><td>body</td><td>string</td><td>Yes</td><td>The value, at most <code>1000</code> characters. <code>regulated</code> and <code>row-column-policy</code> take <code>true</code> or <code>false</code>; <code>retention-class</code> takes a class named in <code>nuna.governance.retention-classes</code>.</td></tr>
+              <tr><td><code>provenance</code></td><td>body</td><td>string</td><td>Yes</td><td>Why, or on whose authority, at most <code>1000</code> characters.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="put-attributes-attribute-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{"value": "true", "provenance": "MiFID II record keeping"}</code></pre>
+        </div>
+        <h4 id="put-attributes-attribute-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The attribute is set; the answer is the attribute as in <code>attributes</code> of <a href="#object-governance">the object's governance</a>.</td></tr>
+              <tr><td><code>400</code></td><td>
+                <ul>
+                  <li><code>Missing field value: a non-empty string</code>, <code>Field provenance is longer than 1000 characters</code></li>
+                  <li><code>Unknown retention class <var>x</var>; configured classes: [<var>…</var>]</code></li>
+                  <li><code>regulated is true or false, not <var>x</var></code></li>
+                  <li><code>The row-column-policy flag goes on a table, not on a <var>kind</var>: only a table's own flag is enforced, so set it on each table to protect</code></li>
+                </ul>
+              </td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the object but not <code>manage-tags</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The attribute is unknown: <code>Unknown governance attribute <var>x</var>; known attributes: [classification, owner, regulated, retention-class, row-column-policy]</code> (<code>NoSuchAttributeException</code>). Or the object is not there, or went away: <code>The <var>kind</var> no longer exists</code> (<code>NoSuchObjectException</code>).</td></tr>
+              <tr><td><code>409</code></td><td>Setting <code>row-column-policy</code> to false on a table that has rules: <code>The table has row filters or column masks; the grant admin removes them before its row/column-policy flag can be removed or set false</code> (<code>RowColumnRulesExistException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A change is audited as a governance record. A change to <code>classification</code>, <code>owner</code> or <code>retention-class</code> also leaves a label record.</p>
+        <h4 id="put-attributes-attribute-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/namespaces/equities/attributes/regulated" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"value": "true", "provenance": "MiFID II record keeping"}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-attributes-attribute"><span class="method" data-method="DELETE">DELETE</span> <code>/management/v1/catalogs/{catalog}/attributes/{attribute}</code></h3>
+        <p>Also served on the namespace, table and view paths. Removes an attribute set on the object itself. A value inherited from above stays.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-tags</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-attributes-attribute-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The attribute is removed.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the object but not <code>manage-tags</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code><var>attribute</var> is not set on this <var>kind</var></code> (<code>NoSuchAttributeException</code>), an unknown attribute, or a missing object.</td></tr>
+              <tr><td><code>409</code></td><td>Removing <code>row-column-policy</code> from a table that has rules (<code>RowColumnRulesExistException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-attributes-attribute-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/namespaces/equities/attributes/owner" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <h2 id="holds-and-freezes">Holds and freezes</h2>
+      <p>A legal hold stops anything under it from being removed. A DR freeze refuses commits, creates, drops, renames, restores and purges under it, with the message <code><var>what</var> is frozen for DR reconcile: <var>reason</var></code> and the audit reason <code>dr_freeze</code>. A refusal for a hold has the audit reason <code>legal_hold</code>.</p>
+
+      <section class="endpoint">
+        <h3 id="post-holds"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/holds</code></h3>
+        <p>Also served on the namespace, table and view paths. Places a legal hold on the object. An object may carry several holds, each with its own id.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-tags</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-holds-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>reason</code></td><td>body</td><td>string</td><td>Yes</td><td>Why the hold is placed, such as a case number.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-holds-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>201</code></td><td><code>{"id", "level", "reason", "placed-by", "placed-at"}</code>. Keep <code>id</code> to release the hold.</td></tr>
+              <tr><td><code>400</code></td><td><code>Missing field reason: a non-empty string</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the object but not <code>manage-tags</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The object is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-holds-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/holds" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "case 2026-114"}'</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+  "level": "table:7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+  "reason": "case 2026-114",
+  "placed-by": "kim",
+  "placed-at": "2026-11-24T16:40:03.918Z"
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-holds-holdid"><span class="method" data-method="DELETE">DELETE</span> <code>/management/v1/catalogs/{catalog}/holds/{holdId}</code></h3>
+        <p>Also served on the namespace, table and view paths. Releases a hold, on the path of the object it was placed on.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-tags</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-holds-holdid-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The hold is released.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an id: <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the object but not <code>manage-tags</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>No hold <var>id</var> on this <var>kind</var></code> (<code>NoSuchHoldException</code>), including a hold placed on another level.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-holds-holdid-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/holds/c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="put-dr-freeze"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/catalogs/{catalog}/dr-freeze</code></h3>
+        <p>Also served on the namespace, table and view paths. Freezes the object while DR reconcile runs. The freeze also turns off every maintenance job beneath it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span> <span class="badge audited">Audited</span></p>
+        <h4 id="put-dr-freeze-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>reason</code></td><td>body</td><td>string</td><td>Yes</td><td>Why, shown in every refusal the freeze causes.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="put-dr-freeze-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The freeze is set; the answer is the <code>dr-freeze</code> attribute.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator: <code>only platform operators may call setDrFreeze</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The object is not there.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="put-dr-freeze-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/namespaces/reference/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "reconcile after failover"}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-dr-freeze"><span class="method" data-method="DELETE">DELETE</span> <code>/management/v1/catalogs/{catalog}/dr-freeze</code></h3>
+        <p>Also served on the namespace, table and view paths. Lifts the freeze.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-dr-freeze-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The freeze is lifted.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+              <tr><td><code>404</code></td><td>The object is not there, or carries no freeze of its own: <code>dr-freeze is not set on this <var>kind</var></code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-dr-freeze-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/namespaces/reference/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="governance-summary">Governance summary</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>catalog</code></td><td>string</td><td>The catalog's name.</td></tr>
+            <tr><td><code>tables</code></td><td>object</td><td>Counts of tables: <code>total</code>, <code>classified</code>, <code>closed</code>, <code>held</code>, <code>frozen</code> and <code>flagged</code>.</td></tr>
+            <tr><td><code>holds</code>, <code>freezes</code></td><td>integer</td><td>Standing holds and freezes in the catalog.</td></tr>
+            <tr><td><code>regulated</code></td><td>array</td><td>Each place <code>regulated</code> is set: <code>on</code> (<code>{"kind", "id", "path"}</code>), <code>tables</code> and <code>closed</code> beneath it, <code>provenance</code>, <code>set-by</code>, <code>set-at</code>.</td></tr>
+            <tr><td><code>closed</code></td><td>array</td><td>Each closed object, as <code>on</code>.</td></tr>
+            <tr><td><code>flagged</code></td><td>array</td><td>Each flagged table, as <code>on</code>, with its number of <code>rules</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A table is <em>closed</em> while a level on or above it is regulated and it has no <code>classification</code> of its own, and the server's authorization treats it as closed until it is classified. A classification inherited from above labels the table but does not open it.</p>
+
+      <h3 id="hold-or-freeze">Hold or freeze</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>kind</code></td><td>string</td><td><code>hold</code> or <code>freeze</code>.</td></tr>
+            <tr><td><code>id</code></td><td>string</td><td>A hold's id. Freezes have none: one object carries one freeze.</td></tr>
+            <tr><td><code>on</code></td><td>object</td><td><code>{"kind", "id", "path"}</code>.</td></tr>
+            <tr><td><code>reason</code>, <code>placed-by</code>, <code>placed-at</code></td><td>string</td><td>Why, who and when.</td></tr>
+            <tr><td><code>lifted-by</code>, <code>lifted-at</code></td><td>string</td><td>In <code>lifted</code> only: who lifted it, and when.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="object-governance">Object governance</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>target</code></td><td>object</td><td><code>{"kind", "id"}</code> of the object asked about.</td></tr>
+            <tr><td><code>attributes</code></td><td>array</td><td>Each attribute set on the object or above it: <code>attribute</code>, <code>level</code> (<code><var>kind</var>:<var>id</var></code> of where it is set), <code>value</code>, <code>provenance</code>, <code>set-by</code>, <code>set-at</code>.</td></tr>
+            <tr><td><code>effective</code></td><td>object</td><td>Attribute name to the value that applies to the object.</td></tr>
+            <tr><td><code>holds</code></td><td>array</td><td>Each hold on the object or above it: <code>id</code>, <code>level</code>, <code>reason</code>, <code>placed-by</code>, <code>placed-at</code>.</td></tr>
+            <tr><td><code>row-column-rules</code></td><td>object</td><td>On a table, for a caller with <code>manage-tags</code> or <code>manage-grants</code>: <code>count</code> and <code>groups</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/governance.html">Governance</a>: what attributes, holds and freezes do.</li>
+          <li><a href="maintenance.html#maintenance-policy">Maintenance</a>: the maintenance policy, which holds and freezes override.</li>
+          <li><a href="dr.html">Disaster recovery</a>: watermarks and reconcile, which freezes protect.</li>
+          <li><a href="../console/governance.html">The Governance page</a>: the same in the console.</li>
+          <li><a href="../reference/audit-records.html#record-types">Audit record format</a>: governance, hold and label records.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>GovernanceSummary.java</code>, <code>ManagementGuard.java</code> and <code>Management.java</code> in the same folder, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The summary, holds and namespace governance reads were run against the demo and their responses rewritten to the fictional estate. The <code>PUT</code>, <code>POST</code> and <code>DELETE</code> examples were not run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

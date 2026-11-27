@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/traces-and-logs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Traces, logs and the request id · nuna docs</title>
+  <meta name="description" content="The spans each request and each maintenance scan make, the JSON log lines, and how to follow one request from its client to the audit record.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Traces, logs and the request id</h1>
+        <p class="lead">The spans each request and each maintenance scan make, the JSON log lines, and how to follow one request from its client to the audit record.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The server and the maintenance worker send traces and logs over OTLP/HTTP once an endpoint is set (<a href="../install/telemetry.html">Send telemetry</a>), and always write their log lines to stdout as JSON. One key, the request id, joins a request's trace, its log lines, its audit record and the STS session it opened.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>A collector that takes OTLP over HTTP, and a trace store and log store behind it.</li>
+        <li><code>OTEL_EXPORTER_OTLP_ENDPOINT</code> set on both programs, or the charts' <code>telemetry.endpoint</code>.</li>
+      </ul>
+
+      <h2 id="the-request-id">The request id</h2>
+      <p>The server settles each request's id once, as the request starts:</p>
+      <ul>
+        <li>A client's <code>X-Request-ID</code> header of 1 to 128 characters, not blank, is kept.</li>
+        <li>Otherwise the id is the request's trace id, 32 hex characters. When the client sent a W3C <code>traceparent</code>, that is the client's trace id.</li>
+      </ul>
+      <p>Every response carries <code>X-Request-ID</code>, errors included. The same id is in:</p>
+      <ul>
+        <li>each log line written while the request ran, as <code>requestId</code>;</li>
+        <li>each audit record the request made, as <code>actor.requestId</code>;</li>
+        <li>the STS session of a credential vend, in its <code>nuna-request</code> session tag and in its session name, and so in CloudTrail.</li>
+      </ul>
+      <p>To follow a call, send your own id and look for it afterwards (<a href="../clients/curl.html">curl</a>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS -i "$NUNA/v1/trading/namespaces/equities/tables/fills" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Request-ID: fills-check-0001"</code></pre>
+      </div>
+      <p>The answer's headers repeat <code>X-Request-ID: fills-check-0001</code>. Search the logs and the audit records for that value.</p>
+
+      <h2 id="the-servers-spans">The server's spans</h2>
+      <p>Each HTTP request the server answers is a server span named for its method and route template, such as <code>http get /v1/{prefix}/namespaces/{namespace}/tables/{table}</code>. A caller's <code>traceparent</code> is honoured, so an engine's trace continues into the catalog. Beneath it, each call to the database, the object store, STS and Kafka is a child span with a timer of the same name (<a href="metrics.html#server-meters">Metrics</a>):</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Child spans of a request</caption>
+          <thead><tr><th scope="col">Span</th><th scope="col">One per</th><th scope="col">Attributes</th></tr></thead>
+          <tbody>
+            <tr><td><code>store <var>method</var></code>, such as <code>store commit</code> or <code>store readPointer</code></td><td>Call to the catalog database; each is one transaction.</td><td><code>backend</code>, <code>operation</code>, <code>outcome</code>, <code>exception</code></td></tr>
+            <tr><td><code>objectstore <var>method</var></code>: <code>write</code>, <code>read</code>, <code>metadataFiles</code>, <code>tableLocations</code>, <code>exists</code>, <code>bytes</code></td><td>Request for metadata files to the object store.</td><td><code>profile</code>, <code>operation</code>, <code>outcome</code>, <code>exception</code></td></tr>
+            <tr><td><code>sts assume-role</code></td><td>AssumeRole for a credential vend. A vend served from the credential cache makes none.</td><td><code>profile</code>, <code>access</code> (<code>read</code> or <code>read-write</code>), <code>outcome</code>, <code>exception</code></td></tr>
+            <tr><td><code>audit publish</code></td><td>Audit record sent to Kafka inside the request, from the send to the acknowledgement.</td><td><code>topic</code>, <code>event</code>, <code>outcome</code>, <code>exception</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The <code>outcome</code> names what the call came to:</p>
+      <ul>
+        <li>Store: a commit is <code>committed</code>, <code>conflict</code> or <code>inactive</code>; another write <code>applied</code>, <code>unchanged</code>, <code>missing</code>, <code>name-taken</code>, <code>version-mismatch</code> or <code>refused</code>; an idempotency key <code>absent</code>, <code>claimed</code>, <code>in-flight</code>, <code>done</code> or <code>mismatch</code>; a commit lookup <code>committed</code> or <code>not-committed</code>; a read that may find nothing <code>found</code> or <code>absent</code>; anything else <code>ok</code>.</li>
+        <li>Object store: <code>written</code>, <code>intact</code>, <code>mismatch</code> (the bytes read do not hash as the pointer recorded), <code>listed</code>, <code>found</code>, <code>absent</code> or <code>read</code>.</li>
+        <li>STS: <code>issued</code>. Kafka: <code>acknowledged</code>.</li>
+        <li>A call that threw: <code>error</code>, with <code>exception</code> the simple name of what it threw, otherwise <code>none</code>.</li>
+      </ul>
+      <p>A commit's trace looks like this:</p>
+      <div class="code" data-lang="text" data-kind="output">
+<pre><code>http post /v1/{prefix}/namespaces/{namespace}/tables/{table}
+  store findTrustedEngine    absent
+  store findCatalog, findNamespace, findObject, ...   found
+  store grantsFor, attributesOf, ...                  ok
+  store readPointer          found
+  objectstore write          written
+  store commit               committed
+  sts assume-role            issued
+  audit publish              acknowledged</code></pre>
+      </div>
+      <p>A load whose metadata file and credentials are already cached reads the pointer and publishes its read record, and makes no <code>objectstore</code> or <code>sts</code> span.</p>
+
+      <h3 id="failed-calls">Failed calls</h3>
+      <p>Every answer of 500 or more ends the server span with status ERROR, and no answer below 500 does. The span records one exception event, <code>AnswerFailed</code>, whose message is the status and the class behind the answer, such as <code>503 nuna.catalog.store.StoreUnavailableException</code>. A failed child span has status ERROR and an exception event naming only the exception's class. Messages, causes and stack traces stay out of spans because they can name a table, a location or a principal; the log line for the failure holds them. A failure that escapes the routes is written in full to the log as <code>request failed outside the routes</code>.</p>
+      <aside class="callout note">
+        <p class="callout-title">Not every 5xx route marks its span</p>
+        <p>On the Iceberg REST routes every 5xx marks the server span. On the management API and the console, a 5xx marks it only when its failure escapes the routes.</p>
+      </aside>
+
+      <h3 id="what-is-not-traced">What is not traced</h3>
+      <p>Calls made outside a request make neither spans nor timers: the outbox relay's claims every 250 ms and its publishes to Kafka, the server's start-up (database migration, storage profiles, declared catalogs), and the hourly audit archive check.</p>
+
+      <h2 id="the-workers-spans">The worker's spans</h2>
+      <p>Each maintenance scan is a trace of its own. Its root span is <code>maintenance scan</code>, with a <code>maintenance <var>part</var></code> span for each part and an <code>HTTP GET</code>, <code>HTTP PUT</code> or <code>HTTP POST</code> span for each call to the catalog or to the identity provider. The worker's calls carry the trace, so the server's spans for them join it.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The parts of a scan</caption>
+          <thead><tr><th scope="col"><code>part</code></th><th scope="col">One per</th><th scope="col"><code>outcome</code></th></tr></thead>
+          <tbody>
+            <tr><td><code>work-list</code></td><td>Page of the work list read; <code>section</code> is <code>tables</code>, <code>purges</code> or <code>deletions</code>.</td><td><code>ok</code></td></tr>
+            <tr><td><code>table-load</code></td><td>Table loaded by name before its jobs.</td><td><code>loaded</code>, or <code>changed</code> when another table now has the name</td></tr>
+            <tr><td><code>snapshot-expiry</code></td><td>Table whose snapshots are due to expire.</td><td><code>ok</code></td></tr>
+            <tr><td><code>manifest-rewrite</code></td><td>Table whose manifests are rewritten.</td><td><code>ok</code></td></tr>
+            <tr><td><code>compaction-assessment</code></td><td>Table assessed in the cleanup window.</td><td><code>ok</code></td></tr>
+            <tr><td><code>compaction-launch</code></td><td>Compaction Job started from the night's queue.</td><td><code>started</code>, <code>exists</code>, <code>off</code></td></tr>
+            <tr><td><code>orphan-scan</code></td><td>Table scanned for orphans in the cleanup window.</td><td><code>ok</code>, also when the window's end cut it short</td></tr>
+            <tr><td><code>purge</code></td><td>Dropped object: claim, delete its files, complete.</td><td><code>purged</code>, or <code>skipped</code></td></tr>
+            <tr><td><code>deletion</code></td><td>Object whose due files are deleted and reported done.</td><td><code>ok</code></td></tr>
+            <tr><td><code>report</code></td><td>Report to the catalog; <code>report</code> is <code>scan-start</code>, <code>scan-end</code>, <code>assessment</code>, <code>compaction</code> or <code>job</code>.</td><td><code>kept</code>, or <code>refused</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A part that threw has <code>outcome</code> <code>error</code>. The scan's own <code>outcome</code> is <code>success</code> when it read the whole work list, otherwise <code>failure</code>. No attribute of the worker's spans names a table, namespace, location, catalog or person; a call's <code>uri</code> is its route, such as <code>/management/v1/catalogs/{catalog}/objects/{id}/purge-claim</code>. The WARN log line for a failure names the table.</p>
+
+      <h2 id="sampling">Sampling</h2>
+      <p>The charts keep 10% of new traces (<code>telemetry.sampling: "0.1"</code>, sent as <code>OTEL_TRACES_SAMPLER=parentbased_traceidratio</code> with that ratio), and every request whose caller's trace was sampled. Without the charts the default is also 10%. Metrics and logs are never sampled.</p>
+      <ul>
+        <li><strong>Head sampling</strong>, what the charts run: the decision is made before the request runs, so most failed calls leave no trace. Find them by their request id in the logs and the audit records.</li>
+        <li><strong>Tail sampling</strong>, with a collector that runs it: set <code>telemetry.sampling: "1.0"</code>, route spans by trace id through a <code>loadbalancing</code> exporter tier, and keep traces in a <code>tail_sampling</code> tier. Because every 5xx ends its server span with status ERROR, a policy on status ERROR keeps every failed call. Traces then show about 30 s late, the policy's decision wait.</li>
+      </ul>
+      <aside class="callout demo">
+        <p class="callout-title">In the demo</p>
+        <p>The demo's collector runs one <code>tail_sampling</code> tier with three policies: <code>errors</code> (status ERROR), <code>slow</code> (over 300 ms) and <code>a-tenth-of-the-rest</code>. It has a single collector, so it needs no <code>loadbalancing</code> tier.</p>
+      </aside>
+
+      <h2 id="log-lines">Log lines</h2>
+      <p>Both programs write one JSON object per line to stdout in Elastic Common Schema. A line written during a request carries <code>traceId</code>, <code>spanId</code> and <code>requestId</code>, besides <code>service.name</code>, <code>log.level</code>, <code>log.logger</code>, <code>message</code> and <code>error.*</code> with the stack trace when there is one. Over OTLP the trace and span ids are the record's own and <code>requestId</code> is an attribute.</p>
+      <p>To write Logstash's or GELF's format instead, set <code>LOGGING_STRUCTURED_FORMAT_CONSOLE</code> to <code>logstash</code> or <code>gelf</code>.</p>
+      <p>Two loggers carry records other tools depend on:</p>
+      <ul>
+        <li><code>nuna.audit</code>: every audit record, as one INFO line holding its CloudEvent JSON. It is never sampled (<a href="audit-pipeline.html">Run the audit pipeline</a>).</li>
+        <li><code>nuna.alerts</code>: one line for each alert counter's rise, such as <code>metadata-integrity object=… location=… expected-sha256=… actual-sha256=…</code> at ERROR (<a href="runbooks.html#nunametadataintegrity">runbook</a>).</li>
+      </ul>
+      <p>No metric label or span attribute names a person or holds a filter value. The server span records the request's path, which names namespaces and tables.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <ul>
+        <li><strong>No traces arrive.</strong> Check that an endpoint is set: nothing is exported without one. The collector must take OTLP over HTTP; gRPC on port 4317 is not supported.</li>
+        <li><strong>A failed call has no trace.</strong> Under head sampling that is expected for 9 calls in 10. Search the logs for its request id.</li>
+        <li><strong>The collector is down.</strong> Requests are not slowed: spans and log records wait in queues of 2,048 and are dropped when they fill. Each failed export logs a warning, and a stopping program waits up to 10 s for its last exports.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="metrics.html">Metrics</a>: the timers behind each span.</li>
+          <li><a href="../install/telemetry.html">Send telemetry</a>: the variables and chart values.</li>
+          <li><a href="audit-pipeline.html">Run the audit pipeline</a>: the audit log and where its records go.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/tracing/</code>, <code>telemetry/RequestIds.java</code>, <code>metrics/RequestMetrics.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java</code>, each module's <code>application.yaml</code>, the charts' <code>telemetry</code> values and <code>demo/k8s/metrics.yaml</code>, with <code>docs/observability/README.md</code>, <code>spans.md</code> and <code>worker-spans.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example request was not run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

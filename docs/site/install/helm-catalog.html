@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/helm-catalog">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install the catalog server with Helm · nuna docs</title>
+  <meta name="description" content="Install the catalog server on Kubernetes with the nuna-catalog chart: put settings in config, passwords and keys in a Secret, and read what the chart and the server refuse.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Install the catalog server with Helm</h1>
+        <p class="lead">Install the catalog server on Kubernetes with the <code>nuna-catalog</code> chart: put settings in <code>config</code>, passwords and keys in a Secret, and read what the chart and the server refuse.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The <code>nuna-catalog</code> image is in a registry your cluster pulls from (<a href="images.html">Container images</a>).</li>
+        <li>The database exists, with a role for the server, and its safety settings pass the self-check: <a href="postgresql.html">Use PostgreSQL</a>, <a href="cockroachdb.html">Use CockroachDB</a>, <a href="oracle.html">Use Oracle</a> or <a href="mongodb.html">Use MongoDB</a>.</li>
+        <li>Each bucket exists, with the server's own identity on the store (<a href="object-storage.html">Set up object storage</a>).</li>
+        <li>You know each trusted issuer's settings and the groups for platform operators and grant admins (<a href="identity-provider.html">Connect an identity provider</a>).</li>
+        <li>You can create a namespace, a Secret and a Helm release in the cluster.</li>
+      </ul>
+
+      <h2 id="how-settings-reach-server">How settings reach the server</h2>
+      <p>The chart takes the server's settings in two parts.</p>
+      <ul>
+        <li><code>config</code> holds Spring Boot properties in YAML form. The chart renders them into <code>application.yaml</code> in a ConfigMap, mounted at <code>/etc/nuna/config</code>, which the server reads beside its built-in settings (<code>SPRING_CONFIG_ADDITIONAL_LOCATION</code>). Every <code>nuna.*</code> key is on its page under <a href="../configure/index.html">Configuration</a>.</li>
+        <li><code>secrets</code> names a Secret that Spring Boot reads as a config tree, mounted at <code>/etc/nuna/secrets</code> (<code>SPRING_CONFIG_IMPORT=optional:configtree:/etc/nuna/secrets/</code>). Each key of the Secret is a property name, and its value is that property's value. Passwords and secret keys go here, never in <code>config</code>.</li>
+      </ul>
+      <p>You make the Secret yourself and set <code>secrets.existingSecret</code>, or pass the keys in <code>secrets.values</code> and the chart makes it. When both are set, <code>existingSecret</code> wins and the chart makes no Secret. Keep a values file that holds <code>secrets.values</code> out of version control.</p>
+
+      <h2 id="install-release">Install the release</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create the namespace.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl create namespace nuna</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Create the Secret with the database password and any store keys.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-catalog-secrets \
+  --from-literal=spring.datasource.password=… \
+  --from-literal=nuna.storage.profiles.onprem.secret-access-key=…</code></pre>
+          </div>
+          <p>Leave out the password if the server signs in to PostgreSQL by a client certificate (<a href="postgresql.html#sign-in-by-client-certificate">Use PostgreSQL</a>). On MongoDB the connection string goes here, as <code>nuna.database.mongodb.uri</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Write the values file.</p>
+          <p>This one is for PostgreSQL and a Ceph store. The two keys the chart insists on are <code>config.spring.datasource.url</code> (unless the database is MongoDB) and at least one entry in <code>config.nuna.security.issuers</code>.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>image:
+  repository: registry.example/nuna-catalog
+  tag: "0.1.0"
+config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://db.example:5432/catalog?sslmode=verify-full
+      username: nuna_catalog
+  nuna:
+    storage:
+      profiles:
+        onprem:
+          kind: CEPH
+          endpoint: https://s3.example
+          region: us-east-1
+          table-root: s3://trading/tables
+          allowed-prefixes: [s3://trading/tables]
+          sts-role: arn:aws:iam:::role/nuna-vend
+          access-key-id: nuna-catalog
+          maintenance-principal: arn:aws:iam:::user/nuna-maintenance
+      catalogs:
+        trading:
+          profile: onprem
+          kms-key-set: trading-keys
+          legal-entity: Example Markets Ltd
+    security:
+      issuers:
+        - issuer: https://idp.example/realms/data
+          jwks-uri: https://idp.example/realms/data/protocol/openid-connect/certs
+          audiences: [nuna-catalog]
+          algorithms: [RS256]
+          user-id-claim: preferred_username
+          groups-claim: groups
+          client-id-claim: azp
+      grant-admin-groups: [grant-admins]
+      platform-operator-groups: [platform-operators]
+      maintenance-principals: [service-account-nuna-maintenance]
+    governance:
+      pitr-window: 7d
+    rest:
+      drop-retention: 30d
+    ui:
+      oidc:
+        issuer: https://idp.example/realms/data
+        client-id: nuna-console
+secrets:
+  existingSecret: nuna-catalog-secrets
+ingress:
+  enabled: true
+  className: nginx
+  host: nuna.example
+  tls:
+    - hosts: [nuna.example]
+      secretName: nuna-example-tls</code></pre>
+          </div>
+          <p><code>nuna.rest.drop-retention</code> must be longer than <code>nuna.governance.pitr-window</code>, the database's real point-in-time-recovery window, or the server refuses to start. Leave <code>nuna.database.allow-unsafe</code> empty, <code>nuna.storage.require-tls</code> at its default (<code>true</code>) and <code>nuna.ui.dev-token-login</code> off.</p>
+        </li>
+        <li>
+          <p class="step-title">Render the chart to check the values.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm template nuna-catalog deploy/helm/nuna-catalog -n nuna -f values.yaml &gt; /dev/null</code></pre>
+          </div>
+          <p>It prints nothing when the values pass the chart's checks, and an error naming the missing value when they do not (<a href="#what-chart-refuses">What the chart refuses</a>).</p>
+        </li>
+        <li>
+          <p class="step-title">Install the release.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm install nuna-catalog deploy/helm/nuna-catalog -n nuna -f values.yaml</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Wait for the servers to be ready.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna rollout status deployment/nuna-catalog --timeout=15m</code></pre>
+          </div>
+          <p>The first server of a release migrates the schema before it answers, and the start-up probe allows it 10 minutes.</p>
+        </li>
+      </ol>
+
+      <aside class="callout check">
+        <p class="callout-title">Three servers are ready and answer without a token</p>
+        <p><code>kubectl -n nuna get pods -l app.kubernetes.io/instance=nuna-catalog</code> shows three pods <code>Running</code> and <code>1/1</code> ready. Through the Ingress, <code>curl -sS https://nuna.example/ui/config.json</code> answers with the console's sign-in settings. <a href="verify.html">Check the install</a> goes further.</p>
+      </aside>
+
+      <h2 id="what-chart-creates">What the chart creates</h2>
+      <p>The objects take the release's name if it holds the chart's name (as <code>nuna-catalog</code> does), and <code><var>release</var>-nuna-catalog</code> otherwise.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The chart's objects</caption>
+          <thead><tr><th scope="col">Kind</th><th scope="col">Name</th><th scope="col">What it is</th></tr></thead>
+          <tbody>
+            <tr><td>Deployment</td><td><var>name</var></td><td>The servers: <code>replicaCount</code> replicas (3), rolled one new server at a time (<code>maxSurge: 1</code>, <code>maxUnavailable: 0</code>).</td></tr>
+            <tr><td>Service</td><td><var>name</var></td><td><code>ClusterIP</code> on port <code>8181</code>, named <code>http</code>, with <code>sessionAffinity: None</code>.</td></tr>
+            <tr><td>Service</td><td><var>name</var><code>-peers</code></td><td>A headless Service with an address for each ready server. The chart sets <code>NUNA_HEALTH_PEERS</code> to it, and the health page asks each server for its figures there.</td></tr>
+            <tr><td>ConfigMap</td><td><var>name</var></td><td><code>application.yaml</code>, rendered from <code>config</code>.</td></tr>
+            <tr><td>Secret</td><td><var>name</var></td><td>Only when <code>secrets.values</code> is set and <code>secrets.existingSecret</code> is not.</td></tr>
+            <tr><td>ServiceAccount</td><td><var>name</var></td><td>Its token is not mounted: the server never calls the Kubernetes API. Annotate it for IRSA on EKS (<a href="object-storage.html">Set up object storage</a>).</td></tr>
+            <tr><td>PodDisruptionBudget</td><td><var>name</var></td><td><code>maxUnavailable: 1</code>.</td></tr>
+            <tr><td>Ingress</td><td><var>name</var></td><td>Only with <code>ingress.enabled</code>: one rule for <code>ingress.host</code>, path <code>/</code>, to the Service's <code>http</code> port, with <code>ingress.tls</code> as you give it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Each pod:</p>
+      <ul>
+        <li>Mounts the ConfigMap at <code>/etc/nuna/config</code>, the Secret at <code>/etc/nuna/secrets</code>, <code>databaseTls.secretName</code> at <code>/etc/nuna/db-tls</code> with mode <code>0440</code>, and <code>storageCaConfigMap.name</code> at <code>/etc/nuna/storage-ca</code>, each only when set.</li>
+        <li>Carries the annotations <code>checksum/config</code> and <code>checksum/secret</code>, so a change to <code>config</code> or <code>secrets.values</code> rolls the servers.</li>
+        <li>Runs its readiness, liveness and start-up probes on <code>GET /ui/config.json</code>, which needs no token and reads nothing from the database.</li>
+        <li>Pauses 5 s before shutdown (<code>preStop</code>), so the Service stops routing to it before Spring's graceful shutdown starts, within <code>terminationGracePeriodSeconds</code> (45).</li>
+        <li>Runs with <code>JAVA_TOOL_OPTIONS</code> from <code>javaToolOptions</code>, by default <code>-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError</code>, and any extra variables in <code>env</code>.</li>
+      </ul>
+      <p>Every value, with its default, is on <a href="../configure/helm-values.html">Helm chart values</a>.</p>
+
+      <h2 id="what-chart-refuses">What the chart refuses</h2>
+      <p><code>helm template</code>, <code>helm install</code> and <code>helm upgrade</code> stop with one of these errors, before anything reaches the cluster:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The chart's refusals</caption>
+          <thead><tr><th scope="col">Error</th><th scope="col">What to set</th></tr></thead>
+          <tbody>
+            <tr><td><code>config.spring.datasource.url is required: the catalog's database</code></td><td>The JDBC URL. Not asked for when <code>config.nuna.database.backend</code> is <code>mongodb</code>.</td></tr>
+            <tr><td><code>config.nuna.security.issuers needs at least one trusted token issuer</code></td><td>At least one entry in <code>config.nuna.security.issuers</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="change-settings-later">Change settings later</h2>
+      <p>Edit the values file and run <code>helm upgrade nuna-catalog deploy/helm/nuna-catalog -n nuna -f values.yaml</code>. A change to <code>config</code> or <code>secrets.values</code> rolls the servers. A change to a Secret you made yourself does not, so restart them after it:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna rollout restart deployment/nuna-catalog</code></pre>
+      </div>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <p>A server that refuses to start logs why and exits, so its pod restarts and shows <code>CrashLoopBackOff</code>. Read the log with <code>kubectl -n nuna logs deployment/nuna-catalog</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>A chart error from the table above.</td><td>A required value is missing.</td><td>Set it and run the command again.</td></tr>
+            <tr><td><code>The catalog's database is unsafe, so the server does not start</code>, followed by codes such as <code>pg.no-sync-standby</code></td><td>The database's safety settings failed the self-check.</td><td>Fix each finding the message names; the database page lists them. Never list them in <code>nuna.database.allow-unsafe</code> in production.</td></tr>
+            <tr><td><code>nuna.security.issuers names no trusted token issuer; the catalog accepts no request without one</code></td><td>The issuers list is empty in the rendered settings.</td><td>Check the indentation of <code>config.nuna.security.issuers</code>.</td></tr>
+            <tr><td><code>nuna.rest.drop-retention (…) must be longer than nuna.governance.pitr-window (…)</code></td><td>A dropped table's files could be purged while a database restore could still bring the table back.</td><td>Make <code>drop-retention</code> longer than the PITR window.</td></tr>
+            <tr><td><code>nuna.storage.profiles.<var>name</var>.endpoint must use https, got …</code></td><td>An <code>http</code> endpoint while <code>nuna.storage.require-tls</code> is on.</td><td>Use the store's HTTPS endpoint.</td></tr>
+            <tr><td><code>nuna.storage.catalogs.<var>name</var> needs profile, kms-key-set and legal-entity</code></td><td>A catalog is declared without all three.</td><td>Set them; see <a href="../guides/create-catalog.html">Create a catalog</a>.</td></tr>
+            <tr><td><code>schema migration failed</code></td><td>The role cannot create the schema's objects, or a migration failed on the database.</td><td>Read the cause logged below it and check the role's privileges on the database page.</td></tr>
+            <tr><td>Pods stay not ready and the start-up probe fails after 10 minutes.</td><td>The server is still waiting, often on the database or on another server's migration lock.</td><td>Read the log. The migration lock is waited on for up to 5 minutes.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../configure/helm-values.html">Helm chart values</a>: every value of the chart.</li>
+          <li><a href="../configure/index.html">Configuration</a>: every setting you can put in <code>config</code>.</li>
+          <li><a href="helm-maintenance.html">Install the maintenance worker</a>: the next step.</li>
+          <li><a href="verify.html">Check the install</a>: health routes and a first table.</li>
+          <li><a href="../security/hardening.html">Hardening checklist</a>: what to check before production.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-catalog/</code> (<code>values.yaml</code> and every template), <code>deploy/README.md</code> (The chart, Before production), <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The chart's refusals and the list of objects were read by running <code>helm template</code> on the chart with too few values and with a full set. The install itself was not run for this page; the demo installs the same chart.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

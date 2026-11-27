@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en" data-root="" data-page="index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nuna documentation · nuna docs</title>
+  <meta name="description" content="nuna is an Apache Iceberg REST catalog built for a brokerage: it keeps every table's pointer in your own database, vends short-lived storage credentials to engines, records every change in a hash-chained audit trail, and maintains your tables overnight.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/docs.css">
+  <script src="assets/theme.js"></script>
+  <script src="assets/nav.js" defer></script>
+  <script src="assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="index.html">nuna docs</a>
+  <a class="all-pages" href="all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="home">
+      <header class="doc-head">
+        <h1>nuna documentation</h1>
+        <p class="lead">nuna is an Apache Iceberg REST catalog built for a brokerage. It keeps every table's pointer in your own database, vends short-lived storage credentials to engines, records every change in a hash-chained audit trail, and maintains your tables overnight.</p>
+        <ul class="home-facts">
+          <li>Iceberg REST, for any engine that speaks it</li>
+          <li>PostgreSQL, CockroachDB, Oracle or MongoDB</li>
+          <li>Branches and tags of a whole catalog</li>
+          <li>Grants, holds and row and column rules</li>
+        </ul>
+        <svg class="home-mark" viewBox="0 0 24 14" aria-hidden="true" focusable="false"><path class="rock" d="M2 14 9.5 3l3.2 4.8 2.3-2.8L22 14"/></svg>
+      </header>
+
+      <h2 id="start-by-role">Start with what you do</h2>
+      <div class="home-roles">
+        <section class="home-role">
+          <h3 id="engine-users">Engine users</h3>
+          <p>You write and query tables from Spark, Trino, PyIceberg or SingleStore.</p>
+          <ul>
+            <li><a href="start/quickstart.html">Run nuna on your laptop</a></li>
+            <li><a href="start/first-table.html">Create your first table</a></li>
+            <li><a href="reference/engines.html">Engine compatibility</a></li>
+          </ul>
+        </section>
+        <section class="home-role">
+          <h3 id="data-stewards">Data stewards</h3>
+          <p>You decide what is regulated, what is held and who sees which rows.</p>
+          <ul>
+            <li><a href="concepts/governance.html">Governance</a></li>
+            <li><a href="guides/hold.html">Place and lift a legal hold</a></li>
+            <li><a href="guides/row-column-rules.html">Add a row filter or column mask</a></li>
+          </ul>
+        </section>
+        <section class="home-role">
+          <h3 id="grant-admins">Grant admins</h3>
+          <p>You give groups privileges on catalogs, namespaces, tables and views.</p>
+          <ul>
+            <li><a href="concepts/access.html">Identity and access</a></li>
+            <li><a href="guides/grant-access.html">Grant and revoke access</a></li>
+            <li><a href="reference/privileges.html">Privileges</a></li>
+          </ul>
+        </section>
+        <section class="home-role">
+          <h3 id="platform-operators">Platform operators</h3>
+          <p>You install nuna, keep it healthy and recover it when something fails.</p>
+          <ul>
+            <li><a href="install/index.html">Install</a></li>
+            <li><a href="operate/health.html">Health checks</a></li>
+            <li><a href="operate/runbooks.html">Alert runbooks</a></li>
+          </ul>
+        </section>
+        <section class="home-role">
+          <h3 id="auditors">Auditors</h3>
+          <p>You need to know who read or changed what, and to prove the record is whole.</p>
+          <ul>
+            <li><a href="concepts/audit.html">The audit trail</a></li>
+            <li><a href="guides/query-audit.html">Query the audit trail</a></li>
+            <li><a href="security/what-is-audited.html">What is audited</a></li>
+          </ul>
+        </section>
+        <section class="home-role">
+          <h3 id="developers">Developers</h3>
+          <p>You script against nuna's APIs or build it from source.</p>
+          <ul>
+            <li><a href="clients/curl.html">Use the APIs with curl</a></li>
+            <li><a href="api/index.html">API reference</a></li>
+            <li><a href="develop/index.html">Build nuna from source</a></li>
+          </ul>
+        </section>
+      </div>
+
+      <h2 id="how-nuna-fits-together">How nuna fits together</h2>
+      <figure class="diagram" id="fig-home-architecture">
+        <svg viewBox="0 0 720 390" role="img" aria-labelledby="fig-home-architecture-t fig-home-architecture-d">
+          <title id="fig-home-architecture-t">The parts of a nuna installation</title>
+          <desc id="fig-home-architecture-d">People use the console and engines use the Iceberg REST API, both with tokens from your identity provider. The nuna server keeps each table's pointer in its database and sends audit records to the audit tables writer. Engines read and write data files in your object store with credentials the server vends. The maintenance worker takes work from the server and compacts and cleans up files in the object store.</desc>
+          <rect class="d-node" x="20" y="30" width="170" height="60" rx="10"/>
+          <text class="d-label" x="105" y="56">People</text>
+          <text class="d-note" x="105" y="74">the console in a browser</text>
+          <rect class="d-node" x="20" y="170" width="170" height="60" rx="10"/>
+          <text class="d-label" x="105" y="196">Engines</text>
+          <text class="d-note" x="105" y="214">Spark, Trino, PyIceberg…</text>
+          <rect class="d-node" x="20" y="310" width="170" height="60" rx="10"/>
+          <text class="d-label" x="105" y="336">Identity provider</text>
+          <text class="d-note" x="105" y="354">issues tokens</text>
+          <rect class="d-node d-accent" x="275" y="150" width="170" height="100" rx="12"/>
+          <text class="d-label" x="360" y="192">nuna server</text>
+          <text class="d-note" x="360" y="212">Iceberg REST and</text>
+          <text class="d-note" x="360" y="228">management APIs</text>
+          <rect class="d-node" x="275" y="310" width="170" height="60" rx="10"/>
+          <text class="d-label" x="360" y="336">Maintenance worker</text>
+          <text class="d-note" x="360" y="354">compacts and cleans up</text>
+          <rect class="d-node d-store" x="530" y="30" width="170" height="60" rx="10"/>
+          <text class="d-label" x="615" y="56">Database</text>
+          <text class="d-note" x="615" y="74">pointers, grants, refs</text>
+          <rect class="d-node" x="530" y="170" width="170" height="60" rx="10"/>
+          <text class="d-label" x="615" y="196">Audit tables writer</text>
+          <text class="d-note" x="615" y="214">audit you query in SQL</text>
+          <rect class="d-node d-store" x="530" y="310" width="170" height="60" rx="10"/>
+          <text class="d-label" x="615" y="336">Object store</text>
+          <text class="d-note" x="615" y="354">data and metadata files</text>
+          <path class="d-edge" d="M190 60C240 60 232 168 275 174" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="204" y="124">console</text>
+          <path class="d-edge" d="M190 200H275" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="232" y="192">REST</text>
+          <path class="d-edge-dash" d="M105 310V230" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="62" y="275">tokens</text>
+          <path class="d-edge" d="M445 170L530 75" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="468" y="108">commits</text>
+          <path class="d-edge" d="M445 200H530" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="488" y="192">audit records</text>
+          <path class="d-edge" d="M360 310V250" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M445 340H530" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M150 230C180 300 470 285 530 325" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="215" y="300">data files (vended credentials)</text>
+        </svg>
+        <figcaption>The server holds no table data: it holds each table's pointer, decides each commit, and hands engines short-lived credentials for the files they may read or write.</figcaption>
+      </figure>
+      <p>Read <a href="concepts/architecture.html">How nuna fits together</a> for each part, what it needs and what runs where.</p>
+
+      <h2 id="the-documentation">The documentation</h2>
+      <div class="home-bands">
+        <section class="home-band">
+          <h3 id="learn">Learn</h3>
+          <ul>
+            <li><a href="start/index.html">Get started</a><span class="home-desc">Run the demo, connect an engine and tour the console.</span></li>
+            <li><a href="concepts/index.html">Concepts</a><span class="home-desc">How nuna works, and why it works that way.</span></li>
+            <li><a href="demo/index.html">The local demo</a><span class="home-desc">Everything the demo runs, from sign-in to change data capture.</span></li>
+          </ul>
+        </section>
+        <section class="home-band">
+          <h3 id="use">Use</h3>
+          <ul>
+            <li><a href="console/index.html">Console guide</a><span class="home-desc">Every page and tab of the console.</span></li>
+            <li><a href="guides/index.html">Guides</a><span class="home-desc">Tasks step by step, in the console and from the command line.</span></li>
+            <li><a href="clients/index.html">Command line and clients</a><span class="home-desc">Tokens, curl and each engine's settings.</span></li>
+          </ul>
+        </section>
+        <section class="home-band">
+          <h3 id="run">Run</h3>
+          <ul>
+            <li><a href="install/index.html">Install</a><span class="home-desc">From requirements to a checked install.</span></li>
+            <li><a href="configure/index.html">Configure</a><span class="home-desc">Every setting and Helm value.</span></li>
+            <li><a href="operate/index.html">Operate</a><span class="home-desc">Health, metrics, alerts, maintenance nights and runbooks.</span></li>
+            <li><a href="security/index.html">Security</a><span class="home-desc">Authentication, authorization and a hardening checklist.</span></li>
+          </ul>
+        </section>
+        <section class="home-band">
+          <h3 id="look-up">Look up</h3>
+          <ul>
+            <li><a href="api/index.html">API reference</a><span class="home-desc">Both APIs, endpoint by endpoint.</span></li>
+            <li><a href="reference/index.html">Reference</a><span class="home-desc">Compatibility, privileges, errors and the glossary.</span></li>
+            <li><a href="develop/index.html">Building from source</a><span class="home-desc">The Gradle builds and the module map.</span></li>
+          </ul>
+        </section>
+      </div>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

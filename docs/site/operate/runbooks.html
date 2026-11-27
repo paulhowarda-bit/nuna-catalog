@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/runbooks">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alert runbooks · nuna docs</title>
+  <meta name="description" content="What to do when each of nuna&#x27;s 29 alert rules fires: what it means, its impact, what to check and how to fix it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="runbook">
+      <header class="doc-head">
+        <h1>Alert runbooks</h1>
+        <p class="lead">What to do when each of nuna's 29 alert rules fires: what it means, its impact, what to check and how to fix it.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The rules are in <code>deploy/grafana/rules/</code> (<a href="dashboards-alerts.html">Dashboards and alerts</a>). Commands below assume the releases are named <code>nuna-catalog</code> and <code>nuna-maintenance</code>, <code>NS</code> holds their namespace, <code>NUNA</code> the catalog's address and <code>TOKEN</code> a platform operator's token (<a href="../clients/curl.html">curl</a>).</p>
+      <h2 id="nunaloadsloburnfast"><code>NunaLoadSloBurnFast</code></h2>
+      <h3 id="nunaloadsloburnfast-means">What it means</h3>
+      <p>More than 1% of loads answered <code>200</code> took longer than 50 ms, fast enough to spend a month's error budget in days: 14.4 times the allowed rate over the last hour and 5 minutes, or 6 times over 6 hours and 30 minutes. Severity <code>page</code>. It keeps firing 10 minutes after the burn stops.</p>
+      <h3 id="nunaloadsloburnfast-impact">Impact</h3>
+      <p>Engines wait longer for their tables. Nothing fails: the answers still arrive.</p>
+      <h3 id="nunaloadsloburnfast-check">Check</h3>
+      <p>Open the nuna catalog dashboard's SLOs row, then the time spent by part. Look at the store and object store timers for the same window:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <p>A server restarting or out of memory shows here. Then check the database and object store figures on the server's health route (<a href="../api/health.html#endpoints">reference</a>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>In the traces, find the slow spans: a slow <code>store</code> span points at the database, a slow <code>objectstore read</code> at the object store, a slow <code>sts assume-role</code> at STS.</p>
+      <h3 id="nunaloadsloburnfast-fix">Fix</h3>
+      <ul>
+        <li>If the database is slow, fix it there first: connections, locks, a failover in progress.</li>
+        <li>If one server is slow and the others are not, restart it: <code>kubectl -n "$NS" delete pod <var>pod</var></code>. The rollout keeps the others serving.</li>
+        <li>If every server is busy, add replicas (<a href="scaling.html">Scaling</a>).</li>
+        <li>If metadata files are being read from the object store, the metadata cache may be too small: compare cache hits and misses on the dashboard and raise <a href="../configure/server.html#nuna-rest-metadata-cache-chars"><code>nuna.rest.metadata-cache-chars</code></a>.</li>
+      </ul>
+      <h3 id="nunaloadsloburnfast-escalate">If that does not fix it</h3>
+      <p>Collect the dashboard's SLOs row for the window and a few slow traces, with their request ids, and take them to whoever runs the database and the object store. If neither is slow, raise it with the team that runs nuna.</p>
+
+      <h2 id="nunaloadsloburnslow"><code>NunaLoadSloBurnSlow</code></h2>
+      <h3 id="nunaloadsloburnslow-means">What it means</h3>
+      <p>More than 1% of loads answered <code>200</code> took longer than 50 ms over the last 3 days and 6 hours, for 15 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunaloadsloburnslow-impact">Impact</h3>
+      <p>Engines wait longer for their tables. Nothing fails: the answers still arrive.</p>
+      <h3 id="nunaloadsloburnslow-check">Check</h3>
+      <p>Open the nuna catalog dashboard's SLOs row, then the time spent by part. Look at the store and object store timers for the same window:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <p>A server restarting or out of memory shows here. Then check the database and object store figures on the server's health route (<a href="../api/health.html#endpoints">reference</a>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>In the traces, find the slow spans: a slow <code>store</code> span points at the database, a slow <code>objectstore read</code> at the object store, a slow <code>sts assume-role</code> at STS.</p>
+      <h3 id="nunaloadsloburnslow-fix">Fix</h3>
+      <ul>
+        <li>If the database is slow, fix it there first: connections, locks, a failover in progress.</li>
+        <li>If one server is slow and the others are not, restart it: <code>kubectl -n "$NS" delete pod <var>pod</var></code>. The rollout keeps the others serving.</li>
+        <li>If every server is busy, add replicas (<a href="scaling.html">Scaling</a>).</li>
+        <li>If metadata files are being read from the object store, the metadata cache may be too small: compare cache hits and misses on the dashboard and raise <a href="../configure/server.html#nuna-rest-metadata-cache-chars"><code>nuna.rest.metadata-cache-chars</code></a>.</li>
+      </ul>
+      <h3 id="nunaloadsloburnslow-escalate">If that does not fix it</h3>
+      <p>Collect the dashboard's SLOs row for the window and a few slow traces, with their request ids, and take them to whoever runs the database and the object store. If neither is slow, raise it with the team that runs nuna.</p>
+
+      <h2 id="nunanotmodifiedsloburnfast"><code>NunaNotModifiedSloBurnFast</code></h2>
+      <h3 id="nunanotmodifiedsloburnfast-means">What it means</h3>
+      <p>More than 1% of loads answered <code>304</code>, where the engine's metadata was current took longer than 10 ms, fast enough to spend a month's error budget in days: 14.4 times the allowed rate over the last hour and 5 minutes, or 6 times over 6 hours and 30 minutes. Severity <code>page</code>. It keeps firing 10 minutes after the burn stops.</p>
+      <h3 id="nunanotmodifiedsloburnfast-impact">Impact</h3>
+      <p>Engines wait longer for their tables. Nothing fails: the answers still arrive. A slow 304 means the catalog is slow even when it has nothing new to send.</p>
+      <h3 id="nunanotmodifiedsloburnfast-check">Check</h3>
+      <p>Open the nuna catalog dashboard's SLOs row, then the time spent by part. Look at the store and object store timers for the same window:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <p>A server restarting or out of memory shows here. Then check the database and object store figures on the server's health route (<a href="../api/health.html#endpoints">reference</a>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>In the traces, find the slow spans: a slow <code>store</code> span points at the database, a slow <code>objectstore read</code> at the object store, a slow <code>sts assume-role</code> at STS.</p>
+      <h3 id="nunanotmodifiedsloburnfast-fix">Fix</h3>
+      <ul>
+        <li>If the database is slow, fix it there first: connections, locks, a failover in progress.</li>
+        <li>If one server is slow and the others are not, restart it: <code>kubectl -n "$NS" delete pod <var>pod</var></code>. The rollout keeps the others serving.</li>
+        <li>If every server is busy, add replicas (<a href="scaling.html">Scaling</a>).</li>
+        <li>If metadata files are being read from the object store, the metadata cache may be too small: compare cache hits and misses on the dashboard and raise <a href="../configure/server.html#nuna-rest-metadata-cache-chars"><code>nuna.rest.metadata-cache-chars</code></a>.</li>
+      </ul>
+      <h3 id="nunanotmodifiedsloburnfast-escalate">If that does not fix it</h3>
+      <p>Collect the dashboard's SLOs row for the window and a few slow traces, with their request ids, and take them to whoever runs the database and the object store. If neither is slow, raise it with the team that runs nuna.</p>
+
+      <h2 id="nunanotmodifiedsloburnslow"><code>NunaNotModifiedSloBurnSlow</code></h2>
+      <h3 id="nunanotmodifiedsloburnslow-means">What it means</h3>
+      <p>More than 1% of loads answered <code>304</code>, where the engine's metadata was current took longer than 10 ms over the last 3 days and 6 hours, for 15 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunanotmodifiedsloburnslow-impact">Impact</h3>
+      <p>Engines wait longer for their tables. Nothing fails: the answers still arrive. A slow 304 means the catalog is slow even when it has nothing new to send.</p>
+      <h3 id="nunanotmodifiedsloburnslow-check">Check</h3>
+      <p>Open the nuna catalog dashboard's SLOs row, then the time spent by part. Look at the store and object store timers for the same window:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <p>A server restarting or out of memory shows here. Then check the database and object store figures on the server's health route (<a href="../api/health.html#endpoints">reference</a>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>In the traces, find the slow spans: a slow <code>store</code> span points at the database, a slow <code>objectstore read</code> at the object store, a slow <code>sts assume-role</code> at STS.</p>
+      <h3 id="nunanotmodifiedsloburnslow-fix">Fix</h3>
+      <ul>
+        <li>If the database is slow, fix it there first: connections, locks, a failover in progress.</li>
+        <li>If one server is slow and the others are not, restart it: <code>kubectl -n "$NS" delete pod <var>pod</var></code>. The rollout keeps the others serving.</li>
+        <li>If every server is busy, add replicas (<a href="scaling.html">Scaling</a>).</li>
+        <li>If metadata files are being read from the object store, the metadata cache may be too small: compare cache hits and misses on the dashboard and raise <a href="../configure/server.html#nuna-rest-metadata-cache-chars"><code>nuna.rest.metadata-cache-chars</code></a>.</li>
+      </ul>
+      <h3 id="nunanotmodifiedsloburnslow-escalate">If that does not fix it</h3>
+      <p>Collect the dashboard's SLOs row for the window and a few slow traces, with their request ids, and take them to whoever runs the database and the object store. If neither is slow, raise it with the team that runs nuna.</p>
+
+      <h2 id="nunacommitsloburnfast"><code>NunaCommitSloBurnFast</code></h2>
+      <h3 id="nunacommitsloburnfast-means">What it means</h3>
+      <p>More than 1% of commits answered <code>200</code> (<code>updateTable</code> and <code>commitTransaction</code>) took longer than 300 ms, fast enough to spend a month's error budget in days: 14.4 times the allowed rate over the last hour and 5 minutes, or 6 times over 6 hours and 30 minutes. Severity <code>page</code>. It keeps firing 10 minutes after the burn stops.</p>
+      <h3 id="nunacommitsloburnfast-impact">Impact</h3>
+      <p>Engines wait longer for their tables. Nothing fails: the answers still arrive.</p>
+      <h3 id="nunacommitsloburnfast-check">Check</h3>
+      <p>Open the nuna catalog dashboard's SLOs row, then the time spent by part. Look at the store and object store timers for the same window:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <p>A server restarting or out of memory shows here. Then check the database and object store figures on the server's health route (<a href="../api/health.html#endpoints">reference</a>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>In the traces, find the slow spans: a slow <code>store</code> span points at the database, a slow <code>objectstore read</code> at the object store, a slow <code>sts assume-role</code> at STS.</p>
+      <h3 id="nunacommitsloburnfast-fix">Fix</h3>
+      <ul>
+        <li>If the database is slow, fix it there first: connections, locks, a failover in progress.</li>
+        <li>If one server is slow and the others are not, restart it: <code>kubectl -n "$NS" delete pod <var>pod</var></code>. The rollout keeps the others serving.</li>
+        <li>If every server is busy, add replicas (<a href="scaling.html">Scaling</a>).</li>
+        <li>Commits wait on the database transaction that moves the pointer. Look for long transactions or lock waits in the database.</li>
+      </ul>
+      <h3 id="nunacommitsloburnfast-escalate">If that does not fix it</h3>
+      <p>Collect the dashboard's SLOs row for the window and a few slow traces, with their request ids, and take them to whoever runs the database and the object store. If neither is slow, raise it with the team that runs nuna.</p>
+
+      <h2 id="nunacommitsloburnslow"><code>NunaCommitSloBurnSlow</code></h2>
+      <h3 id="nunacommitsloburnslow-means">What it means</h3>
+      <p>More than 1% of commits answered <code>200</code> (<code>updateTable</code> and <code>commitTransaction</code>) took longer than 300 ms over the last 3 days and 6 hours, for 15 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunacommitsloburnslow-impact">Impact</h3>
+      <p>Engines wait longer for their tables. Nothing fails: the answers still arrive.</p>
+      <h3 id="nunacommitsloburnslow-check">Check</h3>
+      <p>Open the nuna catalog dashboard's SLOs row, then the time spent by part. Look at the store and object store timers for the same window:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <p>A server restarting or out of memory shows here. Then check the database and object store figures on the server's health route (<a href="../api/health.html#endpoints">reference</a>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>In the traces, find the slow spans: a slow <code>store</code> span points at the database, a slow <code>objectstore read</code> at the object store, a slow <code>sts assume-role</code> at STS.</p>
+      <h3 id="nunacommitsloburnslow-fix">Fix</h3>
+      <ul>
+        <li>If the database is slow, fix it there first: connections, locks, a failover in progress.</li>
+        <li>If one server is slow and the others are not, restart it: <code>kubectl -n "$NS" delete pod <var>pod</var></code>. The rollout keeps the others serving.</li>
+        <li>If every server is busy, add replicas (<a href="scaling.html">Scaling</a>).</li>
+        <li>Commits wait on the database transaction that moves the pointer. Look for long transactions or lock waits in the database.</li>
+      </ul>
+      <h3 id="nunacommitsloburnslow-escalate">If that does not fix it</h3>
+      <p>Collect the dashboard's SLOs row for the window and a few slow traces, with their request ids, and take them to whoever runs the database and the object store. If neither is slow, raise it with the team that runs nuna.</p>
+
+      <h2 id="nunaloadavailabilityburnfast"><code>NunaLoadAvailabilityBurnFast</code></h2>
+      <h3 id="nunaloadavailabilityburnfast-means">What it means</h3>
+      <p>More than 0.1% of loads (<code>loadTable</code>) were answered 5xx, fast enough to spend a month's error budget in days: 14.4 times the allowed rate over the last hour and 5 minutes, or 6 times over 6 hours and 30 minutes. 4xx answers, 409 conflicts among them, count on neither side. Severity <code>page</code>. It keeps firing 10 minutes after the failures stop.</p>
+      <h3 id="nunaloadavailabilityburnfast-impact">Impact</h3>
+      <p>Engines cannot read the tables whose loads fail.</p>
+      <h3 id="nunaloadavailabilityburnfast-check">Check</h3>
+      <p>Open the nuna catalog dashboard: <strong>Failed loads</strong> and <strong>Refused, unknown and failed commits</strong> name the error types. Then:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep '"ERROR"'</code></pre>
+      </div>
+      <p>The commonest 5xx answers and their causes:</p>
+      <ul>
+        <li><code>503</code> <code>ServiceUnavailableException</code> with <code>Retry-After: 2</code>: the catalog's database cannot be reached. The server's health route says so too.</li>
+        <li><code>503</code> while checking a token: the identity provider's keys could not be fetched, logged as <code>Couldn't retrieve JWK set from URL</code>.</li>
+        <li><code>503</code> on reads or vends: an audit record that had to be written first was not.</li>
+        <li><code>500</code> <code>CommitStateUnknownException</code>: the database answer to a commit was lost; the commit may have happened.</li>
+      </ul>
+      <h3 id="nunaloadavailabilityburnfast-fix">Fix</h3>
+      <ul>
+        <li>Database unreachable: restore the database or its network path. The servers recover on their own once it answers; nothing needs restarting.</li>
+        <li>Identity provider unreachable: restore it, or the network path to its JWKS URL.</li>
+        <li>One server failing alone: delete its pod and let the Deployment replace it.</li>
+        <li>After a release: roll back with <code>helm rollback nuna-catalog -n "$NS"</code> (<a href="kubectl.html">Helm and kubectl recipes</a>).</li>
+      </ul>
+      <h3 id="nunaloadavailabilityburnfast-escalate">If that does not fix it</h3>
+      <p>Collect the error types from the dashboard, a few failing request ids and the matching log lines, and raise them with the team that runs nuna. See <a href="troubleshooting.html">Troubleshooting</a> for each message.</p>
+
+      <h2 id="nunaloadavailabilityburnslow"><code>NunaLoadAvailabilityBurnSlow</code></h2>
+      <h3 id="nunaloadavailabilityburnslow-means">What it means</h3>
+      <p>More than 0.1% of loads (<code>loadTable</code>) were answered 5xx over the last 3 days and 6 hours, for 15 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunaloadavailabilityburnslow-impact">Impact</h3>
+      <p>Engines cannot read the tables whose loads fail.</p>
+      <h3 id="nunaloadavailabilityburnslow-check">Check</h3>
+      <p>Open the nuna catalog dashboard: <strong>Failed loads</strong> and <strong>Refused, unknown and failed commits</strong> name the error types. Then:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep '"ERROR"'</code></pre>
+      </div>
+      <p>The commonest 5xx answers and their causes:</p>
+      <ul>
+        <li><code>503</code> <code>ServiceUnavailableException</code> with <code>Retry-After: 2</code>: the catalog's database cannot be reached. The server's health route says so too.</li>
+        <li><code>503</code> while checking a token: the identity provider's keys could not be fetched, logged as <code>Couldn't retrieve JWK set from URL</code>.</li>
+        <li><code>503</code> on reads or vends: an audit record that had to be written first was not.</li>
+        <li><code>500</code> <code>CommitStateUnknownException</code>: the database answer to a commit was lost; the commit may have happened.</li>
+      </ul>
+      <h3 id="nunaloadavailabilityburnslow-fix">Fix</h3>
+      <ul>
+        <li>Database unreachable: restore the database or its network path. The servers recover on their own once it answers; nothing needs restarting.</li>
+        <li>Identity provider unreachable: restore it, or the network path to its JWKS URL.</li>
+        <li>One server failing alone: delete its pod and let the Deployment replace it.</li>
+        <li>After a release: roll back with <code>helm rollback nuna-catalog -n "$NS"</code> (<a href="kubectl.html">Helm and kubectl recipes</a>).</li>
+      </ul>
+      <h3 id="nunaloadavailabilityburnslow-escalate">If that does not fix it</h3>
+      <p>Collect the error types from the dashboard, a few failing request ids and the matching log lines, and raise them with the team that runs nuna. See <a href="troubleshooting.html">Troubleshooting</a> for each message.</p>
+
+      <h2 id="nunacommitavailabilityburnfast"><code>NunaCommitAvailabilityBurnFast</code></h2>
+      <h3 id="nunacommitavailabilityburnfast-means">What it means</h3>
+      <p>More than 0.1% of commits (<code>updateTable</code> and <code>commitTransaction</code>) were answered 5xx, fast enough to spend a month's error budget in days: 14.4 times the allowed rate over the last hour and 5 minutes, or 6 times over 6 hours and 30 minutes. 4xx answers, 409 conflicts among them, count on neither side. Severity <code>page</code>. It keeps firing 10 minutes after the failures stop.</p>
+      <h3 id="nunacommitavailabilityburnfast-impact">Impact</h3>
+      <p>Writes fail. A commit answered 5xx may or may not have happened: engines that retry check the table first.</p>
+      <h3 id="nunacommitavailabilityburnfast-check">Check</h3>
+      <p>Open the nuna catalog dashboard: <strong>Failed loads</strong> and <strong>Refused, unknown and failed commits</strong> name the error types. Then:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep '"ERROR"'</code></pre>
+      </div>
+      <p>The commonest 5xx answers and their causes:</p>
+      <ul>
+        <li><code>503</code> <code>ServiceUnavailableException</code> with <code>Retry-After: 2</code>: the catalog's database cannot be reached. The server's health route says so too.</li>
+        <li><code>503</code> while checking a token: the identity provider's keys could not be fetched, logged as <code>Couldn't retrieve JWK set from URL</code>.</li>
+        <li><code>503</code> on reads or vends: an audit record that had to be written first was not.</li>
+        <li><code>500</code> <code>CommitStateUnknownException</code>: the database answer to a commit was lost; the commit may have happened.</li>
+      </ul>
+      <h3 id="nunacommitavailabilityburnfast-fix">Fix</h3>
+      <ul>
+        <li>Database unreachable: restore the database or its network path. The servers recover on their own once it answers; nothing needs restarting.</li>
+        <li>Identity provider unreachable: restore it, or the network path to its JWKS URL.</li>
+        <li>One server failing alone: delete its pod and let the Deployment replace it.</li>
+        <li>After a release: roll back with <code>helm rollback nuna-catalog -n "$NS"</code> (<a href="kubectl.html">Helm and kubectl recipes</a>).</li>
+      </ul>
+      <h3 id="nunacommitavailabilityburnfast-escalate">If that does not fix it</h3>
+      <p>Collect the error types from the dashboard, a few failing request ids and the matching log lines, and raise them with the team that runs nuna. See <a href="troubleshooting.html">Troubleshooting</a> for each message.</p>
+
+      <h2 id="nunacommitavailabilityburnslow"><code>NunaCommitAvailabilityBurnSlow</code></h2>
+      <h3 id="nunacommitavailabilityburnslow-means">What it means</h3>
+      <p>More than 0.1% of commits (<code>updateTable</code> and <code>commitTransaction</code>) were answered 5xx over the last 3 days and 6 hours, for 15 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunacommitavailabilityburnslow-impact">Impact</h3>
+      <p>Writes fail. A commit answered 5xx may or may not have happened: engines that retry check the table first.</p>
+      <h3 id="nunacommitavailabilityburnslow-check">Check</h3>
+      <p>Open the nuna catalog dashboard: <strong>Failed loads</strong> and <strong>Refused, unknown and failed commits</strong> name the error types. Then:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep '"ERROR"'</code></pre>
+      </div>
+      <p>The commonest 5xx answers and their causes:</p>
+      <ul>
+        <li><code>503</code> <code>ServiceUnavailableException</code> with <code>Retry-After: 2</code>: the catalog's database cannot be reached. The server's health route says so too.</li>
+        <li><code>503</code> while checking a token: the identity provider's keys could not be fetched, logged as <code>Couldn't retrieve JWK set from URL</code>.</li>
+        <li><code>503</code> on reads or vends: an audit record that had to be written first was not.</li>
+        <li><code>500</code> <code>CommitStateUnknownException</code>: the database answer to a commit was lost; the commit may have happened.</li>
+      </ul>
+      <h3 id="nunacommitavailabilityburnslow-fix">Fix</h3>
+      <ul>
+        <li>Database unreachable: restore the database or its network path. The servers recover on their own once it answers; nothing needs restarting.</li>
+        <li>Identity provider unreachable: restore it, or the network path to its JWKS URL.</li>
+        <li>One server failing alone: delete its pod and let the Deployment replace it.</li>
+        <li>After a release: roll back with <code>helm rollback nuna-catalog -n "$NS"</code> (<a href="kubectl.html">Helm and kubectl recipes</a>).</li>
+      </ul>
+      <h3 id="nunacommitavailabilityburnslow-escalate">If that does not fix it</h3>
+      <p>Collect the error types from the dashboard, a few failing request ids and the matching log lines, and raise them with the team that runs nuna. See <a href="troubleshooting.html">Troubleshooting</a> for each message.</p>
+
+      <h2 id="nunarequestavailabilityburnfast"><code>NunaRequestAvailabilityBurnFast</code></h2>
+      <h3 id="nunarequestavailabilityburnfast-means">What it means</h3>
+      <p>More than 0.1% of Iceberg REST calls of every kind were answered 5xx, fast enough to spend a month's error budget in days: 14.4 times the allowed rate over the last hour and 5 minutes, or 6 times over 6 hours and 30 minutes. 4xx answers, 409 conflicts among them, count on neither side. Severity <code>page</code>. It keeps firing 10 minutes after the failures stop.</p>
+      <h3 id="nunarequestavailabilityburnfast-impact">Impact</h3>
+      <p>Engines see failures on whatever they call: config, loads, commits, credentials.</p>
+      <h3 id="nunarequestavailabilityburnfast-check">Check</h3>
+      <p>Open the nuna catalog dashboard: <strong>Failed loads</strong> and <strong>Refused, unknown and failed commits</strong> name the error types. Then:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep '"ERROR"'</code></pre>
+      </div>
+      <p>The commonest 5xx answers and their causes:</p>
+      <ul>
+        <li><code>503</code> <code>ServiceUnavailableException</code> with <code>Retry-After: 2</code>: the catalog's database cannot be reached. The server's health route says so too.</li>
+        <li><code>503</code> while checking a token: the identity provider's keys could not be fetched, logged as <code>Couldn't retrieve JWK set from URL</code>.</li>
+        <li><code>503</code> on reads or vends: an audit record that had to be written first was not.</li>
+        <li><code>500</code> <code>CommitStateUnknownException</code>: the database answer to a commit was lost; the commit may have happened.</li>
+      </ul>
+      <h3 id="nunarequestavailabilityburnfast-fix">Fix</h3>
+      <ul>
+        <li>Database unreachable: restore the database or its network path. The servers recover on their own once it answers; nothing needs restarting.</li>
+        <li>Identity provider unreachable: restore it, or the network path to its JWKS URL.</li>
+        <li>One server failing alone: delete its pod and let the Deployment replace it.</li>
+        <li>After a release: roll back with <code>helm rollback nuna-catalog -n "$NS"</code> (<a href="kubectl.html">Helm and kubectl recipes</a>).</li>
+      </ul>
+      <h3 id="nunarequestavailabilityburnfast-escalate">If that does not fix it</h3>
+      <p>Collect the error types from the dashboard, a few failing request ids and the matching log lines, and raise them with the team that runs nuna. See <a href="troubleshooting.html">Troubleshooting</a> for each message.</p>
+
+      <h2 id="nunarequestavailabilityburnslow"><code>NunaRequestAvailabilityBurnSlow</code></h2>
+      <h3 id="nunarequestavailabilityburnslow-means">What it means</h3>
+      <p>More than 0.1% of Iceberg REST calls of every kind were answered 5xx over the last 3 days and 6 hours, for 15 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunarequestavailabilityburnslow-impact">Impact</h3>
+      <p>Engines see failures on whatever they call: config, loads, commits, credentials.</p>
+      <h3 id="nunarequestavailabilityburnslow-check">Check</h3>
+      <p>Open the nuna catalog dashboard: <strong>Failed loads</strong> and <strong>Refused, unknown and failed commits</strong> name the error types. Then:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep '"ERROR"'</code></pre>
+      </div>
+      <p>The commonest 5xx answers and their causes:</p>
+      <ul>
+        <li><code>503</code> <code>ServiceUnavailableException</code> with <code>Retry-After: 2</code>: the catalog's database cannot be reached. The server's health route says so too.</li>
+        <li><code>503</code> while checking a token: the identity provider's keys could not be fetched, logged as <code>Couldn't retrieve JWK set from URL</code>.</li>
+        <li><code>503</code> on reads or vends: an audit record that had to be written first was not.</li>
+        <li><code>500</code> <code>CommitStateUnknownException</code>: the database answer to a commit was lost; the commit may have happened.</li>
+      </ul>
+      <h3 id="nunarequestavailabilityburnslow-fix">Fix</h3>
+      <ul>
+        <li>Database unreachable: restore the database or its network path. The servers recover on their own once it answers; nothing needs restarting.</li>
+        <li>Identity provider unreachable: restore it, or the network path to its JWKS URL.</li>
+        <li>One server failing alone: delete its pod and let the Deployment replace it.</li>
+        <li>After a release: roll back with <code>helm rollback nuna-catalog -n "$NS"</code> (<a href="kubectl.html">Helm and kubectl recipes</a>).</li>
+      </ul>
+      <h3 id="nunarequestavailabilityburnslow-escalate">If that does not fix it</h3>
+      <p>Collect the error types from the dashboard, a few failing request ids and the matching log lines, and raise them with the team that runs nuna. See <a href="troubleshooting.html">Troubleshooting</a> for each message.</p>
+
+      <h2 id="nunametadataintegrity"><code>NunaMetadataIntegrity</code></h2>
+      <h3 id="nunametadataintegrity-means">What it means</h3>
+      <p>A metadata file read from the object store no longer hashes to the SHA-256 its pointer recorded when it was committed, in the last 15 minutes. Something changed or damaged the file after nuna wrote it. Severity <code>page</code>.</p>
+      <h3 id="nunametadataintegrity-impact">Impact</h3>
+      <p>For a regulated table, nuna refuses to serve the file. For other tables it serves the file as it now reads and raises the alert. Exports and row and column reads of the table are refused with <code>500</code> <code>MetadataIntegrityException</code>.</p>
+      <h3 id="nunametadataintegrity-check">Check</h3>
+      <p>The <code>nuna.alerts</code> log line names the table's id, the file and both hashes:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep metadata-integrity</code></pre>
+      </div>
+      <div class="code" data-lang="text">
+<pre><code>metadata-integrity object=&lt;table id&gt; location=s3://&lt;bucket&gt;/&lt;path&gt;.metadata.json expected-sha256=&lt;hash&gt; actual-sha256=&lt;hash&gt;</code></pre>
+      </div>
+      <p>Check the object's history in the object store: its versions, who wrote it last, and when.</p>
+      <h3 id="nunametadataintegrity-fix">Fix</h3>
+      <ul>
+        <li>Restore the file's earlier version from the object store's versioning, or from the DR replica, so that it hashes as recorded.</li>
+        <li>Find who could write to the table's location and remove that access: only the catalog and the engines it vends credentials to may write there.</li>
+      </ul>
+      <h3 id="nunametadataintegrity-escalate">If that does not fix it</h3>
+      <p>Treat it as a security incident if nobody can account for the change. Keep the log line and the object store's access logs, and raise it with your security team.</p>
+
+      <h2 id="nunaregulatedschemachange"><code>NunaRegulatedSchemaChange</code></h2>
+      <h3 id="nunaregulatedschemachange-means">What it means</h3>
+      <p>A commit changed a regulated table's schema or partition spec in the last 15 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunaregulatedschemachange-impact">Impact</h3>
+      <p>None on serving. Downstream reports and controls that depend on the table's columns may need review.</p>
+      <h3 id="nunaregulatedschemachange-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep regulated-schema-change</code></pre>
+      </div>
+      <p>The line names the table's id and the commit's id. Find the commit and who made it in the audit records (<a href="../console/audit.html">Audit page</a>).</p>
+      <h3 id="nunaregulatedschemachange-fix">Fix</h3>
+      <ul>
+        <li>If the change was planned, record its approval as your change process asks. Nothing else is needed.</li>
+        <li>If it was not, ask the table's owners. To undo it, an engine commits the earlier schema again.</li>
+      </ul>
+      <h3 id="nunaregulatedschemachange-escalate">If that does not fix it</h3>
+      <p>Take the commit id and the audit record to the table's data stewards.</p>
+
+      <h2 id="nunalargemetadata"><code>NunaLargeMetadata</code></h2>
+      <h3 id="nunalargemetadata-means">What it means</h3>
+      <p>A table's metadata file is larger than <a href="../configure/server.html#nuna-rest-alert-metadata-chars"><code>nuna.rest.alert-metadata-chars</code></a> (1,048,576 characters by default) or holds more snapshots than <a href="../configure/server.html#nuna-rest-alert-snapshots"><code>nuna.rest.alert-snapshots</code></a> (1,000 by default). Each server alerts once per file. Severity <code>warning</code>.</p>
+      <h3 id="nunalargemetadata-impact">Impact</h3>
+      <p>Every load and commit of the table reads and writes that file, so they get slower as it grows, and it takes more of the metadata cache.</p>
+      <h3 id="nunalargemetadata-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h | grep large-metadata</code></pre>
+      </div>
+      <p>The line names the table, its location, its size and snapshot count, and both limits. Check the table's health and maintenance policy in the console: is snapshot expiry on, and when did it last run?</p>
+      <h3 id="nunalargemetadata-fix">Fix</h3>
+      <ul>
+        <li>Make sure snapshot expiry runs for the table (<a href="table-health.html">Table health</a>), and shorten its snapshot retention if it keeps many.</li>
+        <li>Branches and tags keep snapshots alive: end branches no longer needed.</li>
+        <li>A table written in many small commits grows fast; ask its writers to batch.</li>
+      </ul>
+      <h3 id="nunalargemetadata-escalate">If that does not fix it</h3>
+      <p>Raise it with the table's owners with the size and snapshot count from the log line.</p>
+
+      <h2 id="nunacataloggone"><code>NunaCatalogGone</code></h2>
+      <h3 id="nunacataloggone-means">What it means</h3>
+      <p>No catalog server has sent <code>nuna_catalog_alerts_metadata_integrity_total</code> for 10 minutes. Every server sends it each minute from its start, busy or idle, so either no server runs or their telemetry does not reach Prometheus. Severity <code>page</code>.</p>
+      <h3 id="nunacataloggone-impact">Impact</h3>
+      <p>If no server runs, every engine and the console are down. If only telemetry is lost, serving is fine but every other catalog alert is blind.</p>
+      <h3 id="nunacataloggone-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS -o /dev/null -w "%{http_code}\n" "$NUNA/ui/config.json"</code></pre>
+      </div>
+      <p><code>200</code> means a server answers, so look at telemetry: the collector, its pods and its logs, and the <code>telemetry.endpoint</code> value.</p>
+      <h3 id="nunacataloggone-fix">Fix</h3>
+      <ul>
+        <li>Servers down: read why with <code>kubectl -n "$NS" describe pod <var>pod</var></code> and the logs of the last run (<code>kubectl -n "$NS" logs <var>pod</var> --previous</code>). A server that refuses to start says why in its last lines (<a href="troubleshooting.html#server-start-up">Troubleshooting</a>).</li>
+        <li>Telemetry lost: restore the collector, or the network path from the servers to it.</li>
+      </ul>
+      <h3 id="nunacataloggone-escalate">If that does not fix it</h3>
+      <p>If servers run and the collector receives, check Prometheus' OTLP receiver and the name translation (<a href="dashboards-alerts.html#if-your-prometheus-names-differ">Dashboards and alerts</a>).</p>
+
+      <h2 id="nunacatalogsilent"><code>NunaCatalogSilent</code></h2>
+      <h3 id="nunacatalogsilent-means">What it means</h3>
+      <p>One catalog deployment, a <code>job</code>, sent metrics within the last day and has not for 10 minutes, while other deployments still do. Severity <code>page</code>.</p>
+      <h3 id="nunacatalogsilent-impact">Impact</h3>
+      <p>As for <a href="#nunacataloggone"><code>NunaCatalogGone</code></a>, for that deployment alone.</p>
+      <h3 id="nunacatalogsilent-check">Check</h3>
+      <p>The alert's <code>job</code> label is <code><var>namespace</var>/nuna-catalog</code>. Set <code>NS</code> to that namespace and check its pods:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <h3 id="nunacatalogsilent-fix">Fix</h3>
+      <ul>
+        <li>Follow <a href="#nunacataloggone"><code>NunaCatalogGone</code></a> for that namespace.</li>
+      </ul>
+      <h3 id="nunacatalogsilent-escalate">If that does not fix it</h3>
+      <p>If the deployment was removed on purpose, the alert resolves after a day.</p>
+
+      <h2 id="nunarequestseriesmissing"><code>NunaRequestSeriesMissing</code></h2>
+      <h3 id="nunarequestseriesmissing-means">What it means</h3>
+      <p>A deployment has sent metrics for over an hour, but <code>nuna_catalog_requests_milliseconds_count</code> has had no sample for an hour. Either its request series arrive under other names, so every objective rule reads nothing, or no Iceberg call has reached a server since it started. Severity <code>page</code>.</p>
+      <h3 id="nunarequestseriesmissing-impact">Impact</h3>
+      <p>Every latency and availability rule for the deployment is blind.</p>
+      <h3 id="nunarequestseriesmissing-check">Check</h3>
+      <p>In Prometheus, look for the series under other names: <code>nuna_catalog_requests_seconds_count</code>, a native histogram <code>nuna_catalog_requests_milliseconds</code>, or names with dots. Then check that engines are calling the deployment at all.</p>
+      <h3 id="nunarequestseriesmissing-fix">Fix</h3>
+      <ul>
+        <li>Names changed: fix the translation in Prometheus or the collector, or change the rules (<a href="dashboards-alerts.html#if-your-prometheus-names-differ">Dashboards and alerts</a>).</li>
+        <li>No calls: if a quiet hour is normal for the deployment, lengthen the rule's window or make it a warning.</li>
+      </ul>
+      <h3 id="nunarequestseriesmissing-escalate">If that does not fix it</h3>
+      <p>Raise it with whoever runs Prometheus and the collector.</p>
+
+      <h2 id="nunaslobucketmissing"><code>NunaSloBucketMissing</code></h2>
+      <h3 id="nunaslobucketmissing-means">What it means</h3>
+      <p>A latency objective's answers arrive in <code>nuna_catalog_requests_milliseconds_count</code>, but no <code>_bucket</code> series has the objective's <code>le</code> bound (10, 50 or 300) for 10 minutes. The alert's <code>slo</code> label names which. Severity <code>page</code>.</p>
+      <h3 id="nunaslobucketmissing-impact">Impact</h3>
+      <p>That objective's burn-rate rules return nothing.</p>
+      <h3 id="nunaslobucketmissing-check">Check</h3>
+      <p>In Prometheus, list the <code>le</code> values of <code>nuna_catalog_requests_milliseconds_bucket</code>. Values written as <code>50.0</code> already match; others, or none, do not.</p>
+      <h3 id="nunaslobucketmissing-fix">Fix</h3>
+      <ul>
+        <li>Buckets dropped or changed by the collector or a relabelling rule: undo it.</li>
+        <li>Native histograms in use: change the rules to <code>histogram_fraction</code>.</li>
+      </ul>
+      <h3 id="nunaslobucketmissing-escalate">If that does not fix it</h3>
+      <p>The buckets are set in nuna's code, not by a setting. Raise it with the team that runs nuna.</p>
+
+      <h2 id="nunaworkernotscanning"><code>NunaWorkerNotScanning</code></h2>
+      <h3 id="nunaworkernotscanning-means">What it means</h3>
+      <p>The maintenance worker's last successful scan ended more than three scan intervals ago (30 minutes at the default), and that has lasted an hour. Severity <code>page</code>.</p>
+      <h3 id="nunaworkernotscanning-impact">Impact</h3>
+      <p>Snapshots are not expired, dropped tables are not purged, due files are not deleted, and nothing is compacted. Storage grows and loads slow over days.</p>
+      <h3 id="nunaworkernotscanning-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-maintenance</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-maintenance --since=1h | grep '"WARN"'</code></pre>
+      </div>
+      <p>Look for the work list failing (<code>kind</code> <code>work-list</code>), the token request failing, or the worker restarting before a scan ends. The console's Service page shows when the worker last reported.</p>
+      <h3 id="nunaworkernotscanning-fix">Fix</h3>
+      <ul>
+        <li>Catalog unreachable from the worker: check <code>catalog-uri</code> and the network path.</li>
+        <li>Token refused: check the worker's client id and secret, and that its principal is in <a href="../configure/security.html#nuna-security-maintenance-principals"><code>nuna.security.maintenance-principals</code></a>.</li>
+        <li>Restarting: read <code>kubectl -n "$NS" logs deployment/nuna-maintenance --previous</code>; an out-of-memory exit needs more memory.</li>
+        <li>A first scan on a new deployment runs every table's orphan scan and can take long: wait for it.</li>
+      </ul>
+      <h3 id="nunaworkernotscanning-escalate">If that does not fix it</h3>
+      <p>Collect the worker's log lines from the last scan and raise them with the team that runs nuna.</p>
+
+      <h2 id="nunaworkergone"><code>NunaWorkerGone</code></h2>
+      <h3 id="nunaworkergone-means">What it means</h3>
+      <p>No maintenance worker has sent <code>nuna_maintenance_scan_last_success_seconds</code> for 15 minutes. Severity <code>page</code>.</p>
+      <h3 id="nunaworkergone-impact">Impact</h3>
+      <p>As for <a href="#nunaworkernotscanning"><code>NunaWorkerNotScanning</code></a>, or only the worker's telemetry is lost.</p>
+      <h3 id="nunaworkergone-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-maintenance</code></pre>
+      </div>
+      <h3 id="nunaworkergone-fix">Fix</h3>
+      <ul>
+        <li>Not running: check the Deployment and its events with <code>kubectl -n "$NS" describe deployment nuna-maintenance</code>.</li>
+        <li>Running: check its <code>telemetry.endpoint</code> and the collector.</li>
+      </ul>
+      <h3 id="nunaworkergone-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs nuna.</p>
+
+      <h2 id="nunapurgesfailing"><code>NunaPurgesFailing</code></h2>
+      <h3 id="nunapurgesfailing-means">What it means</h3>
+      <p>Purges of dropped objects failed in the last hour and none completed, for 20 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunapurgesfailing-impact">Impact</h3>
+      <p>Dropped tables' files stay in storage after their window ends.</p>
+      <h3 id="nunapurgesfailing-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-maintenance --since=1h | grep '"WARN"' | grep -i purge</code></pre>
+      </div>
+      <p>The WARN lines name the objects. A purge the catalog refuses or rate-limits is skipped, not failed.</p>
+      <h3 id="nunapurgesfailing-fix">Fix</h3>
+      <ul>
+        <li>Storage denies the delete: check the worker's storage identity and the bucket's delete policy (<a href="../install/helm-maintenance.html">Install the maintenance worker</a>).</li>
+        <li>A namespace frozen for DR refuses purge claims: lift the freeze when the reconcile is done (<a href="../guides/freeze.html">Freeze for DR</a>).</li>
+      </ul>
+      <h3 id="nunapurgesfailing-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs the object store, with the object ids from the log.</p>
+
+      <h2 id="nunadeletionsfailing"><code>NunaDeletionsFailing</code></h2>
+      <h3 id="nunadeletionsfailing-means">What it means</h3>
+      <p>Deletions of due files failed in the last hour and nothing was deleted, for 20 minutes. Severity <code>warning</code>.</p>
+      <h3 id="nunadeletionsfailing-impact">Impact</h3>
+      <p>Expired snapshots' and orphans' files stay in storage.</p>
+      <h3 id="nunadeletionsfailing-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-maintenance --since=1h | grep '"WARN"' | grep -i delet</code></pre>
+      </div>
+      <h3 id="nunadeletionsfailing-fix">Fix</h3>
+      <ul>
+        <li>The cause is most often the worker's storage identity or the bucket's delete policy: only the worker's identity may delete, and it may list and delete but never read.</li>
+        <li>A store whose endpoint the worker cannot match to the catalog's storage profiles is skipped and logged (<code>kind</code> <code>storage-prefixes</code>).</li>
+      </ul>
+      <h3 id="nunadeletionsfailing-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs the object store.</p>
+
+      <h2 id="nunamaintenancejobfailing"><code>NunaMaintenanceJobFailing</code></h2>
+      <h3 id="nunamaintenancejobfailing-means">What it means</h3>
+      <p>Jobs of one kind (the alert's <code>kind</code> label) failed in every 30 minutes for 3 hours. Severity <code>warning</code>.</p>
+      <h3 id="nunamaintenancejobfailing-impact">Impact</h3>
+      <p>That kind of work is not done for the tables it fails on. See <a href="metrics.html#failure-kinds">Failure kinds</a> for what each kind covers.</p>
+      <h3 id="nunamaintenancejobfailing-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-maintenance --since=1h | grep '"WARN"'</code></pre>
+      </div>
+      <p>Each WARN line names the table or object.</p>
+      <h3 id="nunamaintenancejobfailing-fix">Fix</h3>
+      <ul>
+        <li><code>table-changed</code> is normal after a drop and re-create; it clears on its own.</li>
+        <li><code>table-load</code>: the worker's group needs read on the table; a governance rule may refuse it.</li>
+        <li><code>compaction</code>: check the Jobs' namespace with <code>kubectl -n nuna-compaction get jobs</code> and the failing Job's logs.</li>
+        <li><code>report</code>: the catalog refused the worker's report; the work itself went on.</li>
+      </ul>
+      <h3 id="nunamaintenancejobfailing-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs nuna, with the WARN lines.</p>
+
+      <h2 id="nunascansslowerthaninterval"><code>NunaScansSlowerThanInterval</code></h2>
+      <h3 id="nunascansslowerthaninterval-means">What it means</h3>
+      <p>Over the last hour the mean scan took longer than the scan interval (600 seconds at the default). Severity <code>warning</code>.</p>
+      <h3 id="nunascansslowerthaninterval-impact">Impact</h3>
+      <p>Scans run back to back, and work waits longer to be picked up.</p>
+      <h3 id="nunascansslowerthaninterval-check">Check</h3>
+      <p>Open the nuna maintenance worker dashboard's time by part to see where scans spend their time.</p>
+      <h3 id="nunascansslowerthaninterval-fix">Fix</h3>
+      <ul>
+        <li>The work list has outgrown one worker: lengthen <code>scan-interval</code>, and change the rule's <code>600</code> to match.</li>
+        <li>A store or the catalog is slow: see the latency runbooks above.</li>
+      </ul>
+      <h3 id="nunascansslowerthaninterval-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs nuna.</p>
+
+      <h2 id="nunacompactionfallingbehind"><code>NunaCompactionFallingBehind</code></h2>
+      <h3 id="nunacompactionfallingbehind-means">What it means</h3>
+      <p>Each day for 3 days, tables that needed compaction were left over when the cleanup window closed, or Jobs were cut off by its end. Severity <code>warning</code>.</p>
+      <h3 id="nunacompactionfallingbehind-impact">Impact</h3>
+      <p>Small files build up; scans and loads of those tables slow.</p>
+      <h3 id="nunacompactionfallingbehind-check">Check</h3>
+      <p>Read the last nights in the console's Maintenance page or with the nights route (<a href="maintenance-nights.html">Maintenance nights</a>): <code>jobs-cut-off</code> and how long the Jobs ran.</p>
+      <h3 id="nunacompactionfallingbehind-fix">Fix</h3>
+      <ul>
+        <li>Lengthen the cleanup window.</li>
+        <li>Raise <a href="../configure/maintenance.html#nuna-maintenance-compaction-max-jobs"><code>nuna.maintenance.compaction.max-jobs</code></a> if the cluster has room for more Jobs at once.</li>
+        <li>Give each Job more memory if they run slowly (<code>compaction.memory</code>, <code>compaction.driver-memory</code>).</li>
+      </ul>
+      <h3 id="nunacompactionfallingbehind-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs the cluster the Jobs run in.</p>
+
+      <h2 id="nunafilesoutsidetable"><code>NunaFilesOutsideTable</code></h2>
+      <h3 id="nunafilesoutsidetable-means">What it means</h3>
+      <p>In the last day the worker found unreferenced files that lie outside their table's own location. Severity <code>warning</code>.</p>
+      <h3 id="nunafilesoutsidetable-impact">Impact</h3>
+      <p>The worker never records or deletes such files, so they stay in storage.</p>
+      <h3 id="nunafilesoutsidetable-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-maintenance --since=1h | grep '"WARN"'</code></pre>
+      </div>
+      <p>The WARN lines name the table. Find which engine writes outside the location.</p>
+      <h3 id="nunafilesoutsidetable-fix">Fix</h3>
+      <ul>
+        <li>Configure the engine to write under the table's location.</li>
+        <li>Remove the stray files by hand once nobody needs them.</li>
+      </ul>
+      <h3 id="nunafilesoutsidetable-escalate">If that does not fix it</h3>
+      <p>Raise it with the table's owners.</p>
+
+      <h2 id="nunadrlagging"><code>NunaDrLagging</code></h2>
+      <h3 id="nunadrlagging-means">What it means</h3>
+      <p>The DR verifier's largest lag is over 15 minutes, for 5 minutes: some commit has not reached the DR store whole for that long. Severity <code>page</code>. It fires only on a worker with a DR replica named.</p>
+      <h3 id="nunadrlagging-impact">Impact</h3>
+      <p>If the primary region were lost now, recovery would lose the commits not yet in the DR store.</p>
+      <h3 id="nunadrlagging-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/dr/watermarks" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>The answer names the tables behind (<a href="backup-dr.html">Back up and recover</a>). Then check the object store's replication status for those buckets.</p>
+      <h3 id="nunadrlagging-fix">Fix</h3>
+      <ul>
+        <li>Replication behind or stopped: fix it in the object store.</li>
+        <li>The verifier cannot read the DR store: check its keys and endpoint, and the worker's WARN lines.</li>
+      </ul>
+      <h3 id="nunadrlagging-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs the object store's replication.</p>
+
+      <h2 id="nunadrverifiernotpassing"><code>NunaDrVerifierNotPassing</code></h2>
+      <h3 id="nunadrverifiernotpassing-means">What it means</h3>
+      <p>The DR verifier has not finished a pass for 15 minutes. Severity <code>page</code>.</p>
+      <h3 id="nunadrverifiernotpassing-impact">Impact</h3>
+      <p>Until a pass succeeds, the DR lag is not known.</p>
+      <h3 id="nunadrverifiernotpassing-check">Check</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-maintenance --since=1h | grep '"WARN"'</code></pre>
+      </div>
+      <p>A pass fails when it cannot read the DR work list. The worker logs <code>DR pass done</code> after each pass that ends.</p>
+      <h3 id="nunadrverifiernotpassing-fix">Fix</h3>
+      <ul>
+        <li>Catalog or identity provider unreachable: as for <a href="#nunaworkernotscanning"><code>NunaWorkerNotScanning</code></a>.</li>
+      </ul>
+      <h3 id="nunadrverifiernotpassing-escalate">If that does not fix it</h3>
+      <p>Raise it with the team that runs nuna.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="troubleshooting.html">Troubleshooting</a>: symptoms and messages, by part.</li>
+          <li><a href="health.html">Health checks</a>: the server's health route.</li>
+          <li><a href="kubectl.html">Helm and kubectl recipes</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/grafana/rules/nuna-catalog.rules.yaml</code> and <code>nuna-maintenance.rules.yaml</code> (each rule's expression, <code>for</code>, <code>keep_firing_for</code>, severity and annotations), <code>catalog-server/src/main/java/nuna/catalog/server/rest/ServerAlerts.java</code> and <code>RestSettings.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java</code> and the charts, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The commands were not run against a failing deployment.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

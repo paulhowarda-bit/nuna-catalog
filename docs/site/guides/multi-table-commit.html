@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/multi-table-commit">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Commit to several tables at once · nuna docs</title>
+  <meta name="description" content="Send changes to several tables in one request that lands whole or not at all, through the Iceberg REST transactions endpoint.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Commit to several tables at once</h1>
+        <p class="lead">Send changes to several tables in one request that lands whole or not at all, through the Iceberg REST transactions endpoint.</p>
+        <p class="doc-meta">
+          <span class="badge for">For engine developers and data engineers</span>
+          <span class="badge needs">Needs <code>write</code> or <code>modify</code> on each table</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p><code>POST /v1/{prefix}/transactions/commit</code> takes one commit per table, each with its requirements and updates as a single-table commit has them. nuna checks every table, then applies all the commits in one store transaction, or none. Use it when two tables must change together, such as fills and the positions computed from them.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Every table exists. A transaction commits to existing tables only; it creates, drops and renames nothing.</li>
+        <li>Your groups may commit to each table as a single commit would need: <code>write</code> for a change of data, <code>modify</code> for a change of schema, partitioning or properties.</li>
+        <li>The transaction changes at most <code>nuna.rest.max-transaction-tables</code> tables (default <code>100</code>), each named once.</li>
+        <li>For the curl example, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="send-the-transaction">Send the transaction</h2>
+          <div class="code" data-lang="bash" data-title="Change fills and positions together">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/transactions/commit" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: eod-2026-11-25-restate" \
+  -d '{"table-changes": [
+        {"identifier": {"namespace": ["equities"], "name": "fills"},
+         "requirements": [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": 7210934412873551003}],
+         "updates": [{"action": "add-snapshot", "snapshot": {…}},
+                     {"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 7210934412873552117}]},
+        {"identifier": {"namespace": ["equities", "daily"], "name": "positions"},
+         "requirements": [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": 4418820035512200871}],
+         "updates": [{"action": "add-snapshot", "snapshot": {…}},
+                     {"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 4418820035512209934}]}
+      ]}'</code></pre>
+          </div>
+          <p>The server answers <code>204</code> with no body when every commit has landed. With an <code>Idempotency-Key</code>, a retry after a lost answer gets the first answer again instead of a second commit.</p>
+          <p>Engines that support multi-table transactions over the Iceberg REST protocol send the same request.</p>
+      <p>Through a catalog branch (<code>/v1/trading@dev/transactions/commit</code>), the transaction commits to the branch's own copies of the tables.</p>
+
+      <h2 id="what-all-or-nothing-means">What all-or-nothing means here</h2>
+      <ul>
+        <li>Either every table moves to its new metadata, or none does. A requirement that fails on one table fails the whole transaction.</li>
+        <li>The tables are locked in a fixed order, so two transactions over the same tables cannot deadlock.</li>
+        <li>It does not give readers a view of the tables at one instant: a reader that loads one table before the transaction and another after sees one old and one new.</li>
+        <li>If commits keep landing on the tables while it retries, it gives up and answers <code>409</code>.</li>
+      </ul>
+
+      <aside class="callout check">
+        <p class="callout-title">Every table moved</p>
+        <p>Each table's <b class="ui">History</b> tab shows a new commit, and the audit trail holds one <code>nuna.catalog.commit</code> record per table, all with the transaction's request id.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>409</code> <code>CommitFailedException</code> beginning with a table's name, such as <code>equities.fills: …</code></td><td>That table's requirement failed: another commit moved it. Nothing landed.</td><td>Reload the tables, rebuild the changes and send again.</td></tr>
+            <tr><td><code>409</code> <code>CommitFailedException</code> <code>Transaction lost to concurrent commits … times; its tables changed too often to apply it</code></td><td>Commits kept landing on the tables while it retried.</td><td>Send it again when the tables are quieter.</td></tr>
+            <tr><td><code>400</code> <code>A transaction may change at most 100 tables; this one names …</code></td><td>Too many tables in one request.</td><td>Split the change, or ask an operator to raise <code>nuna.rest.max-transaction-tables</code>.</td></tr>
+            <tr><td><code>400</code> <code>Table equities.fills is named more than once in the transaction</code></td><td>Two entries name one table.</td><td>Merge them into one entry.</td></tr>
+            <tr><td><code>404</code> <code>NoSuchTableException</code> <code>Table does not exist: …</code></td><td>A table does not exist, or your groups cannot see it.</td><td>Create it first, or check your grants.</td></tr>
+            <tr><td><code>400</code> beginning with a table's name</td><td>One table's commit broke a rule, such as a path property outside the table's location.</td><td>Fix that table's updates.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code></td><td>Your groups may not commit to one of the tables, or a legal hold or DR freeze refuses it.</td><td>Ask a grant admin, or wait for the freeze to lift.</td></tr>
+            <tr><td><code>400</code> <code>commitTransaction is refused on tag … of catalog trading: a tag is read-only</code></td><td>The request went through a tag.</td><td>Send it to main or a branch.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../api/iceberg-transactions.html#endpoints">Iceberg transactions API</a>: the endpoint and its body.</li>
+          <li><a href="../concepts/commits.html">Commits</a>: how one commit is checked and applied.</li>
+          <li><a href="branch-workflow.html">Write, audit and publish with a branch</a>: change many tables, check them, then publish together.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code> and <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No transaction was sent to the local demo. The body follows the Iceberg REST specification's <code>CommitTransactionRequest</code>; the snapshots are elided.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

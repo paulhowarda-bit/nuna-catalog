@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API reference · nuna docs</title>
+  <meta name="description" content="nuna serves two HTTP APIs: the Iceberg REST catalog API under /v1, which engines use, and the management API under /management/v1, which the console and operators use. This page covers what they share and lists every endpoint.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>API reference</h1>
+        <p class="lead">nuna serves two HTTP APIs: the Iceberg REST catalog API under <code>/v1</code>, which engines use, and the management API under <code>/management/v1</code>, which the console and operators use. This page covers what they share and lists every endpoint.</p>
+      </header>
+
+      <h2 id="the-two-apis">The two APIs</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">API</th><th scope="col">Base path</th><th scope="col">What it is</th></tr></thead>
+          <tbody>
+            <tr><td>Iceberg REST catalog</td><td><code>/v1</code></td><td>The standard Iceberg REST catalog API, which Spark, Trino, PyIceberg and other engines speak. nuna serves the endpoints it advertises in <code>GET /v1/config</code> and refuses the rest. Catalog routes sit under <code>/v1/{prefix}</code>, where the prefix names a catalog and, for a branch or tag, a ref (<a href="iceberg-config.html#the-prefix">The prefix</a>).</td></tr>
+            <tr><td>Management</td><td><code>/management/v1</code></td><td>nuna's own API: grants, governance, audit, branches and tags, lifecycle, maintenance, health and disaster recovery. A catalog's routes sit under <code>/management/v1/catalogs/{catalog}</code>, and an object's under its namespace's path, <code>…/namespaces/{namespace}/tables/{table}</code> or <code>…/views/{view}</code>.</td></tr>
+            <tr><td>OPA decisions</td><td><code>/opa/v1</code></td><td>Access decisions, row filters and column masks for Trino's OPA access control (<a href="opa.html">OPA decisions</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The version is in the path; there is no version header or field. Both APIs take and answer JSON.</p>
+      <p>In the Iceberg API, a namespace of more than one level is one path segment, its levels joined by the byte <code>0x1F</code>, written <code>%1F</code>: <code>equities%1Fdaily</code> for <code>equities.daily</code>. The management API takes the same form for <code>{namespace}</code>.</p>
+      <p>Examples on these pages use curl with <code>NUNA</code> and <code>TOKEN</code> set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</p>
+
+      <h2 id="authentication">Authentication</h2>
+      <p>Every request carries an access token from your organization's identity provider as a bearer token: <code>Authorization: Bearer <var>token</var></code> (<a href="../clients/tokens.html">Get a token</a>). The only routes that take none are <code>/v1/oauth/tokens</code>, which refuses every call, the console's own files, and the <code>/opa/</code> routes, which check the end user's token that Trino sends in the request body.</p>
+      <p>An engine that acts for an end user adds one of these. Its client must be registered as a trusted engine (<a href="engines.html">Engines</a>); a request from any other client that names an end user is refused with <code>403</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Headers that name an end user</caption>
+          <thead><tr><th scope="col">Header</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><td><code>X-Nuna-End-User</code></td><td>The end user's id, beside the engine's own token in <code>Authorization</code>.</td></tr>
+            <tr><td><code>X-Nuna-End-User-Groups</code></td><td>The end user's groups, separated by commas, each percent-encoded. Only with <code>X-Nuna-End-User</code>: groups without a user are refused with <code>401</code>.</td></tr>
+            <tr><td><code>X-Nuna-Engine-Authorization</code></td><td><code>Bearer <var>engine token</var></code>, when <code>Authorization</code> carries the end user's own token. When both carry the same token, the engine acts as itself. It cannot be sent beside <code>X-Nuna-End-User</code>: an engine names its end user one way.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A refused token answers <code>401</code> with a <code>WWW-Authenticate</code> header: <code>Bearer</code> when there was no token, <code>Bearer error="invalid_token"</code> when the token was not accepted, and <code>Bearer error="invalid_request"</code> when the headers contradict each other. The body never says why a token was refused; the audit record does.</p>
+
+      <h2 id="authorization">Authorization</h2>
+      <p>Each endpoint needs a privilege on its object, from a grant to one of your groups on the object or on anything above it (<a href="../reference/privileges.html">Privileges</a>). A caller who holds nothing on the object gets <code>404</code>, as if it did not exist, so names are not disclosed. A caller who holds something, but not what the endpoint needs, gets <code>403</code> with a message naming the privilege. Every refusal is written to the audit trail.</p>
+
+      <h2 id="errors">Errors</h2>
+      <p>Every error answer from both APIs has the same JSON body, the Iceberg REST standard's error model. <code>type</code> is the name of the error class an Iceberg client maps the answer to; the management API uses the same field for its own types.</p>
+      <div class="code" data-lang="json" data-kind="output" data-title="An error answer">
+<pre><code>{
+  "error": {
+    "message": "Namespace does not exist: equities",
+    "type": "NoSuchNamespaceException",
+    "code": 404
+  }
+}</code></pre>
+      </div>
+      <p>A few <code>409</code> answers add fields beside <code>error</code>: a branch merge that conflicts adds <code>ref</code> and <code>conflicts</code>, and a change refused because refs changed adds <code>refs</code>. <a href="../reference/errors.html">Error responses</a> lists every status and type, when each comes and what to do.</p>
+      <p>Two statuses ask you to repeat the request, and send <code>Retry-After</code> in seconds: <code>503</code> when the catalog's database or another service it needs cannot be reached and nothing was applied (<code>Retry-After: 2</code>), and <code>429</code> when a rate limit is reached (<code>Retry-After: 60</code>).</p>
+
+      <h2 id="paging">Paging</h2>
+      <p>Listings that page take a <code>pageToken</code> query parameter and answer a <code>next-page-token</code> field. Pass the token back for the next page; a <code>null</code> token means the last page.</p>
+      <ul>
+        <li>In the Iceberg API, a listing without <code>pageToken</code> answers every item at once and ignores <code>pageSize</code>. Send an empty <code>pageToken</code> to ask for the first page. <code>pageSize</code> defaults to <code>100</code> (<code>nuna.rest.default-page-size</code>); a larger size than <code>1000</code> (<code>nuna.rest.max-page-size</code>) is cut to it.</li>
+        <li>Management listings name their own size parameter and default on each endpoint's page.</li>
+        <li>A token is opaque: pass it back as it came, with the same other parameters. A token the server did not make answers <code>400</code>, <code>Invalid page token: …</code>.</li>
+      </ul>
+
+      <h2 id="writes-and-retries">Writes and retries</h2>
+      <h3 id="idempotency-keys">Idempotency keys</h3>
+      <p>Every write in the Iceberg API, and these management writes, take an <code>Idempotency-Key</code> header: creating, renewing and deleting a branch or tag. A repeat with the same key gets the first request's answer, and nothing is applied twice.</p>
+      <ul>
+        <li>A key is 1 to 128 characters. Any other answers <code>400</code>, <code>Invalid Idempotency-Key: must be 1 to 128 characters</code>.</li>
+        <li>The server keeps a key for 24 hours, and says so in <code>GET /v1/config</code> as <code>"idempotency-key-lifetime": "PT24H"</code>.</li>
+        <li>A key belongs to one caller, route and body. Reusing it for a different request answers <code>400</code>, <code>Idempotency key … was used for a different request</code>.</li>
+        <li>An answer of <code>500</code> or above frees the key, so the repeat runs again. A repeat sent while the first is still running waits for its answer.</li>
+      </ul>
+      <h3 id="if-match">If-Match</h3>
+      <p>Row filters and column masks carry a version. Setting or removing one takes <code>If-Match: "<var>version</var>"</code>, the version as the rule's listing gives it, in double quotes. When the rule has moved on, the answer is <code>412</code> (<code>PreconditionFailedException</code>) and nothing changes: list the rules again (<a href="row-column-rules.html">Row and column rules</a>). No other endpoint takes <code>If-Match</code>; Iceberg commits carry their own requirements in the body.</p>
+      <h3 id="etags">ETags</h3>
+      <p>Loading a table answers an <code>ETag</code>. Send it back in <code>If-None-Match</code> and the server answers <code>304</code> with no body while nothing has changed (<a href="iceberg-tables.html#get-tables-table">Load a table</a>).</p>
+
+      <h2 id="request-ids">Request ids</h2>
+      <p>Every answer carries <code>X-Request-ID</code>. Send your own, 1 to 128 characters, and the server uses it; otherwise it uses the request's trace id, or makes one. The id is in the server's log lines and in the audit record of the request, so quote it when you report a problem.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <p>Every endpoint of both APIs, by page. Iceberg rows link to their endpoint block; management rows link to their page.</p>
+
+      <h3 id="iceberg-rest-endpoints">Iceberg REST</h3>
+      <div class="table-wrap">
+        <table>
+          <caption>Iceberg REST endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="iceberg-config.html#get-config"><code>/v1/config</code></a></td><td>A catalog's configuration, prefix and advertised endpoints.</td></tr>
+            <tr><td>any</td><td><a href="iceberg-config.html#post-oauth-tokens"><code>/v1/oauth/tokens</code></a></td><td>Refuses: the catalog issues no tokens.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="iceberg-namespaces.html#get-namespaces"><code>/v1/{prefix}/namespaces</code></a></td><td>Lists namespaces.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-namespaces.html#post-namespaces"><code>/v1/{prefix}/namespaces</code></a></td><td>Creates a namespace.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="iceberg-namespaces.html#get-namespaces-namespace"><code>/v1/{prefix}/namespaces/{namespace}</code></a></td><td>Loads a namespace's properties.</td></tr>
+            <tr><td><code>HEAD</code></td><td><a href="iceberg-namespaces.html#head-namespaces-namespace"><code>/v1/{prefix}/namespaces/{namespace}</code></a></td><td>Says whether a namespace exists.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="iceberg-namespaces.html#delete-namespaces-namespace"><code>/v1/{prefix}/namespaces/{namespace}</code></a></td><td>Drops an empty namespace.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-namespaces.html#post-namespaces-namespace-properties"><code>/v1/{prefix}/namespaces/{namespace}/properties</code></a></td><td>Sets and removes namespace properties.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="iceberg-tables.html#get-tables"><code>/v1/{prefix}/namespaces/{namespace}/tables</code></a></td><td>Lists tables.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-tables.html#post-tables"><code>/v1/{prefix}/namespaces/{namespace}/tables</code></a></td><td>Creates a table.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="iceberg-tables.html#get-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Loads a table, with storage credentials.</td></tr>
+            <tr><td><code>HEAD</code></td><td><a href="iceberg-tables.html#head-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Says whether a table exists.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-tables.html#post-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Commits changes to a table.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="iceberg-tables.html#delete-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Drops a table, which can be restored until it is purged.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-tables.html#post-tables-rename"><code>/v1/{prefix}/tables/rename</code></a></td><td>Renames or moves a table.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-tables.html#post-register"><code>/v1/{prefix}/namespaces/{namespace}/register</code></a></td><td>Registers a table from a metadata file.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-tables.html#post-tables-table-unregister"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister</code></a></td><td>Removes a table from the catalog, leaving its files.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-tables.html#post-tables-table-metrics"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics</code></a></td><td>Takes an engine's scan or commit report.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="iceberg-tables.html#get-tables-table-credentials"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials</code></a></td><td>Gets fresh storage credentials for a table.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="iceberg-views.html#get-views"><code>/v1/{prefix}/namespaces/{namespace}/views</code></a></td><td>Lists views.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-views.html#post-views"><code>/v1/{prefix}/namespaces/{namespace}/views</code></a></td><td>Creates a view.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="iceberg-views.html#get-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Loads a view.</td></tr>
+            <tr><td><code>HEAD</code></td><td><a href="iceberg-views.html#head-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Says whether a view exists.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-views.html#post-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Replaces a view's definition.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="iceberg-views.html#delete-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Drops a view.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-views.html#post-views-rename"><code>/v1/{prefix}/views/rename</code></a></td><td>Renames or moves a view.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-views.html#post-register-view"><code>/v1/{prefix}/namespaces/{namespace}/register-view</code></a></td><td>Registers a view from a metadata file.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="iceberg-transactions.html#post-transactions-commit"><code>/v1/{prefix}/transactions/commit</code></a></td><td>Commits changes to several tables at once.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="management-endpoints">Management</h3>
+      <p>Paths below are written from these bases: <code>{catalog path}</code> is <code>/management/v1/catalogs/{catalog}</code>, <code>{namespace path}</code> is <code>{catalog path}/namespaces/{namespace}</code>, <code>{table path}</code> is <code>{namespace path}/tables/{table}</code>, and <code>{object path}</code> is any of the catalog, namespace, table or view paths.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Management and OPA endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Page</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><code>/management/v1/catalogs</code></td><td><a href="catalogs.html#endpoints">Catalogs</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{catalog path}/properties</code></td><td><a href="catalogs.html#endpoints">Catalogs</a></td></tr>
+            <tr><td><code>GET</code>, <code>PUT</code>, <code>DELETE</code></td><td><code>/management/v1/engines</code></td><td><a href="engines.html#endpoints">Engines</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>{catalog path}/grants</code>, <code>{catalog path}/grants/revoke</code>, <code>{catalog path}/grants/check</code>, <code>{catalog path}/grants/preview</code></td><td><a href="grants.html#endpoints">Grants</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{catalog path}/grants</code>, <code>{catalog path}/grants/on</code>, <code>{catalog path}/grants/effective</code>, <code>{catalog path}/grants/groups</code>, <code>{catalog path}/grants/export</code></td><td><a href="grants.html#endpoints">Grants</a></td></tr>
+            <tr><td><code>GET</code>, <code>POST</code></td><td><code>{catalog path}/row-column-rules</code></td><td><a href="row-column-rules.html#endpoints">Row and column rules</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>{catalog path}/row-column-rules/remove</code></td><td><a href="row-column-rules.html#endpoints">Row and column rules</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{catalog path}/row-column-rules/export</code>, <code>{table path}/schema</code>, <code>{table path}/row-column-rules/mine</code></td><td><a href="row-column-rules.html#endpoints">Row and column rules</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>/opa/v1/allow</code>, <code>/opa/v1/row-filters</code>, <code>/opa/v1/column-masks</code></td><td><a href="opa.html#endpoints">OPA decisions</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{object path}/audit</code>, <code>{catalog path}/audit/feed</code>, <code>{catalog path}/audit/summary</code></td><td><a href="audit.html#endpoints">Audit</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>/management/v1/audit/archive</code>, <code>/management/v1/audit/chains/{run}/records/{number}</code></td><td><a href="audit.html#endpoints">Audit</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{catalog path}/governance/summary</code>, <code>{catalog path}/governance/holds</code>, <code>{object path}/governance</code></td><td><a href="governance.html#endpoints">Governance</a></td></tr>
+            <tr><td><code>PUT</code>, <code>DELETE</code></td><td><code>{object path}/attributes/{attribute}</code>, <code>{object path}/dr-freeze</code></td><td><a href="governance.html#endpoints">Governance</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>{object path}/holds</code></td><td><a href="governance.html#endpoints">Governance</a></td></tr>
+            <tr><td><code>DELETE</code></td><td><code>{object path}/holds/{holdId}</code></td><td><a href="governance.html#endpoints">Governance</a></td></tr>
+            <tr><td><code>GET</code>, <code>PUT</code>, <code>DELETE</code></td><td><code>{object path}/maintenance-policy</code></td><td><a href="maintenance.html#endpoints">Maintenance</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>{table path}/maintenance/requests</code>, <code>{catalog path}/objects/{id}/pending-deletions</code>, <code>{catalog path}/objects/{id}/pending-deletions/complete</code></td><td><a href="maintenance.html#endpoints">Maintenance</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>/management/v1/maintenance/nights</code>, <code>/management/v1/maintenance/estate</code>, <code>/management/v1/maintenance/scans</code>, <code>/management/v1/maintenance/tables</code>, <code>/management/v1/maintenance/storage-setup</code>, <code>/management/v1/maintenance/storage-prefixes</code>, <code>/management/v1/maintenance/delete-policies</code>, <code>{catalog path}/maintenance/readiness</code></td><td><a href="maintenance.html#endpoints">Maintenance</a></td></tr>
+            <tr><td><code>PUT</code></td><td><code>/management/v1/maintenance/jobs/{id}</code>, <code>/management/v1/maintenance/scans/{id}</code>, <code>/management/v1/maintenance/tables/{id}/assessment</code>, <code>/management/v1/maintenance/tables/{id}/compaction</code></td><td><a href="maintenance.html#endpoints">Maintenance</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{namespace path}/dropped</code>, <code>{catalog path}/objects/{id}/export</code>, <code>{catalog path}/objects/{id}/metadata-log</code>, <code>/management/v1/maintenance/purge-eligible</code></td><td><a href="lifecycle.html#endpoints">Lifecycle</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>{catalog path}/objects/{id}/undrop</code>, <code>{catalog path}/objects/{id}/purge-claim</code>, <code>{catalog path}/objects/{id}/purge</code></td><td><a href="lifecycle.html#endpoints">Lifecycle</a></td></tr>
+            <tr><td><code>GET</code>, <code>POST</code></td><td><code>{catalog path}/refs</code></td><td><a href="refs.html#endpoints">Branches and tags</a></td></tr>
+            <tr><td><code>GET</code>, <code>DELETE</code></td><td><code>{catalog path}/refs/{ref}</code></td><td><a href="refs.html#endpoints">Branches and tags</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>{catalog path}/refs/{ref}/renew</code>, <code>{catalog path}/refs/{ref}/merge</code>, <code>{catalog path}/objects/{id}/refs/remove</code></td><td><a href="refs.html#endpoints">Branches and tags</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{catalog path}/objects/{id}/refs</code>, <code>{namespace path}/objects/{name}/refs</code></td><td><a href="refs.html#endpoints">Branches and tags</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>{table path}/health</code>, <code>/management/v1/health/server</code>, <code>/management/v1/health/catalog</code></td><td><a href="health.html#endpoints">Health</a></td></tr>
+            <tr><td><code>PUT</code></td><td><code>/management/v1/maintenance/tables/{id}/dr-watermark</code></td><td><a href="dr.html#endpoints">Disaster recovery</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>/management/v1/dr/watermarks</code></td><td><a href="dr.html#endpoints">Disaster recovery</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>{catalog path}/dr-reconcile</code></td><td><a href="dr.html#endpoints">Disaster recovery</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>/management/v1/names</code>, <code>{namespace path}/tables</code>, <code>{catalog path}/namespaces</code>, <code>{namespace path}/namespaces</code></td><td><a href="search.html#endpoints">Name search and listings</a></td></tr>
+            <tr><td><code>GET</code></td><td><code>/management/v1/maintenance/work</code>, <code>/management/v1/maintenance/dr-work</code></td><td><a href="worker.html#endpoints">Worker endpoints</a></td></tr>
+            <tr><td><code>POST</code></td><td><code>/management/v1/maintenance/refs/{id}/warn</code>, <code>/management/v1/maintenance/refs/{id}/end</code></td><td><a href="worker.html#endpoints">Worker endpoints</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../clients/curl.html">Use the APIs with curl</a>: the set-up every example assumes.</li>
+          <li><a href="../reference/errors.html">Error responses</a>: every status and error type.</li>
+          <li><a href="../reference/iceberg-support.html">Iceberg support</a>: which parts of the standard nuna serves.</li>
+          <li><a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml">The Iceberg REST catalog standard</a>, version 1.12.0, which nuna serves.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/AdvertisedEndpoints.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreOutage.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Idempotency.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/ManagementIdempotency.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code> and the route classes under <code>catalog-server/src/main/java/nuna/catalog/server/</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The error body, the <code>401</code> headers and the paging tokens were captured from the local demo with read-only requests.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

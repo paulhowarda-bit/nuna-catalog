@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="develop/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Build nuna from source · nuna docs</title>
+  <meta name="description" content="Build every module and run the tests that need only Java, then build the three container images.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Build nuna from source</h1>
+        <p class="lead">Build every module and run the tests that need only Java, then build the three container images.</p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Install a JDK 25. The build uses a Java 25 toolchain and does not download one.</li>
+        <li>Use the Gradle wrapper in the repository, <code>./gradlew</code>; it runs Gradle 9.9.1.</li>
+        <li>Make Maven Central reachable, or point <code>settings.gradle.kts</code> at a Maven-format mirror of it: every library and plugin comes from that one repository.</li>
+        <li>For the container images, have Docker or Podman.</li>
+      </ul>
+
+      <h2 id="build">Build and test</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Run the fast build from the repository root.</p>
+          <div class="code" data-lang="bash">
+<pre><code>./gradlew build</code></pre>
+          </div>
+          <p>It compiles every module and runs every test that needs only Java, about 1,580 tests, with no containers. Its checks also fail on version conflicts between dependencies and on credential-shaped text in any tracked file.</p>
+        </li>
+        <li>
+          <p class="step-title">Run one module's tests while you change it.</p>
+          <div class="code" data-lang="bash">
+<pre><code>./gradlew :catalog-core:test</code></pre>
+          </div>
+          <p>Add <code>--tests <var>Class</var></code> for one class.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">A green build ends with BUILD SUCCESSFUL</p>
+        <p>The server's runnable jar is then in <code>catalog-server/build/libs/</code>, named <code>*-exec.jar</code>.</p>
+      </aside>
+
+      <h2 id="images">Build the images</h2>
+      <p>Each program has a Dockerfile in <code>deploy/image/</code>, based on <code>eclipse-temurin:25.0.5_8-jre-noble</code>. The server's image is built from its jar folder:</p>
+      <div class="code" data-lang="bash">
+<pre><code>docker build -f deploy/image/Dockerfile \
+  -t &lt;registry&gt;/nuna-catalog:&lt;version&gt; catalog-server/build/libs</code></pre>
+      </div>
+      <p>The worker's and the audit tables writer's images use <code>deploy/image/maintenance.Dockerfile</code> and <code>deploy/image/audit-tables.Dockerfile</code>; <a href="../install/images.html">Container images</a> gives their build contexts.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>Gradle cannot find a Java 25 toolchain.</td><td>No JDK 25 is installed, and the build does not download one.</td><td>Install a JDK 25.</td></tr>
+            <tr><td>The <code>secretShapes</code> task fails.</td><td>A tracked file holds text shaped like a credential.</td><td>Replace the value with a placeholder.</td></tr>
+            <tr><td>The <code>dependencyConvergence</code> task fails.</td><td>Two dependencies ask for different versions of one library.</td><td>Pin the version in the root build script.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="testing.html">How nuna is tested</a>: the heavy and nightly builds.</li>
+          <li><a href="modules.html">Module map</a>: what each module holds.</li>
+          <li><a href="../install/locked-down.html">Install on a locked-down network</a>: building behind a mirror.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>build.gradle.kts</code>, <code>gradle.properties</code>, <code>gradle/wrapper/gradle-wrapper.properties</code>, <code>settings.gradle.kts</code>, <code>deploy/README.md</code> and <code>deploy/image/Dockerfile</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The commands were not run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

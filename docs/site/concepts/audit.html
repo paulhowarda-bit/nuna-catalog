@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/audit">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The audit trail · nuna docs</title>
+  <meta name="description" content="The audit trail is the record of every read, change, refusal and credential the server gives, written as CloudEvents to its log, kept in a hash-chained archive and queryable as an Iceberg table.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>The audit trail</h1>
+        <p class="lead">The audit trail is the record of every read, change, refusal and credential the server gives, written as CloudEvents to its log, kept in a hash-chained archive and queryable as an Iceberg table.</p>
+      </header>
+
+      <figure class="diagram" id="fig-audit">
+        <svg viewBox="0 0 720 240" role="img" aria-labelledby="fig-audit-t fig-audit-d">
+          <title id="fig-audit-t">Where audit records go</title>
+          <desc id="fig-audit-d">The server writes reads and refusals to its log before answering, and changes to the database outbox, which a relay writes to the log. The log goes to standard output and over OTLP to the audit tables writer, which writes the archive and the audit table. Kafka takes a copy where it is configured.</desc>
+          <rect class="d-node d-store" x="20" y="150" width="130" height="48" rx="10"/>
+          <text class="d-label" x="85" y="179">Outbox</text>
+          <rect class="d-node d-accent" x="210" y="80" width="150" height="52" rx="10"/>
+          <text class="d-label" x="285" y="111">nuna.audit log</text>
+          <rect class="d-node" x="20" y="20" width="130" height="48" rx="10"/>
+          <text class="d-label" x="85" y="49">Request</text>
+          <rect class="d-node" x="430" y="80" width="150" height="52" rx="10"/>
+          <text class="d-label" x="505" y="111">Audit tables writer</text>
+          <rect class="d-node d-store" x="600" y="10" width="110" height="48" rx="10"/>
+          <text class="d-label" x="655" y="39">Archive</text>
+          <rect class="d-node d-store" x="600" y="160" width="110" height="48" rx="10"/>
+          <text class="d-label" x="655" y="189">Audit table</text>
+          <rect class="d-node" x="210" y="180" width="150" height="48" rx="10"/>
+          <text class="d-label" x="285" y="209">Kafka</text>
+          <path class="d-edge" d="M150 44L210 96" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="150" y="90">reads, refusals</text>
+          <path class="d-edge" d="M150 170L210 120" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="150" y="140">relay</text>
+          <path class="d-edge" d="M360 106H430" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="395" y="98">OTLP</text>
+          <path class="d-edge" d="M580 96L600 40" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M580 116L600 180" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M285 132V180" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>The log is the record of audit; Kafka is optional.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>Every <a class="term" href="../reference/glossary.html#term-audit-record">audit record</a> is a CloudEvent in JSON, of type <code>nuna.catalog.<var>name</var></code>. The record names the principal, the end user and engine if any, the request id, the object, the operation and privilege, and for a refusal the reason. The kinds are: <code>commit</code>, <code>grant</code>, <code>drop</code>, <code>break-glass</code>, <code>read</code>, <code>denial</code>, <code>auth-failure</code>, <code>credential-issue</code>, <code>namespace</code>, <code>rename</code>, <code>engine</code>, <code>storage-setup</code>, <code>governance</code>, <code>hold</code>, <code>undrop</code>, <code>purge</code>, <code>audit-read</code>, <code>unregister</code>, <code>label</code>, <code>purge-claim</code>, <code>file-deletion</code>, <code>maintenance-exemption</code>, <code>ref</code>, <code>row-column-rule</code> and <code>run-end</code>. <a href="../reference/audit-records.html">Audit record format</a> gives each one's fields.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="when-records-are-written">When records are written</h3>
+      <ul>
+        <li>Reads, refusals, authentication failures, audit reads and credential issues are written to the log before the server answers the request.</li>
+        <li>Changes are written to the database's outbox in the change's own transaction. A relay writes them to the log every 250 ms by default, at least once. A change whose server dies before its relay runs is written by the next relay.</li>
+        <li>A server that stops writes a <code>run-end</code> record as its last line.</li>
+      </ul>
+      <p>Each record is one INFO line of the logger <code>nuna.audit</code>, carrying two extensions: <code>nunarun</code>, the id of the server run, and <code>nunaseq</code>, the line's number in that run from 1. The server refuses to start if <code>nuna.audit</code> is set coarser than INFO. The line goes to standard output and, where a logs endpoint is set, over OTLP.</p>
+
+      <h3 id="kafka">Kafka, if you want it</h3>
+      <p>With <code>nuna.audit.kafka-bootstrap-servers</code> set, every record also goes to the topic <code>nuna.catalog.audit</code>, and object changes to the change stream <code>nuna.catalog.changes</code>, best effort. A record that Kafka does not acknowledge within 5 s is in the log only, and for 10 s after a failure records skip Kafka. Nothing waits on Kafka and nothing is refused for want of it.</p>
+
+      <h3 id="archive">The hash-chained archive</h3>
+      <p>The audit tables writer, taking the records over OTLP, writes every record byte for byte to an archive in a bucket created with Object Lock in compliance mode, locked for at least 2,557 days, seven years. Each server run is a chain: each line is the SHA-256 of the previous line's hash and the record, then the record's number, then the record. The writer writes segments of 10,000 records or a minute's worth, and a checkpoint every 5 minutes.</p>
+      <p>Every server checks the archive a minute after it starts and hourly after that. A record is <em>verified</em> when the check has followed its run's chain, without a gap, from the first number up to it. Each record the console shows carries one of four states: <code>verified</code>, <code>unverified</code> (a number before it has not arrived), <code>no-archive</code> (no archive is configured) or <code>no-place</code> (a record without a run, which no chain can hold).</p>
+
+      <h3 id="audit-tables">The audit tables</h3>
+      <p>The audit tables writer also writes the Iceberg table <code>nuna_audit.audit.events</code>, partitioned by day, which you can query from any engine. It runs about a minute behind. Its columns include <code>event_id</code>, <code>time</code>, <code>type</code>, <code>principal</code>, <code>end_user</code>, <code>engine</code>, <code>request_id</code>, <code>catalog</code>, <code>object_path</code>, <code>operation</code>, <code>privilege</code>, <code>reason</code>, <code>branch</code>, <code>log_run</code> and <code>log_seq</code>. The writer takes the records from Kafka (the default) or over OTLP, and leaves its own requests' records out of the table; the archive keeps them.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>No read, refusal or credential is answered before its record is in the log, and no change commits without its record in the outbox.</li>
+        <li>Records in the archive cannot be changed or deleted while their lock lasts, and the check finds any record of a run that never arrived.</li>
+        <li>Past the log line, delivery is at most once. A pod that dies before its standard output is collected loses those lines; a full OTLP queue (2,048 records by default) drops records; a Kafka outage leaves gaps in the topics. The archive check shows every gap in the archive as missing numbers.</li>
+        <li>Records can arrive twice: the relay writes at least once, and the check counts repeats.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>The console's <a href="../console/audit.html">Audit page</a>, and the Audit tab of a namespace, table or view.</li>
+        <li><a href="../api/audit.html#endpoints">Audit API</a>: the feed and summary need <code>select</code> on the audit catalog, at most 60 reads a minute from one caller on each server; an object's audit tab needs <code>manage-grants</code> on it.</li>
+        <li><a href="../configure/audit.html">Audit settings</a> and <a href="../configure/audit-tables.html">Audit tables writer settings</a>.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>60 audit reads a minute from one caller on each server by default (<code>nuna.governance.audit-reads-per-minute</code>); past it, <code>429</code>.</li>
+        <li>The audit table is about a minute behind the log.</li>
+        <li>The archive is written only when the writer takes records over OTLP.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/query-audit.html">Query the audit trail</a>: SQL on the audit table.</li>
+          <li><a href="../guides/verify-audit-chain.html">Verify the audit chain</a>: check one record's place in its chain.</li>
+          <li><a href="../security/what-is-audited.html">What is audited</a>: each action and its record.</li>
+          <li><a href="../operate/audit-pipeline.html">Run the audit pipeline</a>: keep the writer and archive healthy.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>docs/observability/audit-log.md</code>, <code>catalog-audit-tables/README.md</code>, <code>catalog-audit</code> (<code>EventType</code>, <code>Chain</code>), the server's audit settings class and <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

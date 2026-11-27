@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/iceberg-transactions">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iceberg REST: transactions · nuna docs</title>
+  <meta name="description" content="Commit changes to several tables together, or to none of them, with POST /v1/{prefix}/transactions/commit.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Iceberg REST: transactions</h1>
+        <p class="lead">Commit changes to several tables together, or to none of them, with <code>POST /v1/{prefix}/transactions/commit</code>.</p>
+      </header>
+
+      <p>A transaction applies every table's commit in one database transaction: either all of them land or none does. It does not give readers a view of the tables at one instant: a reader loading two tables while the transaction lands may see one before and one after. The examples use curl with <code>NUNA</code> and <code>TOKEN</code> set as <a href="../clients/curl.html">Use the APIs with curl</a> describes. See <a href="../guides/multi-table-commit.html">Commit to several tables at once</a>.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Transaction endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST</code></td><td><a href="#post-transactions-commit"><code>/v1/{prefix}/transactions/commit</code></a></td><td>Commits changes to several tables at once.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="post-transactions-commit"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/transactions/commit</code></h3>
+        <p>Each entry is one table's commit, judged as a <a href="iceberg-tables.html#post-tables-table">table commit</a> is: the same privileges (<code>write</code> for data changes, <code>modify</code> for anything else), the same rules and the same refusals. Every table must already exist, and each may appear once. Through a branch, each table must be one the branch holds, and the transaction changes only the branch. Through a tag it is refused. Takes an <code>Idempotency-Key</code>.</p>
+        <p>If another commit changes one of the tables first and every requirement still holds, the server applies the transaction again on top, as it does for a single table.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>write</code> or <code>modify</code> on each table</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-transactions-commit-body">Body</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>table-changes</code></td><td>body</td><td>array</td><td>Yes</td><td>One entry per table: <code>identifier</code> (<code>{"namespace": […], "name": "…"}</code>), <code>requirements</code> and <code>updates</code>, as in a table commit. At most <code>nuna.rest.max-transaction-tables</code> entries, 100 by default.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-transactions-commit-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>Every table's change landed. Load the tables for their new metadata.</td></tr>
+              <tr><td><code>400</code></td><td><code>A transaction may change at most 100 tables; this one names <var>n</var></code>; <code>Table <var>table</var> is named more than once in the transaction</code>; a refused update; or the prefix names a tag.</td></tr>
+              <tr><td><code>403</code></td><td>You lack the privilege one table's change needs, or one table is held or frozen.</td></tr>
+              <tr><td><code>404</code></td><td><code>Table does not exist: …</code> for any table.</td></tr>
+              <tr><td><code>409</code></td><td>A requirement failed (<code>CommitFailedException</code>), its message starting with the table's name; or <code>Transaction lost to concurrent commits <var>n</var> times; its tables changed too often to apply it</code>. Nothing landed: load the tables and redo the changes.</td></tr>
+              <tr><td><code>500</code></td><td>The outcome is unknown (<code>CommitStateUnknownException</code>). Repeat with the same <code>Idempotency-Key</code>.</td></tr>
+              <tr><td><code>503</code></td><td><code>Catalog store unavailable; nothing was applied: …</code>, with <code>Retry-After: 2</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-transactions-commit-example">Example</h4>
+        <p>This moves two tables' <code>main</code> to snapshots already written, together: a publish after write-audit-publish. Engines build these bodies themselves; the snapshot ids come from loading each table.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/transactions/commit" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: eod-2026-11-25-publish" \
+  -d '{"table-changes": [
+    {"identifier": {"namespace": ["equities"], "name": "fills"},
+     "requirements": [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": 4012}],
+     "updates": [{"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 4019}]},
+    {"identifier": {"namespace": ["equities"], "name": "orders"},
+     "requirements": [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": 7730}],
+     "updates": [{"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 7741}]}
+  ]}'</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+      <p>The request is the standard's commit-transaction request; the answer has no body.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="iceberg-tables.html#post-tables-table">Commit to a table</a>: the rules each entry follows.</li>
+          <li><a href="../guides/multi-table-commit.html">Commit to several tables at once</a>: when to use a transaction.</li>
+          <li><a href="../concepts/commits.html">Commits</a>: how commits are judged and retried.</li>
+          <li><a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml">The Iceberg REST catalog standard</a>: the transaction endpoint's full definition.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code> and <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No transaction was sent to the demo.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

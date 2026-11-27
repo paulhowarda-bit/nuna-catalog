@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/freeze">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Freeze and unfreeze for disaster recovery · nuna docs</title>
+  <meta name="description" content="Stop every commit and cleanup beneath a catalog, namespace, table or view while a disaster recovery reconcile runs, then lift the freeze.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Freeze and unfreeze for disaster recovery</h1>
+        <p class="lead">Stop every commit and cleanup beneath a catalog, namespace, table or view while a disaster recovery reconcile runs, then lift the freeze.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span> <span class="badge audited">Audited</span></p>
+      </header>
+
+      <p>A DR freeze stops writes and maintenance on everything beneath the object it is set on, until it is lifted. It is the first and last step of recovering in the DR region (<a href="../operate/backup-dr.html">Back up and recover</a>). Only platform operators may set or lift one.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You are a platform operator: your token carries a group named in <a href="../configure/security.html#nuna-security-platform-operator-groups"><code>nuna.security.platform-operator-groups</code></a>.</li>
+        <li>A reason to record, such as the reconcile's ticket. It is at most 1,000 characters.</li>
+      </ul>
+
+      <h2 id="what-a-freeze-stops">What a freeze stops</h2>
+      <p>Beneath a frozen object, each of these is refused with <code>403</code> <code>ForbiddenException</code> and audited with the reason <code>dr_freeze</code>:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Refusals under a DR freeze</caption>
+          <thead><tr><th scope="col">Action</th><th scope="col">Message</th></tr></thead>
+          <tbody>
+            <tr><td>Commit, create or register</td><td><code>Writes to <var>object</var> are frozen for DR reconcile: <var>reason</var></code></td></tr>
+            <tr><td>Drop a table</td><td><code>Table <var>namespace.name</var> is frozen for DR reconcile: <var>reason</var></code></td></tr>
+            <tr><td>Rename into a frozen namespace</td><td><code>Namespace <var>namespace</var> is frozen for DR reconcile: <var>reason</var></code></td></tr>
+            <tr><td>Undrop, or a purge claim by the maintenance worker</td><td><code>The namespace of <var>object</var> is frozen for DR reconcile: <var>reason</var></code></td></tr>
+            <tr><td>Ask for maintenance on a table</td><td><code>Table <var>table</var> is frozen for DR reconcile: <var>reason</var></code></td></tr>
+            <tr><td>Unregister a table</td><td><code>Table <var>table</var> is frozen for DR reconcile and cannot be unregistered</code></td></tr>
+            <tr><td>Remove a branch or tag</td><td><code><var>ref</var> is frozen for DR reconcile</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The maintenance policy of each frozen table shows the guardrail <code>frozen for DR reconcile</code>, which turns off snapshot expiry, orphan scans, compaction and manifest rewrite. Reads go on as before.</p>
+
+      <h2 id="freeze-a-namespace">Freeze a namespace</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Open the namespace's Access tab.</p>
+              <p>Go to the namespace, such as <code>equities</code> in <code>trading</code>, and select the <strong>Access</strong> tab.</p>
+            </li>
+            <li>
+              <p class="step-title">Select Freeze for DR.</p>
+              <p>The dialog <strong>Freeze equities for DR</strong> says: "A DR freeze stops every commit and cleanup beneath this namespace until it is lifted. Platform operators set it."</p>
+            </li>
+            <li>
+              <p class="step-title">Write the reason and select Freeze.</p>
+              <p>Type the reason in <strong>Reason, as it will be recorded</strong> and select <strong>Freeze</strong>. With no reason the dialog says <code>Write the reason.</code></p>
+            </li>
+          </ol>
+          <p>The tab now shows <strong>DR freeze in force</strong> and the button <strong>Lift the DR freeze</strong>.</p>
+          <p>From the Governance page you can also freeze a namespace by its path: on the <strong>Holds and freezes</strong> tab, select <strong>Freeze a namespace for DR</strong>, type the path in <strong>Namespace</strong>, such as <code>equities.daily</code>, and select <strong>Next</strong>.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Send <code>PUT</code> to the namespace's <code>dr-freeze</code> (<a href="../clients/curl.html">curl</a>, <a href="../api/governance.html#endpoints">reference</a>):</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/namespaces/equities/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "DR reconcile in progress"}'</code></pre>
+          </div>
+          <p>The answer is <code>200</code>:</p>
+          <div class="code" data-lang="json" data-kind="output">
+<pre><code>{"attribute":"dr-freeze","level":"namespace:…","value":"DR reconcile in progress","provenance":"management-api","set-by":"…","set-at":"…"}</code></pre>
+          </div>
+          <p>For a nested namespace, join its levels with <code>%1F</code>: <code>namespaces/equities%1Fdaily</code>.</p>
+        </section>
+      </div>
+      <figure class="shot" id="fig-namespace-frozen"><img src="../img/shots/guides-freeze-namespace-light.png" data-dark="../img/shots/guides-freeze-namespace-dark.png" width="1440" height="900" alt="The Access tab of namespace reference: the Governance panel shows DR freeze in force with its reason, DR drill 2026-11-10, reference data frozen; What the catalog enforces says commits are refused and snapshot expiry is off until the freeze is lifted; and a Lift the DR freeze button."><figcaption>A frozen namespace's Access tab, with DR freeze in force, as presenter sees it.</figcaption></figure>
+
+      <h2 id="freeze-a-catalog-table-or-view">Freeze a catalog, table or view</h2>
+      <p>The console freezes namespaces only. Freeze a catalog, a table or a view through the API, at the object's own path:</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "DR reconcile in progress"}'
+
+curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "DR reconcile in progress"}'</code></pre>
+      </div>
+      <p>A view's path ends <code>/views/<var>view</var>/dr-freeze</code>.</p>
+
+      <h2 id="lift-the-freeze">Lift the freeze</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>On the namespace's <strong>Access</strong> tab select <strong>Lift the DR freeze</strong>. The dialog says "Lifting the freeze lets commits and cleanup run again beneath this namespace." Select <strong>Lift the freeze</strong>; the console reports <strong>Freeze lifted</strong>. On the Governance page, select <strong>Lift</strong> beside the freeze.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/namespaces/equities/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>The answer is <code>204</code> with no body.</p>
+        </section>
+      </div>
+      <aside class="callout check">
+        <p class="callout-title">Check it worked</p>
+        <p>The namespace's Access tab shows <strong>No DR freeze</strong> and <strong>Commits are allowed.</strong></p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Errors from the freeze routes</caption>
+          <thead><tr><th scope="col">Answer</th><th scope="col">Cause</th></tr></thead>
+          <tbody>
+            <tr><td><code>400</code> <code>Missing field reason: a non-empty string</code></td><td>The body has no reason, or an empty one.</td></tr>
+            <tr><td><code>400</code> <code>The request body must be a JSON object</code></td><td>The body is JSON but not an object.</td></tr>
+            <tr><td><code>400</code> <code>The request body is not JSON: …</code></td><td>The body is not JSON.</td></tr>
+            <tr><td><code>403</code> <code>only platform operators may call setDrFreeze</code></td><td>You are not a platform operator. Lifting says <code>liftDrFreeze</code>.</td></tr>
+            <tr><td><code>404</code> <code>dr-freeze is not set on this namespace</code></td><td>A <code>DELETE</code> where no freeze is set.</td></tr>
+            <tr><td><code>404</code> <code>Namespace does not exist: …</code>, <code>Table does not exist: …</code>, <code>The given warehouse does not exist: …</code></td><td>The path names no such object.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../operate/backup-dr.html">Back up and recover</a>: where the freeze fits in recovery.</li>
+          <li><a href="../console/governance.html">The Governance page</a>: holds and freezes together.</li>
+          <li><a href="../api/governance.html#endpoints">Governance API</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>ManagementGuard.java</code>, the commit and lifecycle refusals in <code>catalog-core</code> and <code>catalog-server</code>, and the console's <code>governance.js</code> and <code>panels.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The demo's frozen namespace <code>reference</code> was seen in the console. The curl examples were not run: they change the demo's state.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

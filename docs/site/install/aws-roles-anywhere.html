@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/aws-roles-anywhere">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reach AWS with IAM Roles Anywhere · nuna docs</title>
+  <meta name="description" content="What is known about letting the catalog server and the maintenance worker reach AWS with a certificate through IAM Roles Anywhere instead of access keys, and what is not yet supported or tested.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Reach AWS with IAM Roles Anywhere</h1>
+        <p class="lead">What is known about letting the catalog server and the maintenance worker reach AWS with a certificate through IAM Roles Anywhere instead of access keys, and what is not yet supported or tested.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+          <span class="badge untested">Not tested by nuna</span>
+        </p>
+      </header>
+
+      <p>IAM Roles Anywhere lets a workload outside AWS exchange an X.509 certificate for short-lived AWS credentials, through AWS's <code>aws_signing_helper</code> program. nuna has no setting for it. This page says what the code does and leaves the rest as gaps.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Read <a href="object-storage.html">Set up object storage</a>: the AWS S3 profile and the STS role it vends from.</li>
+        <li>On EKS, prefer IRSA: annotate the chart's service account with the role (<code>serviceAccount.annotations</code>). It needs no certificate.</li>
+      </ul>
+
+      <h2 id="what-code-does">What the code does</h2>
+      <ul>
+        <li>An AWS S3 storage profile that names no <code>access-key-id</code> uses the AWS SDK's default credential chain for the server's own identity. The same holds for a worker store with neither key under <code>nuna.maintenance.storage.<var>store</var></code>.</li>
+        <li>The default chain reads, among other sources, a profile in an AWS config file that names a <code>credential_process</code>, which is how <code>aws_signing_helper</code> is usually wired in.</li>
+        <li>The images hold no <code>aws_signing_helper</code>, no AWS config file and no certificate, and the charts mount none.</li>
+      </ul>
+
+      <h2 id="what-is-not-documented">What is not documented yet</h2>
+      <p class="gap">Not documented yet: running the server or the worker with IAM Roles Anywhere. It would need an image with <code>aws_signing_helper</code> added, the certificate and key mounted from a Secret, an AWS config file naming them in <code>credential_process</code>, and <code>AWS_CONFIG_FILE</code> and <code>AWS_PROFILE</code> set through the chart's <code>env</code>. No test or install has tried this, so no step here is verified.</p>
+      <p class="gap">Not documented yet: whether the server's vending, which assumes the profile's <code>sts-role</code> with session tags, works from credentials that Roles Anywhere issued. The role those credentials belong to would need <code>sts:AssumeRole</code> and <code>sts:TagSession</code> on the vending role, as any server identity does.</p>
+      <p>nuna's own test suite signs in to AWS this way on a developer's machine, for the tests that run against real S3; that setup is for the tests, not for the server.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">A vended load proves the server's AWS identity works</p>
+        <p>Whatever identity you give the server, a load with <code>X-Iceberg-Access-Delegation: vended-credentials</code> that returns <code>s3.access-key-id</code> shows the server reached STS and assumed the vending role (<a href="verify.html">Check the install</a>).</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>Vending fails with an AWS error that no credentials were found.</td><td>The default chain found no source: no keys, no IRSA, no config file.</td><td>Give the server one of them.</td></tr>
+            <tr><td>Vending fails with access denied on <code>AssumeRole</code>.</td><td>The vending role's trust policy does not allow the server's identity both <code>sts:AssumeRole</code> and <code>sts:TagSession</code>.</td><td>Allow both.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="object-storage.html">Set up object storage</a>: AWS S3 profiles and the vending role.</li>
+          <li><a href="../security/credential-vending.html">Credential vending</a>: the session policy and tags.</li>
+          <li><a href="../configure/helm-values.html">Helm chart values</a>: <code>env</code> and <code>serviceAccount.annotations</code>.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>docs/aws-roles-anywhere.md</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/CredentialVendor.java</code>, <code>catalog-maintenance/README.md</code>, <code>deploy/README.md</code> (The chart: AWS), <code>deploy/image/Dockerfile</code> and the charts' templates, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>A search of the server's and worker's code found no mention of Roles Anywhere. Nothing on this page was run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

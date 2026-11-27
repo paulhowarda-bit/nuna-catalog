@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/kind">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Run nuna on a local kind cluster · nuna docs</title>
+  <meta name="description" content="Try the catalog server and maintenance worker charts on your own machine, on a one-node kind cluster in Podman, with throwaway PostgreSQL, Kafka, Silo and Keycloak.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Run nuna on a local kind cluster</h1>
+        <p class="lead">Try the catalog server and maintenance worker charts on your own machine, on a one-node kind cluster in Podman, with throwaway PostgreSQL, Kafka, Silo and Keycloak.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators and developers</span>
+        </p>
+      </header>
+
+      <p>Two scripts do it. <code>deploy/kind/kind.sh</code> makes or starts the kind cluster <code>nuna</code> (context <code>kind-nuna</code>) and puts images on its node. <code>deploy/local/run.sh</code> builds the catalog image, starts the backing services, installs the charts with <code>deploy/local/values.yaml</code> and <code>deploy/local/worker-values.yaml</code>, and checks the result. Everything it makes is for a laptop: plain HTTP, a test token issuer, keys kept in your home folder, and a database the self-check would refuse. For a look around with data, use the demo instead (<a href="../demo/index.html">The local demo</a>), which runs on the same cluster.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You have bash (Git Bash on Windows), Podman, kind, <code>kubectl</code>, <code>helm</code>, <code>curl</code> and JDK 25, and a checkout of the nuna repository.</li>
+        <li>The Podman machine has room for 3 GiB of memory limits for <code>up</code>, and 3 GiB more for <code>worker</code>. The demo shares the cluster; beside it there might not be room.</li>
+        <li>For <code>worker</code>, the Spark image is built: <code>podman build -t nuna-engines/spark:4.1.4-iceberg-1.12.0 catalog-tests-engines/images/spark</code>.</li>
+      </ul>
+
+      <h2 id="try-charts">Try the charts</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Install the catalog server and its backing services.</p>
+          <div class="code" data-lang="bash">
+<pre><code>deploy/local/run.sh up</code></pre>
+          </div>
+          <p>It takes about 2 minutes. It starts the cluster if needed, builds <code>nuna-catalog:local</code>, and installs two servers in namespace <code>nuna-local</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Check it through each server.</p>
+          <div class="code" data-lang="bash">
+<pre><code>deploy/local/run.sh smoke</code></pre>
+          </div>
+          <p>It ends with <code>smoke passed on <var>pod</var> and <var>pod</var></code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Install the maintenance worker beside it.</p>
+          <div class="code" data-lang="bash">
+<pre><code>deploy/local/run.sh worker</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Open the console.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl --context kind-nuna -n nuna-local port-forward svc/nuna-catalog 8181:8181</code></pre>
+          </div>
+          <p>Then open <code>http://localhost:8181/ui/</code> and paste a token from <code>~/.nuna-k8s/tokens/</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Remove it when you are done.</p>
+          <div class="code" data-lang="bash">
+<pre><code>deploy/local/run.sh down</code></pre>
+          </div>
+        </li>
+      </ol>
+
+      <aside class="callout check">
+        <p class="callout-title">The smoke check passes on two servers</p>
+        <p><code>smoke</code> prints <code>ok</code> for each call and ends with <code>smoke passed on</code> and the two pods' names. A <code>FAIL</code> line names the step that failed.</p>
+      </aside>
+
+      <h2 id="kind-sh">The cluster script, <code>deploy/kind/kind.sh</code></h2>
+      <p>The cluster is one node, the Podman container <code>nuna-control-plane</code>, made from <code>deploy/kind/cluster.yaml</code>. It publishes ports 8180 to 8188 on <code>localhost</code>, and its API server takes node ports from 8180 up. Pods reach your machine as <code>host.docker.internal</code>.</p>
+      <h3 id="kind-sh-up"><code>kind.sh up</code></h3>
+      <p>Starts the Podman machine if it is stopped, creates the cluster if there is none or starts its node if it is stopped, waits for the node to be ready, lifts the task limits on the node and its containers, and adds <code>host.docker.internal</code> to the cluster's DNS.</p>
+      <h3 id="kind-sh-load"><code>kind.sh load <var>image</var>…</code></h3>
+      <p>Copies each image from Podman's store onto the node, unless the node has it already. A name without a registry, such as <code>nuna-catalog:local</code>, becomes <code>docker.io/library/nuna-catalog:local</code> on the node. The local values use <code>pullPolicy: Never</code>, so a pod runs only an image loaded this way.</p>
+      <p>Any other argument prints the script's usage and exits with status <code>2</code>.</p>
+
+      <h2 id="run-sh">The install script, <code>deploy/local/run.sh</code></h2>
+      <h3 id="run-sh-up"><code>run.sh up</code></h3>
+      <p>Builds the server's jar and the image <code>nuna-catalog:local</code>, starts or creates the cluster and loads the image, makes test tokens with a test issuer, creates the namespace, starts PostgreSQL 18.7, Kafka and Silo, creates Silo users for the server and the worker, installs the chart with two servers, applies the delete policies to Silo as a platform operator, and grants the test groups.</p>
+      <h3 id="run-sh-smoke"><code>run.sh smoke</code></h3>
+      <p>Through two different servers: <code>401</code> without a token, the configuration, a namespace, a table, a load with vended credentials, then a write beneath the table that succeeds, deletes refused for the vended credentials and the server's own Silo user (<code>403</code>) and allowed for the worker's (<code>204</code>), and finally drops the table and the namespace.</p>
+      <h3 id="run-sh-worker"><code>run.sh worker</code></h3>
+      <p>After <code>up</code>: builds <code>nuna-maintenance:local</code>, starts Keycloak 26.8.2 with a client for the worker, grants the worker's group <code>write</code>, and installs the worker's chart in <code>nuna-local-maintenance</code> with its compaction Jobs in <code>nuna-local-compaction</code>. The worker's cleanup window is open all day, and it scans every minute.</p>
+      <h3 id="run-sh-down"><code>run.sh down</code></h3>
+      <p>Uninstalls both releases and deletes the three namespaces. The tokens and keys in <code>~/.nuna-k8s</code> stay.</p>
+      <p>Any other argument prints the usage and exits with status <code>2</code>.</p>
+
+      <h3 id="environment-variables">Environment variables</h3>
+      <div class="table-wrap">
+        <table class="params">
+          <thead><tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>NUNA_K8S_CONTEXT</code></td><td><code>kind-nuna</code></td><td>The <code>kubectl</code> and <code>helm</code> context. The script never uses the current context.</td></tr>
+            <tr><td><code>NUNA_K8S_NAMESPACE</code></td><td><code>nuna-local</code></td><td>The catalog's namespace; the worker's and the Jobs' add <code>-maintenance</code> and <code>-compaction</code>.</td></tr>
+            <tr><td><code>NUNA_K8S_HOME</code></td><td><code>~/.nuna-k8s</code></td><td>Where the test tokens, the issuer's key and every generated password and key are kept.</td></tr>
+            <tr><td><code>JAVA_HOME</code></td><td>none</td><td>The JDK 25 to run with, if <code>java</code> on the path is another.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>need two running servers, found <var>n</var></code></td><td><code>smoke</code> found fewer than two running server pods.</td><td>Wait for <code>up</code> to finish, or read the pods' logs.</td></tr>
+            <tr><td><code>FAIL: no vended credentials in the load</code></td><td>The server could not vend from Silo.</td><td>Read the server's log.</td></tr>
+            <tr><td><code>no image nuna-engines/spark:4.1.4-iceberg-1.12.0 for the compaction Jobs</code></td><td>The Spark image is not built.</td><td>Build it as the message says.</td></tr>
+            <tr><td>Pods stay <code>Pending</code>, or waits run out.</td><td>The Podman machine is out of memory, often with the demo running beside it.</td><td>Free memory, or run one at a time.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../demo/index.html">The local demo</a>: the full stack with data, on the same cluster.</li>
+          <li><a href="helm-catalog.html">Install the catalog server with Helm</a>: the same chart for a real cluster.</li>
+          <li><a href="helm-maintenance.html">Install the maintenance worker</a>: the worker's chart in full.</li>
+          <li><a href="../develop/testing.html">How nuna is tested</a>: the tests that run pods on this cluster.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/kind/kind.sh</code>, <code>deploy/kind/cluster.yaml</code>, <code>deploy/local/run.sh</code>, <code>deploy/local/values.yaml</code>, <code>deploy/local/worker-values.yaml</code>, <code>deploy/local/keycloak.yaml</code> and <code>deploy/README.md</code> (Trying it locally), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The scripts were not run for this page, since the shared demo held the cluster. The cluster's state and versions were read with <code>kubectl</code>, <code>kind</code> and <code>podman</code>.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

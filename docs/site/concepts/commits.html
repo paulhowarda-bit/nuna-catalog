@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/commits">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How a commit works · nuna docs</title>
+  <meta name="description" content="A commit applies an engine's updates to a table's current metadata if the engine's requirements still hold, and moves the table's pointer in one database transaction that only one commit can win.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>How a commit works</h1>
+        <p class="lead">A commit applies an engine's updates to a table's current metadata if the engine's requirements still hold, and moves the table's pointer in one database transaction that only one commit can win.</p>
+      </header>
+
+      <figure class="diagram" id="fig-commit-loop">
+        <svg viewBox="0 0 720 220" role="img" aria-labelledby="fig-commit-loop-t fig-commit-loop-d">
+          <title id="fig-commit-loop-t">The commit loop</title>
+          <desc id="fig-commit-loop-d">The server reads the pointer, loads the metadata file, applies the updates and judges its rules, writes a new metadata file, then swaps the pointer in the database. If another commit moved the pointer first, the server starts again from reading the pointer.</desc>
+          <rect class="d-node" x="10" y="40" width="120" height="52" rx="10"/>
+          <text class="d-label" x="70" y="71">Read pointer</text>
+          <rect class="d-node" x="155" y="40" width="120" height="52" rx="10"/>
+          <text class="d-label" x="215" y="71">Load metadata</text>
+          <rect class="d-node" x="300" y="40" width="120" height="52" rx="10"/>
+          <text class="d-label" x="360" y="71">Apply, judge</text>
+          <rect class="d-node" x="445" y="40" width="120" height="52" rx="10"/>
+          <text class="d-label" x="505" y="71">Write file</text>
+          <rect class="d-node d-accent" x="590" y="40" width="120" height="52" rx="10"/>
+          <text class="d-label" x="650" y="71">Swap pointer</text>
+          <path class="d-edge" d="M130 66H155" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M275 66H300" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M420 66H445" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M565 66H590" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M650 92V160H70V92" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="360" y="182">pointer moved by another commit: pause, then start again</text>
+        </svg>
+        <figcaption>The database refuses a swap when the pointer is no longer the one the server read; the server then tries again against the new metadata.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>An Iceberg <a class="term" href="../reference/glossary.html#term-commit">commit</a> request carries two lists. The <em>requirements</em> say what the engine assumed about the table, for example that its <code>main</code> table branch still points at the snapshot the engine started from. The <em>updates</em> say what to change, for example add a snapshot and point <code>main</code> at it. The server applies the updates only if every requirement holds against the table's current metadata. This is optimistic concurrency: nobody locks a table while writing data, and a conflict is found at commit time.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+
+      <h3 id="commit-loop">The commit loop</h3>
+      <p>For a commit to one table or view, the server:</p>
+      <ol>
+        <li>Looks up the request's <code>Idempotency-Key</code>, if it has one, and answers again with the recorded answer if the key was used before for the same request.</li>
+        <li>Reads the table's <a class="term" href="../reference/glossary.html#term-pointer">pointer</a> from the database.</li>
+        <li>Loads the metadata file the pointer names, from its cache or from the object store, checking the file against the SHA-256 the pointer records.</li>
+        <li>Checks the requirements and applies the updates with Iceberg's own library. A requirement that fails ends the commit with <code>409</code> <code>CommitFailedException</code>. Updates that change nothing end it with the current metadata, and nothing is written.</li>
+        <li>Judges its own rules, described below. A rule that refuses ends the commit with <code>400</code> or <code>403</code>.</li>
+        <li>Writes the new metadata file to the object store.</li>
+        <li>In one database transaction, swaps the pointer to the new file, writes the commit's journal entry, its audit records and its idempotency answer.</li>
+      </ol>
+      <p>If another commit moved the pointer between steps 2 and 7, the database refuses the swap and writes nothing. The server pauses and starts again at step 2, applying the same request to the new metadata. The requirements are checked again there, so a request whose assumptions no longer hold ends with <code>409</code>, and the engine decides what to do.</p>
+
+      <h3 id="one-winner">How the database decides one winner</h3>
+      <p>A pointer records the location of the current metadata file, a version number that starts at 1 and grows by 1 with each commit, and the file's SHA-256. The swap succeeds only if the stored pointer still has the location and version the server read. In the transaction, the server locks each pointer it swaps, always in the same order, so two transactions never wait on each other in a cycle. On a mismatch it rolls the transaction back. Two commits to one table can both write a metadata file, but only one moves the pointer; the other's file is never named by any pointer.</p>
+      <figure class="diagram" id="fig-commit-race">
+        <svg viewBox="0 0 720 450" role="img" aria-labelledby="fig-commit-race-t fig-commit-race-d">
+          <title id="fig-commit-race-t">Two commits to one table race</title>
+          <desc id="fig-commit-race-d">Engines A and B both start from version 41. Each server reads the pointer at version 41 and writes its own metadata file, a.json and b.json. The database swaps the pointer from 41 to 42 for a.json and refuses the swap for b.json, because the pointer is no longer at 41. Server B starts again: it reads version 42 and checks the requirements again. If they still hold it commits version 43; if one fails it answers 409.</desc>
+          <rect class="d-node" x="20" y="40" width="110" height="56" rx="10"/><text class="d-label" x="75" y="65">Engine A</text><text class="d-note" x="75" y="83">from version 41</text>
+          <rect class="d-node" x="160" y="40" width="130" height="56" rx="10"/><text class="d-label" x="225" y="65">Read pointer</text><text class="d-note" x="225" y="83">version 41</text>
+          <rect class="d-node" x="320" y="40" width="130" height="56" rx="10"/><text class="d-label" x="385" y="65">Write metadata</text><text class="d-note" x="385" y="83">file a.json</text>
+          <rect class="d-node" x="20" y="230" width="110" height="56" rx="10"/><text class="d-label" x="75" y="255">Engine B</text><text class="d-note" x="75" y="273">from version 41</text>
+          <rect class="d-node" x="160" y="230" width="130" height="56" rx="10"/><text class="d-label" x="225" y="255">Read pointer</text><text class="d-note" x="225" y="273">version 41</text>
+          <rect class="d-node" x="320" y="230" width="130" height="56" rx="10"/><text class="d-label" x="385" y="255">Write metadata</text><text class="d-note" x="385" y="273">file b.json</text>
+          <path class="d-edge" d="M130 68H160" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M290 68H320" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M130 258H160" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M290 258H320" marker-end="url(#d-arrow)"/>
+          <rect class="d-node d-store d-accent" x="500" y="120" width="200" height="86" rx="12"/><text class="d-label" x="600" y="148">Database</text><text class="d-note" x="600" y="168">one pointer per table</text><text class="d-note" x="600" y="186">swaps 41 → 42 once</text>
+          <path class="d-edge" d="M450 68C485 68 480 140 500 140" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="385" y="116">swap done: pointer at 42</text>
+          <path class="d-edge" d="M450 258C485 258 480 186 500 186" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="385" y="306">swap refused: not at 41</text>
+          <rect class="d-node" x="300" y="340" width="220" height="60" rx="10"/><text class="d-label" x="410" y="367">Server B starts again</text><text class="d-note" x="410" y="385">reads 42, checks requirements again</text>
+          <path class="d-edge" d="M600 206V296C600 322 470 312 470 338" marker-end="url(#d-arrow)"/>
+          <rect class="d-node d-ok" x="548" y="316" width="160" height="52" rx="10"/><text class="d-label" x="628" y="339">Commits version 43</text><text class="d-note" x="628" y="357">requirements hold</text>
+          <rect class="d-node d-bad" x="548" y="384" width="160" height="52" rx="10"/><text class="d-label" x="628" y="407">Answers 409</text><text class="d-note" x="628" y="425">a requirement fails</text>
+          <path class="d-edge" d="M520 362L546 344" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M520 380L546 406" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>Two commits race; one wins and the other is tried again against the winner's metadata.</figcaption>
+      </figure>
+
+      <h3 id="retries">Retries and their bound</h3>
+      <p>The server tries a commit at most 4 times, the first included, within 2 s. The first pause is 100 ms and each pause doubles, with up to 10% added at random so that racing servers spread out. These values are fixed in the server. When they are spent, the engine gets <code>409</code> <code>CommitFailedException</code> with the message "Commit lost to concurrent commits <var>n</var> times; the table changed too often to apply it". Iceberg engines treat a <code>409</code> as a conflict: they refresh the table and try again, up to their own retry setting.</p>
+      <p>A rule's refusal is <code>400</code> or <code>403</code>, never <code>409</code>, so an engine never retries a request that can only be refused again.</p>
+
+      <h3 id="unknown-outcome">When the outcome is unknown</h3>
+      <p>If the connection to the database fails after the server sent the transaction's COMMIT, the server cannot tell whether the commit landed. Every commit carries an id chosen before its first attempt, and the server asks the database whether that commit is recorded, after making sure the answer is durable. If it is recorded, the engine gets success. If it is not, the server tries again within the same bound. If the database cannot answer, the engine gets <code>500</code> <code>CommitStateUnknownException</code> with "Commit <var>id</var> may or may not have been applied: …". An Iceberg engine that receives it keeps the files it wrote, because the commit might have landed.</p>
+      <p>If the database cannot be reached before COMMIT, nothing was applied, and the engine gets <code>503</code> with <code>Retry-After: 2</code> and "Catalog store unavailable; nothing was applied: …".</p>
+
+      <h3 id="rules">The server's rules</h3>
+      <p>After Iceberg's own checks, the server judges these rules, in this order:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Rules a commit must pass</caption>
+          <thead><tr><th scope="col">Rule</th><th scope="col">Refuses</th><th scope="col">Answer</th></tr></thead>
+          <tbody>
+            <tr><td>DR freeze</td><td>Any commit to a table under a <a class="term" href="../reference/glossary.html#term-dr-freeze">DR freeze</a>.</td><td><code>403</code> "Writes to <var>table</var> are frozen for DR reconcile: <var>reason</var>"</td></tr>
+            <tr><td>Assigned location</td><td>A location other than the one the server assigned.</td><td><code>400</code> "Location is assigned by the catalog: <var>root</var>, not <var>location</var>"</td></tr>
+            <tr><td>Write paths</td><td><code>write.data.path</code>, <code>write.metadata.path</code>, <code>write.object-storage.path</code> or <code>write.folder-storage.path</code> outside the table's location.</td><td><code>400</code> "Property <var>key</var> must lie within the table location <var>root</var>, not <var>value</var>"</td></tr>
+            <tr><td>Encryption key</td><td>A change to <code>encryption.key-id</code> after the table is created.</td><td><code>400</code> "Property encryption.key-id is fixed when the table is created"</td></tr>
+            <tr><td>Legal hold</td><td>Removing snapshots from a table under a <a class="term" href="../reference/glossary.html#term-legal-hold">legal hold</a>.</td><td><code>403</code> "Table <var>table</var> is under legal hold: its snapshots cannot be removed"</td></tr>
+            <tr><td>Clock skew</td><td>A new snapshot stamped more than 1 minute ahead of the server's clock.</td><td><code>400</code> "Snapshot <var>id</var> is stamped <var>time</var>, more than PT1M ahead of the catalog clock"</td></tr>
+            <tr><td>Minimum snapshot age</td><td>Removing a snapshot younger than <code>nuna.governance.minimum-snapshot-age</code> (1 hour by default) or its retention class's minimum.</td><td><code>403</code></td></tr>
+            <tr><td>Storage properties</td><td>A property starting <code>s3.</code>, <code>client.</code>, <code>http-client.</code>, <code>gcs.</code> or <code>adls.</code>, or <code>io-impl</code> or <code>py-io-impl</code>.</td><td><code>400</code> "Property <var>key</var> configures storage access, which the catalog alone sets"</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The governance refusals are written to the audit trail as denials, with the reason <code>dr_freeze</code>, <code>legal_hold</code> or <code>snapshot_min_age</code>. A schema or partition change on a regulated table is not refused; it is journaled and raises an alert.</p>
+
+      <h3 id="idempotency">Idempotency keys</h3>
+      <p>An engine can send an <code>Idempotency-Key</code> header with any change. The server records the answer with the change, in the same transaction, and keeps it for 24 hours; <code>/v1/config</code> advertises this as <code>idempotency-key-lifetime</code>. The same key with the same request gets the recorded answer, and the change is not applied twice. A key is bound to the operation, the catalog, the namespace, the name, the end user, the body and the branch. The same key with a different request is refused with <code>400</code> "Idempotency key <var>key</var> was used for a different request". A <code>5xx</code> answer releases the key so that the request can be repeated; a <code>4xx</code> answer is recorded.</p>
+
+      <h3 id="journal">The journal and the metadata log</h3>
+      <p>Every pointer move writes a journal entry in the database: the principal, the end user and engine if any, the requirements and updates as sent, the old and new metadata location and version, and the time. Iceberg's own <a class="term" href="../reference/glossary.html#term-metadata-log">metadata log</a> inside each metadata file lists the files before it. The console's table History tab, the metadata log route and a table's export read the journal, and the journal stays readable after a drop.</p>
+
+      <h3 id="creates">Creates and registers</h3>
+      <p>A create is one transaction that checks the namespace, takes the name and applies the first commit, at pointer version 1. If the name is taken, the engine gets <code>409</code> <code>AlreadyExistsException</code>, for example "Table already exists: equities.fills". A register makes a table from an existing metadata file, which keeps its own UUID and location; it is refused for a file written on a catalog branch.</p>
+
+      <h3 id="multi-table-transactions">Multi-table transactions</h3>
+      <p><code>POST /v1/<var>prefix</var>/transactions/commit</code> commits to several tables at once, all or nothing, in one database transaction. Every table's requirements and the server's rules are judged first; metadata files are written only when every table passes. A table that the transaction names but does not change is held too, so its requirements still hold when the others commit. A transaction can name at most 100 tables (<code>nuna.rest.max-transaction-tables</code>) and each table once. Success is <code>204</code>. A transaction that keeps losing races ends with <code>409</code> "Transaction lost to concurrent commits <var>n</var> times; its tables changed too often to apply it".</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>Of two commits that start from the same version of a table, at most one moves the pointer to the next version. No acknowledged commit is lost or applied twice.</li>
+        <li>A commit the server acknowledges is durable in the database before the answer is sent.</li>
+        <li>A multi-table transaction never publishes some of its tables without the others.</li>
+        <li>A multi-table transaction does not give readers a view of all its tables at one instant: a reader that loads the tables one by one can see one before and another after.</li>
+        <li>The server does not merge conflicting changes. It applies the losing request again only where the engine's requirements still hold.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>The console's <a href="../console/table.html">table page</a>, whose History tab lists each commit.</li>
+        <li><a href="../api/iceberg-tables.html#endpoints">Iceberg REST: tables</a> and <a href="../api/iceberg-transactions.html#endpoints">Iceberg REST: transactions</a>.</li>
+        <li><a href="../reference/errors.html">Error responses</a>, for every status a commit can answer.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>4 attempts within 2 s for each commit, fixed in the server.</li>
+        <li>100 tables in one transaction by default.</li>
+        <li>24 hours for an idempotency key.</li>
+        <li>1 minute of clock skew for a new snapshot's time stamp.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/multi-table-commit.html">Commit to several tables at once</a>: a transaction, step by step.</li>
+          <li><a href="databases.html">Choosing a database</a>: how each database answers an unknown outcome.</li>
+          <li><a href="branches-and-tags.html">Catalog branches and tags</a>: commits on a branch and how a merge is judged.</li>
+          <li><a href="governance.html">Governance</a>: the holds and freezes that commits obey.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, <code>CommitSettings.java</code>, <code>Rules.java</code> and <code>TableFiles.java</code> in the same folder, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Engines.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java</code>, <code>catalog-store-api</code> and <code>docs/storage-design.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run. The minimum snapshot age refusal's message was not read.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

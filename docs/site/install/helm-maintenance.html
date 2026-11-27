@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/helm-maintenance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install the maintenance worker · nuna docs</title>
+  <meta name="description" content="Give the maintenance worker its own identity in the catalog, the identity provider and each object store, then install it with the nuna-maintenance chart, with or without compaction Jobs.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Install the maintenance worker</h1>
+        <p class="lead">Give the maintenance worker its own identity in the catalog, the identity provider and each object store, then install it with the <code>nuna-maintenance</code> chart, with or without compaction Jobs.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+          <span class="badge needs">Needs a platform operator</span>
+        </p>
+      </header>
+
+      <p>The worker scans every catalog, expires snapshots, deletes files no table needs, purges dropped tables and, with compaction on, launches a Kubernetes Job per table that needs compacting (<a href="../concepts/maintenance.html">Maintenance</a>). It is the only principal that can delete table files, so it signs in with an identity of its own everywhere. Install one release beside each catalog server release. It has no HTTP port.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The catalog server is installed (<a href="helm-catalog.html">Install the catalog server with Helm</a>), and the <code>nuna-maintenance</code> image, and the Spark image if you want compaction, are in your registry (<a href="images.html">Container images</a>).</li>
+        <li>You can change the catalog server's release, and you are in one of its <code>platform-operator-groups</code>.</li>
+        <li>For compaction, you can create a namespace for the Jobs.</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="give-worker-its-identity">Give the worker its identity</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create a confidential client for the worker at the identity provider.</p>
+          <p>It needs the client-credentials grant, a scope (the examples use <code>nuna-catalog</code>), the audience the server accepts, and a groups claim that puts its service account in a group of its own. The token's user id claim is the worker's principal id: with Keycloak and <code>preferred_username</code>, a client <code>nuna-maintenance</code> signs in as <code>service-account-nuna-maintenance</code>. <a href="identity-provider.html#client-for-maintenance-worker">Connect an identity provider</a> shows the Keycloak client.</p>
+        </li>
+        <li>
+          <p class="step-title">Name the worker's principal in the catalog server's <code>maintenance-principals</code>.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml (catalog server)">
+<pre><code>config:
+  nuna:
+    security:
+      maintenance-principals: [service-account-nuna-maintenance]</code></pre>
+          </div>
+          <p>Upgrade the catalog server's release so the servers read it.</p>
+        </li>
+        <li>
+          <p class="step-title">Grant the worker's group <code>write</code> on every catalog it maintains.</p>
+          <p>See <a href="../guides/grant-access.html">Grant and revoke access</a>. The worker always acts as itself, never for an end user. The credentials the server vends it read and write table files but never delete.</p>
+        </li>
+        <li>
+          <p class="step-title">Give the worker a storage identity of its own on each store.</p>
+          <p>An IAM role or user on AWS S3, a user on Ceph, a user on MinIO or Silo, never the root user. Name it in each storage profile's <code>maintenance-principal</code> on the catalog server (<a href="object-storage.html#protect-deletes">Set up object storage</a>). It needs <code>s3:ListBucket</code> and <code>s3:DeleteObject</code> beneath the profile's prefixes and no other right to list or delete.</p>
+        </li>
+        <li>
+          <p class="step-title">Apply the delete policies the server generates.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/delete-policies" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>Apply each entry once, as an identity that may, and again after any change to a profile's prefixes: a bucket policy on AWS S3 and Ceph, two user policies on MinIO. They take delete from every other principal, the server's own included, and give the worker its two rights. The server never applies them itself. <a href="object-storage.html#protect-deletes">Set up object storage</a> gives the commands.</p>
+        </li>
+      </ol>
+
+      <h2 id="install-release">Install the release</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create the Jobs' namespace, if you want compaction.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl create namespace nuna-compaction</code></pre>
+          </div>
+          <p>Use it for the Jobs alone, never the catalog server's or the worker's: a pod may run as any service account and mount any Secret of its namespace.</p>
+        </li>
+        <li>
+          <p class="step-title">Create the worker's Secret.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-maintenance-secrets \
+  --from-literal=nuna.maintenance.token.client-secret=… \
+  --from-literal=nuna.maintenance.storage.onprem.secret-access-key=…</code></pre>
+          </div>
+          <p>Each key is a property name, as for the catalog server. On AWS with IRSA, leave out the store's keys and annotate the chart's service account instead (<code>serviceAccount.annotations</code>).</p>
+        </li>
+        <li>
+          <p class="step-title">Write the values file.</p>
+          <div class="code" data-lang="yaml" data-title="worker-values.yaml">
+<pre><code>image:
+  repository: registry.example/nuna-maintenance
+  tag: "0.1.0"
+config:
+  nuna:
+    maintenance:
+      catalog-uri: http://nuna-catalog.nuna.svc:8181/
+      cleanup-window:
+        start: "22:30"
+        end: "04:00"
+        zone: Europe/London
+      token:
+        endpoint: https://idp.example/realms/data/protocol/openid-connect/token
+        client-id: nuna-maintenance
+        scope: nuna-catalog
+        audience: nuna-catalog
+      storage:
+        onprem:
+          kind: ceph
+          endpoint: https://s3.example
+          access-key-id: nuna-maintenance
+      compaction:
+        image: registry.example/nuna-spark:0.1.0
+        namespace: nuna-compaction
+secrets:
+  existingSecret: nuna-maintenance-secrets</code></pre>
+          </div>
+          <ul>
+            <li><code>cleanup-window</code> has no default: compaction and orphan scans start only inside it, in local times of <code>zone</code>. Quote the times in YAML; the chart quotes them again in the worker's own file.</li>
+            <li>Each store under <code>storage</code> names its <code>kind</code> (<code>s3</code>, <code>minio</code> or <code>ceph</code>) and its <code>endpoint</code> exactly as the catalog server's profiles on that store write theirs: the worker serves a profile with the one store of the same kind and endpoint. The prefixes come from the server at each scan, never from here.</li>
+            <li>Compaction is off until <code>compaction.image</code> is set. It needs the client-credentials grant with a <code>scope</code>, since each Job signs in with it, not <code>token.file</code>.</li>
+            <li>The Jobs run in another namespace, so name every in-cluster service in <code>catalog-uri</code>, the token endpoint and the store endpoint as <code><var>service</var>.<var>namespace</var>.svc</code>.</li>
+          </ul>
+        </li>
+        <li>
+          <p class="step-title">Install the release.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm install nuna-maintenance deploy/helm/nuna-maintenance -n nuna -f worker-values.yaml</code></pre>
+          </div>
+        </li>
+      </ol>
+
+      <aside class="callout check">
+        <p class="callout-title">The worker logs a line per scan</p>
+        <p><code>kubectl -n nuna logs deployment/nuna-maintenance</code> shows the prefixes it read from the server and a line for each scan, every <code>scan-interval</code> (10 minutes by default), with no failed jobs. A platform operator's <code>GET /management/v1/maintenance/storage-setup</code> shows each profile's delete policy and any store the worker's last report says it does not reach.</p>
+      </aside>
+
+      <h2 id="what-chart-creates">What the chart creates</h2>
+      <ul>
+        <li>A Deployment of one replica with the <code>Recreate</code> strategy, so two workers never overlap during an upgrade, and a grace period of 70 s.</li>
+        <li>A ConfigMap with <code>application.yaml</code> from <code>config</code>, a Secret when <code>secrets.values</code> is set and <code>secrets.existingSecret</code> is not, and a ServiceAccount, whose token is mounted only when compaction is on.</li>
+        <li>With <code>compaction.image</code> set, in the Jobs' namespace: a Role <code><var>name</var>-compaction</code> that may <code>get</code> and <code>create</code> Jobs and <code>create</code> Secrets, and <code>create</code> ConfigMaps when a store names a <code>ca-bundle</code>; a RoleBinding of it to the worker's service account; and the Jobs' service account, <code>nuna-compaction</code> by default, with no rights and no token mounted.</li>
+      </ul>
+
+      <h2 id="what-chart-refuses">What the chart refuses</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>The chart's refusals</caption>
+          <thead><tr><th scope="col">Error</th></tr></thead>
+          <tbody>
+            <tr><td><code>config.nuna.maintenance.catalog-uri is required: the catalog the worker maintains</code></td></tr>
+            <tr><td><code>config.nuna.maintenance.storage needs at least one store: the worker's own storage identity on it</code></td></tr>
+            <tr><td><code>config.nuna.maintenance.storage.<var>name</var>.kind is required: the worker serves a catalog storage profile with the store of its kind and endpoint, written as the profile writes it</code>, and the same for <code>endpoint</code></td></tr>
+            <tr><td><code>config.nuna.maintenance.storage.<var>name</var>.prefixes: the worker reads its prefixes from the catalog's storage profiles at each scan; name the store's kind and endpoint instead (deploy/README.md, "Delete rights")</code></td></tr>
+            <tr><td><code>config.nuna.maintenance.cleanup-window.start is required: the nightly window in which compaction and orphan scans run (start and end as local times such as "01:00", zone a named zone such as Europe/London)</code>, and the same for <code>end</code> and <code>zone</code></td></tr>
+            <tr><td><code>config.nuna.maintenance.compaction.namespace is required when compaction runs: a namespace for the Jobs alone, created beforehand</code></td></tr>
+            <tr><td><code>config.nuna.maintenance.compaction.namespace must not be the release's namespace: a pod may run as any service account and mount any Secret of its namespace, the worker's included</code></td></tr>
+            <tr><td><code>config.nuna.maintenance.compaction.job-service-account is required when compaction runs</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>A chart error from the table above.</td><td>A required value is missing or wrong.</td><td>Set it and run the command again.</td></tr>
+            <tr><td><code>nuna.maintenance.token: set file, or endpoint, client-id and client-secret</code></td><td>The worker has no way to sign in.</td><td>Set the client-credentials grant, with the secret in the Secret.</td></tr>
+            <tr><td><code>nuna.maintenance.token: set exactly one of file and endpoint</code></td><td>Both are set.</td><td>Keep one.</td></tr>
+            <tr><td>The worker refuses to start because the cleanup window's start is a number.</td><td>An unquoted <code>22:30</code> in YAML 1.1 is a number in base 60.</td><td>Quote the times.</td></tr>
+            <tr><td>Scans get <code>403</code> from the server.</td><td>The worker's principal is not in <code>maintenance-principals</code>, or its group holds no <code>write</code> on the catalog.</td><td>Check the token's user id claim against <code>maintenance-principals</code>, and the grant.</td></tr>
+            <tr><td>A Job fails with <code>UnknownHostException</code>.</td><td>A short Service name does not resolve from the Jobs' namespace.</td><td>Use <code><var>service</var>.<var>namespace</var>.svc</code>.</td></tr>
+            <tr><td>A Job fails with <code>PKIX path building failed</code>, or <code>Unable to execute HTTP request: Network is unreachable</code>.</td><td>The Job does not trust the store's certificate.</td><td>Name the store's <code>ca-bundle</code> and give the chart the same <code>storageCaConfigMap.name</code> as the catalog server.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../configure/maintenance.html">Maintenance worker settings</a>: every <code>nuna.maintenance.*</code> setting.</li>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: what a scan does and when.</li>
+          <li><a href="../operate/maintenance-nights.html">Maintenance nights</a>: reading what each night did.</li>
+          <li><a href="../api/worker.html">Worker endpoints</a>: the routes the worker calls.</li>
+          <li><a href="kind.html">Run nuna on a local kind cluster</a>: a working install of the worker beside a local catalog.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-maintenance/</code> (<code>values.yaml</code> and every template), <code>catalog-maintenance/README.md</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java</code>, <code>deploy/README.md</code> (Delete rights, Compaction Jobs), <code>deploy/local/worker-values.yaml</code>, <code>deploy/local/keycloak.yaml</code> and <code>deploy/local/run.sh</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The chart's refusals and objects were read by running <code>helm template</code> with too few values and with compaction on. The install was not run for this page; <code>deploy/local/run.sh worker</code> installs the same chart on the local kind cluster.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

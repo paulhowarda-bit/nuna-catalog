@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/object-storage">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Set up object storage · nuna docs</title>
+  <meta name="description" content="Prepare the buckets and identities on AWS S3, Ceph or Silo, declare them as storage profiles, let the server vend credentials, and keep delete rights for the maintenance worker alone.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Set up object storage</h1>
+        <p class="lead">Prepare the buckets and identities on AWS S3, Ceph or Silo, declare them as storage profiles, let the server vend credentials, and keep delete rights for the maintenance worker alone.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+          <span class="badge needs">Needs a platform operator</span>
+        </p>
+      </header>
+
+      <p>A <a href="../concepts/storage.html">storage profile</a> names one object store, the root under which new tables go, and the prefixes the server may hand out credentials for. Each catalog uses one profile. The server writes metadata files with its own identity, and gives engines <a class="term" href="../reference/glossary.html#term-vended-credentials">vended credentials</a>: short-lived keys limited by a session policy to one table's location. No credentials the server vends can delete; only the maintenance worker deletes, with an identity of its own.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You can create buckets, users or roles, and bucket or user policies on the store.</li>
+        <li>You can change the catalog server's Helm release (<a href="helm-catalog.html">Install the catalog server with Helm</a>).</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes, with a platform operator's token.</li>
+      </ul>
+
+      <h2 id="prepare-store">Prepare the store</h2>
+      <p>Each store needs a bucket, the server's own identity, and the worker's own identity. The server's identity never deletes and must hold no right to change the bucket's policy or lifecycle rules.</p>
+      <div class="tabs" data-group="store">
+        <section class="tab" data-tab="aws" data-label="AWS S3">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Create the bucket in the region the profile will name.</p>
+            </li>
+            <li>
+              <p class="step-title">Give the server an AWS identity of its own.</p>
+              <p>On EKS, annotate the chart's service account with an IAM role (IRSA): <code>serviceAccount.annotations: {eks.amazonaws.com/role-arn: …}</code>. The AWS SDK's default chain then uses it for every profile that names no keys. Otherwise put the profile's <code>access-key-id</code> in <code>config</code> and its <code>secret-access-key</code> in the Secret.</p>
+            </li>
+            <li>
+              <p class="step-title">Create the role the server assumes to vend credentials.</p>
+              <p>Its permissions allow <code>s3:GetObject</code>, <code>s3:PutObject</code>, <code>s3:AbortMultipartUpload</code>, <code>s3:ListMultipartUploadParts</code> and <code>s3:ListBucket</code> beneath the profile's prefixes; each vend narrows them further with a session policy. Its trust policy must let the server's identity call both <code>sts:AssumeRole</code> and <code>sts:TagSession</code>: every vend tags its session with whom it is for, and AWS refuses a tagged <code>AssumeRole</code> without the second. The profile names the role in <code>sts-role</code>.</p>
+            </li>
+            <li>
+              <p class="step-title">Create the worker's IAM role or user.</p>
+              <p>Its own policies allow no <code>s3:DeleteObject</code>, <code>s3:DeleteObjectVersion</code> or <code>s3:ListBucket</code> in the bucket, and name no wildcard bucket: in the bucket's own account, the bucket policy you apply later grants all it needs. Its ARN is the profile's <code>maintenance-principal</code>.</p>
+            </li>
+            <li>
+              <p class="step-title">Choose a KMS key, if writes must be encrypted with one.</p>
+              <p>An AWS S3 profile may name one customer-managed key ARN in <code>kms-key</code>, in the profile's region. The server writes metadata files with it, vended credentials may write only with SSE-KMS under exactly that key, and loads tell engines to use it. The key's policy must let the server's identity and the STS role use <code>kms:GenerateDataKey</code> and <code>kms:Decrypt</code>.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="ceph" data-label="Ceph">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Create the bucket as an operator's user, never the server's.</p>
+              <p>A Ceph bucket's owner can always replace its policy, and on Ceph the generated policy denies lifecycle rules but not policy changes.</p>
+            </li>
+            <li>
+              <p class="step-title">Create a user for the server, and its keys.</p>
+              <p>The profile's <code>access-key-id</code> goes in <code>config</code>, its <code>secret-access-key</code> in the Secret. The server calls the RADOS Gateway's STS on the store's own endpoint with these keys.</p>
+            </li>
+            <li>
+              <p class="step-title">Create the role the server assumes to vend credentials.</p>
+              <p>A Ceph role ARN has an empty account, such as <code>arn:aws:iam:::role/nuna-vend</code>. As on AWS, its trust policy must allow the server's user both <code>sts:AssumeRole</code> and <code>sts:TagSession</code>. The profile names it in <code>sts-role</code>.</p>
+            </li>
+            <li>
+              <p class="step-title">Create a user for the worker.</p>
+              <p>It owns no bucket, and no bucket ACL or user policy grants it, or all authenticated users, write. Its ARN, <code>arn:aws:iam::<var>tenant</var>:user/<var>uid</var></code> with the tenant empty for none, is the profile's <code>maintenance-principal</code>.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="silo" data-label="Silo">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Create the bucket.</p>
+              <p>Silo answers as MinIO does, so its profiles use the kind <code>MINIO</code>, and buckets are addressed by path.</p>
+            </li>
+            <li>
+              <p class="step-title">Create a user for the server, never the root user.</p>
+              <p>MinIO's root user ignores every policy. The server's user name is the profile's <code>access-key-id</code>, its secret the <code>secret-access-key</code> in the Secret. A MinIO profile names no <code>sts-role</code>: the server vends from its own user through the store's STS.</p>
+            </li>
+            <li>
+              <p class="step-title">Create a user for the worker.</p>
+              <p>It is not root, is in no group, uses keys of its own rather than a service account of a broader user, and will hold only the worker's policy. Its user name is the profile's <code>maintenance-principal</code>.</p>
+            </li>
+          </ol>
+        </section>
+      </div>
+
+      <h2 id="declare-storage-profile">Declare the storage profile</h2>
+      <p>Add the profile under <code>config.nuna.storage.profiles</code> and point a catalog at it. Secret keys go in the Secret as <code>nuna.storage.profiles.<var>name</var>.secret-access-key</code>.</p>
+      <div class="tabs" data-group="store">
+        <section class="tab" data-tab="aws" data-label="AWS S3">
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    storage:
+      profiles:
+        onprem:
+          kind: S3
+          endpoint: https://s3.eu-west-2.amazonaws.com
+          region: eu-west-2
+          table-root: s3://trading-eu-west-2/tables
+          allowed-prefixes: [s3://trading-eu-west-2/tables]
+          sts-role: arn:aws:iam::111122223333:role/nuna-vend
+          maintenance-principal: arn:aws:iam::111122223333:role/nuna-maintenance
+          kms-key: arn:aws:kms:eu-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+      catalogs:
+        trading:
+          profile: onprem
+          kms-key-set: trading-keys
+          legal-entity: Example Markets Ltd</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="ceph" data-label="Ceph">
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    storage:
+      profiles:
+        onprem:
+          kind: CEPH
+          endpoint: https://s3.example
+          table-root: s3://trading/tables
+          allowed-prefixes: [s3://trading/tables]
+          sts-role: arn:aws:iam:::role/nuna-vend
+          access-key-id: nuna-catalog
+          maintenance-principal: arn:aws:iam:::user/nuna-maintenance
+      catalogs:
+        trading:
+          profile: onprem
+          kms-key-set: trading-keys
+          legal-entity: Example Markets Ltd</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="silo" data-label="Silo">
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    storage:
+      profiles:
+        onprem:
+          kind: MINIO
+          endpoint: https://s3.example
+          table-root: s3://trading/tables
+          allowed-prefixes: [s3://trading/tables]
+          access-key-id: nuna-catalog
+          maintenance-principal: nuna-maintenance
+      catalogs:
+        trading:
+          profile: onprem
+          kms-key-set: trading-keys
+          legal-entity: Example Markets Ltd</code></pre>
+          </div>
+        </section>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <caption>A profile's fields</caption>
+          <thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>kind</code></td><td><code>S3</code>, <code>MINIO</code> or <code>CEPH</code>. Required.</td></tr>
+            <tr><td><code>endpoint</code></td><td>The store's S3 endpoint, <code>http(s)://host[:port]</code>; <code>https</code> while <code>nuna.storage.require-tls</code> is on (the default). Required.</td></tr>
+            <tr><td><code>region</code></td><td>The region; <code>us-east-1</code> by default.</td></tr>
+            <tr><td><code>table-root</code></td><td>Where new tables go. It must lie within an allowed prefix. Required.</td></tr>
+            <tr><td><code>allowed-prefixes</code></td><td>Where tables of this profile may live, and so where the server vends credentials. Two profiles' prefixes must not overlap. Required.</td></tr>
+            <tr><td><code>sts-role</code></td><td>The role the server assumes to vend credentials. Required on <code>S3</code> and <code>CEPH</code>; not used on <code>MINIO</code>.</td></tr>
+            <tr><td><code>access-key-id</code>, <code>secret-access-key</code></td><td>The server's own keys. On AWS, leave both out to use the SDK's default chain (IRSA).</td></tr>
+            <tr><td><code>maintenance-principal</code></td><td>The worker's storage identity: an IAM ARN on <code>S3</code> and <code>CEPH</code>, a user name on <code>MINIO</code>. A profile without one is not maintained, and its delete policy is listed as <code>unprotected</code>.</td></tr>
+            <tr><td><code>ca-bundle</code></td><td>A PEM file of the private CA that signed the store's certificate (below).</td></tr>
+            <tr><td><code>kms-key</code></td><td>One KMS key ARN, <code>S3</code> only.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Credentials live <code>nuna.storage.credential-lifetime</code>, 30 minutes by default and 15 to 60 minutes at most. Every field and limit is on <a href="../configure/storage.html">Storage settings</a>. A catalog's <code>profile</code>, <code>kms-key-set</code> and <code>legal-entity</code> never change once the catalog exists (<a href="../guides/create-catalog.html">Create a catalog</a>).</p>
+
+      <h3 id="trust-private-certificate-authority">Trust a private certificate authority</h3>
+      <p>If a private CA signed the store's certificate, put its PEM file in a ConfigMap, one key per store, and name it in the chart's <code>storageCaConfigMap.name</code>. The chart mounts it at <code>/etc/nuna/storage-ca</code>, and the profile's <code>ca-bundle</code> names the file there:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create configmap nuna-storage-ca --from-file=onprem.crt=store-ca.pem</code></pre>
+      </div>
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>storageCaConfigMap:
+  name: nuna-storage-ca
+config:
+  nuna:
+    storage:
+      profiles:
+        onprem:
+          ca-bundle: /etc/nuna/storage-ca/onprem.crt</code></pre>
+      </div>
+      <p>That profile's S3 and STS clients trust the bundle beside the JVM's CAs; nothing else does. Vended credentials carry the endpoint, not the CA, so engines must trust the store through their own setup. Give the worker's chart the same ConfigMap and the store the same <code>ca-bundle</code>.</p>
+
+      <h2 id="protect-deletes">Keep delete rights for the worker</h2>
+      <p>Once the servers run with the profile, a platform operator reads the delete policies the server generates and applies each one, as an identity that may. The server never applies them itself, since its own credentials would then need the right to undo them.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Read the policies.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/delete-policies" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p><code>GET /management/v1/maintenance/storage-setup</code> gives the same policies per profile with the commands that apply them (<a href="../api/maintenance.html">Maintenance API</a>).</p>
+        </li>
+        <li>
+          <p class="step-title">Apply each entry to its store.</p>
+          <div class="tabs" data-group="store">
+            <section class="tab" data-tab="aws" data-label="AWS S3">
+              <p>An entry of form <code>bucket-policy</code>. A bucket holds one policy, so merge its statements into any the bucket already has:</p>
+              <div class="code" data-lang="bash">
+<pre><code>aws s3api put-bucket-policy --bucket trading-eu-west-2 --policy file://policy.json</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="ceph" data-label="Ceph">
+              <p>An entry of form <code>bucket-policy</code>, applied at the store's endpoint:</p>
+              <div class="code" data-lang="bash">
+<pre><code>aws s3api put-bucket-policy --bucket trading --policy file://policy.json \
+  --endpoint-url https://s3.example</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="silo" data-label="Silo">
+              <p>Two entries of form <code>user-policy</code>, since MinIO enforces no bucket policy on signed requests. Create the one with <code>except</code> and attach it to every user but the worker, the server's own included; create the one with <code>to</code> and attach it to the worker's user alone:</p>
+              <div class="code" data-lang="bash">
+<pre><code>mc admin policy create store nuna-no-delete no-delete.json
+mc admin policy attach store nuna-no-delete --user nuna-catalog
+mc admin policy create store nuna-maintenance maintenance.json
+mc admin policy attach store nuna-maintenance --user nuna-maintenance</code></pre>
+              </div>
+            </section>
+          </div>
+          <p>Each policy denies delete beneath the profiles' prefixes to every principal but the worker, allows the worker to delete there and to list beneath its prefixes, and denies everyone else setting lifecycle rules on the bucket (and, on AWS S3 and MinIO, changing the bucket policy).</p>
+        </li>
+        <li>
+          <p class="step-title">Apply them again whenever a profile's prefixes change.</p>
+        </li>
+      </ol>
+
+      <aside class="callout check">
+        <p class="callout-title">An engine's load carries vended credentials</p>
+        <p>Load a table with <code>X-Iceberg-Access-Delegation: vended-credentials</code>: the response's <code>config</code> holds <code>s3.access-key-id</code>, <code>s3.secret-access-key</code> and <code>s3.session-token</code>. With them, a write beneath the table succeeds and a delete answers <code>403</code>. <a href="verify.html">Check the install</a> walks through it.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <p>The server checks every profile at start-up and refuses to start on the first problem, naming the profile.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.storage.profiles.<var>name</var> needs kind, endpoint, table-root and allowed-prefixes</code></td><td>A required field is missing.</td><td>Set all four.</td></tr>
+            <tr><td><code>nuna.storage.profiles.<var>name</var>.endpoint must use https, got …</code></td><td>An <code>http</code> endpoint with <code>require-tls</code> on.</td><td>Use HTTPS.</td></tr>
+            <tr><td><code>table root … is not within an allowed prefix</code></td><td><code>table-root</code> lies outside <code>allowed-prefixes</code>.</td><td>Move the root or widen the prefixes.</td></tr>
+            <tr><td><code>storage profiles <var>a</var> and <var>b</var> overlap: …</code></td><td>Two profiles share a prefix.</td><td>Give each its own prefixes.</td></tr>
+            <tr><td><code>… needs an STS role to vend credentials</code></td><td>An <code>S3</code> or <code>CEPH</code> profile without <code>sts-role</code>.</td><td>Name the role.</td></tr>
+            <tr><td><code>maintenance principal … must be an ARN on …</code>, or <code>… a MinIO user name on MINIO</code></td><td>The worker's identity is in the wrong form for the store.</td><td>Use an ARN on S3 and Ceph, a user name on MinIO.</td></tr>
+            <tr><td><code>only an AWS S3 profile names a KMS key, not a … profile</code></td><td><code>kms-key</code> on Ceph or MinIO.</td><td>Remove it.</td></tr>
+            <tr><td><code>must be a KMS key ARN, arn:&lt;partition&gt;:kms:&lt;region&gt;:&lt;account&gt;:key/&lt;key id&gt;, not an alias or a bare key id; got …</code></td><td>An alias or a key id.</td><td>Use the full key ARN.</td></tr>
+            <tr><td><code>the key … is not in the profile's region …: S3 encrypts only with a key in the bucket's region</code></td><td>The key is in another region.</td><td>Use a key in the bucket's region.</td></tr>
+            <tr><td><code>cannot read the CA bundle …</code>, or <code>the CA bundle … holds no certificate</code></td><td>The file is missing from the ConfigMap, or not PEM certificates.</td><td>Check <code>storageCaConfigMap.name</code> and the key.</td></tr>
+            <tr><td>Loads succeed but vending fails with an AWS access error.</td><td>The role's trust policy lacks <code>sts:TagSession</code>.</td><td>Allow both <code>sts:AssumeRole</code> and <code>sts:TagSession</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/storage.html">Storage profiles and credential vending</a>: how vending works.</li>
+          <li><a href="../configure/storage.html">Storage settings</a>: every <code>nuna.storage.*</code> setting.</li>
+          <li><a href="../security/credential-vending.html">Credential vending</a>: the session policy and tags.</li>
+          <li><a href="../security/encryption.html">Encryption and keys</a>: KMS keys and key sets.</li>
+          <li><a href="helm-maintenance.html">Install the maintenance worker</a>: the worker's side of the store.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java</code>, <code>CredentialVendor.java</code>, <code>DeletePolicy.java</code> and <code>CaBundle.java</code> in the same folder, <code>deploy/README.md</code> (The chart, Delete rights), <code>deploy/local/values.yaml</code> and <code>deploy/local/run.sh</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>None of the store commands were run for this page. The Silo form of the delete policies is applied by <code>deploy/local/run.sh up</code>, and its <code>smoke</code> tries a delete as each user. The account number and key id in the AWS example are placeholders.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

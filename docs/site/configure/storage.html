@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/storage">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storage settings · nuna docs</title>
+  <meta name="description" content="Name the object stores the catalog places tables in, the prefixes each may use, and how the server vends credentials for them.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Storage settings</h1>
+        <p class="lead">Name the object stores the catalog places tables in, the prefixes each may use, and how the server vends credentials for them.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>A storage profile names one S3-compatible store and the prefixes in it that catalogs may use. Each catalog is bound to one profile (<a href="catalogs.html">Catalog settings</a>), and the server places every table of the catalog under that profile's table root and vends credentials only for that profile's store. Profiles are read at start-up; the server refuses to start on a profile it cannot use.</p>
+
+      <h2 id="nuna-storage-group">nuna.storage</h2>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles"><code>nuna.storage.profiles</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of profile name to its profile</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd>one variable per field, such as <code>NUNA_STORAGE_PROFILES_<var>NAME</var>_ENDPOINT</code>; the name is read in lower case</dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The deployment's storage profiles, keyed by name. A catalog names its profile by this name. No two profiles' allowed prefixes may overlap: one may not equal, contain or lie within another's, and the server refuses to start naming the first pair that does.</p>
+        <p>Each profile is written to the database at start-up when the database holds it otherwise, with an audit record of type <code>storage-setup</code> (action <code>PROFILE_SET</code>) naming the kind, endpoint, STS role, allowed prefixes and KMS key it sets.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-catalogs"><code>nuna.storage.catalogs</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of catalog name to its declaration</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd>see <a href="catalogs.html#nuna-storage-catalogs">Catalog settings</a></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.catalogs</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The catalogs and the profile each is bound to. Every field is on <a href="catalogs.html#nuna-storage-catalogs-group">Catalog settings</a>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-credential-lifetime"><code>nuna.storage.credential-lifetime</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>30m</code></dd>
+          <dt>Allowed values</dt><dd>15 to 60 minutes</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_CREDENTIALLIFETIME</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.credential-lifetime</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long the storage credentials the server vends to engines live. The server refuses to start outside 15 to 60 minutes, with <code>credential lifetime must be 15 to 60 minutes, got <var>lifetime</var></code>.</p>
+        <p>Engines refresh their credentials before they expire through the catalog's refresh endpoint, a margin of <a href="server.html#nuna-rest-credential-refresh-margin"><code>nuna.rest.credential-refresh-margin</code></a> before the end.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-credential-cache-entries"><code>nuna.storage.credential-cache-entries</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>10000</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_CREDENTIALCACHEENTRIES</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.credential-cache-entries</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How many callers' vended credentials the server keeps in memory at once, so that a caller asking again for the same table and access gets the same credentials rather than a new STS call.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-require-tls"><code>nuna.storage.require-tls</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>boolean</dd>
+          <dt>Default</dt><dd><code>true</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_REQUIRETLS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.require-tls</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Refuses a profile whose endpoint is not <code>https://</code>, with <code>nuna.storage.profiles.<var>name</var>.endpoint must use https, got <var>endpoint</var></code>. Only a local test turns it off.</p>
+      </section>
+
+      <h2 id="nuna-storage-profiles-fields">A storage profile</h2>
+
+      <p>Each profile needs <code>kind</code>, <code>endpoint</code>, <code>table-root</code> and <code>allowed-prefixes</code>; without any of them the server refuses to start with <code>nuna.storage.profiles.<var>name</var> needs kind, endpoint, table-root and allowed-prefixes</code>.</p>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-kind"><code>nuna.storage.profiles.<var>name</var>.kind</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>enumeration</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Allowed values</dt><dd><code>S3</code>, <code>CEPH</code>, <code>MINIO</code> (Spring also accepts them in lower case)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_KIND</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.kind</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Which kind of store the profile names:</p>
+        <ul>
+        <li><code>S3</code>: AWS S3, addressed by virtual host. Needs <code>sts-role</code>.</li>
+        <li><code>CEPH</code>: Ceph RADOS Gateway, addressed by path. Needs <code>sts-role</code>.</li>
+        <li><code>MINIO</code>: MinIO, addressed by path. Needs no STS role.</li>
+      </ul>
+        <p>An S3 or Ceph profile without an STS role stops the server with <code><var>KIND</var> needs an STS role to vend credentials</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-endpoint"><code>nuna.storage.profiles.<var>name</var>.endpoint</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a URL)</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_ENDPOINT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.endpoint</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The store's S3 endpoint, as <code>https://<var>host</var></code> or <code>https://<var>host</var>:<var>port</var></code>, with no path. For AWS S3, the regional endpoint. Anything else stops the server with <code>endpoint must be http(s)://host[:port], got <var>endpoint</var></code>; plain <code>http</code> is refused too unless <code>nuna.storage.require-tls</code> is off.</p>
+        <p>Engines are handed this endpoint (<code>s3.endpoint</code>) and told to address by path on Ceph and MinIO (<code>s3.path-style-access</code>).</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-region"><code>nuna.storage.profiles.<var>name</var>.region</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>us-east-1</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_REGION</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.region</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The store's region. Engines are handed it as <code>client.region</code>. On Ceph and MinIO it is whatever the store answers to; leave the default unless the store was given another. A blank region stops the server.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-table-root"><code>nuna.storage.profiles.<var>name</var>.table-root</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (an <code>s3://</code> location)</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_TABLEROOT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.table-root</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where new tables are placed: each new table's location is the table root followed by the table's UUID. It must lie within one of the allowed prefixes, or the server stops with <code>table root <var>root</var> is not within an allowed prefix</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-allowed-prefixes"><code>nuna.storage.profiles.<var>name</var>.allowed-prefixes</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>list of strings (<code>s3://</code> locations)</dd>
+          <dt>Default</dt><dd>none (required, at least one)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_ALLOWEDPREFIXES_<var>N</var></code>, one per entry, counting from 0</dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.allowed-prefixes</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The prefixes in the store this profile's tables may use. A table location outside them is refused, and so is a credential for one: <code>Table location <var>location</var> is outside storage profile <var>name</var></code> (403).</p>
+        <p>No prefix may overlap another profile's.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-sts-role"><code>nuna.storage.profiles.<var>name</var>.sts-role</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a role ARN)</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_STSROLE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.sts-role</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The role STS assumes to vend credentials. S3 and Ceph profiles need one; a MinIO profile needs none. Each vend tags its session with the caller, so the role's trust policy must allow the catalog's own identity both <code>sts:AssumeRole</code> and <code>sts:TagSession</code>.</p>
+        <p>When STS refuses or cannot be reached, the request for credentials fails with 503 <code>Storage credentials cannot be issued now; retry later</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-access-key-id"><code>nuna.storage.profiles.<var>name</var>.access-key-id</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: the AWS SDK's default credentials chain</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_ACCESSKEYID</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key <code>nuna.storage.profiles.<var>name</var>.access-key-id</code> in the config tree Secret</dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>With <code>secret-access-key</code>, the catalog's own static credentials for the store and its STS. Without them, the server uses the AWS SDK's default chain (environment, web identity, instance profile). Put both in the Secret, never in <code>config</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-secret-access-key"><code>nuna.storage.profiles.<var>name</var>.secret-access-key</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_SECRETACCESSKEY</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key <code>nuna.storage.profiles.<var>name</var>.secret-access-key</code> in the config tree Secret</dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The secret half of the static credentials. Secret: keep it in the Secret the chart mounts as a config tree.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-maintenance-principal"><code>nuna.storage.profiles.<var>name</var>.maintenance-principal</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: the profile has no delete policy</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_MAINTENANCEPRINCIPAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.maintenance-principal</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The maintenance worker's own storage identity, the one principal the profile's delete policy lets delete objects:</p>
+        <ul>
+        <li>AWS S3: an IAM role or user ARN.</li>
+        <li>Ceph: a user ARN, <code>arn:aws:iam::<var>tenant</var>:user/<var>uid</var></code>.</li>
+        <li>MinIO: a user name.</li>
+      </ul>
+        <p>It may hold only letters, digits and <code>+=,.@_:/-</code>; anything else stops the server with <code>nuna.storage.profiles.<var>name</var>.maintenance-principal: </code> and the reason. Without it the profile has no delete policy, and the console's storage setup shows the profile as unprotected.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-ca-bundle"><code>nuna.storage.profiles.<var>name</var>.ca-bundle</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>path (a PEM file)</dd>
+          <dt>Default</dt><dd>none: the JVM's own CAs only</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_CABUNDLE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.ca-bundle</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A PEM file of one or more CA certificates, for a store whose certificate a private CA signed. This profile's S3 and STS clients trust them beside the JVM's CAs, and no other client does. Vended credentials carry no trust: each engine trusts the store through its own setup.</p>
+        <p>The server refuses to start, with <code>nuna.storage.profiles.<var>name</var>.ca-bundle: </code> and the reason, when it cannot read the file, finds no certificate in it, or finds something other than PEM certificates. In the catalog chart, mount the bundle with <a href="helm-values.html#nuna-catalog-storagecaconfigmap"><code>storageCaConfigMap.name</code></a>, at <code>/etc/nuna/storage-ca</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-kms-key"><code>nuna.storage.profiles.<var>name</var>.kms-key</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a KMS key ARN)</dd>
+          <dt>Default</dt><dd>none: writes are encrypted as the bucket's default says</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_PROFILES_<var>NAME</var>_KMSKEY</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.profiles.<var>name</var>.kms-key</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>AWS S3 only: the SSE-KMS key every write to this profile must use. The server writes its metadata files with it, vended credentials may write with it alone (a write with no key or another key is refused), and the configuration handed to engines tells them to use it (<code>s3.sse.type</code> and <code>s3.sse.key</code>). The catalog's own identity and the STS role need <code>kms:GenerateDataKey</code> and <code>kms:Decrypt</code> on it.</p>
+        <p>The server refuses to start, with <code>nuna.storage.profiles.<var>name</var>.kms-key: </code> and the reason, on a Ceph or MinIO profile (<code>only an AWS S3 profile names a KMS key, not a <var>KIND</var> profile</code>), on anything but a key ARN (<code>must be a KMS key ARN, arn:&lt;partition&gt;:kms:&lt;region&gt;:&lt;account&gt;:key/&lt;key id&gt;, not an alias or a bare key id</code>), and on a key in another region (<code>the key <var>arn</var> is not in the profile's region <var>region</var>: S3 encrypts only with a key in the bucket's region</code>).</p>
+      </section>
+
+      <h2 id="examples">Examples</h2>
+
+      <h3 id="example-ceph">Ceph with a private CA</h3>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    storage:
+      profiles:
+        onprem:
+          kind: CEPH
+          endpoint: https://s3.example
+          table-root: s3://trading-tables/warehouse
+          allowed-prefixes:
+            - s3://trading-tables/warehouse
+          sts-role: arn:aws:iam:::role/nuna-vend
+          maintenance-principal: arn:aws:iam::data:user/nuna-maintenance
+          ca-bundle: /etc/nuna/storage-ca/ca.crt
+      catalogs:
+        trading:
+          profile: onprem
+          kms-key-set: trading-keys
+          legal-entity: example-securities
+storageCaConfigMap:
+  name: storage-ca</code></pre>
+      </div>
+
+      <p>The catalog's own static credentials for the store go in the Secret:</p>
+
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-catalog-secrets \
+  --from-literal=nuna.storage.profiles.onprem.access-key-id="$S3_ACCESS_KEY_ID" \
+  --from-literal=nuna.storage.profiles.onprem.secret-access-key="$S3_SECRET_ACCESS_KEY"</code></pre>
+      </div>
+
+      <h3 id="example-aws">AWS S3 with a KMS key</h3>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    storage:
+      profiles:
+        aws:
+          kind: S3
+          endpoint: https://s3.eu-west-1.amazonaws.com
+          region: eu-west-1
+          table-root: s3://example-trading/warehouse
+          allowed-prefixes:
+            - s3://example-trading/warehouse
+          sts-role: arn:aws:iam::111122223333:role/nuna-vend
+          kms-key: arn:aws:kms:eu-west-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab</code></pre>
+      </div>
+
+      <p>With no <code>access-key-id</code>, the server takes its identity from the AWS SDK's default chain, such as the web identity of its service account (<a href="helm-values.html#nuna-catalog-serviceaccount"><code>serviceAccount.annotations</code></a>).</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="catalogs.html">Catalog settings</a>: binding a catalog to a profile</li>
+          <li><a href="../concepts/storage.html">Storage and credentials</a>: how vended credentials are scoped and refreshed</li>
+          <li><a href="../install/object-storage.html">Prepare the object store</a>: buckets, the STS role and its trust policy</li>
+          <li><a href="maintenance.html#nuna-maintenance-storage">Maintenance worker settings</a>: the worker's own view of each store</li>
+          <li><a href="helm-values.html#nuna-catalog">Helm chart values</a>: the <code>storageCaConfigMap</code> and <code>secrets</code> values</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/CredentialVendor.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/ProfileOverlap.java</code> and <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StoreKind.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the catalog chart.</p>
+        <p>No server was started with them for this page, and the <code>kubectl</code> command was not run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

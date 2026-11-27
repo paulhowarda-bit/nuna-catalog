@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/catalogs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Catalogs · nuna docs</title>
+  <meta name="description" content="List the catalogs you can see and read a catalog's own properties, under /management/v1/catalogs.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Catalogs</h1>
+        <p class="lead">List the catalogs you can see and read a catalog's own properties, under <code>/management/v1/catalogs</code>.</p>
+      </header>
+
+      <p>The API creates no catalog and deletes none. The server creates each catalog named in <code>nuna.storage.catalogs</code> when it starts, bound to the storage profile, KMS key set and legal entity set there, and records the creation as an audit record. A catalog's binding never changes: a server whose settings disagree with what the catalog's database holds refuses to start. See <a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a> and <a href="../concepts/storage.html">Storage profiles and credential vending</a>.</p>
+      <p>The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Catalog endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-catalogs"><code>/management/v1/catalogs</code></a></td><td>Lists the catalogs you hold something in, with what you may do in each.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-properties"><code>/management/v1/catalogs/{catalog}/properties</code></a></td><td>Reads a catalog's storage profile, KMS key set and legal entity.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-catalogs"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs</code></h3>
+        <p>Lists the catalogs the deployment declares that you hold something in, by name, sorted without regard to case. You hold something in a catalog when one of your groups holds a grant on it or on anything in it. Grant admins and platform operators see every catalog. A caller who holds nothing gets an empty list, not a refusal.</p>
+        <p>Each catalog says what your groups may do somewhere in it, and the answer says whether you read the audit feed and operate the deployment. These come from your own grants and groups, so asking writes no audit record. Each route still decides for itself: these flags say only what the console offers.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a signed-in caller</span></p>
+        <h4 id="get-catalogs-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalogs": [<var>catalog entry</var>, …], "may": {"operate", "read-audit-feed"}}</code>.</td></tr>
+              <tr><td><code>401</code></td><td>The request carries no token, or one the server does not accept: <code>Not authorized: the bearer token is missing or was not accepted</code> (<code>NotAuthorizedException</code>), with <code>WWW-Authenticate: Bearer</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalogs-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "may": {"operate": false, "read-audit-feed": true},
+  "catalogs": [
+    {
+      "audit": false,
+      "name": "trading",
+      "may": {"manage-grants": false, "manage-tags": true, "modify": false, "select": true}
+    },
+    {
+      "audit": true,
+      "name": "nuna_audit",
+      "may": {"manage-grants": false, "manage-tags": false, "modify": false, "select": true}
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-properties"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/properties</code></h3>
+        <p>Reads a catalog's own properties: the storage profile, KMS key set and legal entity it was declared with, and where its tables live. The Iceberg REST API has nothing at the catalog level, which is why this route exists. Nothing secret is answered and nothing that names an identity: the profile's access keys, its STS role, the maintenance principal, its CA bundle's path and its KMS key ARN stay out. The answer says whether writes use a KMS key, not which key.</p>
+        <p class="doc-meta"><span class="badge needs">Needs any grant in the catalog</span></p>
+        <h4 id="get-catalog-properties-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-properties-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#catalog-properties">catalog properties</a> follow.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist: <code>The given warehouse does not exist: <var>catalog</var></code> (<code>NoSuchWarehouseException</code>). The refusal is audited.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-properties-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/properties" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "name": "trading",
+  "kms-key-set": "trading-keys",
+  "legal-entity": "Example Trading",
+  "storage-profile": {
+    "name": "onprem",
+    "kind": "CEPH",
+    "endpoint": "https://s3.example",
+    "region": "us-east-1",
+    "table-root": "s3://trading-lake/tables",
+    "allowed-prefixes": ["s3://trading-lake/tables"],
+    "encryption": "sse-kms"
+  }
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="catalog-entry">Catalog entry</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>string</td><td>The catalog's name, as <code>nuna.storage.catalogs</code> declares it.</td></tr>
+            <tr><td><code>audit</code></td><td>boolean</td><td>True for the catalog that holds the audit tables (<code>nuna.audit.tables.catalog</code>).</td></tr>
+            <tr><td><code>may</code></td><td>object</td><td><code>select</code>, <code>modify</code>, <code>manage-grants</code> and <code>manage-tags</code>, each true when one of your groups holds a grant that implies it on the catalog or on anything in it. A grant admin's <code>manage-grants</code> is always true.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="answer-may">The answer's may</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>operate</code></td><td>boolean</td><td>True when you belong to a platform-operator group.</td></tr>
+            <tr><td><code>read-audit-feed</code></td><td>boolean</td><td>True when you hold <code>select</code> on the audit tables' catalog, which <a href="audit.html#get-catalog-audit-feed">the audit feed</a> needs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="catalog-properties">Catalog properties</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>string</td><td>The catalog's name.</td></tr>
+            <tr><td><code>kms-key-set</code></td><td>string</td><td>The KMS key set it was declared with.</td></tr>
+            <tr><td><code>legal-entity</code></td><td>string</td><td>The legal entity it was declared with.</td></tr>
+            <tr><td><code>storage-profile.name</code></td><td>string</td><td>The storage profile's name.</td></tr>
+            <tr><td><code>storage-profile.kind</code></td><td>string</td><td>The object store: <code>S3</code>, <code>MINIO</code> or <code>CEPH</code>.</td></tr>
+            <tr><td><code>storage-profile.endpoint</code></td><td>string</td><td>The object store's endpoint, as configured.</td></tr>
+            <tr><td><code>storage-profile.region</code></td><td>string</td><td>The region, as configured.</td></tr>
+            <tr><td><code>storage-profile.table-root</code></td><td>string</td><td>Where new tables are placed.</td></tr>
+            <tr><td><code>storage-profile.allowed-prefixes</code></td><td>array of strings</td><td>The prefixes a table's location may lie beneath.</td></tr>
+            <tr><td><code>storage-profile.encryption</code></td><td>string</td><td><code>sse-kms</code> when the profile names a KMS key, otherwise <code>bucket-default</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>: the object model.</li>
+          <li><a href="../concepts/storage.html">Storage profiles and credential vending</a>: what a storage profile holds.</li>
+          <li><a href="grants.html">Grants</a>: what makes a catalog visible to a group.</li>
+          <li><a href="../console/catalog.html">The Catalog page</a>: the same properties in the console.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/CatalogProperties.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java</code> and <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StoreKind.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Both examples, and a request with no token, were run against the demo; the responses were rewritten to the fictional estate.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

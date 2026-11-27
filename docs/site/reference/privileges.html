@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/privileges">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privileges · nuna docs</title>
+  <meta name="description" content="Each of the seven privileges: what it allows, on which objects it can be granted, what it includes, its words in the console, and every operation that needs it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Privileges</h1>
+        <p class="lead">Each of the seven privileges: what it allows, on which objects it can be granted, what it includes, its words in the console, and every operation that needs it.</p>
+      </header>
+
+      <h2 id="the-privileges">The privileges</h2>
+      <p>In the order the code defines them. A privilege is written in lower case with hyphens, as the APIs take it. Any other name is refused with <code>400</code>: <code>unknown privilege '<var>name</var>'; known: [describe, select, write, modify, create, manage-grants, manage-tags]</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>What each privilege allows</caption>
+          <thead><tr><th scope="col">Privilege</th><th scope="col">Allows</th><th scope="col">Granted on</th><th scope="col">Includes</th><th scope="col">Duty</th><th scope="col">Console words</th></tr></thead>
+          <tbody>
+            <tr><td><code>describe</code></td><td>Seeing that an object exists: listing it, checking it exists, loading a namespace.</td><td>catalog, namespace, table, view</td><td>nothing else</td><td>reading</td><td><b class="ui">See it</b></td></tr>
+            <tr><td><code>select</code></td><td>Reading data: loading a table or view, receiving read credentials, reporting metrics.</td><td>catalog, namespace, table, view</td><td><code>describe</code></td><td>reading</td><td><b class="ui">Read its data</b></td></tr>
+            <tr><td><code>write</code></td><td>Changing data: commits that add or remove snapshots, statistics and table refs.</td><td>catalog, namespace, table</td><td><code>select</code>, <code>describe</code></td><td>data</td><td><b class="ui">Read and write rows</b></td></tr>
+            <tr><td><code>modify</code></td><td>Changing definitions: schema, partitioning, properties, view versions; dropping and renaming.</td><td>catalog, namespace, table, view</td><td><code>write</code>, <code>select</code>, <code>describe</code></td><td>data</td><td><b class="ui">Change it (schema, properties, maintenance)</b>; on a view, <b class="ui">Change it (definition, properties)</b></td></tr>
+            <tr><td><code>create</code></td><td>Creating namespaces, tables and views inside the object, and registering or restoring tables and views there.</td><td>catalog, namespace</td><td><code>describe</code></td><td>data</td><td><b class="ui">Create tables, views and namespaces in it</b></td></tr>
+            <tr><td><code>manage-grants</code></td><td>Granting and revoking privileges on the object, setting row filters and column masks on its tables, and reading its audit trail.</td><td>catalog, namespace, table, view</td><td><code>describe</code></td><td>grants</td><td><b class="ui">Manage grants</b></td></tr>
+            <tr><td><code>manage-tags</code></td><td>Setting governance attributes (classification, owner, retention class, the regulated and row-column-policy flags) and placing and releasing legal holds.</td><td>catalog, namespace, table, view</td><td><code>describe</code></td><td>tags</td><td><b class="ui">Set labels and holds</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A grant on a catalog or namespace reaches everything under it. Nothing includes <code>create</code>, <code>manage-grants</code> or <code>manage-tags</code>. The server refuses <code>create</code> on a table or view (<code>create means nothing on a table: it creates namespaces, tables and views in a catalog or namespace</code>) and <code>write</code> on a view (<code>write means nothing on a view: it has no rows; select reads it, and modify changes its definition</code>). A grant that names a catalog branch can only be <code>write</code> or <code>modify</code>. Which duties may share a group is in <a href="../security/authorization.html#separation-of-duties">Authorization</a>.</p>
+
+      <h2 id="iceberg-operations">Iceberg REST operations</h2>
+      <p>The privilege each Iceberg REST operation needs, by its operation id, in the order of the routes. "Storage" marks an operation that also hands out or uses storage access, which a table flagged with <code>row-column-policy</code> gives only to trusted engines and maintenance principals.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Operation and the privilege it needs</caption>
+          <thead><tr><th scope="col">Operation</th><th scope="col">Privilege</th><th scope="col">On</th></tr></thead>
+          <tbody>
+            <tr><td><code>listNamespaces</code>, <code>loadNamespaceMetadata</code>, <code>namespaceExists</code></td><td><code>describe</code></td><td>the namespace or its parent</td></tr>
+            <tr><td><code>createNamespace</code></td><td><code>create</code></td><td>the parent</td></tr>
+            <tr><td><code>dropNamespace</code>, <code>updateProperties</code></td><td><code>modify</code></td><td>the namespace</td></tr>
+            <tr><td><code>listTables</code>, <code>tableExists</code>, <code>listViews</code>, <code>viewExists</code></td><td><code>describe</code></td><td>the namespace or object</td></tr>
+            <tr><td><code>createTable</code>, <code>registerTable</code>, <code>createView</code>, <code>registerView</code>, <code>undropObject</code></td><td><code>create</code></td><td>the namespace</td></tr>
+            <tr><td><code>loadTable</code> (storage), <code>loadCredentials</code> (storage), <code>reportMetrics</code>, <code>loadView</code></td><td><code>select</code></td><td>the table or view</td></tr>
+            <tr><td><code>updateTable</code> (storage) with only snapshot, statistics and table-ref updates</td><td><code>write</code></td><td>the table</td></tr>
+            <tr><td><code>updateTable</code> (storage) with any other update</td><td><code>modify</code></td><td>the table</td></tr>
+            <tr><td><code>commitTransaction</code> (storage)</td><td><code>write</code></td><td>each table</td></tr>
+            <tr><td><code>dropTable</code>, <code>unregisterTable</code>, <code>replaceView</code>, <code>dropView</code></td><td><code>modify</code></td><td>the table or view</td></tr>
+            <tr><td><code>renameTable</code>, <code>renameView</code></td><td><code>modify</code> and <code>create</code></td><td><code>modify</code> on the source, <code>create</code> on the destination namespace</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The updates <code>write</code> covers are <code>add-snapshot</code>, <code>remove-snapshots</code>, <code>set-snapshot-ref</code>, <code>remove-snapshot-ref</code>, <code>set-statistics</code>, <code>remove-statistics</code>, <code>set-partition-statistics</code> and <code>remove-partition-statistics</code>. A maintenance principal on main may also send <code>remove-schemas</code> and <code>remove-partition-specs</code> with <code>write</code>.</p>
+
+      <h2 id="management-operations">Management operations</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Management operation and what it needs</caption>
+          <thead><tr><th scope="col">Operation</th><th scope="col">Needs</th></tr></thead>
+          <tbody>
+            <tr><td>Grant, revoke, list grants on an object, effective grants, export grants</td><td><code>manage-grants</code> on the object or above it</td></tr>
+            <tr><td>List your own groups' grants</td><td>any grant in the catalog</td></tr>
+            <tr><td>List another group's grants</td><td><code>manage-grants</code> on the catalog</td></tr>
+            <tr><td>Set, remove or list row filters and column masks</td><td><code>manage-grants</code> on the table or above it</td></tr>
+            <tr><td>Read your own rules on a table</td><td><code>select</code> on the table</td></tr>
+            <tr><td>Read an object's audit trail</td><td><code>manage-grants</code> on the object or above it</td></tr>
+            <tr><td>Read the catalog's audit feed and summary</td><td><code>select</code> on the audit catalog</td></tr>
+            <tr><td>Read governance, holds and the maintenance policy</td><td><code>describe</code></td></tr>
+            <tr><td>Set or remove a governance attribute; place or release a legal hold</td><td><code>manage-tags</code> on the object or above it</td></tr>
+            <tr><td>Set the maintenance policy</td><td><code>modify</code></td></tr>
+            <tr><td>Set or lift a DR freeze; the trusted-engine registry; delete policies</td><td>a platform operator</td></tr>
+            <tr><td>Purge, pending deletions, scan and job reports</td><td>a maintenance principal</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/authorization.html">Authorization</a>: how grants, roles and governance rules decide a request.</li>
+          <li><a href="../concepts/access.html">Identity and access</a>: the model behind the table.</li>
+          <li><a href="../guides/grant-access.html">Grant and revoke access</a>: granting a privilege from the console or curl.</li>
+          <li><a href="../api/grants.html#endpoints">Grants API</a>: every grant endpoint.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-security/src/main/java/nuna/catalog/security/Privilege.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Separation.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java</code> and <code>catalog-server/src/main/resources/nuna/ui/grant.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

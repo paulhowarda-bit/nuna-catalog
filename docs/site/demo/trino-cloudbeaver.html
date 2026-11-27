@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/trino-cloudbeaver">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trino and CloudBeaver in the demo · nuna docs</title>
+  <meta name="description" content="Query the demo's catalogs from Trino in CloudBeaver as a demo user, with nuna's privileges, row filters and column masks applied to that user.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Trino and CloudBeaver in the demo</h1>
+        <p class="lead">Query the demo's catalogs from Trino in CloudBeaver, signed in as a demo person. nuna sees that person in every query and applies their privileges, row filters and column masks.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For data users</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The demo is running, and the CDC leg is not: Trino stops while it runs.</li>
+        <li>You have trusted the demo's certificate (<a href="start-stop.html#https-and-the-certificate">HTTPS and the certificate</a>).</li>
+        <li>You know a person's password, from <code>~/.nuna-demo/people</code> (<a href="sign-in.html">Demo users and sign-in</a>).</li>
+      </ul>
+
+      <h2 id="how-it-works">How the query reaches nuna</h2>
+      <p>CloudBeaver on port 8185 is a SQL editor in the browser. Each person has their own connections and sees only those; the Trino one is named like <code>nuna (Trino, as ana)</code>. It sends Trino the person's own token as the extra credential <code>token</code>, and Trino passes it to nuna with each request (<code>iceberg.rest-catalog.session=USER</code>). Trino's own token goes with it, in the header <code>X-Nuna-Engine-Authorization</code>, and vouches for the person: Trino's client <code>trino-demo</code> is registered as a trusted engine, and its own group holds no grant.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Trino catalog</th><th scope="col">nuna catalog</th></tr></thead>
+          <tbody>
+            <tr><td><code>lakehouse</code></td><td><code>lakehouse</code></td></tr>
+            <tr><td><code>lakehouse_dev</code></td><td><code>lakehouse</code>'s branch <code>dev</code> (warehouse <code>lakehouse@dev</code>)</td></tr>
+            <tr><td><code>engines</code></td><td><code>engines</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="run-a-query">Run a query</h2>
+      <ol class="steps">
+        <li><p class="step-title">Sign in to CloudBeaver.</p>
+          <p>Go to <code>https://localhost:8185</code> and sign in through Keycloak as <code>ana</code>.</p></li>
+        <li><p class="step-title">Open your Trino connection.</p>
+          <p>Open <code>nuna (Trino, as ana)</code> and a SQL editor on it. The navigator lists every namespace at every depth as a schema named by its dotted path.</p></li>
+        <li><p class="step-title">Query a table.</p>
+          <p>Quote the namespace, since it holds dots:</p>
+          <div class="code" data-lang="sql">
+<pre><code>SELECT * FROM lakehouse."markets.fx".rates;
+SELECT * FROM lakehouse."markets.equities.eu.xetra".trades;</code></pre>
+          </div>
+          <p>The first query after Trino starts takes about 10 seconds; later ones about 2.</p></li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The query runs as you</p>
+        <p>The console's Audit page, read as <code>gary</code> or <code>presenter</code>, lists the read with the person as end user and Trino, engine <code>trino-demo</code>, acting for them.</p>
+      </aside>
+
+      <h2 id="what-each-person-sees">What each person can do</h2>
+      <ul>
+        <li><code>ana</code> reads and changes data and definitions: <code>CREATE SCHEMA</code>, <code>CREATE TABLE</code>, <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>ALTER</code> and <code>DROP</code>.</li>
+        <li><code>stella</code> reads.</li>
+        <li><code>gary</code> and <code>oscar</code> see the namespaces and tables listed, but every read fails, since they hold no grant on data: <code>Failed to load table 'positions'</code>.</li>
+      </ul>
+
+      <h2 id="row-filters-and-column-masks">Row filters and column masks</h2>
+      <p>The table <code>markets.desks.positions</code> is flagged, and each group has a rule on it. Trino asks nuna for the rules through its OPA access control, forwarding the person's token, and applies them. Run the same query as <code>ana</code> and as <code>stella</code>:</p>
+      <div class="code" data-lang="sql">
+<pre><code>SELECT * FROM lakehouse."markets.desks".positions;</code></pre>
+      </div>
+      <h3 id="as-ana">As <code>ana</code></h3>
+      <p>The equity desk's three rows, each trader's name masked:</p>
+      <div class="code" data-lang="text">
+<pre><code>"desk","trader","symbol","quantity","pnl"
+"EQ","***","SAP","1200","18250.00"
+"EQ","***","ASML","300","-4100.50"
+"EQ","***","SIE","800","9120.25"</code></pre>
+      </div>
+      <h3 id="as-stella">As <code>stella</code></h3>
+      <p>All six rows, with <code>pnl</code> empty:</p>
+      <div class="code" data-lang="text">
+<pre><code>"desk","trader","symbol","quantity","pnl"
+"EQ","Mia Novak","SAP","1200",""
+"EQ","Mia Novak","ASML","300",""
+"EQ","Leo Brandt","SIE","800",""
+"FX","Ida Moreau","EURUSD","5000000",""
+"FX","Ida Moreau","GBPUSD","2000000",""
+"RATES","Tom Okafor","BUND-10Y","150",""</code></pre>
+      </div>
+      <p>Read without a trusted engine, such as from Spark with the person's own token, the table's data answers 403: only a trusted engine gets a flagged table's files. <code>gary</code> lists and changes the rules at <code>/management/v1/catalogs/lakehouse/row-column-rules</code>.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <p>Trino's CLI in its pod runs a query as a person. <code>--debug</code> prints the cause of a refusal:</p>
+      <div class="code" data-lang="bash">
+<pre><code>MSYS_NO_PATHCONV=1 kubectl --context kind-nuna -n nuna-demo exec deployment/trino -- \
+  trino --user ana --debug \
+  --extra-credential "token=$(cat ~/.nuna-demo/tokens/ana.jwt)" \
+  --execute 'SELECT * FROM lakehouse."markets.desks".positions'</code></pre>
+      </div>
+      <p>The user name names the query in Trino; Trino checks no password. A query without a token fails: Trino then asks nuna to exchange one, and nuna issues none.</p>
+
+      <h2 id="cloudbeaver-administration">CloudBeaver's administration</h2>
+      <p><code>oscar</code> administers CloudBeaver: select <b class="ui">Settings</b>, then <b class="ui">Administration</b>. Scripts and settings last as long as CloudBeaver's pod, which <code>engines</code> and <code>cdc</code> restart; each new pod adds the people and their connections again. While the CDC leg runs, each person also has connections to its three databases (<a href="cdc.html">Change data capture in the demo</a>).</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>Failed to load table '<var>table</var>'</code></td><td>The person holds no read privilege on it.</td><td>Sign in as someone who does, such as <code>ana</code> or <code>stella</code>.</td></tr>
+            <tr><td>The Trino connection does not answer.</td><td>The CDC leg or the engine matrix is running, and Trino is stopped for their memory.</td><td>Wait for <code>engines</code> to end, or run <code>demo/demo.sh cdc stop</code>.</td></tr>
+            <tr><td>A query fails with no reason.</td><td>Trino shows nuna's reason only in the error's cause.</td><td>Run it with the CLI and <code>--debug</code>, above.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../clients/trino.html">Trino</a>: setting Trino up against your own nuna.</li>
+          <li><a href="sign-in.html">Demo users and sign-in</a></li>
+          <li><a href="../start/first-branch.html">Work on a catalog branch</a>: <code>lakehouse_dev</code> in use.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/k8s/trino.yaml</code>, <code>demo/k8s/cloudbeaver.yaml</code>, <code>demo/demo.sh</code> (Trino's registration as a trusted engine) and <code>demo/README.md</code> (Trino and CloudBeaver), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The positions query was run in the running demo with Trino's CLI as <code>ana</code>, <code>stella</code> and <code>gary</code>; the outputs above are theirs. CloudBeaver's pages were not opened.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

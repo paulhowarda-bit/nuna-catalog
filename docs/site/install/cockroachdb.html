@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/cockroachdb">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Use CockroachDB · nuna docs</title>
+  <meta name="description" content="Prepare a CockroachDB database and user for the catalog server, connect to it, and pass the safety self-check the server runs before it starts.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Use CockroachDB</h1>
+        <p class="lead">Prepare a CockroachDB database and user for the catalog server, connect to it, and pass the safety self-check the server runs before it starts.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators and database administrators</span>
+          <span class="badge tested">Tested nightly</span>
+        </p>
+      </header>
+
+      <p>The server reaches CockroachDB with the PostgreSQL driver, so <code>nuna.database.backend</code> stays <code>postgresql</code>; the server sees CockroachDB from the version it reports and uses its own schema for it. nuna's tests run on CockroachDB v25.4.20.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You can create users and databases and change cluster settings and zone configurations, or you work with someone who can.</li>
+        <li>The cluster keeps 3 voting replicas of the catalog's data.</li>
+      </ul>
+
+      <h2 id="prepare-cluster">Prepare the cluster</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Allow READ COMMITTED transactions.</p>
+          <div class="code" data-lang="sql">
+<pre><code>SET CLUSTER SETTING sql.txn.read_committed_isolation.enabled = true;</code></pre>
+          </div>
+          <p>Without it CockroachDB runs a READ COMMITTED transaction as SERIALIZABLE, and the store's locking is verified only under READ COMMITTED.</p>
+        </li>
+        <li>
+          <p class="step-title">Create the database and the server's user.</p>
+          <div class="code" data-lang="sql">
+<pre><code>CREATE DATABASE catalog;
+CREATE USER nuna_catalog;
+ALTER DATABASE catalog OWNER TO nuna_catalog;
+GRANT SYSTEM VIEWCLUSTERSETTING TO nuna_catalog;</code></pre>
+          </div>
+          <p>The first server of a release creates the schema's tables in the user's current schema. <code>VIEWCLUSTERSETTING</code> lets the self-check read whether the Raft log is synced.</p>
+        </li>
+        <li>
+          <p class="step-title">Keep 3 voting replicas for the database and its tables.</p>
+          <p>The self-check reads <code>SHOW ZONE CONFIGURATION</code> for the database and every table in the user's schema and counts <code>num_voters</code>, or <code>num_replicas</code> where no voters are set.</p>
+        </li>
+      </ol>
+
+      <h2 id="connect-server">Connect the server</h2>
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://crdb.example:26257/catalog?sslmode=verify-full
+      username: nuna_catalog
+  nuna:
+    database:
+      backend: postgresql</code></pre>
+      </div>
+      <p>The password goes in the server's Secret as <code>spring.datasource.password</code> (<a href="helm-catalog.html">Install the catalog server with Helm</a>).</p>
+      <p class="gap">Not documented yet: signing in to CockroachDB by a client certificate with the chart's <code>databaseTls</code>. The chart mounts the files for any JDBC URL, but only PostgreSQL's client-certificate sign-in is described or exercised.</p>
+
+      <h2 id="safety-self-check">The safety self-check</h2>
+      <p>Before it migrates the schema, each server checks these. Any finding stops it with <code>The catalog's database is unsafe, so the server does not start</code>, followed by each <code><var>code</var>: <var>detail</var></code>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>CockroachDB findings</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Detail the server logs</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>crdb.replicas</code></td><td><code>every zone holding catalog data needs 3 voting replicas; <var>target</var> has <var>n</var>, …</code></td><td>Raise <code>num_voters</code> (or <code>num_replicas</code>) to 3 for each target named.</td></tr>
+            <tr><td><code>crdb.fsync-off</code></td><td><code>kv.raft_log.synchronization.unsafe.disabled is <var>value</var>; it must be false</code>, or <code>cannot read kv.raft_log.synchronization.unsafe.disabled (the catalog role needs VIEWCLUSTERSETTING): …</code></td><td>Set the setting to <code>false</code>, or grant <code>VIEWCLUSTERSETTING</code>.</td></tr>
+            <tr><td><code>crdb.read-committed-off</code></td><td><code>a READ COMMITTED transaction runs as <var>isolation</var>; set sql.txn.read_committed_isolation.enabled to true, the isolation the store's locking is verified under</code></td><td>Set the cluster setting, as above.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>nuna.database.allow-unsafe</code> names findings the server starts despite, logging each as a warning. Leave it empty in production (<a href="../configure/database.html#nuna-database-allow-unsafe">Database settings</a>).</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The server reports CockroachDB</p>
+        <p>As a platform operator, <code>GET /management/v1/health/server?store=true</code> shows <code>"configured": "postgresql"</code>, a <code>backend</code> naming CockroachDB, and an empty <code>allowed</code> list (<a href="verify.html#read-health-routes">Check the install</a>).</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>The catalog's database is unsafe, so the server does not start</code> with a <code>crdb.</code> code</td><td>A setting from the table above.</td><td>Change it as the table says.</td></tr>
+            <tr><td><code>YugabyteDB is not a supported backend (the server reports "…"); the supported backends are PostgreSQL, CockroachDB, Oracle and MongoDB</code></td><td>The URL points at YugabyteDB.</td><td>Use a supported database.</td></tr>
+            <tr><td><code>schema migration failed</code></td><td>The user cannot create the schema's objects.</td><td>Make the user the database's owner.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/databases.html">Choosing a database</a>: how CockroachDB compares.</li>
+          <li><a href="../configure/database.html">Database settings</a>: <code>nuna.database.*</code>.</li>
+          <li><a href="postgresql.html">Use PostgreSQL</a>: the same driver, with a client certificate.</li>
+          <li><a href="helm-catalog.html">Install the catalog server with Helm</a>: where these values go.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/SelfChecks.java</code>, <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java</code>, <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code>, <code>gradle.properties</code> and <code>deploy/README.md</code> (The database), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The SQL statements were not run for this page. They are standard CockroachDB statements chosen to meet what the self-check reads; the test fixture (<code>catalog-store-sql/src/test/java/nuna/catalog/store/sql/CockroachCluster.java</code>) runs a three-node insecure cluster as <code>root</code>, so no test exercises a least-privilege user.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

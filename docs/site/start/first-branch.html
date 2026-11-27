@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="start/first-branch">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Work on a catalog branch · nuna docs</title>
+  <meta name="description" content="Write to the demo's catalog branch dev from an engine, compare it with main in the console, merge it into main, tag the result and make the branch again. It takes about 20 minutes.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="tutorial">
+      <header class="doc-head">
+        <h1>Work on a catalog branch</h1>
+        <p class="lead">Write to the demo's catalog branch <code>dev</code> from an engine, compare it with main in the console, merge it into main, tag the result and make the branch again. It takes about 20 minutes.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For engine users and data stewards</span></p>
+      </header>
+
+      <h2 id="what-you-need">What you need</h2>
+      <ul>
+        <li>The demo running, as <a href="quickstart.html">Run nuna on your laptop</a> leaves it.</li>
+        <li>The console at <code>https://localhost:8181/ui/</code> and CloudBeaver at <code>https://localhost:8185</code>, both signed in as <code>ana</code>.</li>
+        <li><code>NUNA</code> and <code>TOKEN</code> set for <code>ana</code>, as in <a href="first-table.html#get-a-token">Create your first table</a>.</li>
+      </ul>
+      <p>A <a href="../concepts/branches-and-tags.html">catalog branch</a> holds every table of the catalog as it was at one moment and takes commits of its own, without copying a file. A merge moves what the branch changed onto main, every table in one transaction. An engine reaches a branch as a warehouse of its own, <code>lakehouse@dev</code>.</p>
+
+      <h2 id="look-at-the-branch-the-demo-made">Look at the branch the demo made</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Select <b class="ui">Branches and tags</b> in the console's rail.</p>
+          <p>The demo made two refs when it first loaded its sample data, as <code>ana</code>: branch <code>@dev</code>, on which its lake writer committed the next day's trades and rates (2026-11-11) to <code>markets.equities.eu.xetra.trades</code> and <code>markets.fx.rates</code>, and tag <code>@sample</code>, which keeps the sample data as it was loaded.</p>
+        </li>
+        <li>
+          <p class="step-title">List the same refs with curl.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $TOKEN" \
+  "$NUNA/management/v1/catalogs/lakehouse/refs"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "refs": [
+    {
+      "id": "738f98ad-37ba-4e50-b472-d6ba96857ccb",
+      "name": "dev",
+      "kind": "branch",
+      "from": "main",
+      "created-at": "2026-11-26T15:17:22.587Z",
+      "created-by": "ana",
+      "expires-at": "2026-12-26T15:17:22.587Z",
+      "max-expires-at": "2027-05-25T15:17:22.587Z",
+      "expiring": false,
+      "cut-at": "2026-11-26T15:17:22.587Z",
+      "changed-count": 2
+    },
+    {
+      "id": "82dae882-ca9c-461e-a684-52ecb2aadfc7",
+      "name": "sample",
+      "kind": "tag",
+      "from": "main",
+      "created-at": "2026-11-26T15:17:33.490Z",
+      "created-by": "ana",
+      "cut-at": "2026-11-26T15:17:33.490Z"
+    }
+  ],
+  "limits": {
+    "max-branches": 50,
+    "max-tags": 1000,
+    "max-merge-tables": 100,
+    "branch-idle-expiry": "PT720H",
+    "branch-max-life": "PT4320H",
+    "expiry-warning": "PT168H",
+    "max-description": 200
+  },
+  "may": {
+    "create": true
+  }
+}</code></pre>
+          </div>
+          <p>A branch expires 30 days (<code>PT720H</code>) after it was made or last renewed, and never later than 180 days after it was made. A tag never expires.</p>
+        </li>
+      </ol>
+      <figure class="shot" id="fig-first-branch-refs"><img src="../img/shots/start-first-branch-refs-light.png" data-dark="../img/shots/start-first-branch-refs-dark.png" width="1440" height="900" alt="Branches and tags of catalog lakehouse as ana sees them: the branch @dev and the tag @sample."><figcaption>Branches and tags of catalog <code>lakehouse</code>: the branch <code>@dev</code> and the tag <code>@sample</code>.</figcaption></figure>
+      <aside class="callout check">
+        <p class="callout-title">The page lists @dev and @sample</p>
+        <p><code>@dev</code> is a branch with 2 changed tables and <code>@sample</code> a tag, both made by <code>ana</code>. If <code>@dev</code> is missing, someone merged or deleted it: make it again as the last stage of this page says, then come back.</p>
+      </aside>
+
+      <h2 id="write-to-the-branch">Write to the branch</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Add a rate for 2026-11-11 to <code>markets.fx.rates</code> on <code>dev</code>.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="curl" data-label="curl">
+              <p>curl cannot write rows, so this commit changes a table property instead. It is a commit on the branch all the same, through the warehouse <code>lakehouse@dev</code>; <code>%1F</code> separates the namespace's levels in a path.</p>
+              <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X POST "$NUNA/v1/lakehouse@dev/namespaces/markets%1Ffx/tables/rates" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"requirements": [], "updates": [{"action": "set-properties", "updates": {"comment": "Reviewed on dev"}}]}'</code></pre>
+              </div>
+              <p>The answer is the table's new metadata on the branch. Its <code>metadata-location</code> ends in <code>.branch-<var>id</var>.metadata.json</code>, where <var>id</var> is the branch's id: main's metadata is untouched.</p>
+            </section>
+            <section class="tab" data-tab="spark" data-label="Spark">
+              <p>Start <code>spark-sql</code> with a second catalog whose warehouse is the branch. Its settings are those of <code>lakehouse</code> in <a href="first-table.html#point-an-engine-at-the-demo">Create your first table</a>, with the warehouse changed:</p>
+              <div class="code" data-lang="bash">
+<pre><code>spark-sql \
+  --packages org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:1.12.0,org.apache.iceberg:iceberg-aws-bundle:1.12.0 \
+  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+  --conf spark.sql.catalog.lakehouse_dev=org.apache.iceberg.spark.SparkCatalog \
+  --conf spark.sql.catalog.lakehouse_dev.type=rest \
+  --conf spark.sql.catalog.lakehouse_dev.uri=https://localhost:8181/ \
+  --conf spark.sql.catalog.lakehouse_dev.warehouse=lakehouse@dev \
+  --conf "spark.sql.catalog.lakehouse_dev.token=$TOKEN" \
+  --conf spark.sql.catalog.lakehouse_dev.header.X-Iceberg-Access-Delegation=vended-credentials \
+  --conf spark.sql.catalog.lakehouse_dev.io-impl=org.apache.iceberg.aws.s3.S3FileIO</code></pre>
+              </div>
+              <div class="code" data-lang="sql">
+<pre><code>INSERT INTO lakehouse_dev.markets.fx.rates
+VALUES ('USDJPY', 152.07, TIMESTAMP '2026-11-11 16:00:00 UTC', 'ECB');</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="trino" data-label="Trino">
+              <p>The demo's Trino has a catalog <code>lakehouse_dev</code> whose warehouse is <code>lakehouse@dev</code>, beside <code>lakehouse</code>, which reads and writes main. Run this in CloudBeaver on <b class="ui">nuna (Trino, as ana)</b>:</p>
+              <div class="code" data-lang="sql">
+<pre><code>INSERT INTO lakehouse_dev."markets.fx".rates
+VALUES ('USDJPY', 152.07, TIMESTAMP '2026-11-11 16:00:00 UTC', 'ECB');</code></pre>
+              </div>
+              <p>Trino names a nested namespace by its dotted path, in quotes.</p>
+            </section>
+            <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+              <div class="code" data-lang="python">
+<pre><code>import os
+from datetime import datetime, timezone
+
+import pyarrow as pa
+from pyiceberg.catalog import load_catalog
+
+dev = load_catalog("lakehouse_dev", **{
+    "type": "rest",
+    "uri": "https://localhost:8181",
+    "warehouse": "lakehouse@dev",
+    "token": os.environ["TOKEN"],
+    "header.X-Iceberg-Access-Delegation": "vended-credentials",
+})
+rates = dev.load_table("markets.fx.rates")
+rows = pa.schema([("pair", pa.string()), ("rate", pa.float64()),
+                  ("as_of", pa.timestamp("us", tz="UTC")), ("source", pa.string())])
+rates.append(pa.Table.from_pylist([
+    {"pair": "USDJPY", "rate": 152.07,
+     "as_of": datetime(2026, 11, 11, 16, 0, tzinfo=timezone.utc), "source": "ECB"},
+], schema=rows))</code></pre>
+              </div>
+            </section>
+          </div>
+          <p>A branch takes commits to the tables it holds. Creating, dropping or renaming a table or namespace happens on main only; through <code>lakehouse_dev</code>, Trino refuses a <code>CREATE TABLE</code> itself with <code>Server does not support endpoint: POST /v1/{prefix}/namespaces/{namespace}/tables</code>.</p>
+          <p class="gap">Not documented yet: how Spark and PyIceberg on your laptop reach the demo's table files. The server vends <code>s3.endpoint</code> <code>http://s3:9000</code>, which resolves only inside the demo's cluster; the Spark and PyIceberg tabs have not been run from outside it.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">Only the branch has the new rate</p>
+        <p>In CloudBeaver, compare main and the branch:</p>
+        <div class="code" data-lang="sql">
+<pre><code>SELECT pair, rate, as_of FROM lakehouse."markets.fx".rates ORDER BY as_of, pair;
+SELECT pair, rate, as_of FROM lakehouse_dev."markets.fx".rates ORDER BY as_of, pair;</code></pre>
+        </div>
+        <p>The second query lists rates for 2026-11-11, <code>USDJPY</code> among them; the first lists none for that day.</p>
+      </aside>
+
+      <h2 id="compare-the-branch-with-main">Compare the branch with main</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Select <code>@dev</code> on the <b class="ui">Branches and tags</b> page.</p>
+          <p>The branch's page opens on its <b class="ui">Changes</b> tab, which lists each table the branch changed since it was cut from main.</p>
+        </li>
+        <li>
+          <p class="step-title">Read the same list with curl.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $TOKEN" \
+  "$NUNA/management/v1/catalogs/lakehouse/refs/dev"</code></pre>
+          </div>
+          <p>The answer is the branch with a <code>changed</code> array: for each table, its <code>namespace</code>, <code>name</code>, <code>kind</code>, the version main had when the branch was cut (<code>cut-version</code>) and the branch's own <code>version</code>.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">Changes lists the two tables</p>
+        <p><code>markets.equities.eu.xetra.trades</code> and <code>markets.fx.rates</code> are listed. Your write added a version to <code>markets.fx.rates</code> on the branch; main's version of it is unchanged.</p>
+      </aside>
+
+      <h2 id="merge-the-branch">Merge the branch</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Select <b class="ui">Merge…</b> on <code>@dev</code>'s line of the <b class="ui">Branches and tags</b> page.</p>
+          <p>The branch's <b class="ui">Merge</b> tab opens with the server's dry run, which moves nothing. It says <b class="ui">Ready to merge: 2 tables would move to main in one transaction.</b> and, for each table, how main would judge the commit: the privilege your groups hold for it and whether main's commit rules pass. The trades table's legal hold allows the merge, because a merge only adds snapshots.</p>
+          <p>The same dry run over the API:</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X POST "$NUNA/management/v1/catalogs/lakehouse/refs/dev/merge?dry-run=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>Its answer has <code>"dry-run": true</code>, <code>answer.code</code> with the status the merge would get (<code>200</code> when it would succeed), <code>changed</code> with the number of tables, <code>may-merge</code>, and per table <code>moves</code>, <code>verdict.allowed</code> and <code>right.needs</code>, the privilege the move needs on main: <code>write</code> for data alone, <code>modify</code> for a change to the table's definition, such as a property.</p>
+        </li>
+        <li>
+          <p class="step-title">Select <b class="ui">Merge @dev into main</b>.</p>
+          <p>A dialog shows each table's version on main now and after the merge.</p>
+        </li>
+        <li>
+          <p class="step-title">Select <b class="ui">Merge into main</b>.</p>
+          <p>The console says <b class="ui">Merged @dev into main</b> with the time, and lists main's new version of each table. The branch has ended: its name is free, and <code>lakehouse@dev</code> answers <code>404</code>. Over the API, the merge is the same call without <code>?dry-run=true</code>; it answers <code>200</code> with each table's new <code>version</code> and <code>metadata-location</code> on main.</p>
+          <p>If the console says <code>@dev cannot merge: 1 table changed on main too</code>, someone committed to one of the branch's tables on main after the branch was cut, for example with <code>demo/demo.sh rate</code>, which appends to main's rates. The server refuses the whole merge with <code>409</code> <code>RefMergeConflictException</code>, because every table moves or none does. Make a new branch from main and redo the change there.</p>
+        </li>
+      </ol>
+      <figure class="shot" id="fig-first-branch-merge"><img src="../img/shots/start-first-branch-merge-light.png" data-dark="../img/shots/start-first-branch-merge-dark.png" width="1440" height="900" alt="The Merge tab of @dev as demo.sh up leaves it: the dry run says both tables would move to main in one transaction."><figcaption>The Merge tab of @dev: the dry run says both tables would move to main in one transaction. Taken as demo.sh up leaves the branch, before this page's write.</figcaption></figure>
+      <aside class="callout check">
+        <p class="callout-title">Main now has the branch's rows</p>
+        <p>The first query of the previous check now lists the rates of 2026-11-11, <code>USDJPY</code> among them. The second fails, because <code>lakehouse_dev</code> names a branch that no longer exists.</p>
+      </aside>
+
+      <h2 id="tag-the-result">Tag the result</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Select <b class="ui">Make a branch or tag</b> on the <b class="ui">Branches and tags</b> page.</p>
+        </li>
+        <li>
+          <p class="step-title">Select <b class="ui">Tag</b> as the <b class="ui">Kind</b>, enter <code>tutorial-1</code> as the <b class="ui">Name</b> and choose <b class="ui">main, as it is now</b> as <b class="ui">From</b>.</p>
+          <p>Names take letters, digits, dot, dash and underscore, and compare without case. <b class="ui">Purpose (optional)</b> takes one line that everyone who can see the catalog's refs reads.</p>
+        </li>
+        <li>
+          <p class="step-title">Select <b class="ui">Make it</b>.</p>
+          <p>The console says <b class="ui">Made the tag @tutorial-1</b>. Over the API, the same tag is one call; the server answers <code>201</code> with the tag:</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X POST "$NUNA/management/v1/catalogs/lakehouse/refs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "tutorial-1", "kind": "tag", "from": "main", "description": "After the tutorial merge"}'</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "id": "6e6502b4-84ae-4427-aafd-9d4df6584733",
+  "name": "tutorial-1",
+  "kind": "tag",
+  "from": "main",
+  "created-at": "2026-11-27T03:29:21.841Z",
+  "created-by": "ana",
+  "description": "After the tutorial merge",
+  "cut-at": "2026-11-27T03:29:21.841Z"
+}</code></pre>
+          </div>
+          <p>A name already taken answers <code>409</code> with <code>Ref already exists: tutorial-1</code>.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The tag is read-only</p>
+        <p>An engine reads the tag as the warehouse <code>lakehouse@tutorial-1</code>. A commit through it is refused with <code>400</code> and <code>updateTable is refused on tag tutorial-1 of catalog lakehouse: a tag is read-only</code>.</p>
+      </aside>
+
+      <h2 id="make-the-branch-again">Make the branch again</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Make a branch named <code>dev</code> from main.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="console" data-label="Console">
+              <p>Select <b class="ui">Make a branch or tag</b>, select <b class="ui">Branch</b> as the <b class="ui">Kind</b>, enter <code>dev</code> as the <b class="ui">Name</b>, choose <b class="ui">main, as it is now</b> as <b class="ui">From</b> and select <b class="ui">Make it</b>.</p>
+            </section>
+            <section class="tab" data-tab="curl" data-label="curl">
+              <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X POST "$NUNA/management/v1/catalogs/lakehouse/refs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "dev", "kind": "branch", "from": "main"}'</code></pre>
+              </div>
+            </section>
+          </div>
+          <p>The demo makes <code>dev</code> only on a new lake, so it does not make it again on the next <code>up</code> while <code>@sample</code> exists.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">Trino reads the new branch at once</p>
+        <p>The second query of the comparison runs again, on the new <code>dev</code>, and returns what main holds now.</p>
+      </aside>
+
+      <h2 id="what-you-did">What you did</h2>
+      <p>You wrote to a catalog branch through its own warehouse, <code>lakehouse@dev</code>, while main stayed as it was. You compared the branch with main, previewed the merge with the server's dry run and merged both changed tables in one transaction. You tagged main as it stood after the merge and made the branch again for the next person. Next, take <a href="console-tour.html">the tour of the console</a>, or read <a href="../guides/branch-workflow.html">Write, audit and publish with a branch</a> to use branches in your own work.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>: how refs work, and how they differ from a table's own branches.</li>
+          <li><a href="../console/branches-and-tags.html">The Branches and tags page</a>: every element of the console's refs pages.</li>
+          <li><a href="../api/refs.html#endpoints">Branches and tags API</a>: every ref endpoint, with its refusals.</li>
+          <li><a href="../guides/tag.html">Keep a point in time with a tag</a>: reading through a tag and removing it.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java</code>, the console's <code>refs.js</code> and <code>route.js</code>, <code>demo/demo.sh</code> (<code>refs</code>), <code>demo/LakeWriter.java</code>, <code>demo/k8s/trino.yaml</code>, <code>demo/README.md</code> (Branches and tags of the catalog), <code>catalog-tests-engines/images/spark/run.sh</code> and <code>catalog-tests-engines/images/python/refs_matrix.py</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The demo's <code>dev</code> branch is shared, so this page's steps were not run on it. The API steps were run as <code>ana</code> on a branch of the same kind instead, <code>tutorial-dev</code>, on a table made for the purpose: making the branch, a <code>set-properties</code> commit through <code>lakehouse@tutorial-dev</code>, reading the branch, the dry run, the merge, making the tag <code>tutorial-1</code>, a commit through the tag, and a name already taken. The refs list and the tag's response shown are from those runs; everything made was removed afterwards.</p>
+        <p>The Spark, Trino and PyIceberg statements and the console steps were not run. The Trino statements and the console's merge words come from <code>demo/README.md</code> and <code>refs.js</code>; the Spark and PyIceberg settings from the engine tests' scripts, which run inside the cluster.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

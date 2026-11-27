@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/what-is-audited">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What is audited · nuna docs</title>
+  <meta name="description" content="Every action and refusal that leaves an audit record, by record type, how each record is written, and what leaves no record.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>What is audited</h1>
+        <p class="lead">Every action and refusal that leaves an audit record, by record type, how each record is written, and what leaves no record.</p>
+      </header>
+
+      <p>Every record goes to the server's log <code>nuna.audit</code> at <code>INFO</code>; the server refuses to start if that log is set coarser than <code>INFO</code>. With Kafka configured, records also go to the audit topic, best effort. The fields of each record are in <a href="../reference/audit-records.html">Audit record format</a>; how records are chained, carried and kept is in <a href="../concepts/audit.html">The audit trail</a>.</p>
+
+      <h2 id="changes">Changes</h2>
+      <p>A change is recorded in the same database transaction as the change itself, through an outbox, so a change that happened always has its record and a record never describes a change that did not happen. In the order the code defines the types; each type's name is <code>nuna.catalog.</code> followed by the name in the first column.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Record types written with a change</caption>
+          <thead><tr><th scope="col">Type</th><th scope="col">Recorded when</th></tr></thead>
+          <tbody>
+            <tr><td><code>commit</code></td><td>A table or view's metadata pointer moves: a commit, a create, a register. A multi-table commit writes one per table, with one commit id.</td></tr>
+            <tr><td><code>grant</code></td><td>A privilege is granted or revoked (<code>GRANTED</code>, <code>REVOKED</code>), including the audit catalog's grants the server makes at start-up, recorded as granted by <code>nuna-configuration</code>.</td></tr>
+            <tr><td><code>drop</code></td><td>A table or view is dropped, with the time after which it can be purged.</td></tr>
+            <tr><td><code>namespace</code></td><td>A namespace is created, its properties change, or it is dropped (<code>CREATED</code>, <code>PROPERTIES_CHANGED</code>, <code>DROPPED</code>).</td></tr>
+            <tr><td><code>rename</code></td><td>A table or view is renamed or moved to another namespace.</td></tr>
+            <tr><td><code>engine</code></td><td>A trusted engine is registered or removed (<code>REGISTERED</code>, <code>REMOVED</code>).</td></tr>
+            <tr><td><code>storage-setup</code></td><td>A storage profile is set or a catalog is created from the settings at start-up (<code>PROFILE_SET</code>, <code>CATALOG_CREATED</code>). Store credentials are never recorded.</td></tr>
+            <tr><td><code>governance</code></td><td>An attribute is set or removed (<code>SET</code>, <code>REMOVED</code>): classification, owner, retention class, <code>regulated</code>, <code>row-column-policy</code>, the maintenance policy, a DR freeze, or a request for maintenance now. Includes the flags the server removes at start-up from catalogs, namespaces and views.</td></tr>
+            <tr><td><code>hold</code></td><td>A legal hold is placed or released (<code>PLACED</code>, <code>RELEASED</code>), with its reason.</td></tr>
+            <tr><td><code>undrop</code></td><td>A dropped table or view is restored.</td></tr>
+            <tr><td><code>purge</code></td><td>A dropped table or view is marked purged once the worker has deleted its files.</td></tr>
+            <tr><td><code>unregister</code></td><td>A table is unregistered: the catalog stops tracking it and deletes nothing.</td></tr>
+            <tr><td><code>label</code></td><td>A classification, owner or retention class sent to engines changes, beside its <code>governance</code> record.</td></tr>
+            <tr><td><code>purge-claim</code></td><td>The worker claims a dropped object for purge, before deleting its files. From then on it cannot be restored.</td></tr>
+            <tr><td><code>file-deletion</code></td><td>The worker records files it no longer needs as pending deletions, and later reports them deleted (<code>RECORDED</code>, <code>DELETED</code>).</td></tr>
+            <tr><td><code>ref</code></td><td>A catalog branch or tag is made, renewed, deleted, merged, warned of before it expires, or ends at its expiry, or an object is taken out of one (<code>CREATED</code>, <code>RENEWED</code>, <code>DELETED</code>, <code>MERGED</code>, <code>EXPIRING</code>, <code>EXPIRED</code>, <code>OBJECT_REMOVED</code>). The expiry warning changes nothing and is written at once, not through the outbox.</td></tr>
+            <tr><td><code>row-column-rule</code></td><td>A group's row filter and column masks on a table are set or removed (<code>SET</code>, <code>REMOVED</code>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="reads-and-refusals">Reads, refusals and credentials</h2>
+      <p>These are written as they happen, before the answer is sent.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Record types written at once</caption>
+          <thead><tr><th scope="col">Type</th><th scope="col">Recorded when</th><th scope="col">If it cannot be written</th></tr></thead>
+          <tbody>
+            <tr><td><code>read</code></td><td>A table or view is loaded, including a load answered <code>304</code>; the console reads a table's schema; an object is exported.</td><td>The read is still answered.</td></tr>
+            <tr><td><code>denial</code></td><td>The server refuses a request on authorization or governance: a missing privilege, an unclassified table in a regulated area, a flagged table, an identity-less write, a legal hold, a DR freeze, the minimum snapshot age, separation of duties, the self-grant rule, a column a rule names, a role-only operation. Refusals answered as a missing name are recorded too.</td><td>The refusal still stands.</td></tr>
+            <tr><td><code>auth-failure</code></td><td>A request's token is missing or refused, or an unregistered client names an end user. The token is never recorded.</td><td>The refusal still stands.</td></tr>
+            <tr><td><code>credential-issue</code></td><td>Storage credentials are vended. The credentials are never recorded.</td><td>The credentials are discarded and the request answers <code>503</code>.</td></tr>
+            <tr><td><code>audit-read</code></td><td>Someone reads an object's audit trail, the catalog's audit feed or summary, a record's place in the chain, or the drop record of a dropped object.</td><td>See the note below the table.</td></tr>
+            <tr><td><code>maintenance-exemption</code></td><td>A maintenance principal is given storage access to a flagged table.</td><td>The access is refused with <code>503</code>.</td></tr>
+            <tr><td><code>run-end</code></td><td>A server stops in order: the last record of its run.</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">Not documented yet: what happens to the request when an <code>audit-read</code> record cannot be written. The code was not traced that far.</p>
+      <p>The type <code>break-glass</code> exists in the record format, but no part of the server writes it: there is no break-glass access.</p>
+
+      <h2 id="not-audited">What leaves no record</h2>
+      <ul>
+        <li>Listings and existence checks: listing namespaces, tables, views, catalogs and grants.</li>
+        <li>The grant preview and the batch privilege check, which ask a question and change nothing.</li>
+        <li>Reading governance, holds, the maintenance policy, rules, health and metadata logs.</li>
+        <li>A table load with <code>X-Iceberg-Access-Delegation: none</code> vends nothing and leaves no <code>credential-issue</code>, though the load itself leaves a <code>read</code>.</li>
+        <li>The OPA decision endpoints' answers.</li>
+        <li>Exporting a catalog's grants (<code>GET …/grants/export</code>) and its row filters and column masks (<code>GET …/row-column-rules/export</code>). The console's export dialog says <b class="ui">The export is audited.</b>, but the server writes no record for either.</li>
+      </ul>
+      <p class="gap">Not documented yet: whether each listing in the first item is free of a denial record when refused. Refusals go through the same code, so they are expected to be audited, but each route was not checked.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/audit-records.html">Audit record format</a>: the fields of each type.</li>
+          <li><a href="../concepts/audit.html">The audit trail</a>: the chain, the archive and the audit tables.</li>
+          <li><a href="../guides/query-audit.html">Query the audit trail</a>: finding one record.</li>
+          <li><a href="../console/audit.html">The Audit page</a>: the feed in the console.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-audit/src/main/java/nuna/catalog/audit/EventType.java</code> and each record class beside it, and from the code that writes each record: <code>catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java</code>, <code>ObjectRoutes.java</code>, <code>NamespaceRoutes.java</code>, <code>Guard.java</code> and <code>Engines.java</code> in the same package; <code>AuditTrail.java</code>, <code>ReadAudit.java</code>, <code>AuditReadRoutes.java</code>, <code>AuditDrops.java</code>, <code>GovernanceRoutes.java</code>, <code>LifecycleRoutes.java</code>, <code>MaintenanceRoutes.java</code>, <code>MaintenanceRequests.java</code>, <code>RefRoutes.java</code> and <code>FlagsAboveTables.java</code> in <code>catalog-server/src/main/java/nuna/catalog/server/governance/</code>; <code>Authentication.java</code>, <code>Denials.java</code>, <code>EngineRoutes.java</code>, <code>GrantRoutes.java</code>, <code>AuditCatalogGrants.java</code>, <code>RuleRoutes.java</code> and <code>RowColumnReadRoutes.java</code> in <code>catalog-server/src/main/java/nuna/catalog/server/security/</code>; <code>CatalogStorage.java</code> and <code>StsCredentialVending.java</code> in <code>catalog-server/src/main/java/nuna/catalog/server/storage/</code>. Checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/pyiceberg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PyIceberg · nuna docs</title>
+  <meta name="description" content="Connect PyIceberg to a nuna catalog with load_catalog, read tables any engine wrote, and write to format version 2 tables.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>PyIceberg</h1>
+        <p class="lead">Connect PyIceberg to a nuna catalog with <code>load_catalog</code>, read tables any engine wrote, and write to format version 2 tables.</p>
+        <p class="doc-meta"><span class="badge for">For engine users</span> <span class="badge tested">Tested in the engine matrix</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>PyIceberg with pyarrow: <code>pip install "pyiceberg[pyarrow]==0.12.0"</code>. The engine matrix tests 0.12.0 on Python 3.12.</li>
+        <li>An access token in <code>NUNA_TOKEN</code> (<a href="tokens.html">Get a token</a>), and grants for one of its groups: <code>select</code> to read, <code>write</code> to change data, <code>create</code> to create namespaces and tables (<a href="../reference/privileges.html">Privileges</a>).</li>
+      </ul>
+
+      <h2 id="load-the-catalog">Load the catalog</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Load the catalog with the server's address, the nuna catalog and the token.</p>
+          <div class="code" data-lang="python">
+<pre><code>import os
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("trading", **{
+    "type": "rest",
+    "uri": "https://nuna.example",
+    "warehouse": "trading",
+    "token": os.environ["NUNA_TOKEN"],
+    "header.X-Iceberg-Access-Delegation": "vended-credentials",
+})</code></pre>
+          </div>
+          <p><code>warehouse</code> names the nuna catalog, or <code><var>catalog</var>@<var>ref</var></code> for a branch or tag. PyIceberg takes the object store's address and short-lived credentials from each table's load answer, so it needs no keys of its own.</p>
+        </li>
+        <li>
+          <p class="step-title">List the namespaces.</p>
+          <div class="code" data-lang="python">
+<pre><code>print(catalog.list_namespaces())</code></pre>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">PyIceberg prints the namespaces you may see</p>
+        <p>For example <code>[('equities',), ('reference',)]</code>. <code>NoSuchWarehouseException</code> means the catalog name is wrong or you hold nothing in it.</p>
+      </aside>
+
+      <h2 id="read-a-table">Read a table</h2>
+      <div class="code" data-lang="python">
+<pre><code>fills = catalog.load_table(("equities", "fills"))
+rows = fills.scan(row_filter="symbol = 'ACME'").to_arrow()</code></pre>
+      </div>
+      <p>PyIceberg reads tables Spark wrote, of format versions 2 and 3: row-level deletes, deletion vectors, evolved schemas and partitions, and time travel with <code>snapshot_by_name</code> and <code>snapshot_as_of_timestamp</code>. It cannot load a table with a <code>variant</code> column (<code>Unsupported field type: 'variant'</code>) or a geometry column.</p>
+
+      <h2 id="write-to-a-table">Write to a table</h2>
+      <p>Create each level of a nested namespace in turn: the catalog refuses a namespace whose parent does not exist.</p>
+      <div class="code" data-lang="python">
+<pre><code>import pyarrow as pa
+
+catalog.create_namespace(("equities",))
+catalog.create_namespace(("equities", "daily"))
+
+schema = pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("symbol", pa.string())])
+positions = catalog.create_table(("equities", "daily", "positions"), schema=schema,
+                                 properties={"format-version": "2"})
+
+positions.append(pa.Table.from_pylist([{"id": 1, "symbol": "ACME"}, {"id": 2, "symbol": "INITECH"}], schema=schema))
+positions.delete("id = 2")
+positions.overwrite(pa.Table.from_pylist([{"id": 1, "symbol": "ACME2"}], schema=schema), overwrite_filter="id = 1")</code></pre>
+      </div>
+      <ul>
+        <li>Set <code>format-version</code> to <code>2</code> for a table PyIceberg writes. nuna creates format version 3 tables by default, and PyIceberg 0.12.0 refuses to append to them: <code>ValueError: Cannot write manifest for table version: 3</code>.</li>
+        <li><code>append</code>, <code>delete</code>, <code>overwrite</code> and <code>upsert</code> work, all copy-on-write.</li>
+        <li><code>purge_table</code> sends a purge request, which nuna ignores: the drop is soft, and the table is purged after the retention period.</li>
+      </ul>
+
+      <h2 id="what-was-tested">What was tested</h2>
+      <p>The engine matrix runs PyIceberg against nuna every night code changes: a v2 table's lifecycle; a v3 table's create, read, schema change and drop; reading Spark's tables of every kind in <a href="../reference/engines.html">Engine compatibility</a>; its own <code>append</code>, <code>delete</code>, <code>overwrite</code> and <code>upsert</code>; the audit tables; and reading and writing through a catalog branch and tag.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>ValueError: Cannot write manifest for table version: 3</code></td><td>PyIceberg 0.12.0 does not write format version 3.</td><td>Write to a v2 table, or with another engine.</td></tr>
+            <tr><td><code>Namespace does not exist: …</code> from <code>create_namespace</code></td><td>The parent namespace does not exist.</td><td>Create the parent first.</td></tr>
+            <tr><td><code>Unsupported field type: 'variant'</code></td><td>The table has a v3 type PyIceberg cannot read.</td><td>Read it with Spark.</td></tr>
+            <tr><td><code>Not authorized: the bearer token is missing or was not accepted</code></td><td>The token is missing, expired or not trusted.</td><td>Get a new token.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/engines.html">Engine compatibility</a>: every PyIceberg result.</li>
+          <li><a href="spark.html">Spark</a>: for format version 3 writes and maintenance.</li>
+          <li><a href="https://py.iceberg.apache.org/configuration/">PyIceberg's configuration</a>: every catalog property.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-tests-engines/images/python/pyiceberg_matrix.py</code>, <code>catalog-tests-engines/images/python/refs_matrix.py</code>, <code>catalog-tests-engines/images/python/audit_tables_matrix.py</code>, <code>catalog-tests-engines/images/python/Dockerfile</code> and <code>catalog-tests-engines/src/test/java/nuna/catalog/engines/EngineMatrixTest.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The settings are the engine matrix's, with this site's names. The matrix passed in the nightly run at commit <code>639b0da5</code> on 2026-11-25; PyIceberg was not run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

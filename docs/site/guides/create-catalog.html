@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/create-catalog">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create a catalog · nuna docs</title>
+  <meta name="description" content="Declare a catalog in the server's settings with its storage profile, roll the servers so they create it, and grant its first groups access.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Create a catalog</h1>
+        <p class="lead">Declare a catalog in the server's settings with its storage profile, roll the servers so they create it, and grant its first groups access.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators and grant admins</span>
+          <span class="badge needs">Needs a grant admin</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>There is no API or console action that creates a catalog. The server creates each catalog named under <code>nuna.storage.catalogs</code> when it starts, if the database does not hold it yet. Once a catalog exists, its storage profile, KMS key set and legal entity never change.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You can change the catalog server's Helm release, or whatever else sets its <code>application.yaml</code>. See <a href="../install/helm-catalog.html">Install the catalog server with Helm</a>.</li>
+        <li>The storage profile the catalog will use is declared under <code>nuna.storage.profiles</code>. See <a href="../install/object-storage.html">Set up object storage</a> and <a href="../configure/storage.html">Storage settings</a>.</li>
+        <li>For the grants, you are in a group named in <code>nuna.security.grant-admin-groups</code>, or one of your groups holds <code>manage-grants</code> on the catalog. A new catalog holds no grants, so at first only grant admins can grant there.</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="declare-the-catalog">Declare the catalog</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Choose the catalog's name.</p>
+          <p>Engines use it as the warehouse, and the REST prefix is the name itself. It must not contain <code>@</code>, which the prefix <code><var>catalog</var>@<var>ref</var></code> keeps for a branch or tag. Names compare without case: the server keeps the name as you write it and looks it up in lower case.</p>
+        </li>
+        <li>
+          <p class="step-title">Add the catalog under <code>nuna.storage.catalogs</code> in the release's values.</p>
+          <p>Each catalog needs all three fields: <code>profile</code> names a storage profile declared on the same server, and <code>kms-key-set</code> and <code>legal-entity</code> are recorded with the catalog as its boundary.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    storage:
+      catalogs:
+        trading:
+          profile: onprem
+          kms-key-set: trading-keys
+          legal-entity: Example Markets Ltd</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Upgrade the release.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm upgrade nuna-catalog deploy/helm/nuna-catalog -f values.yaml</code></pre>
+          </div>
+          <p>The chart writes <code>config</code> into the server's ConfigMap and puts a checksum of it on the pods, so a changed <code>config</code> rolls the servers. The first server to start writes the catalog to the database, with an audit record of type <code>nuna.catalog.storage-setup</code> (action <code>CATALOG_CREATED</code>, principal <code>nuna-configuration</code>). The others find it there and check that it holds the same profile, key set and legal entity.</p>
+        </li>
+      </ol>
+
+      <aside class="callout warning">
+        <p class="callout-title">A catalog's boundary is fixed once it exists</p>
+        <p>If you later change a declared catalog's <code>profile</code>, <code>kms-key-set</code> or <code>legal-entity</code>, the server refuses to start. To use another store, declare a new catalog.</p>
+      </aside>
+
+      <h2 id="check-that-it-exists">Check that it exists</h2>
+      <p>Grant admins and platform operators see every catalog the server declares. As one of them, list the catalogs:</p>
+      <div class="code" data-lang="bash" data-title="List the catalogs you can see">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "may": {"operate": false, "read-audit-feed": false},
+  "catalogs": [
+    {
+      "audit": false,
+      "name": "trading",
+      "may": {"manage-grants": true, "manage-tags": false, "modify": false, "select": false}
+    }
+  ]
+}</code></pre>
+      </div>
+      <p>In the console, the new catalog appears in the catalog picker in the header.</p>
+
+      <h2 id="grant-first-groups-access">Grant the first groups access</h2>
+      <p>A new catalog holds no grants, so no engine user can see it yet. Grant each group the privileges its work needs on the catalog itself; a grant on the catalog reaches every namespace, table and view in it. A typical start gives one group <code>create</code> and <code>modify</code>, and another <code>select</code>.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Choose the catalog in the catalog picker.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Grants</b> in the rail.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Grant access</b>.</p>
+              <p>The dialog <b class="ui">Grant access in trading</b> opens. Enter the group, choose the access, and select <b class="ui">Grant</b>. The dialog says what the group will be able to do before you grant, and shows the server's refusal word for word if it refuses.</p>
+            </li>
+          </ol>
+          <p>The console words each privilege as a rung of a ladder, from <b class="ui">See it</b> to <b class="ui">Manage grants</b>. <a href="grant-access.html">Grant and revoke access</a> walks through the dialog.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Send one grant per group and privilege. Each answers <code>204</code> with no body, also when the group already holds the grant.</p>
+          <div class="code" data-lang="bash" data-title="Let trading-engineers create in the catalog">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "catalog"}, "group": "trading-engineers", "privilege": "create"}'</code></pre>
+          </div>
+          <div class="code" data-lang="bash" data-title="Let trading-engineers change what is in it">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "catalog"}, "group": "trading-engineers", "privilege": "modify"}'</code></pre>
+          </div>
+          <div class="code" data-lang="bash" data-title="Let trading-analysts read it">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "catalog"}, "group": "trading-analysts", "privilege": "select"}'</code></pre>
+          </div>
+        </section>
+      </div>
+
+      <p>If the maintenance worker will maintain the catalog, its group also needs <code>write</code> on the catalog. The <a href="../console/maintenance.html">Maintenance page</a>'s setup checklist shows whether the worker can maintain the catalog, and <a href="maintenance-policy.html">Set a catalog's maintenance policy</a> turns its jobs on.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">An engine user in a granted group can now use the catalog</p>
+        <p>Signed in as a member of <code>trading-analysts</code>, <code>GET /v1/config?warehouse=trading</code> answers <code>200</code> with <code>"prefix": "trading"</code> in its <code>overrides</code>, and <code>GET /management/v1/catalogs</code> lists <code>trading</code>.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <p>The first four messages are start-up failures: the server logs them and stops, and Kubernetes shows the pod restarting. The rest are answers to a grant.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.storage.catalogs.trading needs profile, kms-key-set and legal-entity</code></td><td>One of the three fields is missing.</td><td>Set all three.</td></tr>
+            <tr><td><code>nuna.storage.catalogs.trading.profile names no profile: onprem</code></td><td>No profile of that name is declared under <code>nuna.storage.profiles</code> on this server.</td><td>Declare the profile, or correct the name.</td></tr>
+            <tr><td><code>nuna.storage.catalogs.trading@x: a catalog's name holds no @, which the REST prefix catalog@ref keeps for a branch or tag</code></td><td>The name contains <code>@</code>.</td><td>Choose a name without <code>@</code>.</td></tr>
+            <tr><td><code>catalog trading is bound to … in the store, but configured as …; a catalog's boundary never changes</code></td><td>The catalog exists with another profile, key set or legal entity than the settings now say.</td><td>Put the settings back as they were. A catalog's boundary cannot be changed; declare a new catalog instead.</td></tr>
+            <tr><td><code>400</code> <code>A grant names the group it goes to; grants never go to individuals …</code></td><td>The body has no <code>group</code>.</td><td>Name a group from the identity provider's token.</td></tr>
+            <tr><td><code>403</code> <code>no one grants to a group they belong to: trading-engineers</code></td><td>You are a member of the group you are granting to.</td><td>Ask another grant admin to make the grant.</td></tr>
+            <tr><td><code>403</code> <code>group trading-engineers holds modify in this catalog, a data duty that manage-tags (tags) must stay separate from</code></td><td>Separation of duties: one group may not hold conflicting duties anywhere in one catalog. Changing data conflicts with tagging, and managing grants conflicts with everything. The message names the privilege the group already holds.</td><td>Grant the privilege to another group. <a href="grant-access.html#if-it-fails">Grant and revoke access</a> covers every separation refusal.</td></tr>
+            <tr><td><code>403</code> <code>group grant-admins administers grants on every catalog and may hold no other grant</code></td><td>The group is a deployment grant-admin group.</td><td>Grant to another group.</td></tr>
+            <tr><td><code>404</code> <code>NoSuchWarehouseException</code> <code>The given warehouse does not exist: trading</code></td><td>The server does not hold the catalog yet, or your groups hold nothing in it and you are not a grant admin or platform operator.</td><td>Check the servers restarted with the new settings, and that your token carries a grant-admin group.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>: what a catalog holds and how its tables are placed in storage.</li>
+          <li><a href="../configure/storage.html">Storage settings</a>: every <code>nuna.storage.*</code> setting, profiles included.</li>
+          <li><a href="grant-access.html">Grant and revoke access</a>: the Grant access dialog and the grants API in full.</li>
+          <li><a href="../api/catalogs.html#endpoints">Catalogs API</a>: listing the catalogs a caller can see.</li>
+          <li><a href="../concepts/access.html">Identity and access</a>: privileges, inheritance and separation of duties.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Separation.java</code>, <code>catalog-server/src/main/resources/nuna/ui/governance.js</code>, <code>catalog-server/src/main/resources/nuna/ui/grant.js</code>, <code>deploy/helm/nuna-catalog/values.yaml</code> and <code>deploy/helm/nuna-catalog/templates/deployment.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The shape of the catalogs listing and of <code>/v1/config</code> was read from the local demo with GET requests. The Helm upgrade and the grants were not run: the demo is shared and makes its catalogs and grants its own way.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

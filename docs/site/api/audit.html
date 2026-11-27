@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/audit">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit · nuna docs</title>
+  <meta name="description" content="Read an object's audit records, search a catalog's audit feed, count recent records, and check the archive and one record's place in its hash chain, under /management/v1.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Audit</h1>
+        <p class="lead">Read an object's audit records, search a catalog's audit feed, count recent records, and check the archive and one record's place in its hash chain, under <code>/management/v1</code>.</p>
+      </header>
+
+      <p>Every route here reads the audit trail; none changes it. The records themselves are described in <a href="../reference/audit-records.html">Audit record format</a>, and what the trail is in <a href="../concepts/audit.html">The audit trail</a>. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+      <p>Two kinds of caller read audit. A caller with <code>manage-grants</code> on an object reads that object's records. An <em>audit reader</em>, who holds <code>select</code> on the catalog that holds the audit tables (<code>nuna.audit.tables.catalog</code>), reads the feed, the summary, the archive and the chain for any catalog.</p>
+      <p>Each caller may make at most <code>nuna.governance.audit-reads-per-minute</code> (default <code>60</code>) object, feed, chain and uncached summary reads a minute on each server. Beyond that the answer is <code>429</code> <code>TooManyRequestsException</code>, <code>More than 60 audit reads in a minute by <var>caller</var>; retry later</code>, with <code>Retry-After: 60</code>; that answer is not audited.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Audit endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-audit"><code>/management/v1/catalogs/{catalog}/audit</code></a>, and on namespace, table and view paths</td><td>Reads one object's newest records.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-audit-feed"><code>/management/v1/catalogs/{catalog}/audit/feed</code></a></td><td>Searches a catalog's records, newest first, a page at a time.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-audit-summary"><code>/management/v1/catalogs/{catalog}/audit/summary</code></a></td><td>Counts the last day's records by type, and names the busiest objects.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-audit-archive"><code>/management/v1/audit/archive</code></a></td><td>Says whether the archive is configured, and how its last check went.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-audit-chains-records"><code>/management/v1/audit/chains/{run}/records/{number}</code></a></td><td>Shows one record's place in its hash chain.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-audit"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/audit</code></h3>
+        <p>Also served on the namespace, table and view paths. Reads the newest records about one object, as the trail holds them. The server reads the audit tables when <code>nuna.audit.tables.catalog</code> is set; otherwise it reads the audit topic in Kafka, scanning back at most 20,000 messages.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the object or above it</span> <span class="badge audited">Audited</span></p>
+        <h4 id="get-audit-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>limit</code></td><td>query</td><td>integer</td><td>No</td><td>Most records. Default <code>50</code>, from <code>1</code> to <code>200</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-audit-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>From the tables: <code>{"target", "source": "table", "records", "complete", "table": {"name", "snapshot-id", "committed-at"}}</code>; <code>complete</code> is true when no older record exists. From the topic: <code>{"target", "source": "topic", "records", "window": {"topic", "partition", "earliest-offset", "from-offset", "to-offset", "complete", "scan-limit": 20000}}</code>. Each record is the CloudEvent as the trail holds it. The read leaves an audit-read record.</td></tr>
+              <tr><td><code>400</code></td><td><code>limit must be a whole number from 1 to 200, not <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the object but not <code>manage-grants</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The object is not there, or you hold nothing on it.</td></tr>
+              <tr><td><code>429</code></td><td>Too many audit reads in a minute.</td></tr>
+              <tr><td><code>503</code></td><td><code>Neither the audit tables (nuna.audit.tables.catalog) nor the audit topic (nuna.audit.kafka-bootstrap-servers) is configured on this server</code>, or <code>The audit topic cannot be read now; retry later</code>, or the audit table cannot be read.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-audit-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/audit?limit=1" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "target": {"kind": "table", "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d"},
+  "source": "table",
+  "records": [
+    {
+      "specversion": "1.0",
+      "id": "0d3f9a1e-7c2b-4e5d-9f80-1a2b3c4d5e6f",
+      "source": "urn:nuna:deployment:nuna-catalog",
+      "type": "nuna.catalog.hold",
+      "datacontenttype": "application/json",
+      "dataschema": "urn:nuna:catalog:event:hold:1",
+      "subject": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+      "time": "2026-11-24T16:40:03.918Z",
+      "partitionkey": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+      "data": {
+        "action": "PLACED",
+        "holdId": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+        "target": {"kind": "TABLE", "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", "catalog": "trading", "path": ["equities", "fills"]},
+        "reason": "case 2026-114",
+        "actor": {"principal": "kim", "endUser": null, "engine": null, "requestId": "4f0c9e2a7b1d4c8e9a3f5b6d7e8c9a01"}
+      }
+    }
+  ],
+  "complete": false,
+  "table": {"name": "nuna_audit.audit.events", "snapshot-id": 6119200483514202211, "committed-at": "2026-11-24T16:41:00.002Z"}
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-audit-feed"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/audit/feed</code></h3>
+        <p>Searches one catalog's records in the audit tables, newest first by time, then by partition and offset. Each filter only narrows the catalog's records; none reaches another catalog's. A page reads at most about 500,000 rows: when it stops short, <code>searched-to</code> says how far back it got, and <code>next-page-token</code> carries on from there. Each record carries the chain status the archive check last found for it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the audit catalog</span> <span class="badge audited">Audited</span></p>
+        <h4 id="get-catalog-audit-feed-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog whose records to read.</td></tr>
+              <tr><td><code>type</code></td><td>query</td><td>string</td><td>No</td><td>Record types, separated by commas: <code>nuna.catalog.grant,nuna.catalog.denial</code>.</td></tr>
+              <tr><td><code>principal</code></td><td>query</td><td>string</td><td>No</td><td>The principal who acted.</td></tr>
+              <tr><td><code>path</code></td><td>query</td><td>string</td><td>No</td><td>Namespace levels, and a table or view name, separated by <code>%1F</code>: <code>equities%1Ffills</code>.</td></tr>
+              <tr><td><code>branch</code></td><td>query</td><td>string</td><td>No</td><td>A branch's or tag's name, or <code>main</code>, without its <code>@</code>.</td></tr>
+              <tr><td><code>subject</code></td><td>query</td><td>string</td><td>No</td><td>An id the record is about, a UUID.</td></tr>
+              <tr><td><code>from</code>, <code>to</code></td><td>query</td><td>string</td><td>No</td><td>Instants such as <code>2026-11-22T00:00:00Z</code>. <code>from</code> must be before <code>to</code>.</td></tr>
+              <tr><td><code>limit</code></td><td>query</td><td>integer</td><td>No</td><td>Most records in a page. Default <code>50</code>, from <code>1</code> to <code>200</code>.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-audit-feed-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalog", "records": [<var>feed record</var>, …], "next-page-token", "searched-to", "table"}</code>. The read leaves an audit-read record on the catalog.</td></tr>
+              <tr><td><code>400</code></td><td>
+                <ul>
+                  <li><code>from must be before to</code></li>
+                  <li><code>from must be an instant such as 2026-11-22T00:00:00Z, not <var>x</var></code> (and the same for <code>to</code>)</li>
+                  <li><code>type must be audit record types such as nuna.catalog.read, separated by commas, not <var>x</var></code></li>
+                  <li><code>path must be namespace levels, and a table or view name, separated by 0x1F, none of them empty</code></li>
+                  <li><code>branch must be a branch's or tag's name, or main, without its @, not <var>x</var></code></li>
+                  <li><code>subject must be a UUID, not <var>x</var></code></li>
+                  <li><code>pageToken is not one this feed gave: <var>x</var></code></li>
+                  <li><code>limit must be a whole number from 1 to 200, not <var>x</var></code></li>
+                </ul>
+              </td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>select</code> on the audit catalog.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog does not exist.</td></tr>
+              <tr><td><code>429</code></td><td>Too many audit reads in a minute.</td></tr>
+              <tr><td><code>503</code></td><td><code>The audit tables are not configured on this server (nuna.audit.tables.catalog)</code>, or <code>The audit table cannot be read: …</code>, or <code>The audit table cannot be read now; retry later</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-audit-feed-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/audit/feed?type=nuna.catalog.denial&amp;limit=1" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "records": [
+    {
+      "event-id": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+      "time": "2026-11-25T11:02:44.310Z",
+      "type": "nuna.catalog.denial",
+      "principal": "ana",
+      "end-user": null,
+      "engine": null,
+      "request-id": "9b8a7c6d5e4f40312a1b2c3d4e5f6a7b",
+      "branch": null,
+      "object": {"kind": "table", "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d", "catalog": "trading", "path": ["equities", "fills"]},
+      "operation": "updateTable",
+      "privilege": "write",
+      "reason": "no_privilege: …",
+      "partition": 0,
+      "offset": 48211,
+      "log-run": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b",
+      "log-seq": 912,
+      "chain": {"status": "unverified"},
+      "event": {"specversion": "1.0", "type": "nuna.catalog.denial", "data": {}}
+    }
+  ],
+  "next-page-token": "…",
+  "table": {"name": "nuna_audit.audit.events", "snapshot-id": 6119200483514202211, "committed-at": "2026-11-25T11:03:00.002Z"}
+}</code></pre>
+        </div>
+        <p>In the response above, <code>event</code> is cut short; it holds the whole CloudEvent. The <code>reason</code> holds the denial's code and message.</p>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-audit-summary"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/audit/summary</code></h3>
+        <p>Counts the last day's records in the catalog by type, the same for the whole deployment, and names the 10 busiest objects. The counts are kept for 1 minute, so two calls a few seconds apart give the same answer.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the audit catalog</span></p>
+        <h4 id="get-catalog-audit-summary-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalog", "from", "to", "by-type", "busiest": [{"kind", "id", "path", "records", "reads", "writer"}], "deployment-by-type", "table"}</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>select</code> on the audit catalog.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog does not exist.</td></tr>
+              <tr><td><code>429</code></td><td>Too many audit reads in a minute.</td></tr>
+              <tr><td><code>503</code></td><td>The audit tables are not configured, or cannot be read.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-audit-summary-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/audit/summary" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "from": "2026-11-25T04:34:21.494744751Z",
+  "to": "2026-11-26T04:34:21.494744751Z",
+  "by-type": {},
+  "busiest": [],
+  "deployment-by-type": {},
+  "table": {"name": "nuna_audit.audit.events", "snapshot-id": null, "committed-at": null}
+}</code></pre>
+        </div>
+        <p class="gap">Not documented yet: the exact meaning of <code>reads</code> and <code>writer</code> in a busiest entry. This page was written from the route, not from the code that counts them.</p>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-audit-archive"><span class="method" data-method="GET">GET</span> <code>/management/v1/audit/archive</code></h3>
+        <p>Says whether the audit archive is configured and, when it is, where it is and how the last archive check went.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the audit catalog</span></p>
+        <h4 id="get-audit-archive-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"configured": false}</code>, or <code>{"configured": true, "bucket", "prefix", "check"}</code>. <code>check</code> is <code>null</code> before the first check; otherwise it holds <code>started-at</code>, <code>ended-at</code>, <code>intact</code>, <code>complete</code>, <code>checkpoints</code> (<code>latest</code>, <code>at</code>, <code>interval</code>, <code>late</code>, <code>problems</code>), <code>runs</code>, <code>runs-done</code>, <code>records-verified</code> and <code>chains</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>select</code> on the audit catalog.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-audit-archive-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/audit/archive" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"configured": false}</code></pre>
+        </div>
+        <p class="gap">Not documented yet: every field of a <code>chains</code> entry in the archive check, beyond <code>chain</code>, <code>run</code>, <code>records-verified</code>, <code>sequence</code> and <code>hash</code>. The demo has no archive to show one.</p>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-audit-chains-records"><span class="method" data-method="GET">GET</span> <code>/management/v1/audit/chains/{run}/records/{number}</code></h3>
+        <p>Shows where one record sits in its hash chain: the log run that wrote it, its number in that run and, once it is archived, its hash, its neighbours' hashes and whether the links hold.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the audit catalog</span></p>
+        <h4 id="get-audit-chains-records-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>run</code></td><td>path</td><td>string</td><td>Yes</td><td>The record's log run, a UUID (<code>nunarun</code>, or <code>log-run</code> in the feed).</td></tr>
+              <tr><td><code>number</code></td><td>path</td><td>integer</td><td>Yes</td><td>The record's number in its run, from <code>1</code> (<code>nunaseq</code>, or <code>log-seq</code>).</td></tr>
+              <tr><td><code>event-id</code></td><td>query</td><td>string</td><td>No</td><td>The record's id, a UUID, to check the chain holds that record at that place.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-audit-chains-records-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"chain", "log-run", "log-seq", "event-id", "archived"}</code>, and once archived also <code>position</code>, <code>hash</code>, <code>previous-hash</code>, <code>next-hash</code>, <code>link-holds</code>, <code>verified</code>, <code>checked-at</code> and <code>segment</code> (<code>key</code>, <code>first-position</code>, <code>last-position</code>).</td></tr>
+              <tr><td><code>400</code></td><td><code>run must be a UUID, not <var>x</var></code>, <code>number must be the record's number in its run, a whole number from 1, not <var>x</var></code>, or <code>event-id must be a UUID, not <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>select</code> on the audit catalog.</td></tr>
+              <tr><td><code>429</code></td><td>Too many audit reads in a minute.</td></tr>
+              <tr><td><code>503</code></td><td><code>The audit archive is not configured on this server (nuna.audit.archive.bucket)</code>, or <code>The audit archive cannot be read now; retry later</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-audit-chains-records-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/audit/chains/e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a5b/records/912" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="feed-record">Feed record</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>event-id</code>, <code>time</code>, <code>type</code></td><td>string</td><td>The record's id, time and type.</td></tr>
+            <tr><td><code>principal</code>, <code>end-user</code>, <code>engine</code>, <code>request-id</code></td><td>string</td><td>Who acted, the end user a trusted engine acted for, the engine, and the request id. Each may be <code>null</code>.</td></tr>
+            <tr><td><code>branch</code></td><td>string</td><td>The branch or tag acted through; <code>null</code> for <code>main</code> or none.</td></tr>
+            <tr><td><code>object</code></td><td>object</td><td><code>{"kind", "id", "catalog", "path"}</code>, or <code>null</code>.</td></tr>
+            <tr><td><code>operation</code>, <code>privilege</code>, <code>reason</code></td><td>string</td><td>Filled for the record types that carry them (see <a href="../reference/audit-records.html#audit-table">the audit table</a>).</td></tr>
+            <tr><td><code>partition</code>, <code>offset</code></td><td>integer</td><td>Where the record sits in the audit topic; <code>-1</code> for a record read from the log.</td></tr>
+            <tr><td><code>log-run</code>, <code>log-seq</code></td><td></td><td>The log run that wrote it and its number in the run.</td></tr>
+            <tr><td><code>chain</code></td><td>object</td><td><code>status</code>: <code>verified</code>, <code>unverified</code>, <code>no-place</code> or <code>no-archive</code>; <code>checked-at</code> when verified; <code>missing</code> (<code>from</code>, <code>to</code>) when the check found a gap.</td></tr>
+            <tr><td><code>event</code></td><td>object</td><td>The whole CloudEvent.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">Not documented yet: exactly when a record's chain status is <code>no-place</code> rather than <code>unverified</code>. See <code>catalog-audit-tables/README.md</code> for the archive check.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/audit-records.html">Audit record format</a>: every record type and field.</li>
+          <li><a href="../concepts/audit.html">The audit trail</a>: the hash chain and what "verified" means.</li>
+          <li><a href="../security/what-is-audited.html">What is audited</a>: every audited action and denial.</li>
+          <li><a href="../operate/audit-pipeline.html">Run the audit pipeline</a>: the topic, the archive and the audit tables.</li>
+          <li><a href="../console/audit.html">The Audit page</a>: the feed in the console.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java</code>, <code>GovernanceSettings.java</code> in the same folder, <code>catalog-audit/</code> and <code>catalog-audit-tables/README.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The summary and archive reads were run against the demo, whose audit table was empty and whose archive was not configured. The object audit, feed and chain responses are built from the code, not captured.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

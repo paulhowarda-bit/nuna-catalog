@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/opa">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Use OPA · nuna docs</title>
+  <meta name="description" content="Point Trino's OPA access control at the server's decision endpoints, so that each query applies the row filter and column masks the grant admin set for its user's groups.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Use OPA</h1>
+        <p class="lead">Point Trino's OPA access control at the server's decision endpoints, so that each query applies the row filter and column masks the grant admin set for its user's groups.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+          <span class="badge needs">Needs a platform operator</span>
+        </p>
+      </header>
+
+      <p>The server answers three endpoints in the form Trino's OPA access control expects, so no OPA server runs between them. They are outside the server's token check: each verifies the end user's own token, passed by Trino as an extra credential, and ignores the user and groups Trino names.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The decision endpoints</caption>
+          <thead><tr><th scope="col">Endpoint</th><th scope="col">Answers</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST /opa/v1/allow</code></td><td>Always <code>{"result":true}</code>: the server has already decided access on the catalog's own requests.</td></tr>
+            <tr><td><code>POST /opa/v1/row-filters</code></td><td><code>{"result":[{"expression":"…"}]}</code>: the user's combined filter on the table.</td></tr>
+            <tr><td><code>POST /opa/v1/column-masks</code></td><td><code>{"result":[{"index":0,"viewExpression":{"expression":"…"}}]}</code>: one entry per masked column Trino asked about.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Trino reaches the server's Iceberg REST API with vended credentials, as <a href="../clients/trino.html">Trino</a> describes.</li>
+        <li>Trino has a token of its own, from a client registered at the identity provider, in the environment variable <code>NUNA_TOKEN</code>.</li>
+        <li>You are a platform operator, to register Trino as a trusted engine, and you can change the server's settings.</li>
+      </ul>
+
+      <h2 id="wire-trino">Wire Trino to the server</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Register Trino's client as a trusted engine.</p>
+          <div class="code" data-lang="bash" data-title="Register trino as a trusted engine">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/engines" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"issuer": "https://idp.example/realms/data", "client-id": "trino"}'</code></pre>
+          </div>
+          <p>The issuer must be one of the server's trusted issuers. The registration is audited as a <code>nuna.catalog.engine</code> record.</p>
+        </li>
+        <li>
+          <p class="step-title">Make each Iceberg catalog in Trino send its users' tokens.</p>
+          <p>With <code>session=USER</code>, Trino passes each user's own token, and the extra header names Trino itself, so the server decides each query for its user.</p>
+          <div class="code" data-lang="properties" data-title="etc/catalog/trading.properties">
+<pre><code>connector.name=iceberg
+iceberg.catalog.type=rest
+iceberg.rest-catalog.uri=https://nuna.example
+iceberg.rest-catalog.warehouse=trading
+iceberg.rest-catalog.security=OAUTH2
+iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
+iceberg.rest-catalog.session=USER
+iceberg.rest-catalog.http-headers=X-Nuna-Engine-Authorization: Bearer ${ENV:NUNA_TOKEN}
+iceberg.rest-catalog.vended-credentials-enabled=true
+iceberg.rest-catalog.nested-namespace-enabled=true</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Point Trino's access control at the decision endpoints.</p>
+          <div class="code" data-lang="properties" data-title="etc/access-control.properties">
+<pre><code>access-control.name=opa
+opa.policy.uri=https://nuna.example/opa/v1/allow
+opa.policy.row-filters-uri=https://nuna.example/opa/v1/row-filters
+opa.policy.batch-column-masking-uri=https://nuna.example/opa/v1/column-masks
+opa.identity.extra-credentials-keys=token</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Map each Trino catalog to the nuna catalog it reads.</p>
+          <p>Set <code>nuna.opa.catalogs</code> in the server's settings: each key is a Trino catalog's name, each value a nuna catalog, or <code><var>catalog</var>@<var>ref</var></code> for one read through a branch or tag. A Trino catalog that is not mapped gets no filters and no masks.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    opa:
+      catalogs:
+        trading: trading
+        trading_dev: trading@dev</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Have each user send their token as the extra credential <code>token</code>.</p>
+          <p>A query without one is refused by the catalog, since the server issues no tokens to exchange.</p>
+        </li>
+      </ol>
+
+      <aside class="callout check">
+        <p class="callout-title">A reader sees only their rows</p>
+        <p>A member of a group with a row filter on a flagged table queries it through Trino and gets only the matching rows, with masked columns replaced. The same person's answer at <code>GET /management/v1/catalogs/trading/namespaces/equities%1Fdaily/tables/positions/row-column-rules/mine</code> says <code>"rows": "filtered"</code> and lists the masked columns.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <p>The decision endpoints fail closed: an answer they cannot give shows less, never more.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>Every row is shown, unmasked, on a table with rules.</td><td>The Trino catalog is not in <code>nuna.opa.catalogs</code>.</td><td>Map it.</td></tr>
+            <tr><td>No rows, and every column <code>NULL</code>.</td><td>The user's token is missing or was refused, the table was not found, or the user holds nothing on it. Or the user is in no group with a rule.</td><td>Check the extra credential, the mapping, and the table's rules.</td></tr>
+            <tr><td>Every masked column in a query reads <code>NULL</code>.</td><td>Trino asked about only some of the table's masked columns in one call.</td><td>See the note below the table.</td></tr>
+            <tr><td><code>503</code> <code>The user's token could not be checked; retry later</code></td><td>The identity provider's signing keys could not be fetched.</td><td>Retry; check the server can reach the issuer's JWKS URI.</td></tr>
+            <tr><td><code>403</code> <code>Forbidden: client trino is not a registered trusted engine, so it may not act for another user</code></td><td>Trino's client is not registered.</td><td>Register it as in the first step.</td></tr>
+            <tr><td><code>403</code> <code>only platform operators run the trusted-engine registry</code></td><td>You are not a platform operator.</td><td>Ask one to register Trino.</td></tr>
+            <tr><td><code>400</code> <code>Not a trusted issuer: …</code></td><td>The registration names an issuer the server does not trust.</td><td>Use an issuer from <code>nuna.security.issuers</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">Not documented yet: when Trino asks about only some of a table's masked columns in one call. No test or document says.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="row-column.html">Row-level security and column masking</a>: the path of one query, and what is withheld.</li>
+          <li><a href="../guides/row-column-rules.html">Add a row filter or column mask</a>: setting the rules Trino applies.</li>
+          <li><a href="../api/opa.html#endpoints">OPA decisions API</a>: the endpoints' bodies in full.</li>
+          <li><a href="../api/engines.html#endpoints">Engines API</a>: listing and removing trusted engines.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaRoutes.java</code>, <code>OpaAnswers.java</code>, <code>OpaSettings.java</code>, <code>EngineRoutes.java</code> and <code>Authentication.java</code> in the same package, and <code>demo/k8s/trino.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The Trino properties follow the demo's, with the fictional estate's names. The engine registry's answer was read from the local demo with a GET request; the registration and the decision endpoints take PUT and POST and were not run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

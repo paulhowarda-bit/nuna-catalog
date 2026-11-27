@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/maintenance-nights">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maintenance nights · nuna docs</title>
+  <meta name="description" content="When the maintenance worker does each kind of work, how to set its cleanup window, and how to read what each night did.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Maintenance nights</h1>
+        <p class="lead">When the maintenance worker does each kind of work, how to set its cleanup window, and how to read what each night did.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The maintenance worker scans the catalog every <code>scan-interval</code>, ten minutes by default. Some work runs at every scan; the heavy work waits for the cleanup window, a stretch of each night you choose. A <strong>night</strong> is one opening of the window and the day that follows, until the window next opens. It is named by the date the window opened on, in the window's zone.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The maintenance worker installed (<a href="../install/helm-maintenance.html">Install the maintenance worker</a>).</li>
+        <li>Your deployment's quiet hours, and the time zone they are in.</li>
+      </ul>
+
+      <h2 id="what-runs-when">What runs when</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>The worker's work, by when it runs</caption>
+          <thead><tr><th scope="col">Work</th><th scope="col">When</th></tr></thead>
+          <tbody>
+            <tr><td>Snapshot expiry</td><td>At every scan, round the clock.</td></tr>
+            <tr><td>Manifest rewrite</td><td>At every scan, round the clock.</td></tr>
+            <tr><td>Purges of dropped objects whose window has ended</td><td>At every scan, round the clock.</td></tr>
+            <tr><td>Deleting files whose deletion is due</td><td>At every scan, round the clock.</td></tr>
+            <tr><td>Compaction assessment and compaction Jobs</td><td>Only in the cleanup window. Each table gets at most one Job a night, the neediest first, at most <code>compaction.max-jobs</code> at once. Each Job stops at the window's end.</td></tr>
+            <tr><td>Orphan scans</td><td>Only in the cleanup window, at most once per table per <code>orphan-interval</code> (one night by default).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Round-the-clock work counts towards the night that opened last before it started.</p>
+
+      <h2 id="set-the-cleanup-window">Set the cleanup window</h2>
+      <p>The window has no default: the worker needs <code>start</code>, <code>end</code> and <code>zone</code>. Set them in the maintenance chart's values:</p>
+      <div class="code" data-lang="yaml">
+<pre><code>config:
+  nuna:
+    maintenance:
+      cleanup-window:
+        start: "22:30"
+        end: "04:00"
+        zone: Europe/London</code></pre>
+      </div>
+      <ul>
+        <li><code>start</code> and <code>end</code> are local times in <code>zone</code>, a named time zone.</li>
+        <li>An <code>end</code> before the <code>start</code> crosses midnight.</li>
+        <li>An <code>end</code> equal to the <code>start</code> keeps the window open all day.</li>
+      </ul>
+      <aside class="callout warning">
+        <p class="callout-title">Quote the times</p>
+        <p>YAML 1.1 reads an unquoted <code>22:30</code> as the number 1350. Write <code>"22:30"</code>.</p>
+      </aside>
+      <p>Other settings that shape the night are on <a href="../configure/maintenance.html">Maintenance worker settings</a>: <a href="../configure/maintenance.html#nuna-maintenance-scan-interval"><code>nuna.maintenance.scan-interval</code></a> (<code>PT10M</code>), <a href="../configure/maintenance.html#nuna-maintenance-orphan-interval"><code>nuna.maintenance.orphan-interval</code></a> (<code>P1D</code>) and <a href="../configure/maintenance.html#nuna-maintenance-compaction-max-jobs"><code>nuna.maintenance.compaction.max-jobs</code></a> (2). Which tables need compaction is maintenance policy, set in the catalog (<a href="table-health.html">Table health</a>).</p>
+
+      <h2 id="read-last-night-in-the-console">Read last night in the console</h2>
+      <p>The overview's <strong>Maintenance, last night</strong> figure shows the newest night's tables compacted, small files merged, snapshots expired, unreferenced files deleted and jobs cut off at the window's end, for every catalog. Select it to open the Maintenance page.</p>
+      <p>The Maintenance page shows four figures with a sparkline over the nights reported, and a <strong>Last night</strong> panel that draws each compaction Job on its slot and the orphan scans in a lane of their own, with a dashed line at the window's end. Under it are the counts <strong>Compaction jobs finished</strong>, <strong>Cut off at</strong> the window's end, <strong>Failed</strong> and <strong>Still running</strong>.</p>
+      <figure class="shot" id="fig-maintenance-last-night"><img src="../img/shots/operate-maintenance-last-night-light.png" data-dark="../img/shots/operate-maintenance-last-night-dark.png" width="1440" height="900" alt="The Maintenance page: last night's figures, one table compacted, five small files merged into two and sixteen snapshots expired, and the Last night panel with its jobs on the slot timeline."><figcaption>The Maintenance page: last night's figures and its jobs on their slots.</figcaption></figure>
+      <p>Anyone signed in sees the totals. A job names its table only to someone who may <code>select</code> it; others see the job without a name.</p>
+
+      <h2 id="read-the-nights-with-the-api">Read the nights with the API</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>Open the Maintenance page from the rail. The page reads the last 30 nights and the newest night's jobs.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Call <code>GET /management/v1/maintenance/nights</code> (<a href="../clients/curl.html">curl</a>, <a href="../api/maintenance.html#endpoints">reference</a>):</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/nights?days=7&amp;jobs=1" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+        </section>
+      </div>
+      <ul>
+        <li><code>days</code>: how many nights to answer, the newest first. Only nights with at least one job count. Default 30, held to 1 to 32.</li>
+        <li><code>jobs</code>: how many of those nights carry their jobs, the newest first. Default 1, held to 0 to <code>days</code>.</li>
+      </ul>
+      <p>An answer, shortened to one job:</p>
+      <div class="code" data-lang="json" data-kind="output">
+<pre><code>{
+  "nights": [
+    {
+      "night": "2026-11-26",
+      "opens": "2026-11-26T22:30:00Z",
+      "closes": "2026-11-27T04:00:00Z",
+      "tables-compacted": 1,
+      "files-compacted": 5,
+      "files-written": 2,
+      "snapshots-expired": 16,
+      "files-deleted": 0,
+      "bytes-deleted": 0,
+      "jobs-running": 0,
+      "jobs-succeeded": 55,
+      "jobs-cut-off": 0,
+      "jobs-failed": 0,
+      "jobs": [
+        {
+          "id": "e0bab7fe-9311-34bc-89ee-fb0e08f48de5",
+          "kind": "compaction",
+          "slot": 1,
+          "started-at": "2026-11-26T22:40:16.064Z",
+          "ended-at": "2026-11-26T22:45:24.420Z",
+          "outcome": "succeeded",
+          "files-in": 5,
+          "files-out": 2,
+          "table": { "id": "40f87e4c-0a44-4667-bf6b-d8e31c5ff086", "catalog": "trading", "namespace": ["equities"], "name": "fills" }
+        }
+      ]
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3 id="a-nights-totals">A night's totals</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>night</code></td><td>The date the window opened on, in the window's zone.</td></tr>
+            <tr><td><code>opens</code>, <code>closes</code></td><td>The window as the worker saw it.</td></tr>
+            <tr><td><code>tables-compacted</code></td><td>Compaction Jobs that succeeded.</td></tr>
+            <tr><td><code>files-compacted</code>, <code>files-written</code></td><td>Data files the night's compaction Jobs replaced, and those they wrote.</td></tr>
+            <tr><td><code>snapshots-expired</code></td><td>Snapshots expired over the whole night.</td></tr>
+            <tr><td><code>files-deleted</code>, <code>bytes-deleted</code></td><td>Files deleted, and their bytes, by purges and due deletions. A file counts when it is deleted, not when it is listed for deletion.</td></tr>
+            <tr><td><code>jobs-running</code>, <code>jobs-succeeded</code>, <code>jobs-cut-off</code>, <code>jobs-failed</code></td><td>Jobs of every kind, by how they stand. Round-the-clock work counts once for each table and kind.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="a-nights-jobs">A night's jobs</h3>
+      <p>Only compaction Jobs and orphan scans are listed, by start. Round-the-clock work counts in the totals only.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code></td><td>The job's id. A compaction's id comes from its Kubernetes Job's name, so a restarted worker reports the same Job under the same id.</td></tr>
+            <tr><td><code>kind</code></td><td><code>compaction</code> or <code>orphan-scan</code>.</td></tr>
+            <tr><td><code>slot</code></td><td>A compaction's slot, from 1 to <code>compaction.max-jobs</code>. Absent for an orphan scan.</td></tr>
+            <tr><td><code>started-at</code>, <code>ended-at</code></td><td>When the worker started the job, and when it saw it end. No <code>ended-at</code> while it runs.</td></tr>
+            <tr><td><code>outcome</code></td><td><code>running</code>, <code>succeeded</code>, <code>failed</code>, or <code>cut-off</code> when the window's end stopped it.</td></tr>
+            <tr><td><code>files-in</code>, <code>files-out</code></td><td>For a compaction, the data files it took out and those it wrote. 0 for an orphan scan.</td></tr>
+            <tr><td><code>table</code></td><td>The table, only to a caller who may <code>select</code> it. Absent once the table is purged.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="callout demo">
+        <p class="callout-title">In the demo</p>
+        <p>The demo's window opens at <code>"12:00"</code> and ends at <code>"12:00"</code>, <code>America/New_York</code>, so it is open all day and every scan may compact. Its catalog is <code>lakehouse</code>.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <ul>
+        <li><strong>The worker does not start, or never compacts.</strong> Check that <code>cleanup-window</code> names <code>start</code>, <code>end</code> and <code>zone</code>, with quoted times. Compaction also needs <code>compaction.image</code> and a namespace for the Jobs (<a href="../install/helm-maintenance.html">Install the maintenance worker</a>).</li>
+        <li><strong>Jobs are cut off night after night.</strong> The window is too short for the work, or <code>compaction.max-jobs</code> too low. <a href="runbooks.html#nunacompactionfallingbehind"><code>NunaCompactionFallingBehind</code></a> fires after 3 days of it.</li>
+        <li><strong>The console says the worker has reported no job in the last 30 nights.</strong> The worker is not running or cannot reach the catalog. See <a href="runbooks.html#nunaworkernotscanning"><code>NunaWorkerNotScanning</code></a>.</li>
+        <li><strong>The route answers <code>500</code>.</strong> A <code>jobs</code> value that is not a number is answered <code>500</code> rather than <code>400</code>. Send a whole number.</li>
+      </ul>
+      <p>The catalog keeps the jobs in its database for 31 nights, so the figures survive restarts of the catalog servers. The worker adds up round-the-clock runs in memory for the night under way: a restarted worker reports its later runs under new ids, and the night keeps both.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="table-health.html">Table health</a>: what puts a table in tonight's compaction queue.</li>
+          <li><a href="metrics.html#worker-meters">Metrics: worker meters</a>: the figures alerts are built on.</li>
+          <li><a href="../console/maintenance.html">The Maintenance page</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java</code> and <code>MaintenanceNights.java</code>, <code>catalog-server/src/main/resources/nuna/ui/nights.js</code>, <code>deploy/helm/nuna-maintenance/values.yaml</code>, <code>catalog-maintenance/src/main/resources/application.yaml</code> and <code>docs/observability/maintenance-nights.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The nights route was called in the demo on 2026-11-26 and answered <code>200</code>. The example keeps its counts and job; the times were moved to the example window and the table renamed to the example estate.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

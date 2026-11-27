@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/time-travel">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Read an earlier version of a table · nuna docs</title>
+  <meta name="description" content="Find the snapshot you want on the table's History tab, then read it by snapshot id, by time or by an Iceberg tag from Spark, Trino or PyIceberg.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Read an earlier version of a table</h1>
+        <p class="lead">Find the snapshot you want on the table's History tab, then read it by snapshot id, by time or by an Iceberg tag from Spark, Trino or PyIceberg.</p>
+        <p class="doc-meta">
+          <span class="badge for">For engine users and analysts</span>
+          <span class="badge needs">Needs <code>select</code> on the table</span>
+        </p>
+      </header>
+
+      <p>Each commit that writes data adds a snapshot to the table. An engine can read any snapshot the table still lists: by its id, by the time it was current, or by an Iceberg branch or tag inside the table's metadata. This is time travel within one table. To read the whole catalog as it was, read through a catalog tag instead (<a href="tag.html">Keep a point in time with a tag</a>).</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Your groups hold <code>select</code> on the table. Reading an earlier snapshot needs nothing more than reading the current one.</li>
+        <li>The snapshot still exists. Snapshot expiry removes snapshots older than the table's <code>snapshot-expiry.max-snapshot-age</code>, keeping at least <code>snapshot-expiry.min-snapshots-to-keep</code>; a snapshot an Iceberg tag names stays as long as the tag keeps it (<a href="maintenance-policy.html">Set a catalog's maintenance policy</a>).</li>
+      </ul>
+
+      <h2 id="find-the-snapshot">Find the snapshot</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Open the table and select its <b class="ui">History</b> tab.</p>
+          <p><b class="ui">Snapshots and Iceberg refs</b> draws the snapshots on a line, newest on the right, with the table's own branches and tags marked. <b class="ui">Commits</b> lists each commit, newest first, with its <b class="ui">Version</b>, when it was <b class="ui">Written</b>, the <b class="ui">Change</b>, the <b class="ui">Snapshot</b> it added, <b class="ui">Rows</b>, <b class="ui">By</b> whom and its <b class="ui">Iceberg refs</b>.</p>
+        </li>
+        <li>
+          <p class="step-title">Select a snapshot.</p>
+          <p><b class="ui">Selected snapshot</b> shows its summary (<b class="ui">Show the whole summary</b> shows every field), and <b class="ui">Copy time-travel SQL</b> copies a query that reads it.</p>
+        </li>
+      </ol>
+      <figure class="shot" id="fig-time-travel-history"><img src="../img/shots/guides-time-travel-history-light.png" data-dark="../img/shots/guides-time-travel-history-dark.png" width="1440" height="900" alt="A table's History tab with one snapshot selected, and its time-travel SQL ready to copy."><figcaption>A table's History tab, with one snapshot selected and its time-travel SQL ready to copy.</figcaption></figure>
+
+      <h2 id="read-it">Read it</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <div class="code" data-lang="sql" data-title="By snapshot id, by time, or by an Iceberg tag">
+<pre><code>SELECT * FROM trading.equities.fills VERSION AS OF 7210934412873551003;
+SELECT * FROM trading.equities.fills TIMESTAMP AS OF '2026-11-25 18:00:00';
+SELECT * FROM trading.equities.fills VERSION AS OF 'month-end';</code></pre>
+          </div>
+          <p>To name a snapshot for later, make an Iceberg tag on the table. A commit that makes, moves or removes one changes only data bookkeeping, so it needs <code>write</code> on the table.</p>
+          <div class="code" data-lang="sql" data-title="Tag the table's current snapshot">
+<pre><code>ALTER TABLE trading.equities.fills CREATE TAG `month-end`;</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="trino" data-label="Trino">
+          <div class="code" data-lang="sql" data-title="By snapshot id">
+<pre><code>SELECT * FROM trading.equities.fills FOR VERSION AS OF 7210934412873551003;</code></pre>
+          </div>
+          <p>This is the form the console's <b class="ui">Copy time-travel SQL</b> copies.</p>
+        </section>
+        <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+          <div class="code" data-lang="python" data-title="By snapshot id, by Iceberg tag, or by time">
+<pre><code>fills = catalog.load_table("equities.fills")
+
+by_id = fills.scan(snapshot_id=7210934412873551003).to_arrow()
+by_tag = fills.scan(snapshot_id=fills.snapshot_by_name("month-end").snapshot_id).to_arrow()
+by_time = fills.scan(snapshot_id=fills.snapshot_as_of_timestamp(1764093600000).snapshot_id).to_arrow()</code></pre>
+          </div>
+          <p><code>snapshot_as_of_timestamp</code> takes milliseconds since the epoch.</p>
+        </section>
+      </div>
+
+      <p>An Iceberg branch or tag is a named snapshot inside one table's metadata file; an engine makes it with <code>ALTER TABLE … CREATE TAG</code> and reads it with <code>VERSION AS OF</code>. A catalog branch or tag (<code>trading@eod-2026-11-25</code>) is different: it chooses which metadata file every table reads. The catalog never uses Iceberg refs for its own.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">You read the earlier rows</p>
+        <p>The query returns the rows as they were at that snapshot, and a count matches the <b class="ui">Rows</b> the History tab shows for it.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>The engine says the snapshot or version cannot be found.</td><td>Snapshot expiry has removed it, or the id is from another table.</td><td>Pick a snapshot the History tab still lists. To keep one, tag it before it ages out.</td></tr>
+            <tr><td>A time before the table's oldest snapshot is refused by the engine.</td><td>No snapshot was current then.</td><td>Use a later time.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>select</code></td><td>Your groups lack <code>select</code> on the table.</td><td>Ask a grant admin (<a href="grant-access.html">Grant and revoke access</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">The engines' own messages for an expired snapshot or a time before the first snapshot are the engines', not nuna's, and were not captured here.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="tag.html">Keep a point in time with a tag</a>: the whole catalog at one point.</li>
+          <li><a href="../console/table.html">The table page</a>: the History tab and every other tab.</li>
+          <li><a href="maintenance-policy.html">Set a catalog's maintenance policy</a>: how long snapshots are kept.</li>
+          <li><a href="../clients/spark.html">Spark</a>, <a href="../clients/trino.html">Trino</a> and <a href="../clients/pyiceberg.html">PyIceberg</a>: setting each engine up.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/resources/nuna/ui/table.js</code>, <code>catalog-tests-engines/README.md</code> ("Time travel", "Branches and write-audit-publish"), <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code> and <code>docs/refs.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The Spark and PyIceberg forms are those the engine tests run; the Trino form is the one the console copies. Nothing was run against the local demo for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/cdc">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Change data capture in the demo · nuna docs</title>
+  <meta name="description" content="Run the demo's CDC leg: changes in PostgreSQL, Oracle and CockroachDB captured by Debezium and written through nuna into Iceberg history tables, one row per change.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Change data capture in the demo</h1>
+        <p class="lead">Run the demo's CDC leg: changes made in PostgreSQL, Oracle and CockroachDB reach Iceberg history tables in nuna within about 10 seconds, one row per change.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For developers</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The demo is running. The engine matrix is not: the two do not fit together.</li>
+        <li>The first run pulls Oracle Database Free's image, about 5 GB.</li>
+        <li>While the leg runs, Trino, the maintenance worker and the brokerage world's generator are stopped for its memory, and the audit table writer too when SingleStore is on. While the writer is stopped, the console's Audit page misses the leg's records.</li>
+      </ul>
+
+      <h2 id="what-runs">What runs</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Source</th><th scope="col">Table</th><th scope="col">Kafka topic</th><th scope="col">History table in <code>lakehouse</code></th></tr></thead>
+          <tbody>
+            <tr><td>PostgreSQL <code>backoffice</code>, logical WAL</td><td><code>settlement.instructions</code></td><td><code>backoffice.settlement.instructions</code></td><td><code>history.postgres.settlement.instructions</code></td></tr>
+            <tr><td>Oracle Database Free, PDB <code>FREEPDB1</code>, LogMiner</td><td><code>TREASURY.PAYMENTS</code></td><td><code>oracle.TREASURY.PAYMENTS</code></td><td><code>history.oracle.treasury.payments</code></td></tr>
+            <tr><td>CockroachDB, database <code>custody</code>, a changefeed</td><td><code>clearing.stock_record</code>, <code>cns_obligations</code>, <code>fails</code>, <code>locates</code></td><td><code>cockroach.clearing.<var>table</var></code></td><td><code>history.cockroach.clearing.<var>table</var></code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Six connectors run in the demo's Kafka Connect 4.2.2: Debezium 3.7.1's PostgreSQL, Oracle and CockroachDB source connectors, and an Apache Iceberg sink for each, writing through nuna as user <code>cdc</code> with vended credentials and committing every 5 seconds. CockroachDB's <code>clearing</code> tables hold the brokerage world's clearing books, loaded on each <code>cdc</code> as they stand after the world's last end of day (<a href="brokerage-world.html#clearing">The brokerage world</a>).</p>
+
+      <h2 id="start-the-leg">Start the leg and watch a change arrive</h2>
+      <ol class="steps">
+        <li><p class="step-title">Start it.</p>
+          <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh cdc</code></pre>
+          </div>
+          <p>The command waits for each source's snapshot (4 rows from PostgreSQL and from Oracle), then updates, deletes and inserts rows in PostgreSQL and Oracle and waits for those changes too: 8 rows in PostgreSQL's history and 7 in Oracle's. A leg run before carries on from its kept databases and offsets, without a new snapshot.</p></li>
+        <li><p class="step-title">Make a change.</p>
+          <p>Open a prompt on a source and change a row. In Oracle, end with <code>COMMIT</code>, or Debezium sees nothing.</p>
+          <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh psql             # database backoffice, user backoffice
+demo/demo.sh sqlplus          # user treasury in FREEPDB1
+demo/demo.sh cockroach        # database custody, as root
+demo/demo.sh psql ana         # or as a person, with their password</code></pre>
+          </div></li>
+        <li><p class="step-title">Watch it arrive.</p>
+          <p>kafbat on port 8182 shows Debezium's change event in the topic. In the console, the history table has a new snapshot for each sink commit.</p></li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">Each change is one appended row</p>
+        <p>After <code>demo/demo.sh cdc stop</code>, read the history in CloudBeaver's Trino connection, oldest first. <code>offset</code> is a keyword in Trino, so it is quoted:</p>
+        <div class="code" data-lang="sql">
+<pre><code>SELECT "_cdc".op, "_cdc".ts, instruction_id, status
+FROM lakehouse."history.postgres.settlement".instructions
+ORDER BY "_cdc"."offset";</code></pre>
+        </div>
+      </aside>
+
+      <h2 id="history-tables">The history tables</h2>
+      <p>The sink only appends, so each table is a history, never updated. A view over it that keeps the newest row per key that is not a delete gives the rows as they are now. The sink adds a struct column <code>_cdc</code>:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Holds</th></tr></thead>
+          <tbody>
+            <tr><td><code>op</code></td><td><code>I</code>, <code>U</code> or <code>D</code>. A deleted row is written as it was before the delete.</td></tr>
+            <tr><td><code>ts</code></td><td>When Debezium read the change.</td></tr>
+            <tr><td><code>offset</code></td><td>Its Kafka offset.</td></tr>
+            <tr><td><code>source</code>, <code>target</code></td><td>The source table and the Iceberg table.</td></tr>
+            <tr><td><code>key</code></td><td>The row's key.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li>Every timestamp lands as <code>timestamptz</code>, numbers with a scale as <code>decimal(38, <var>s</var>)</code>, and Oracle's <code>NUMBER(10)</code> as <code>long</code>.</li>
+        <li>Oracle's upper-case column names become lower case, column by column; a column added later arrives in upper case.</li>
+        <li>CockroachDB's connector can send again the changes made shortly before a stop, so its history may repeat them.</li>
+      </ul>
+
+      <h2 id="who-may-do-what">Who may do what in the sources</h2>
+      <p>The people sign in to all three databases with their Keycloak passwords, in a prompt or through their own CloudBeaver connections, such as <code>backoffice (PostgreSQL, as ana)</code>. Their changes reach the history tables like any other.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">User</th><th scope="col">PostgreSQL <code>backoffice</code></th><th scope="col">Oracle <code>FREEPDB1</code></th><th scope="col">CockroachDB <code>custody</code></th></tr></thead>
+          <tbody>
+            <tr><td><code>ana</code></td><td>Reads and writes every table; creates in the database and its schemas</td><td><code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, <code>CREATE</code>, <code>ALTER</code> and <code>DROP ANY TABLE</code></td><td>Every privilege on schema <code>clearing</code> and its tables</td></tr>
+            <tr><td><code>gary</code></td><td>Superuser</td><td>DBA</td><td><code>admin</code></td></tr>
+            <tr><td><code>stella</code>, <code>oscar</code></td><td>Read every table</td><td><code>SELECT ANY TABLE</code></td><td><code>SELECT</code> on the <code>clearing</code> tables</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The history tables are written as <code>cdc</code>, group <code>demo-loaders</code>; <code>ana</code> reads them like any other table.</p>
+
+      <h2 id="pause-or-reset">Pause or reset the leg</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>demo/demo.sh cdc stop</code></td><td>Stops the connectors, keeping their offsets, and the databases' pods, keeping their volumes; topics and history tables stay. Starts Trino, the audit table writer, the maintenance worker and the generator again. The next <code>cdc</code> carries on.</td></tr>
+            <tr><td><code>demo/demo.sh cdc reset</code></td><td>Deletes the leg, running or paused: connectors and offsets, databases and their volumes, topics. The next <code>cdc</code> starts anew from the SQL files and drops the previous run's history tables.</td></tr>
+            <tr><td><code>demo/demo.sh down</code></td><td>Pauses the leg as <code>cdc stop</code> does.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>An Oracle change never arrives.</td><td>It was not committed.</td><td>Run <code>COMMIT</code> in SQL*Plus.</td></tr>
+            <tr><td>A connector cannot carry on, such as Oracle's after its archived logs left the 4 GB recovery area.</td><td>The source no longer holds the log from the connector's offset.</td><td><code>demo/demo.sh cdc reset</code>, then <code>demo/demo.sh cdc</code>.</td></tr>
+            <tr><td>A changed SQL file in <code>demo/cdc</code> has no effect.</td><td>The databases start from their kept volumes.</td><td><code>demo/demo.sh cdc reset</code>, then <code>demo/demo.sh cdc</code>.</td></tr>
+            <tr><td><code>the CDC leg is running, and … does not fit beside it: demo/demo.sh cdc stop first</code></td><td><code>engines</code> or <code>rate</code> was run during the leg.</td><td>Run <code>demo/demo.sh cdc stop</code> first.</td></tr>
+            <tr><td>CloudBeaver's source connections do not connect.</td><td>The leg is not running: their hosts are gone.</td><td>Start the leg.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Kafka Connect's REST API is on port 8186, behind a password (user <code>operator</code>, the password in <code>~/.nuna-demo/secrets/connect</code>):</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -s --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -K ~/.nuna-demo/secrets/connect.curlrc 'https://localhost:8186/connectors?expand=status'</code></pre>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="commands.html#demo-sh-cdc">demo.sh cdc</a> and <a href="commands.html#demo-sh-psql">the database prompts</a></li>
+          <li><a href="kafka-metrics.html">Kafka, metrics and traces in the demo</a>: the connectors in kafbat.</li>
+          <li><a href="trino-cloudbeaver.html">Trino and CloudBeaver in the demo</a></li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/k8s/cdc.yaml</code>, <code>demo/cdc/connectors/*.json</code>, <code>demo/cdc/*.sql</code>, <code>demo/cdc/plugins/*/pom.xml</code>, <code>demo/k8s/connect.Dockerfile</code>, <code>demo/demo.sh</code> (<code>cdc_start</code>, <code>cdc_stop</code>, <code>cdc_reset</code>, <code>psql</code>, <code>sqlplus</code>, <code>cockroach</code>) and <code>demo/README.md</code> (CDC), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The leg was not running and was not started, since the demo is shared; nothing here was run. The namespaces <code>history.postgres</code>, <code>history.oracle</code> and <code>history.cockroach</code> exist in the running demo from an earlier run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

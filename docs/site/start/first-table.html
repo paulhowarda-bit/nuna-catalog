@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="start/first-table">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create your first table · nuna docs</title>
+  <meta name="description" content="Create a namespace and a table in the demo's catalog lakehouse, write three rows from an engine, read them back and find the table's history in the console. It takes about 20 minutes.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="tutorial">
+      <header class="doc-head">
+        <h1>Create your first table</h1>
+        <p class="lead">Create a namespace and a table in the demo's catalog <code>lakehouse</code>, write three rows from an engine, read them back and find the table's history in the console. It takes about 20 minutes.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For engine users</span></p>
+      </header>
+
+      <h2 id="what-you-need">What you need</h2>
+      <ul>
+        <li>The demo running, with its certificate authority trusted, as <a href="quickstart.html">Run nuna on your laptop</a> leaves it.</li>
+        <li>Git Bash, for the commands on this page.</li>
+        <li>One engine. The demo runs Trino for you, with CloudBeaver as its web page, so the Trino tabs need nothing else. The Spark tabs need Spark 4.1 with Iceberg 1.12.0, and the PyIceberg tabs need PyIceberg 0.12.0, the versions nuna tests.</li>
+      </ul>
+
+      <h2 id="get-a-token">Get a token</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Set the server's address and the token of the demo user <code>ana</code>.</p>
+          <div class="code" data-lang="bash">
+<pre><code>export NUNA=https://localhost:8181
+export TOKEN=$(tr -d '\r\n' &lt; ~/.nuna-demo/tokens/ana.jwt)</code></pre>
+          </div>
+          <p>The demo minted a token for each of its users when it started and keeps them in <code>~/.nuna-demo/tokens/</code>. Each lasts 7 days; <code>demo/demo.sh token</code> prints them again and mints new ones when they are about to expire. <code>ana</code> belongs to group <code>demo-analysts</code>, which holds <code>create</code> and <code>modify</code> on catalog <code>lakehouse</code>: she may create namespaces and tables and write to them.</p>
+        </li>
+        <li>
+          <p class="step-title">Ask the server for the catalog's configuration.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $TOKEN" \
+  "$NUNA/v1/config?warehouse=lakehouse"</code></pre>
+          </div>
+          <p><code>--cacert</code> trusts the demo's certificate authority. Git Bash's <code>curl</code> checks certificates with Windows, which refuses the demo's authority because it names no revocation list, unless you add <code>--ssl-revoke-best-effort</code>. The answer lists 26 endpoints; here they are cut to two:</p>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "defaults": {},
+  "overrides": {
+    "prefix": "lakehouse"
+  },
+  "endpoints": [
+    "GET /v1/{prefix}/namespaces",
+    "POST /v1/{prefix}/namespaces"
+  ],
+  "idempotency-key-lifetime": "PT24H"
+}</code></pre>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The server answers with prefix lakehouse</p>
+        <p>The <code>overrides</code> name the prefix every other call on the catalog uses: <code>/v1/lakehouse/…</code>. An answer of <code>401</code> with <code>Not authorized: the bearer token is missing or was not accepted</code> means <code>TOKEN</code> is empty or expired: run <code>demo/demo.sh token</code> and set it again.</p>
+      </aside>
+
+      <h2 id="point-an-engine-at-the-demo">Point an engine at the demo</h2>
+      <p>An engine needs the server's address, the warehouse, which is the catalog's name, and a token. It asks for vended credentials, so the server hands it short-lived keys for the table's files and the engine holds none of its own.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>curl needs nothing more than <code>NUNA</code> and <code>TOKEN</code>. It creates namespaces and tables and reads them, but cannot write rows: writing rows means writing data files, which only an engine does.</p>
+        </section>
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <p>Start <code>spark-sql</code> with a catalog named <code>lakehouse</code>. These are the settings nuna's engine tests use, with the demo's address:</p>
+          <div class="code" data-lang="bash">
+<pre><code>spark-sql \
+  --packages org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:1.12.0,org.apache.iceberg:iceberg-aws-bundle:1.12.0 \
+  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+  --conf spark.sql.catalog.lakehouse=org.apache.iceberg.spark.SparkCatalog \
+  --conf spark.sql.catalog.lakehouse.type=rest \
+  --conf spark.sql.catalog.lakehouse.uri=https://localhost:8181/ \
+  --conf spark.sql.catalog.lakehouse.warehouse=lakehouse \
+  --conf "spark.sql.catalog.lakehouse.token=$TOKEN" \
+  --conf spark.sql.catalog.lakehouse.header.X-Iceberg-Access-Delegation=vended-credentials \
+  --conf spark.sql.catalog.lakehouse.io-impl=org.apache.iceberg.aws.s3.S3FileIO \
+  --conf spark.sql.catalog.lakehouse.rest-catalog-purge=true</code></pre>
+          </div>
+          <p><code>rest-catalog-purge=true</code> makes <code>DROP TABLE … PURGE</code> leave the files to the server instead of deleting them itself, which vended credentials could not do anyway.</p>
+        </section>
+        <section class="tab" data-tab="trino" data-label="Trino">
+          <p>The demo's Trino already has a catalog <code>lakehouse</code> pointed at the server, and sends each query with the token of the person who runs it.</p>
+          <ol>
+            <li>Open CloudBeaver at <code>https://localhost:8185</code>.</li>
+            <li>Sign in through Keycloak as <code>ana</code>, with her password from <code>~/.nuna-demo/people</code>.</li>
+            <li>Open the connection <b class="ui">nuna (Trino, as ana)</b> and open an SQL editor on it.</li>
+          </ol>
+          <p>The first query after Trino starts takes about 10 seconds; later ones about 2.</p>
+        </section>
+        <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+          <p>Load the catalog in Python. These are the settings nuna's engine tests use, with the demo's address:</p>
+          <div class="code" data-lang="python">
+<pre><code>import os
+from pyiceberg.catalog import load_catalog
+
+catalog = load_catalog("lakehouse", **{
+    "type": "rest",
+    "uri": "https://localhost:8181",
+    "warehouse": "lakehouse",
+    "token": os.environ["TOKEN"],
+    "header.X-Iceberg-Access-Delegation": "vended-credentials",
+})</code></pre>
+          </div>
+        </section>
+      </div>
+      <p class="gap">Not documented yet: how Spark and PyIceberg on your laptop reach the demo's table files. The server vends <code>s3.endpoint</code> <code>http://s3:9000</code>, an address that resolves only inside the demo's cluster, and nuna's engine tests run Spark and PyIceberg inside it. Making these engines trust the demo's certificate and reach its object store on port 8187 has not been tested.</p>
+
+      <h2 id="create-a-namespace-and-a-table">Create a namespace and a table</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create the namespace <code>quickstart</code>.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="curl" data-label="curl">
+              <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X POST "$NUNA/v1/lakehouse/namespaces" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"namespace": ["quickstart"]}'</code></pre>
+              </div>
+              <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "namespace": ["quickstart"],
+  "properties": {}
+}</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="spark" data-label="Spark">
+              <div class="code" data-lang="sql">
+<pre><code>CREATE NAMESPACE lakehouse.quickstart;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="trino" data-label="Trino">
+              <div class="code" data-lang="sql">
+<pre><code>CREATE SCHEMA lakehouse.quickstart;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+              <div class="code" data-lang="python">
+<pre><code>catalog.create_namespace("quickstart")</code></pre>
+              </div>
+            </section>
+          </div>
+          <p>If the namespace exists already, the server answers <code>409</code> with <code>Namespace already exists: quickstart</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Create the table <code>quickstart.trades</code> with four columns.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="curl" data-label="curl">
+              <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X POST "$NUNA/v1/lakehouse/namespaces/quickstart/tables" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "trades",
+    "schema": {
+      "type": "struct",
+      "fields": [
+        {"id": 1, "name": "trade_id", "type": "long", "required": false},
+        {"id": 2, "name": "symbol", "type": "string", "required": false},
+        {"id": 3, "name": "qty", "type": "long", "required": false},
+        {"id": 4, "name": "price", "type": "double", "required": false}
+      ]
+    }
+  }'</code></pre>
+              </div>
+              <p>The answer is the table's metadata, then <code>config</code> and <code>storage-credentials</code> with the vended keys. Here it is cut to the fields this step is about, with the keys left out:</p>
+              <div class="code" data-lang="json" data-kind="output" data-title="Response, cut">
+<pre><code>{
+  "metadata-location": "s3://warehouse/tables/7f48984b-7fe8-4032-bbad-d4afa694fe8e/metadata/00001-72ff9cae-05a9-4735-aab3-e1526bd7d574.metadata.json",
+  "metadata": {
+    "format-version": 3,
+    "location": "s3://warehouse/tables/7f48984b-7fe8-4032-bbad-d4afa694fe8e",
+    "current-schema-id": 0,
+    "current-snapshot-id": null,
+    "properties": {
+      "write.parquet.compression-codec": "zstd"
+    }
+  },
+  "config": {
+    "s3.endpoint": "http://s3:9000",
+    "client.region": "us-east-1",
+    "s3.path-style-access": "true"
+  }
+}</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="spark" data-label="Spark">
+              <div class="code" data-lang="sql">
+<pre><code>CREATE TABLE lakehouse.quickstart.trades (
+  trade_id bigint,
+  symbol string,
+  qty bigint,
+  price double
+) USING iceberg;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="trino" data-label="Trino">
+              <div class="code" data-lang="sql">
+<pre><code>CREATE TABLE lakehouse.quickstart.trades (
+  trade_id bigint,
+  symbol varchar,
+  qty bigint,
+  price double
+);</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+              <div class="code" data-lang="python">
+<pre><code>from pyiceberg.schema import Schema
+from pyiceberg.types import DoubleType, LongType, NestedField, StringType
+
+table = catalog.create_table("quickstart.trades", Schema(
+    NestedField(1, "trade_id", LongType(), required=False),
+    NestedField(2, "symbol", StringType(), required=False),
+    NestedField(3, "qty", LongType(), required=False),
+    NestedField(4, "price", DoubleType(), required=False),
+))</code></pre>
+              </div>
+            </section>
+          </div>
+          <p>The server chose the table's location itself, a folder named by the table's id under the catalog's table root, so a renamed table keeps its files where they are (<a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>).</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The namespace lists the new table</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $TOKEN" \
+  "$NUNA/v1/lakehouse/namespaces/quickstart/tables"</code></pre>
+        </div>
+        <p>The answer is <code>{"identifiers":[{"namespace":["quickstart"],"name":"trades"}],"next-page-token":null}</code>. The table has no snapshot yet: <code>current-snapshot-id</code> is <code>null</code> until the first write.</p>
+      </aside>
+
+      <h2 id="write-rows">Write rows</h2>
+      <p>curl has no tab here: an engine writes the data files to the object store with the vended keys, then commits them through the server.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Insert three rows.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="spark" data-label="Spark">
+              <div class="code" data-lang="sql">
+<pre><code>INSERT INTO lakehouse.quickstart.trades VALUES
+  (1, 'SAP', 100, 183.40),
+  (2, 'DTE', 1500, 23.24),
+  (3, 'SIE', 50, 211.10);</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="trino" data-label="Trino">
+              <div class="code" data-lang="sql">
+<pre><code>INSERT INTO lakehouse.quickstart.trades VALUES
+  (1, 'SAP', 100, 183.40),
+  (2, 'DTE', 1500, 23.24),
+  (3, 'SIE', 50, 211.10);</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+              <div class="code" data-lang="python">
+<pre><code>import pyarrow as pa
+
+rows = pa.schema([("trade_id", pa.int64()), ("symbol", pa.string()),
+                  ("qty", pa.int64()), ("price", pa.float64())])
+table.append(pa.Table.from_pylist([
+    {"trade_id": 1, "symbol": "SAP", "qty": 100, "price": 183.40},
+    {"trade_id": 2, "symbol": "DTE", "qty": 1500, "price": 23.24},
+    {"trade_id": 3, "symbol": "SIE", "qty": 50, "price": 211.10},
+], schema=rows))</code></pre>
+              </div>
+            </section>
+          </div>
+          <p>The engine's one commit adds one snapshot to the table. If the server refuses the commit, the engine shows its error: a <code>403</code> names the privilege the caller lacks, as in <code>gary holds no privilege that gives select for loadTable</code>.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The insert reports three rows</p>
+        <p>Trino reports 3 rows inserted. The table now has a current snapshot, which the next stage reads.</p>
+      </aside>
+
+      <h2 id="read-the-rows-back">Read the rows back</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Select the rows.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="curl" data-label="curl">
+              <p>curl cannot read rows, but it reads the table's metadata, whose newest snapshot counts them:</p>
+              <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $TOKEN" \
+  "$NUNA/v1/lakehouse/namespaces/quickstart/tables/trades"</code></pre>
+              </div>
+              <p>In the answer, <code>metadata.current-snapshot-id</code> names the snapshot the insert made, and that snapshot's <code>summary</code> holds <code>"added-records": "3"</code>.</p>
+            </section>
+            <section class="tab" data-tab="spark" data-label="Spark">
+              <div class="code" data-lang="sql">
+<pre><code>SELECT * FROM lakehouse.quickstart.trades ORDER BY trade_id;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="trino" data-label="Trino">
+              <div class="code" data-lang="sql">
+<pre><code>SELECT * FROM lakehouse.quickstart.trades ORDER BY trade_id;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+              <div class="code" data-lang="python">
+<pre><code>table = catalog.load_table("quickstart.trades")
+print(table.scan().to_arrow().to_pylist())</code></pre>
+              </div>
+            </section>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">You get the three rows you wrote</p>
+        <p>Trade ids 1, 2 and 3, for <code>SAP</code>, <code>DTE</code> and <code>SIE</code>.</p>
+      </aside>
+
+      <h2 id="find-the-table-in-the-console">Find the table in the console</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Sign in to the console at <code>https://localhost:8181/ui/</code> as <code>ana</code>.</p>
+          <p>Select <b class="ui">Sign in with localhost:8180</b> and sign in to Keycloak with her password. If you are signed in as someone else, select <b class="ui">Sign out</b> first.</p>
+        </li>
+        <li>
+          <p class="step-title">Press <kbd>/</kbd>, enter <code>quickstart.trades</code> and press <kbd>Enter</kbd>.</p>
+        </li>
+        <li>
+          <p class="step-title">Select the <b class="ui">History</b> tab.</p>
+          <p>Each row is one version of the table, newest first: when it was committed, what it changed, the snapshot it added, the rows it added or removed and who committed it. Select <b class="ui">Show</b> on a row for the commit's updates.</p>
+        </li>
+      </ol>
+      <figure class="shot pending" id="fig-first-table-history"
+              data-shot="start-first-table-history"
+              data-shot-route="#c=lakehouse&amp;k=table&amp;ns=quickstart&amp;n=trades&amp;tab=history"
+              data-shot-user="ana"
+              data-shot-width="1440"
+              data-shot-state="After this tutorial's write steps and before its clean-up: quickstart.trades holds the three rows, written from Trino as ana.">
+        <figcaption>The History tab of <code>quickstart.trades</code>: the create, then the insert of three rows.</figcaption>
+      </figure>
+      <aside class="callout check">
+        <p class="callout-title">The History tab shows two versions</p>
+        <p>Version 1 is the table's creation and version 2 the insert, which added 3 rows. Through Trino, the insert's row names Trino's principal acting for <code>ana</code>; from Spark or PyIceberg it names <code>ana</code>.</p>
+      </aside>
+
+      <h2 id="remove-what-you-made">Remove what you made</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Drop the table.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="curl" data-label="curl">
+              <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X DELETE "$NUNA/v1/lakehouse/namespaces/quickstart/tables/trades?purgeRequested=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+              </div>
+              <p>The server answers <code>204</code> with no body. It ignores <code>purgeRequested</code>: every drop keeps the files, and the table can be restored for a time.</p>
+            </section>
+            <section class="tab" data-tab="spark" data-label="Spark">
+              <div class="code" data-lang="sql">
+<pre><code>DROP TABLE lakehouse.quickstart.trades PURGE;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+              <div class="code" data-lang="python">
+<pre><code>catalog.purge_table("quickstart.trades")</code></pre>
+              </div>
+            </section>
+          </div>
+          <p class="gap">Not documented yet: Trino's <code>DROP TABLE</code> against the demo. nuna has not checked it, so this step has no Trino tab.</p>
+        </li>
+        <li>
+          <p class="step-title">Drop the namespace.</p>
+          <div class="tabs" data-group="client">
+            <section class="tab" data-tab="curl" data-label="curl">
+              <div class="code" data-lang="bash">
+<pre><code>curl -sS --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -X DELETE "$NUNA/v1/lakehouse/namespaces/quickstart" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="spark" data-label="Spark">
+              <div class="code" data-lang="sql">
+<pre><code>DROP NAMESPACE lakehouse.quickstart;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="trino" data-label="Trino">
+              <div class="code" data-lang="sql">
+<pre><code>DROP SCHEMA lakehouse.quickstart;</code></pre>
+              </div>
+            </section>
+            <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+              <div class="code" data-lang="python">
+<pre><code>catalog.drop_namespace("quickstart")</code></pre>
+              </div>
+            </section>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The namespace is gone</p>
+        <p>A <code>GET</code> of <code>$NUNA/v1/lakehouse/namespaces/quickstart</code> now answers <code>404</code>. Every drop in nuna is soft: the server keeps the dropped table's files until its window ends, then the maintenance worker purges them. <a href="../concepts/lifecycle.html">Dropping, restoring and purging</a> explains the window.</p>
+      </aside>
+
+      <h2 id="what-you-did">What you did</h2>
+      <p>You read a token the demo minted and asked the server for the catalog's configuration. You created a namespace and a table through the Iceberg REST API, wrote rows from an engine that received vended credentials rather than keys of its own, and read them back. You found the table in the console and read its versions on the History tab, then dropped it. Next, <a href="first-branch.html">work on a catalog branch</a>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../clients/curl.html">Use the APIs with curl</a>: the set-up every curl example on this site assumes.</li>
+          <li><a href="../clients/spark.html">Spark</a>, <a href="../clients/trino.html">Trino</a> and <a href="../clients/pyiceberg.html">PyIceberg</a>: each engine's settings in full.</li>
+          <li><a href="../api/iceberg-tables.html#endpoints">Iceberg REST: tables</a>: every table endpoint and what nuna answers.</li>
+          <li><a href="../console/table.html">The table page</a>: every tab of a table in the console.</li>
+          <li><a href="../demo/trino-cloudbeaver.html">Trino and CloudBeaver in the demo</a>: each demo user's connections and what they may do there.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/README.md</code> (Trino and CloudBeaver), <code>demo/k8s/trino.yaml</code>, <code>demo/k8s/demo-values.yaml</code>, <code>demo/CloudBeaverUsers.java</code>, <code>demo/demo.sh</code> (<code>grants</code>, <code>tokens_expired</code>), <code>demo/Mint.java</code>, <code>catalog-tests-engines/README.md</code>, <code>catalog-tests-engines/images/spark/run.sh</code>, <code>catalog-tests-engines/images/spark/Dockerfile</code>, <code>catalog-tests-engines/images/python/pyiceberg_matrix.py</code> and the console's <code>table.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Every curl command was run as <code>ana</code> against the demo, which ran commit <code>a9c7ea81a81a</code>: the configuration, creating the namespace and the table, listing the namespace's tables, dropping the table with <code>purgeRequested=true</code> and dropping the namespace. The responses shown are those runs', cut where the text says.</p>
+        <p>The Spark, Trino and PyIceberg statements were not run for this page. Their settings come from the engine tests' scripts, which run inside the cluster against <code>http://nuna-catalog:8181</code>, and from the demo's Trino configuration; the statements are standard SQL and PyIceberg calls of the forms those tests use. The console steps were not run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

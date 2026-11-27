@@ -1745,3 +1745,4 @@ another), and it is judged BITES in the overnight run.
 | [298](backlog/298.md) | Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot | done | 2026-11-26 |
 | [299](backlog/299.md) | Console prototype: bring its header up to the built console (the Reading slot, items 231 and 297) | done | 2026-11-26 |
 | [300](backlog/300.md) | Console: on a phone the Reading menu may run past the window and main may end in an ellipsis (from 299) | done | 2026-11-26 |
+| [301](backlog/301.md) | A documentation site: every console page and command, installation, configuration, API and operations, as static web pages | done | 2026-11-27 |

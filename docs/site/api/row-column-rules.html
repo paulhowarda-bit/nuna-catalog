@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/row-column-rules">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Row and column rules · nuna docs</title>
+  <meta name="description" content="Set, remove and list each group's row filter and column masks on a table, export every rule, and read what your own rules do to you, under /management/v1/catalogs/{catalog}/row-column-rules.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Row and column rules</h1>
+        <p class="lead">Set, remove and list each group's row filter and column masks on a table, export every rule, and read what your own rules do to you, under <code>/management/v1/catalogs/{catalog}/row-column-rules</code>.</p>
+      </header>
+
+      <p>A rule belongs to one group on one table. The server hands the rules to trusted engines, which apply them (see <a href="../concepts/row-column-rules.html">Row filters and column masks</a> and <a href="opa.html">OPA decisions</a>). A rule needs the table's <code>row-column-policy</code> flag, which a data steward sets through <a href="governance.html#put-attributes-attribute">the governance attributes</a>, so writing the rules and flagging the table take two people. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+      <p>No filter or mask expression reaches a caller without <code>manage-grants</code>. Every refusal is audited, and a refusal on a table you hold nothing on is answered as if the table did not exist.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Row and column rule endpoints, under <code>/management/v1/catalogs/{catalog}</code></caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST</code></td><td><a href="#post-row-column-rules"><code>/row-column-rules</code></a></td><td>Sets a group's rule on a table, replacing the one it had.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-row-column-rules-remove"><code>/row-column-rules/remove</code></a></td><td>Removes a group's rule from a table.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-row-column-rules"><code>/row-column-rules</code></a></td><td>Lists the rules on one table, with their expressions.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-row-column-rules-export"><code>/row-column-rules/export</code></a></td><td>Exports every rule in the catalog, for access reviews.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-table-row-column-rules-mine"><code>/namespaces/{namespace}/tables/{table}/row-column-rules/mine</code></a></td><td>Says what your own rules do to you on a table.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-table-schema"><code>/namespaces/{namespace}/tables/{table}/schema</code></a></td><td>Reads a table's current schema and properties, to pick columns to mask.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="post-row-column-rules"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/row-column-rules</code></h3>
+        <p>Sets a group's rule on a table: a row filter, column masks or both. It replaces the rule the group had. Each expression must parse as Trino SQL, checked with Trino's own parser; a subquery, and so another table, is allowed. A rule names only columns the table's current schema has. Afterwards, a schema change that renames or drops a column a rule names is refused until the rule changes, since a mask is served by its column's name and a rename would unmask it.</p>
+        <p>To act only on the rule as you read it, send its version back in <code>If-Match</code>. When the group's rule is at another version, or has been removed, the answer is <code>412</code> and nothing is written. Without <code>If-Match</code>, the set replaces whatever rule there is.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the table or above it</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-row-column-rules-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>If-Match</code></td><td>header</td><td>string</td><td>No</td><td>The rule's <code>version</code> from <a href="#get-row-column-rules">the list</a>, in double quotes: <code>"1795706330054677"</code>. A weak tag, a list or <code>*</code> is refused.</td></tr>
+              <tr><td><code>table</code></td><td>body</td><td>object</td><td>Yes</td><td><code>{"type": "table", "namespace": [<var>levels</var>], "name": <var>name</var>}</code>. Only a table: views take no rules.</td></tr>
+              <tr><td><code>group</code></td><td>body</td><td>string</td><td>Yes</td><td>The group the rule is for.</td></tr>
+              <tr><td><code>row-filter</code></td><td>body</td><td>string</td><td>No</td><td>An SQL predicate: the group sees the rows it admits. At most <code>4000</code> characters, with no NUL. To give the group every row, set it to <code>true</code>.</td></tr>
+              <tr><td><code>column-masks</code></td><td>body</td><td>object</td><td>No</td><td>Column name to SQL expression: the group sees the expression's value instead of the column's. At most <code>500</code> columns, each expression at most <code>4000</code> characters.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-row-column-rules-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{
+  "table": {"type": "table", "namespace": ["equities", "daily"], "name": "positions"},
+  "group": "trading-analysts",
+  "row-filter": "desk = 'EQ'",
+  "column-masks": {"trader": "'***'"}
+}</code></pre>
+        </div>
+        <h4 id="post-row-column-rules-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The group has the rule, whether this request set it or it was set already.</td></tr>
+              <tr><td><code>400</code></td><td>
+                <p>The body is wrong. The messages include:</p>
+                <ul>
+                  <li><code>A rule filters rows (row-filter), masks columns (column-masks), or both; to give a group every row, set row-filter to true</code></li>
+                  <li><code>A rule names its table: {"table": {"type": "table", "namespace": [...], "name": ...}}</code></li>
+                  <li><code>Row filters and column masks go on tables only</code></li>
+                  <li><code>A rule names the group it is for; rules never go to individuals …</code></li>
+                  <li><code>row-filter is an SQL expression, as text</code>, and <code>row-filter is at most 4000 characters, with no NUL</code></li>
+                  <li><code>column-masks is an object from column name to SQL expression</code>, <code>column-masks names each column it masks</code>, <code>A rule masks at most 500 columns</code></li>
+                  <li><code>The mask of trader is not a Trino SQL expression: at line 1, column 5, …</code>, with Trino's own message</li>
+                  <li><code>column-masks names traderx, which the table's current schema does not have; a mask names a column of the table as it is now …</code>, and the same for <code>row-filter</code></li>
+                  <li><code>If-Match names the rule's version as the list gives it, as "&lt;version&gt;"</code></li>
+                </ul>
+              </td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the table or above it; or you belong to the group: <code>no one sets row filters or column masks for a group they belong to: <var>group</var></code>, audited with the reason <code>separation-of-duties</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog or table is not there, or you hold nothing on it.</td></tr>
+              <tr><td><code>409</code></td><td>The table is not flagged: <code>The table does not carry the row/column-policy flag; a steward sets it first, so that only trusted engines read its files …</code> (<code>NotFlaggedException</code>).</td></tr>
+              <tr><td><code>412</code></td><td>The rule is not the one <code>If-Match</code> named: <code>The rule for <var>group</var> is at version <var>n</var>, not the one named in If-Match; another change came first: list the rules again</code>, or <code>The rule for <var>group</var> named in If-Match has been removed; list the rules again</code> (<code>PreconditionFailedException</code>).</td></tr>
+              <tr><td><code>500</code></td><td><code>The catalog may or may not have finished setting the rule; repeat it: …</code>. Repeating a set is safe.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-row-column-rules-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -i -X POST "$NUNA/management/v1/catalogs/trading/row-column-rules" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H 'If-Match: "1795706330054677"' \
+  -d '{"table": {"type": "table", "namespace": ["equities", "daily"], "name": "positions"},
+       "group": "trading-analysts", "row-filter": "desk = '"'"'EQ'"'"'",
+       "column-masks": {"trader": "'"'"'***'"'"'"}}'</code></pre>
+        </div>
+        <div class="code" data-lang="http" data-kind="output" data-title="Response">
+<pre><code>HTTP/1.1 204
+X-Request-ID: 8c2e4a6b0d1f4e3a9b5c7d9e1f2a3b4c</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-row-column-rules-remove"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/row-column-rules/remove</code></h3>
+        <p>Removes a group's rule from a table. <code>If-Match</code> works as for a set.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the table or above it</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-row-column-rules-remove-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>If-Match</code></td><td>header</td><td>string</td><td>No</td><td>The rule's <code>version</code>, in double quotes.</td></tr>
+              <tr><td><code>table</code></td><td>body</td><td>object</td><td>Yes</td><td>The table, as for a set.</td></tr>
+              <tr><td><code>group</code></td><td>body</td><td>string</td><td>Yes</td><td>The group whose rule to remove.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-row-column-rules-remove-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The rule is gone.</td></tr>
+              <tr><td><code>400</code></td><td>The body is wrong, as for a set.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the table or above it, or you belong to the group.</td></tr>
+              <tr><td><code>404</code></td><td>The group has no rule on the table: <code>No row filter or column masks for <var>group</var> on the table</code> (<code>NotFoundException</code>). Or the catalog or table is not there.</td></tr>
+              <tr><td><code>412</code></td><td>The rule is not at the version <code>If-Match</code> named.</td></tr>
+              <tr><td><code>500</code></td><td>The database did not say whether the removal happened. Repeating it answers <code>404</code> if it did.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-row-column-rules-remove-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -i -X POST "$NUNA/management/v1/catalogs/trading/row-column-rules/remove" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"table": {"type": "table", "namespace": ["equities", "daily"], "name": "positions"},
+       "group": "data-stewards"}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-row-column-rules"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/row-column-rules</code></h3>
+        <p>Lists every group's rule on one table, with the expressions and each rule's version.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the table or above it</span></p>
+        <h4 id="get-row-column-rules-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>namespace</code></td><td>query</td><td>string</td><td>Yes</td><td>One namespace level. Repeat it for each level, in order.</td></tr>
+              <tr><td><code>name</code></td><td>query</td><td>string</td><td>Yes</td><td>The table's name.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-row-column-rules-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"table": <var>securable</var>, "rules": [<var>rule</var>, …]}</code>. The table is named as on the <a href="grants.html#securable">Grants page</a>.</td></tr>
+              <tr><td><code>400</code></td><td>The table is not named fully.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the table or above it.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog or table is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-row-column-rules-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/row-column-rules?namespace=equities&amp;namespace=daily&amp;name=positions" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "table": {
+    "type": "table",
+    "id": "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c",
+    "namespace": ["equities", "daily"],
+    "name": "positions",
+    "state": "active"
+  },
+  "rules": [
+    {
+      "group": "data-stewards",
+      "column-masks": {"pnl": "NULL"},
+      "set-by": "sam",
+      "set-at": "2026-11-25T15:18:50.283770Z",
+      "version": 1795706330283769
+    },
+    {
+      "group": "trading-analysts",
+      "row-filter": "desk = 'EQ'",
+      "column-masks": {"trader": "'***'"},
+      "set-by": "sam",
+      "set-at": "2026-11-25T15:18:50.054677Z",
+      "version": 1795706330054677
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-row-column-rules-export"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/row-column-rules/export</code></h3>
+        <p>Exports every rule in the catalog, for access reviews: tables in the catalog's walk order, each table's rules by group. A caller with <code>manage-grants</code> on the catalog gets the expressions. An audit reader, who holds <code>select</code> on the audit tables' catalog, gets each rule without them, for any catalog. Anyone else is refused.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the catalog, or <code>select</code> on the audit catalog</span></p>
+        <h4 id="get-row-column-rules-export-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-row-column-rules-export-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalog", "expressions", "rules": [<var>exported rule</var>, …]}</code>. <code>expressions</code> says whether the rules carry their expressions.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the catalog and are not an audit reader.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog does not exist, or you hold nothing in it and are not an audit reader.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-row-column-rules-export-example">Example</h4>
+        <p>The response below is cut to one rule.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/row-column-rules/export" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "expressions": true,
+  "rules": [
+    {
+      "table": {
+        "kind": "table",
+        "id": "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c",
+        "path": ["equities", "daily", "positions"]
+      },
+      "group": "trading-analysts",
+      "rows": "filtered",
+      "masked-columns": ["trader"],
+      "row-filter": "desk = 'EQ'",
+      "column-masks": {"trader": "'***'"},
+      "set-by": "sam",
+      "set-at": "2026-11-25T15:18:50.054677Z"
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-table-row-column-rules-mine"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/row-column-rules/mine</code></h3>
+        <p>Says what your own groups' rules do to you on a table, combined as Trino receives them, without the expressions. You see the rows any of your groups' filters admit, and a rule of yours with no filter admits every row. A column is masked only when every one of your rules masks it. When the table has rules and none is for your groups, you get no rows.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the table</span></p>
+        <h4 id="get-table-row-column-rules-mine-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>namespace</code></td><td>path</td><td>string</td><td>Yes</td><td>The namespace levels joined by the unit separator, <code>%1F</code> in a URL: <code>equities%1Fdaily</code>.</td></tr>
+              <tr><td><code>table</code></td><td>path</td><td>string</td><td>Yes</td><td>The table's name.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-table-row-column-rules-mine-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"target": {"kind", "id"}, "flagged", "rows", "masked-columns"}</code>: whether the table carries the flag, <code>all</code>, <code>filtered</code> or <code>none</code>, and the columns masked for you.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the table but not <code>select</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The table is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-table-row-column-rules-mine-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities%1Fdaily/tables/positions/row-column-rules/mine" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "target": {"kind": "table", "id": "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c"},
+  "flagged": true,
+  "rows": "filtered",
+  "masked-columns": ["trader"]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-table-schema"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/schema</code></h3>
+        <p>Reads a table's current schema and properties, flagged or not, so a mask editor can pick its columns. It gives no location, snapshot or file and no storage credentials, so it is not storage access. The server reads the metadata file itself and checks it against the hash it recorded.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the table</span> <span class="badge audited">Audited</span></p>
+        <h4 id="get-table-schema-parameters">Parameters</h4>
+        <p><code>catalog</code>, <code>namespace</code> and <code>table</code>, as for <a href="#get-table-row-column-rules-mine-parameters">your own rules</a>.</p>
+        <h4 id="get-table-schema-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"target": {"kind", "id"}, "format-version", "schema", "properties"}</code>. <code>schema</code> is the Iceberg schema that <code>current-schema-id</code> names. The read is audited as a read record.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the table but not <code>describe</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The table is not there, or you hold nothing on it.</td></tr>
+              <tr><td><code>500</code></td><td><code>The metadata file of the table does not match its recorded hash</code> (<code>MetadataIntegrityException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-table-schema-example">Example</h4>
+        <p>The schema below is cut to two fields.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities%1Fdaily/tables/positions/schema" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "target": {"kind": "table", "id": "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c"},
+  "format-version": 2,
+  "schema": {
+    "type": "struct",
+    "schema-id": 0,
+    "fields": [
+      {"id": 1, "name": "desk", "required": false, "type": "string"},
+      {"id": 2, "name": "trader", "required": false, "type": "string"}
+    ]
+  },
+  "properties": {"write.parquet.compression-codec": "zstd"}
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="rule">Rule</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>group</code></td><td>string</td><td>The group the rule is for.</td></tr>
+            <tr><td><code>row-filter</code></td><td>string</td><td>The SQL predicate. Absent when the rule masks columns only.</td></tr>
+            <tr><td><code>column-masks</code></td><td>object</td><td>Column name to SQL expression, keyed by the column as the table's current schema spells it. Empty when the rule filters only.</td></tr>
+            <tr><td><code>set-by</code></td><td>string</td><td>The subject who set it.</td></tr>
+            <tr><td><code>set-at</code></td><td>string</td><td>When, as an ISO-8601 instant.</td></tr>
+            <tr><td><code>version</code></td><td>integer</td><td>The rule's version, for <code>If-Match</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="exported-rule">Exported rule</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>table</code></td><td>object</td><td><code>{"kind", "id", "path"}</code>: <code>path</code> is the namespace levels and the table's name.</td></tr>
+            <tr><td><code>group</code></td><td>string</td><td>The group the rule is for.</td></tr>
+            <tr><td><code>rows</code></td><td>string</td><td><code>filtered</code> when the rule has a row filter, otherwise <code>all</code>.</td></tr>
+            <tr><td><code>masked-columns</code></td><td>array of strings</td><td>The columns the rule masks.</td></tr>
+            <tr><td><code>row-filter</code>, <code>column-masks</code></td><td></td><td>Only when <code>expressions</code> is true; <code>row-filter</code> only when the rule has one.</td></tr>
+            <tr><td><code>set-by</code>, <code>set-at</code></td><td>string</td><td>Who set the rule, and when.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/row-column-rules.html">Row filters and column masks</a>: flagged tables and how rules combine.</li>
+          <li><a href="../security/row-column.html">Row-level security and column masking</a>: which engines enforce the rules.</li>
+          <li><a href="opa.html">OPA decisions</a>: how a trusted engine fetches the rules it applies.</li>
+          <li><a href="governance.html">Governance</a>: setting the <code>row-column-policy</code> flag.</li>
+          <li><a href="../reference/audit-records.html#record-types">Audit record format</a>: the record each set and removal leaves.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/RowColumnPolicy.java</code>, <code>RuleColumns.java</code> and <code>RuleExpressions.java</code> in the same folder, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The <code>GET</code> examples were run against the demo and their responses rewritten to the fictional estate. The <code>POST</code> examples were not run: their responses are built from the code.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

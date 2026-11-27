@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Command line and clients · nuna docs</title>
+  <meta name="description" content="There is no nuna command-line program. You call the APIs with curl, query and write data with Iceberg engines, run local stacks with two scripts, and run clusters with Helm and kubectl.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>Command line and clients</h1>
+        <p class="lead">There is no nuna command-line program. You call the APIs with curl, query and write data with Iceberg engines, run local stacks with two scripts, and run clusters with Helm and kubectl.</p>
+      </header>
+
+      <p>Every client needs an access token from your identity provider first. Start with the token, then pick the tool for the job.</p>
+
+      <ul class="cards">
+        <li>
+          <a href="tokens.html">
+            <span class="card-title">Get a token</span>
+            <span class="card-text">An access token from your identity provider, a token an engine renews itself, and how long tokens last.</span>
+          </a>
+        </li>
+        <li>
+          <a href="curl.html">
+            <span class="card-title">Use the APIs with curl</span>
+            <span class="card-text">The set-up every curl example on this site assumes, request ids, paging, safe retries and reading errors.</span>
+          </a>
+        </li>
+        <li>
+          <a href="spark.html">
+            <span class="card-title">Spark</span>
+            <span class="card-text">Catalog settings, vended credentials, branches and tags, and maintenance procedures. Tested in the engine matrix.</span>
+          </a>
+        </li>
+        <li>
+          <a href="trino.html">
+            <span class="card-title">Trino</span>
+            <span class="card-text">Queries that reach nuna as the person who runs them, with row filters and column masks. Not tested by nuna.</span>
+          </a>
+        </li>
+        <li>
+          <a href="pyiceberg.html">
+            <span class="card-title">PyIceberg</span>
+            <span class="card-text">Loading the catalog from Python, reading any table, and writing format version 2 tables. Tested in the engine matrix.</span>
+          </a>
+        </li>
+        <li>
+          <a href="kafka-connect.html">
+            <span class="card-title">Kafka Connect</span>
+            <span class="card-text">The Apache Iceberg sink writing topics into nuna tables. Tested in the engine matrix.</span>
+          </a>
+        </li>
+        <li>
+          <a href="singlestore.html">
+            <span class="card-title">SingleStore</span>
+            <span class="card-text">Loading nuna tables into SingleStore with Iceberg pipelines. Tested in the engine matrix.</span>
+          </a>
+        </li>
+        <li>
+          <a href="other-engines.html">
+            <span class="card-title">Other engines</span>
+            <span class="card-text">DuckDB, StarRocks, Flink and others, with the standard REST settings. Not tested by nuna.</span>
+          </a>
+        </li>
+        <li>
+          <a href="../demo/commands.html">
+            <span class="card-title">demo.sh reference</span>
+            <span class="card-text">The script that runs the local demo: every subcommand and what it prints.</span>
+          </a>
+        </li>
+        <li>
+          <a href="../install/kind.html">
+            <span class="card-title">Run nuna on a local kind cluster</span>
+            <span class="card-text">The scripts that make a local Kubernetes cluster and run nuna on it.</span>
+          </a>
+        </li>
+        <li>
+          <a href="../install/helm-catalog.html">
+            <span class="card-title">Install the catalog server with Helm</span>
+            <span class="card-text">The Helm charts that install nuna on a cluster.</span>
+          </a>
+        </li>
+        <li>
+          <a href="../operate/kubectl.html">
+            <span class="card-title">Helm and kubectl recipes</span>
+            <span class="card-text">Status, logs, restarts and rollbacks for a running deployment.</span>
+          </a>
+        </li>
+      </ul>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/dr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Disaster recovery · nuna docs</title>
+  <meta name="description" content="Read how far each table is behind its DR watermark, and reconcile a catalog from storage after a recovery, under /management/v1.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Disaster recovery</h1>
+        <p class="lead">Read how far each table is behind its DR watermark, and reconcile a catalog from storage after a recovery, under <code>/management/v1</code>.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>A table's <em>DR watermark</em> is the newest version of its <code>main</code> pointer whose every file the verifier found in the DR store (see <a href="../concepts/disaster-recovery.html">Disaster recovery</a>). Both routes here need a platform operator. Freezing and lifting a freeze are on <a href="governance.html#put-dr-freeze">Governance</a>; the verifier's own routes are on <a href="worker.html#dr-verification">Worker endpoints</a>. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Disaster recovery endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-dr-watermarks"><code>/management/v1/dr/watermarks</code></a></td><td>Lists the tables and views behind their DR watermark.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-catalog-dr-reconcile"><code>/management/v1/catalogs/{catalog}/dr-reconcile</code></a></td><td>Walks a catalog's tables forward from storage, or back to their watermarks.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-dr-watermarks"><span class="method" data-method="GET">GET</span> <code>/management/v1/dr/watermarks</code></h3>
+        <p>Lists, by id, every table and view behind its DR watermark, in every catalog: its pointer's version, its watermark (<code>null</code> when the verifier has passed none of its versions), how many versions behind it is, and its lag, the time since its oldest unverified commit.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-dr-watermarks-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Default <code>50</code>, at most <code>200</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-dr-watermarks-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"tables": [{"id", "kind", "catalog", "namespace", "name", "pointer-version", "watermark-version", "watermark-recorded-at", "versions-behind", "oldest-unverified-at", "lag-seconds"}], "next-page-token"}</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid page token: <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td><code>only platform operators may call listDrWatermarks</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-dr-watermarks-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/dr/watermarks?pageSize=1" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "tables": [
+    {
+      "id": "8e9f0a1b-2c3d-4e5f-9a6b-7c8d9e0f1a2b",
+      "kind": "table",
+      "catalog": "trading",
+      "namespace": ["reference"],
+      "name": "instruments",
+      "pointer-version": 2,
+      "watermark-version": null,
+      "versions-behind": 2,
+      "oldest-unverified-at": "2026-11-25T15:17:13.187639Z",
+      "lag-seconds": 48430
+    }
+  ],
+  "next-page-token": "AAAAJDhlOWYwYTFi"
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-catalog-dr-reconcile"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/dr-reconcile</code></h3>
+        <p>The reconcile-from-storage step of recovery. It walks every active table of the catalog forward along its metadata-log chain, taking each step only when storage holds every file it adds, data included, and stopping at the first that lacks one. Without <code>apply</code> it only reports. With <code>apply</code>, tables under a DR freeze move through their proven files and any tip named in <code>accept</code>. With <code>accept-archived</code>, the audit archive is read whole first, and a tip whose swap it records is taken too; an <code>accept</code> entry the archive contradicts stops its table and is reported.</p>
+        <p>With <code>rewind</code>, the step goes the other way: each table and view whose pointer is above its DR watermark, or that has none, is reported with the commits a rewind gives up, and with <code>apply</code>, each one under a DR freeze moves back to its watermark in one commit. Branches and tags are never walked or rewound: the answer only reports those whose files storage lacks.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="post-catalog-dr-reconcile-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>apply</code></td><td>body</td><td>boolean</td><td>No</td><td><code>true</code> to move frozen tables; default <code>false</code>, a report only.</td></tr>
+              <tr><td><code>accept</code></td><td>body</td><td>array of strings</td><td>No</td><td>Metadata locations to accept as a table's tip.</td></tr>
+              <tr><td><code>accept-archived</code></td><td>body</td><td>boolean</td><td>No</td><td>Also accept tips whose swap the audit archive records.</td></tr>
+              <tr><td><code>rewind</code></td><td>body</td><td>boolean</td><td>No</td><td>Move back to the watermarks instead. Takes neither <code>accept</code> nor <code>accept-archived</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-catalog-dr-reconcile-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{"apply": false, "accept": [], "accept-archived": false}</code></pre>
+        </div>
+        <h4 id="post-catalog-dr-reconcile-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>Forward: <code>{"tables", "refs", "unknown-locations", "unused-accepts", "contradicted-accepts"}</code>; <code>unknown-locations</code> lists table locations in storage that no table or view of any catalog holds, to register by name. Rewind: <code>{"tables", "views"}</code>, each with the commits it gives up.</td></tr>
+              <tr><td><code>400</code></td><td><code>rewind takes neither accept nor accept-archived: it moves each table back to its DR watermark, never forward</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+              <tr><td><code>409</code></td><td><code>accept-archived</code> without an audit archive (<code>ArchiveNotConfiguredException</code>).</td></tr>
+              <tr><td><code>500</code></td><td>The archive failed its integrity check (<code>ArchiveIntegrityException</code>). Nothing was applied.</td></tr>
+              <tr><td><code>503</code></td><td>The archive cannot be read now (<code>ServiceUnavailableException</code>). Nothing was applied.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-catalog-dr-reconcile-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/dr-reconcile" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"apply": false}'</code></pre>
+        </div>
+        <p class="gap">Not documented yet: the fields of each table, ref and lost-commit entry in the reconcile answer, and whether a reconcile leaves its own audit record. Reconcile was not run, and the entry builders in <code>ReconcileRoutes.java</code> were not read in full.</p>
+      </section>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/disaster-recovery.html">Disaster recovery</a>: watermarks, the verifier and freezes.</li>
+          <li><a href="../operate/backup-dr.html">Back up and recover</a>: the recovery runbook step by step.</li>
+          <li><a href="governance.html#put-dr-freeze">Governance</a>: freezing a catalog before reconcile.</li>
+          <li><a href="worker.html#dr-verification">Worker endpoints</a>: how the verifier records watermarks.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/DrRoutes.java</code> and <code>ReconcileRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The watermark list was run against the demo and rewritten to the fictional estate. Reconcile was not run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

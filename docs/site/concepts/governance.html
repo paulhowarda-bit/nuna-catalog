@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/governance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Governance · nuna docs</title>
+  <meta name="description" content="Governance is the set of attributes, holds and freezes that data stewards and platform operators put on catalogs, namespaces, tables and views, and that the server enforces on every request and every maintenance job.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Governance</h1>
+        <p class="lead">Governance is the set of attributes, holds and freezes that data stewards and platform operators put on catalogs, namespaces, tables and views, and that the server enforces on every request and every maintenance job.</p>
+      </header>
+
+      <figure class="diagram" id="fig-governance-chain">
+        <svg viewBox="0 0 720 200" role="img" aria-labelledby="fig-governance-chain-t fig-governance-chain-d">
+          <title id="fig-governance-chain-t">Governance applies down the chain</title>
+          <desc id="fig-governance-chain-d">A hold on namespace equities covers tables fills and orders under it. The server checks the table, each namespace above it and the catalog, and the nearest attribute wins.</desc>
+          <rect class="d-node" x="20" y="70" width="150" height="56" rx="10"/>
+          <text class="d-label" x="95" y="103">trading</text>
+          <rect class="d-node d-held" x="230" y="70" width="170" height="56" rx="10"/>
+          <text class="d-label" x="315" y="103">equities</text>
+          <text class="d-note" x="315" y="146">legal hold</text>
+          <rect class="d-node d-held" x="480" y="20" width="200" height="56" rx="10"/>
+          <text class="d-label" x="580" y="53">equities.fills</text>
+          <rect class="d-node d-held" x="480" y="120" width="200" height="56" rx="10"/>
+          <text class="d-label" x="580" y="153">equities.orders</text>
+          <path class="d-edge" d="M170 98H230" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M400 90L480 52" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M400 106L480 146" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>A hold on a namespace covers every table and view under it.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>Governance has three parts, each set on a catalog, namespace, table or view and each audited:</p>
+      <ul>
+        <li><em>Attributes</em>: a classification, an owner, a retention class, the <code>regulated</code> mark and the <code>row-column-policy</code> flag. Each carries its provenance, a sentence on where the value came from.</li>
+        <li><em>Legal holds</em>, which stop data from being deleted.</li>
+        <li><em>DR freezes</em>, which stop commits while disaster recovery reconciles.</li>
+      </ul>
+      <p>Members of groups that hold <code>manage-tags</code> set attributes and place and release holds. Only platform operators set and lift freezes.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="attributes">Attributes</h3>
+      <div class="table-wrap">
+        <table>
+          <caption>The governance attributes</caption>
+          <thead><tr><th scope="col">Attribute</th><th scope="col">Values</th><th scope="col">What the server does with it</th></tr></thead>
+          <tbody>
+            <tr><td><code>classification</code></td><td>any text</td><td>Sends it to engines as a label. In a regulated area, a table without its own classification is closed.</td></tr>
+            <tr><td><code>owner</code></td><td>any text</td><td>Sends it to engines as a label.</td></tr>
+            <tr><td><code>retention-class</code></td><td>a class named in <code>nuna.governance.retention-classes</code></td><td>Keeps snapshots younger than the class's minimum age, against engines and the worker alike.</td></tr>
+            <tr><td><code>regulated</code></td><td><code>true</code> or <code>false</code>; the console offers it on catalogs and namespaces</td><td>Makes the area regulated: unclassified tables in it are refused everything but <code>describe</code> and <code>manage-tags</code>.</td></tr>
+            <tr><td><code>row-column-policy</code></td><td><code>true</code> or <code>false</code>, on a table only</td><td>Withholds the table's files from all but trusted engines and maintenance principals; see <a href="row-column-rules.html">Row filters and column masks</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Attributes pass down: a table's effective classification, owner and retention class are the nearest level's, the table first. The <code>row-column-policy</code> flag is the exception: only a table's own flag counts.</p>
+
+      <h3 id="legal-holds">Legal holds</h3>
+      <p>A legal hold carries a reason and covers the object it is placed on and everything under it. While it stands:</p>
+      <ul>
+        <li>Dropping a held table, view or namespace is refused, for example <code>Table equities.fills is under a legal hold and cannot be dropped</code>.</li>
+        <li>A commit that removes snapshots is refused: <code>Table <var>id</var> is under legal hold: its snapshots cannot be removed</code>. Commits that add data still succeed.</li>
+        <li>The maintenance policy turns snapshot expiry and orphan removal off, and maintenance on request for them is refused. Compaction still runs.</li>
+        <li>Purging a dropped table or view is refused, and so is unregistering a table or removing a held object from a catalog branch or tag.</li>
+      </ul>
+      <p>A hold is released on the level it was placed on, by anyone whose group holds <code>manage-tags</code> there. See <a href="../guides/hold.html">Place and lift a legal hold</a>.</p>
+
+      <h3 id="dr-freezes">DR freezes</h3>
+      <p>A DR freeze, set by a platform operator with a reason, refuses every commit under it: <code>Writes to <var>id</var> are frozen for DR reconcile: <var>reason</var></code>. The maintenance policy also turns off snapshot expiry, orphan removal, compaction and manifest rewrites there. Lifting the freeze restores both.</p>
+
+      <h3 id="delete-policies">Delete policies</h3>
+      <p>Nothing the server vends can delete a file. To make the object store enforce the same rule, a platform operator reads the bucket policies at <code>GET /management/v1/maintenance/delete-policies</code> and applies them. They let only the maintenance worker's own storage identity, named as the profile's <code>maintenance-principal</code>, delete objects or change the bucket's lifecycle and policy, and deny it to everyone else, the server's own identity included. A profile without a <code>maintenance-principal</code> is listed as unprotected.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>Every attribute change, hold and freeze is audited, with who made it and, for attributes, its provenance.</li>
+        <li>Each block is enforced in the server, against engines, the console and the maintenance worker alike, and each refusal is audited as a denial with its reason, such as <code>legal_hold</code> or <code>dr_freeze</code>.</li>
+        <li>A purge already claimed by the worker before a hold was placed still completes.</li>
+        <li>Without the delete policies applied, someone with other credentials to the bucket can still delete files. The server cannot see that.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <p>In the console, the <b class="ui">Governance</b> page has the tabs <b class="ui">Summary</b> and <b class="ui">Holds and freezes</b>, and each object's <b class="ui">Access</b> tab has the panels <b class="ui">Governance</b>, <b class="ui">Legal holds</b> and <b class="ui">Attributes</b>. The endpoints are in the <a href="../api/governance.html#endpoints">Governance API</a>, and the settings in <a href="../configure/governance.html">Governance and refs settings</a>.</p>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>An attribute's value and provenance, and a hold's or freeze's reason, are at most 1,000 characters.</li>
+        <li>The <code>row-column-policy</code> flag cannot be removed while rules stand on the table.</li>
+        <li>A <code>retention-class</code> must name a configured class: <code>Unknown retention class <var>name</var>; configured classes: […]</code>.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/hold.html">Place and lift a legal hold</a>: the steps, with each refusal.</li>
+          <li><a href="../guides/freeze.html">Freeze and unfreeze for disaster recovery</a>: freezes in practice.</li>
+          <li><a href="row-column-rules.html">Row filters and column masks</a>: what the flag enables.</li>
+          <li><a href="../console/governance.html">The Governance page</a>: the console's view of holds and attributes.</li>
+          <li><a href="../security/what-is-audited.html">What is audited</a>: the governance and hold records.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>GovernanceSettings.java</code>, <code>MaintenancePolicy.java</code>, <code>MaintenanceRequests.java</code>, <code>LifecycleRoutes.java</code>, <code>RefRoutes.java</code> and <code>FlagsAboveTables.java</code> in the same package, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java</code> and <code>catalog-security/src/main/java/nuna/catalog/security/Authorizer.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The holds and freezes listing and a table's governance were read from the local demo with GET requests.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

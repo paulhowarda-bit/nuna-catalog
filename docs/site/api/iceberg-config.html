@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/iceberg-config">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iceberg REST: configuration and tokens · nuna docs</title>
+  <meta name="description" content="GET /v1/config tells a client which catalog its warehouse names, the prefix to use and the endpoints the server serves there; /v1/oauth/tokens refuses, since nuna issues no tokens.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Iceberg REST: configuration and tokens</h1>
+        <p class="lead"><code>GET /v1/config</code> tells a client which catalog its warehouse names, the prefix to use and the endpoints the server serves there; <code>/v1/oauth/tokens</code> refuses, since nuna issues no tokens.</p>
+      </header>
+
+      <p>An Iceberg client calls <code>/v1/config</code> once, when it starts, with the warehouse it was given. It then sends every catalog request under <code>/v1/{prefix}</code> and uses only the endpoints the answer lists. The examples use curl with <code>NUNA</code> and <code>TOKEN</code> set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Configuration and token endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-config"><code>/v1/config</code></a></td><td>Answers the prefix and the endpoints served for a warehouse.</td></tr>
+            <tr><td>any</td><td><a href="#post-oauth-tokens"><code>/v1/oauth/tokens</code></a></td><td>Refuses: get tokens from your identity provider.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-config"><span class="method" data-method="GET">GET</span> <code>/v1/config</code></h3>
+        <p>Answers the configuration for one catalog, or for one branch or tag of it. The warehouse is a catalog's name, or <code><var>catalog</var>@<var>ref</var></code> for a branch or tag. The answer's <code>overrides.prefix</code> is the prefix the client sends from then on, and <code>endpoints</code> lists every route the server serves through that prefix.</p>
+        <p class="doc-meta"><span class="badge needs">Needs any grant in the catalog</span></p>
+        <h4 id="get-config-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>warehouse</code></td><td>query</td><td>string</td><td>No</td><td>A catalog's name, or <code><var>catalog</var>@<var>ref</var></code>. When it is missing or blank, the server uses <code>nuna.rest.default-warehouse</code>; with that unset too, the request is refused.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-config-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#configuration">configuration</a> follows.</td></tr>
+              <tr><td><code>400</code></td><td>No warehouse was named and none is set: <code>Missing query parameter warehouse, and this server has no default warehouse</code> (<code>BadRequestException</code>).</td></tr>
+              <tr><td><code>401</code></td><td>The token is missing or was not accepted.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog does not exist, or you hold nothing in it: <code>The given warehouse does not exist: <var>warehouse</var></code> (<code>NoSuchWarehouseException</code>). The same type, with <code>(catalog <var>catalog</var> has no branch or tag <var>ref</var>)</code> added, when the ref does not exist or the branch is past its expiry.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-config-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/config?warehouse=trading@dev" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response, through branch dev">
+<pre><code>{
+  "defaults": {},
+  "overrides": {"prefix": "trading@dev"},
+  "endpoints": [
+    "GET /v1/{prefix}/namespaces",
+    "GET /v1/{prefix}/namespaces/{namespace}",
+    "HEAD /v1/{prefix}/namespaces/{namespace}",
+    "GET /v1/{prefix}/namespaces/{namespace}/tables",
+    "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+    "HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+    "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics",
+    "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials",
+    "GET /v1/{prefix}/namespaces/{namespace}/views",
+    "GET /v1/{prefix}/namespaces/{namespace}/views/{view}",
+    "HEAD /v1/{prefix}/namespaces/{namespace}/views/{view}",
+    "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+    "POST /v1/{prefix}/namespaces/{namespace}/views/{view}",
+    "POST /v1/{prefix}/transactions/commit"
+  ],
+  "idempotency-key-lifetime": "PT24H"
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-oauth-tokens"><span class="method" data-method="POST">POST</span> <code>/v1/oauth/tokens</code></h3>
+        <p>The standard's token endpoint. nuna answers every call to it, with any method and without a token, with the same OAuth error, so that a client configured to ask the catalog for a token learns where to get one. <code>/v1/config</code> does not list it. See <a href="../clients/tokens.html">Get a token</a>.</p>
+        <h4 id="post-oauth-tokens-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>400</code></td><td>Always: <code>{"error": "unsupported_grant_type", "error_description": "This catalog does not issue tokens. Get an access token from the organisation's identity provider and send it as a bearer token."}</code>. The words <code>the organisation's identity provider</code> come from <code>nuna.rest.identity-provider</code>. This body is the OAuth error form, not the catalog's error body.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-oauth-tokens-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/oauth/tokens" -d "grant_type=client_credentials"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "error": "unsupported_grant_type",
+  "error_description": "This catalog does not issue tokens. Get an access token from the organisation's identity provider and send it as a bearer token."
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="the-prefix">The prefix</h2>
+      <p>The prefix names a catalog and, after an <code>@</code>, a branch or tag of it: <code>trading</code> is the catalog's main line, as <code>trading@main</code> is, and <code>trading@dev</code> is branch <code>dev</code>. Catalog names and ref names never hold an <code>@</code>, so a prefix reads one way. Names match without regard to case; the prefix answered is the catalog's name, and the ref's, in their stored lower-case form. See <a href="../concepts/branches-and-tags.html">Branches and tags</a>.</p>
+      <p>What the prefix allows:</p>
+      <ul>
+        <li>On main, every endpoint below.</li>
+        <li>On a branch, the reads, plus committing to a table, replacing a view and committing a transaction. A branch's commits change only the branch. Creates, drops, renames, registrations and namespace changes happen on main only.</li>
+        <li>On a tag, the reads only: a tag is read-only.</li>
+      </ul>
+      <p>Iceberg clients read the endpoint list and refuse an unlisted write themselves, before it reaches the server. A client that sends one anyway gets <code>400</code>, for example <code>createTable is refused on tag eod-2026-11-25 of catalog trading: a tag is read-only</code>.</p>
+
+      <h2 id="objects">Objects</h2>
+      <h3 id="configuration">Configuration</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>defaults</code></td><td>object</td><td>Always empty: nuna sets no client defaults.</td></tr>
+            <tr><td><code>overrides</code></td><td>object</td><td>Holds one key, <code>prefix</code>: the prefix the client puts after <code>/v1/</code>.</td></tr>
+            <tr><td><code>endpoints</code></td><td>array of strings</td><td>Every route served through this prefix, as <code>"<var>METHOD</var> <var>path</var>"</code>. Never empty, and never lists <code>/v1/config</code> or <code>/v1/oauth/tokens</code>.</td></tr>
+            <tr><td><code>idempotency-key-lifetime</code></td><td>string</td><td><code>PT24H</code>: how long the server keeps an <code>Idempotency-Key</code> (<a href="index.html#idempotency-keys">Idempotency keys</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>On main, <code>endpoints</code> lists these 26 routes. Each links to its block.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Endpoints listed on main</caption>
+          <thead><tr><th scope="col">Route</th><th scope="col">Branch</th><th scope="col">Tag</th></tr></thead>
+          <tbody>
+            <tr><td><a href="iceberg-namespaces.html#get-namespaces"><code>GET /v1/{prefix}/namespaces</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-namespaces.html#post-namespaces"><code>POST /v1/{prefix}/namespaces</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-namespaces.html#get-namespaces-namespace"><code>GET /v1/{prefix}/namespaces/{namespace}</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-namespaces.html#head-namespaces-namespace"><code>HEAD /v1/{prefix}/namespaces/{namespace}</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-namespaces.html#delete-namespaces-namespace"><code>DELETE /v1/{prefix}/namespaces/{namespace}</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-namespaces.html#post-namespaces-namespace-properties"><code>POST /v1/{prefix}/namespaces/{namespace}/properties</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-tables.html#get-tables"><code>GET /v1/{prefix}/namespaces/{namespace}/tables</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-tables.html#post-tables"><code>POST /v1/{prefix}/namespaces/{namespace}/tables</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-tables.html#get-tables-table"><code>GET /v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-tables.html#head-tables-table"><code>HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-tables.html#post-tables-table"><code>POST /v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Yes</td><td>No</td></tr>
+            <tr><td><a href="iceberg-tables.html#delete-tables-table"><code>DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-tables.html#post-tables-rename"><code>POST /v1/{prefix}/tables/rename</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-tables.html#post-register"><code>POST /v1/{prefix}/namespaces/{namespace}/register</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-tables.html#post-tables-table-unregister"><code>POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-tables.html#post-tables-table-metrics"><code>POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-tables.html#get-tables-table-credentials"><code>GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-views.html#get-views"><code>GET /v1/{prefix}/namespaces/{namespace}/views</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-views.html#post-views"><code>POST /v1/{prefix}/namespaces/{namespace}/views</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-views.html#get-views-view"><code>GET /v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-views.html#head-views-view"><code>HEAD /v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Yes</td><td>Yes</td></tr>
+            <tr><td><a href="iceberg-views.html#post-views-view"><code>POST /v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Yes</td><td>No</td></tr>
+            <tr><td><a href="iceberg-views.html#delete-views-view"><code>DELETE /v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-views.html#post-views-rename"><code>POST /v1/{prefix}/views/rename</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-views.html#post-register-view"><code>POST /v1/{prefix}/namespaces/{namespace}/register-view</code></a></td><td>No</td><td>No</td></tr>
+            <tr><td><a href="iceberg-transactions.html#post-transactions-commit"><code>POST /v1/{prefix}/transactions/commit</code></a></td><td>Yes</td><td>No</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The standard's other routes are not served and not listed: functions, server-side scan planning and remote signing. <a href="../reference/iceberg-support.html">Iceberg support</a> lists them.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../clients/tokens.html">Get a token</a>: where tokens come from.</li>
+          <li><a href="../guides/branch-workflow.html">Work on a branch</a>: using a <code>catalog@ref</code> warehouse from an engine.</li>
+          <li><a href="index.html">API reference</a>: authentication, errors and paging for every endpoint.</li>
+          <li><a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml">The Iceberg REST catalog standard</a>: the configuration endpoint's full definition.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/AdvertisedEndpoints.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/rest/OAuthRoute.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The configuration through a branch, the <code>400</code> without a warehouse and the token endpoint's answer were captured from the local demo and the names changed to this site's examples.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

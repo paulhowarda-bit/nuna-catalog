@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/glossary">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glossary · nuna docs</title>
+  <meta name="description" content="Every term these pages use for nuna and for Apache Iceberg, in alphabetical order, each with the meaning the code gives it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Glossary</h1>
+        <p class="lead">Every term these pages use for nuna and for Apache Iceberg, in alphabetical order, each with the meaning the code gives it.</p>
+      </header>
+
+      <p>Iceberg's own terms are defined as the <a href="https://iceberg.apache.org/spec/">Iceberg table spec</a> defines them; this page says how nuna uses them.</p>
+
+      <h2 id="terms">Terms</h2>
+      <dl class="terms">
+        <dt id="term-allowed-prefix">Allowed prefix</dt>
+        <dd>A bucket path a storage profile lets tables live under. No two profiles' allowed prefixes overlap.</dd>
+        <dt id="term-archive">Archive</dt>
+        <dd>The seven-year record of the audit trail: hash-chained segments in a bucket with Object Lock in compliance mode, one chain per server run.</dd>
+        <dt id="term-audit-record">Audit record</dt>
+        <dd>One entry of the audit trail: a CloudEvent in JSON, of type <code>nuna.catalog.<var>name</var></code>, naming who did what to which object, and why it was refused if it was.</dd>
+        <dt id="term-audit-tables-writer">Audit tables writer</dt>
+        <dd>The program that takes audit records from Kafka or over OTLP and writes them to the Iceberg table <code>nuna_audit.audit.events</code>, and, over OTLP, to the archive.</dd>
+        <dt id="term-audit-trail">Audit trail</dt>
+        <dd>Every audit record the server makes: the lines of its log <code>nuna.audit</code>, their copies in Kafka, the archive and the audit table.</dd>
+        <dt id="term-catalog">Catalog</dt>
+        <dd>The object that holds namespaces, tables and views, bound to one storage profile, KMS key set and legal entity. An engine names it as its warehouse. Catalogs are declared in the server's settings.</dd>
+        <dt id="term-catalog-branch">Catalog branch</dt>
+        <dd>A ref of a whole catalog that can take commits and be merged into main. It expires when idle.</dd>
+        <dt id="term-cleanup-window">Cleanup window</dt>
+        <dd>The hours, set in the worker's settings, in which compaction and orphan scans may run.</dd>
+        <dt id="term-column-mask">Column mask</dt>
+        <dd>A rule that replaces a column's values for a group's members, enforced by a trusted engine.</dd>
+        <dt id="term-commit">Commit</dt>
+        <dd>A change to a table or view: requirements the current metadata must meet, and updates to apply. A commit that succeeds writes a new metadata file and moves the table's pointer.</dd>
+        <dt id="term-compaction">Compaction</dt>
+        <dd>Rewriting a table's small data files, and the files their delete files apply to, into fewer, larger ones. The worker runs it as a Kubernetes Job.</dd>
+        <dt id="term-console">Console</dt>
+        <dd>nuna's web pages for people, served by the server at <code>/ui/</code>.</dd>
+        <dt id="term-data-file">Data file</dt>
+        <dd>A file of a table's rows, in Parquet, ORC or Avro, listed by a manifest.</dd>
+        <dt id="term-delete-file">Delete file</dt>
+        <dd>A file that marks rows of data files as deleted: by position, by equal values (an equality delete), or as a deletion vector in format version 3.</dd>
+        <dt id="term-dr-freeze">DR freeze</dt>
+        <dd>A stop on commits, creates, drops, renames, restores and purges, and on maintenance, for a catalog, namespace or table during disaster recovery. A platform operator places and lifts it. After first mention, the freeze.</dd>
+        <dt id="term-dr-watermark">DR watermark</dt>
+        <dd>For each table and view, the newest version whose every file the DR object store holds, kept in the database by the worker's verifier.</dd>
+        <dt id="term-drop">Drop</dt>
+        <dd>Removing a table or view's name. Every drop is soft: the files stay, and the object can be restored until its purge time.</dd>
+        <dt id="term-end-user">End user</dt>
+        <dd>The person a trusted engine acts for, named in the request's headers. Authorization then decides for the end user.</dd>
+        <dt id="term-engine">Engine</dt>
+        <dd>A program that reads and writes tables through the catalog: Spark, Trino, PyIceberg, Kafka Connect, SingleStore and the rest.</dd>
+        <dt id="term-flagged-table">Flagged table</dt>
+        <dd>A table with a row or column policy. Only trusted engines and the maintenance principal get storage access to it.</dd>
+        <dt id="term-format-version">Format version</dt>
+        <dd>The version of the Iceberg table format a table uses. New tables are version 3; versions 1 to 3 are accepted.</dd>
+        <dt id="term-grant">Grant</dt>
+        <dd>A privilege given to a group on a catalog, namespace, table or view; it applies to everything beneath. Also the act of giving it. To revoke is to take it back.</dd>
+        <dt id="term-grant-admin">Grant admin</dt>
+        <dd>A member of a group the server's settings name as grant admins, who manages grants and holds no data privilege by it.</dd>
+        <dt id="term-group">Group</dt>
+        <dd>A group from the identity provider's token. Grants are made to groups only.</dd>
+        <dt id="term-hash-chain">Hash chain</dt>
+        <dd>The archive's form: each line holds the SHA-256 of the line before and its own record, so a changed or missing line breaks the chain.</dd>
+        <dt id="term-health-score">Health score</dt>
+        <dd>The figure a maintenance scan gives a table: 1 when a figure reaches its threshold, 2 at twice the threshold.</dd>
+        <dt id="term-idempotency-key">Idempotency key</dt>
+        <dd>The <code>Idempotency-Key</code> header of a change. The same key with the same request within 24 hours gets the first answer again, and the change is not applied twice.</dd>
+        <dt id="term-journal">Journal</dt>
+        <dd>The database's record of every pointer move: who, the requirements and updates, the old and new metadata file, and when.</dd>
+        <dt id="term-legal-hold">Legal hold</dt>
+        <dd>A stop on deleting an object's data: its snapshots cannot be removed, and it cannot be dropped, purged or unregistered. A principal with <code>manage-tags</code> places and lifts it. After first mention, the hold.</dd>
+        <dt id="term-location">Location</dt>
+        <dd>The object store path under which a table's files live: the storage profile's table root followed by the table's id.</dd>
+        <dt id="term-main">Main</dt>
+        <dd>The catalog itself, as a ref: what an engine reads and writes when its warehouse names no branch or tag.</dd>
+        <dt id="term-maintenance-principal">Maintenance principal</dt>
+        <dd>A principal named in <code>nuna.security.maintenance-principals</code>, which the worker signs in as. Only it may claim and complete purges and record pending deletions.</dd>
+        <dt id="term-maintenance-worker">Maintenance worker</dt>
+        <dd>The program that scans tables and runs expiry, manifest rewrites, compaction, orphan scans, deletions and purges. After first mention, the worker.</dd>
+        <dt id="term-manifest">Manifest</dt>
+        <dd>An Iceberg file that lists data or delete files with their statistics. A manifest list names a snapshot's manifests.</dd>
+        <dt id="term-metadata-file">Metadata file</dt>
+        <dd>A table or view's state as JSON: schemas, partition specs, properties, snapshots and refs. Each commit writes a new one.</dd>
+        <dt id="term-metadata-log">Metadata log</dt>
+        <dd>The list, inside each metadata file, of the metadata files before it. The console's History tab and the metadata log route read the journal beside it.</dd>
+        <dt id="term-namespace">Namespace</dt>
+        <dd>A level of a catalog's tree, holding tables, views and other namespaces, to any depth.</dd>
+        <dt id="term-nuna">nuna</dt>
+        <dd>The product: an Iceberg REST catalog with its maintenance worker, audit tables writer and console. Always written in lower case.</dd>
+        <dt id="term-object-store">Object store</dt>
+        <dd>The S3-compatible store that holds tables' files: AWS S3, Ceph, or a MinIO-compatible store such as Silo.</dd>
+        <dt id="term-orphan-file">Orphan file</dt>
+        <dd>A file under a table's location that no snapshot reaches. An orphan scan finds those older than the policy's age.</dd>
+        <dt id="term-outbox">Outbox</dt>
+        <dd>The database table where a change's audit records are written in the change's own transaction, until the relay writes them to the log.</dd>
+        <dt id="term-pending-deletion">Pending deletion</dt>
+        <dd>A file the worker has recorded to delete once the point-in-time recovery window has passed.</dd>
+        <dt id="term-pitr-window">Point-in-time recovery window</dt>
+        <dd>How far back the database can be restored, declared in <code>nuna.governance.pitr-window</code> (7 days by default). No file is deleted sooner.</dd>
+        <dt id="term-platform-operator">Platform operator</dt>
+        <dd>A member of a group the server's settings name as platform operators, who runs the deployment (DR freezes, reconcile, delete policies) and holds no data privilege by it.</dd>
+        <dt id="term-pointer">Pointer</dt>
+        <dd>A table or view's record in the database of its current metadata file: the file's location, a version number and the file's SHA-256. A commit moves it.</dd>
+        <dt id="term-principal">Principal</dt>
+        <dd>Who a request acts as, mapped from the token's claims.</dd>
+        <dt id="term-privilege">Privilege</dt>
+        <dd>One of <code>describe</code>, <code>select</code>, <code>write</code>, <code>modify</code>, <code>create</code>, <code>manage-grants</code> and <code>manage-tags</code>.</dd>
+        <dt id="term-purge">Purge</dt>
+        <dd>Deleting a dropped object's files once its restore window has closed. Only the maintenance principal purges, and it cannot be undone.</dd>
+        <dt id="term-ref">Ref</dt>
+        <dd>A catalog branch or tag: a named cut of a whole catalog.</dd>
+        <dt id="term-regulated">Regulated</dt>
+        <dd>A flag on a catalog or namespace: a table beneath it with no classification of its own is closed to everything above <code>describe</code>.</dd>
+        <dt id="term-requirement">Requirement</dt>
+        <dd>A condition in a commit that the current metadata must meet, such as a table branch still pointing at a given snapshot.</dd>
+        <dt id="term-restore">Restore</dt>
+        <dd>Bringing a dropped object back under its name or another, before its purge time. The API calls it undrop.</dd>
+        <dt id="term-rest-prefix">REST prefix</dt>
+        <dd>The part of every Iceberg REST path after <code>/v1/</code> that names the catalog, or <code><var>catalog</var>@<var>ref</var></code> for a ref.</dd>
+        <dt id="term-retention-class">Retention class</dt>
+        <dd>A named set of minimum ages in the governance settings that a table can be classified with.</dd>
+        <dt id="term-row-filter">Row filter</dt>
+        <dd>A rule that limits which rows a group's members see, enforced by a trusted engine.</dd>
+        <dt id="term-separation-of-duties">Separation of duties</dt>
+        <dd>The rule that one group cannot hold conflicting duties, such as managing grants and changing data.</dd>
+        <dt id="term-server">Server</dt>
+        <dd>The running catalog server program, which answers engines, the console and the worker on port 8181.</dd>
+        <dt id="term-session-policy">Session policy</dt>
+        <dd>The policy the server attaches when it assumes a storage role, limiting the vended credentials to one table's prefix.</dd>
+        <dt id="term-sign-in">Sign in</dt>
+        <dd>To get a token from the identity provider and present it. The noun is sign-in.</dd>
+        <dt id="term-snapshot">Snapshot</dt>
+        <dd>The state of a table's data at one commit: the list of data and delete files it holds.</dd>
+        <dt id="term-storage-profile">Storage profile</dt>
+        <dd>A named object store in the settings: its kind, endpoint, region, table root and allowed prefixes, and the role used to vend credentials.</dd>
+        <dt id="term-table">Table</dt>
+        <dd>An Apache Iceberg table: a metadata file and the data and delete files its snapshots list.</dd>
+        <dt id="term-table-branch">Table branch</dt>
+        <dd>Iceberg's named line of snapshots inside one table's metadata file, such as its <code>main</code>. Not a catalog branch.</dd>
+        <dt id="term-table-root">Table root</dt>
+        <dd>The path in a storage profile under which the server places new tables.</dd>
+        <dt id="term-table-tag">Table tag</dt>
+        <dd>Iceberg's named snapshot inside one table's metadata file. Not a catalog tag.</dd>
+        <dt id="term-tag">Tag</dt>
+        <dd>A read-only ref of a whole catalog that never expires.</dd>
+        <dt id="term-trusted-engine">Trusted engine</dt>
+        <dd>An engine in the server's registry that may name the end user it acts for, and that enforces row filters and column masks.</dd>
+        <dt id="term-update">Update</dt>
+        <dd>A change in a commit, such as adding a snapshot or setting a property.</dd>
+        <dt id="term-vended-credentials">Vended credentials</dt>
+        <dd>Short-lived storage credentials, scoped to one table's prefix and unable to delete, that the server gives an engine with a table.</dd>
+        <dt id="term-verifier">Verifier</dt>
+        <dd>The worker's job that checks the DR object store and moves each table's DR watermark.</dd>
+        <dt id="term-view">View</dt>
+        <dd>An Apache Iceberg view: a metadata file holding a query and its versions.</dd>
+        <dt id="term-warehouse">Warehouse</dt>
+        <dd>The Iceberg client setting that names the catalog, or <code><var>catalog</var>@<var>ref</var></code>.</dd>
+      </dl>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/index.html">Concepts</a>: the mechanisms behind these terms.</li>
+          <li><a href="privileges.html">Privileges</a>: what each privilege allows.</li>
+          <li><a href="faq.html">Questions and answers</a>: short answers to common questions.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>docs/site/DESIGN.md</code> section 6.4 and the concept pages' sources (<code>catalog-core</code>, <code>catalog-server</code>, <code>catalog-maintenance/README.md</code>, <code>docs/observability/audit-log.md</code>, <code>docs/refs.md</code>), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

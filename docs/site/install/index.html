@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install · nuna docs</title>
+  <meta name="description" content="Install the catalog server, the maintenance worker and the audit tables writer on Kubernetes with their Helm charts, beside a database, an object store and an identity provider you already run.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>Install</h1>
+        <p class="lead">Install the catalog server, the maintenance worker and the audit tables writer on Kubernetes with their Helm charts, beside a database, an object store and an identity provider you already run.</p>
+      </header>
+
+      <p>There are four ways in. To look around, start the demo (<a href="../start/quickstart.html">Run nuna on your laptop</a>), which runs everything on your machine with made-up data. To try the charts, run the catalog on a local kind cluster with throwaway PostgreSQL, Kafka and Silo (<a href="kind.html">Run nuna on a local kind cluster</a>). For a production cluster, follow the pages below in order: check the requirements, build and push the images, prepare the database, the object store and the identity provider, install the catalog server, then the maintenance worker and, if you want the audit tables, the audit tables writer, and finish by checking the install. On a network with no outbound access, read <a href="locked-down.html">Install on a locked-down network</a> first: it says what to mirror before you start.</p>
+
+      <figure class="diagram" id="fig-install-order">
+        <svg viewBox="0 0 720 310" role="img" aria-labelledby="fig-install-order-t fig-install-order-d">
+          <title id="fig-install-order-t">The order of an install</title>
+          <desc id="fig-install-order-d">First the requirements. Then the container images, the database, object storage and the identity provider. Then the catalog server chart, then the maintenance worker chart, then, if you want the audit tables, the audit tables writer. Last, check the install. Telemetry is optional and can be set up at any time with the charts.</desc>
+          <rect class="d-node" x="15" y="125" width="100" height="56" rx="10"/><text class="d-label" x="65" y="150">Requirements</text><text class="d-note" x="65" y="168">what must exist</text>
+          <rect class="d-node" x="150" y="40" width="130" height="44" rx="10"/><text class="d-label" x="215" y="67">Images</text>
+          <rect class="d-node" x="150" y="96" width="130" height="44" rx="10"/><text class="d-label" x="215" y="123">Database</text>
+          <rect class="d-node" x="150" y="152" width="130" height="44" rx="10"/><text class="d-label" x="215" y="179">Object storage</text>
+          <rect class="d-node" x="150" y="208" width="130" height="44" rx="10"/><text class="d-label" x="215" y="235">Identity provider</text>
+          <path class="d-edge" d="M115 153C132 153 131 62 148 62" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M115 153C132 153 131 118 148 118" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M115 153C132 153 131 174 148 174" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M115 153C132 153 131 230 148 230" marker-end="url(#d-arrow)"/>
+          <rect class="d-node d-accent" x="320" y="123" width="125" height="60" rx="10"/><text class="d-label" x="382.5" y="150">Catalog server</text><text class="d-note" x="382.5" y="168">Helm chart</text>
+          <path class="d-edge" d="M280 62C300 62 298 140 318 140" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 118C300 118 298 147 318 147" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 174C300 174 298 159 318 159" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 230C300 230 298 166 318 166" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="320" y="240" width="125" height="52" rx="10"/><text class="d-label" x="382.5" y="263">Telemetry</text><text class="d-note" x="382.5" y="281">optional, any time</text>
+          <path class="d-edge-dash" d="M382 183V238" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="475" y="123" width="120" height="60" rx="10"/><text class="d-label" x="535" y="150">Maintenance</text><text class="d-note" x="535" y="168">worker chart</text>
+          <path class="d-edge" d="M445 153H473" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="615" y="30" width="100" height="56" rx="10"/><text class="d-label" x="665" y="55">Audit tables</text><text class="d-note" x="665" y="73">writer, optional</text>
+          <path class="d-edge-dash" d="M595 140C605 140 605 58 613 58" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="615" y="123" width="100" height="60" rx="10"/><text class="d-label" x="665" y="150">Check</text><text class="d-note" x="665" y="168">the install</text>
+          <path class="d-edge" d="M595 153H613" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M665 86V121" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>The order of an install: what must exist, the catalog server, the worker, the audit tables writer if you want it, then the check. Telemetry is optional.</figcaption>
+      </figure>
+      <ul class="cards">
+        <li>
+          <a href="requirements.html">
+            <span class="card-title">Requirements</span>
+            <span class="card-text">What must exist before you install: Kubernetes, Helm, a database, an object store, an identity provider, the network paths and the sizes.</span>
+          </a>
+        </li>
+        <li>
+          <a href="images.html">
+            <span class="card-title">Container images</span>
+            <span class="card-text">Build the three images from source and push them to your registry.</span>
+          </a>
+        </li>
+        <li>
+          <a href="helm-catalog.html">
+            <span class="card-title">Install the catalog server with Helm</span>
+            <span class="card-text">Write the chart's <code>config</code> and <code>secrets</code>, install the release and read what the chart refuses.</span>
+          </a>
+        </li>
+        <li>
+          <a href="helm-maintenance.html">
+            <span class="card-title">Install the maintenance worker</span>
+            <span class="card-text">Give the worker its own identity in the catalog, the identity provider and each store, then install its chart.</span>
+          </a>
+        </li>
+        <li>
+          <a href="helm-audit-tables.html">
+            <span class="card-title">Install the audit tables writer</span>
+            <span class="card-text">Write every audit record into the audit catalog's tables, from Kafka or from the server's log.</span>
+          </a>
+        </li>
+        <li>
+          <a href="postgresql.html">
+            <span class="card-title">Use PostgreSQL</span>
+            <span class="card-text">The database, role and privileges, a client certificate in place of a password, and the start-up self-check.</span>
+          </a>
+        </li>
+        <li>
+          <a href="cockroachdb.html">
+            <span class="card-title">Use CockroachDB</span>
+            <span class="card-text">The cluster settings and privileges the server checks before it starts on CockroachDB.</span>
+          </a>
+        </li>
+        <li>
+          <a href="oracle.html">
+            <span class="card-title">Use Oracle</span>
+            <span class="card-text">The service, Transaction Guard, the grants and the journal's Scheduler job.</span>
+          </a>
+        </li>
+        <li>
+          <a href="mongodb.html">
+            <span class="card-title">Use MongoDB</span>
+            <span class="card-text">The replica set, the connection string and the write concern the server needs.</span>
+          </a>
+        </li>
+        <li>
+          <a href="object-storage.html">
+            <span class="card-title">Set up object storage</span>
+            <span class="card-text">Buckets, prefixes and storage profiles on AWS S3, Ceph or Silo, and the role the server vends credentials from.</span>
+          </a>
+        </li>
+        <li>
+          <a href="aws-roles-anywhere.html">
+            <span class="card-title">Reach AWS with IAM Roles Anywhere</span>
+            <span class="card-text">What is known about signing in to AWS with certificates in place of keys.</span>
+          </a>
+        </li>
+        <li>
+          <a href="identity-provider.html">
+            <span class="card-title">Connect an identity provider</span>
+            <span class="card-text">Trusted issuers, the groups claim, the operator and grant admin groups, and the console's sign-in client.</span>
+          </a>
+        </li>
+        <li>
+          <a href="telemetry.html">
+            <span class="card-title">Send telemetry</span>
+            <span class="card-text">Send metrics, traces and logs to an OpenTelemetry collector.</span>
+          </a>
+        </li>
+        <li>
+          <a href="kind.html">
+            <span class="card-title">Run nuna on a local kind cluster</span>
+            <span class="card-text">Try the charts on your machine with <code>deploy/kind/kind.sh</code> and <code>deploy/local/run.sh</code> on Podman.</span>
+          </a>
+        </li>
+        <li>
+          <a href="locked-down.html">
+            <span class="card-title">Install on a locked-down network</span>
+            <span class="card-text">Mirror images and Maven repositories, trust an internal certificate authority and build with no outbound access.</span>
+          </a>
+        </li>
+        <li>
+          <a href="verify.html">
+            <span class="card-title">Check the install</span>
+            <span class="card-text">Read the health routes and the self-check, then create, load and drop a first table through two servers.</span>
+          </a>
+        </li>
+        <li>
+          <a href="upgrade.html">
+            <span class="card-title">Upgrade nuna</span>
+            <span class="card-text">Roll a new image one server at a time while the first new server migrates the schema.</span>
+          </a>
+        </li>
+        <li>
+          <a href="uninstall.html">
+            <span class="card-title">Uninstall nuna</span>
+            <span class="card-text">Remove the releases, and know what stays in the database and the object store.</span>
+          </a>
+        </li>
+      </ul>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

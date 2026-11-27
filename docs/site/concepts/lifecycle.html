@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/lifecycle">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dropping, restoring and purging · nuna docs</title>
+  <meta name="description" content="A drop removes a table or view's name but keeps its files for 30 days, during which you can restore it; after that the maintenance worker purges its files.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Dropping, restoring and purging</h1>
+        <p class="lead">A drop removes a table or view's name but keeps its files for 30 days, during which you can restore it; after that the maintenance worker purges its files.</p>
+      </header>
+
+      <figure class="diagram" id="fig-lifecycle">
+        <svg viewBox="0 0 720 160" role="img" aria-labelledby="fig-lifecycle-t fig-lifecycle-d">
+          <title id="fig-lifecycle-t">The life of a dropped table</title>
+          <desc id="fig-lifecycle-d">An active table is dropped and becomes dropped. It can be restored to active until its purge time. After that the worker claims it, deletes its files and marks it purged.</desc>
+          <rect class="d-node d-ok" x="20" y="50" width="140" height="52" rx="10"/>
+          <text class="d-label" x="90" y="81">Active</text>
+          <rect class="d-node d-warn" x="210" y="50" width="140" height="52" rx="10"/>
+          <text class="d-label" x="280" y="81">Dropped</text>
+          <rect class="d-node" x="400" y="50" width="140" height="52" rx="10"/>
+          <text class="d-label" x="470" y="81">Purging</text>
+          <rect class="d-node d-accent" x="580" y="50" width="120" height="52" rx="10"/>
+          <text class="d-label" x="640" y="81">Purged</text>
+          <path class="d-edge" d="M160 66H210" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="185" y="40">drop</text>
+          <path class="d-edge-dash" d="M280 102V130H90V102" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="185" y="148">restore, within 30 days</text>
+          <path class="d-edge" d="M350 76H400" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="375" y="40">claim</text>
+          <path class="d-edge" d="M540 76H580" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>Nothing is deleted until the restore window has closed and the worker purges.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>A <a class="term" href="../reference/glossary.html#term-drop">drop</a> frees an object's name and hides it from lists and loads. Its record, pointer, journal and files stay. A <a class="term" href="../reference/glossary.html#term-restore">restore</a> brings it back. A <a class="term" href="../reference/glossary.html#term-purge">purge</a> deletes its files for good.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="drop">Drop</h3>
+      <p>Every drop is soft. The Iceberg query parameter <code>purgeRequested</code> is ignored. The server sets the object's purge time to the drop time plus <code>nuna.rest.drop-retention</code>, 30 days by default. A table under a legal hold cannot be dropped: <code>403</code> "Table <var>table</var> is under a legal hold and cannot be dropped". <code>GET …/namespaces/<var>namespace</var>/dropped</code> lists a namespace's dropped objects to a principal with <code>describe</code>.</p>
+      <h3 id="restore">Restore</h3>
+      <p><code>POST …/objects/<var>id</var>/undrop</code> restores an object, under its old name or a new one given as <code>{"name": …}</code>. It needs <code>create</code> on the namespace. Past the purge time: <code>409</code> <code>UndropWindowClosedException</code> "The undrop window of <var>object</var> closed at <var>time</var>; it is waiting to be purged". With the name taken: <code>409</code> <code>AlreadyExistsException</code> "The name <var>name</var> is taken in its namespace; undrop it under another name".</p>
+      <h3 id="purge">Purge</h3>
+      <p>Only a maintenance principal purges, in two steps. It claims the object, which marks it purging; then it deletes the files in batches of 1,000 and completes the purge. The server refuses a claim before the purge time (<code>409</code> <code>PurgeNotDueException</code> "<var>object</var> may not be purged before <var>time</var>"), on a held or frozen object, a dropped table that a catalog branch or tag still names, and more than <code>nuna.governance.purges-per-minute</code> claims a minute on one server (10 by default; <code>429</code> with <code>Retry-After: 60</code>). After the purge the record is kept as purged and its grants are deleted.</p>
+      <h3 id="after-a-drop">Reading a dropped object</h3>
+      <p>A principal with <code>select</code> can still read a dropped object's export, <code>GET …/objects/<var>id</var>/export</code>, which gives its metadata and whole journal, and its metadata log, <code>GET …/objects/<var>id</var>/metadata-log</code>, newest first, 25 entries a page by default and at most 100.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>No file of a dropped object is deleted before its purge time.</li>
+        <li>A purge cannot be undone.</li>
+        <li>A restore brings back the object with its id, location, history and grants.</li>
+        <li>A drop does not stop engines that loaded the table before it from using credentials they already hold until those expire.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>The console's <a href="../console/namespace.html">namespace page</a>, which lists dropped objects.</li>
+        <li><a href="../api/lifecycle.html#endpoints">Lifecycle API</a>.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>30 days to restore by default.</li>
+        <li>10 purge claims a minute on each server by default.</li>
+        <li>The restore window must be longer than <code>nuna.governance.pitr-window</code>; otherwise the server refuses to start.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/drop-restore-purge.html">Drop, restore and purge a table</a>: the steps.</li>
+          <li><a href="governance.html">Governance</a>: the holds and freezes that stop a drop or purge.</li>
+          <li><a href="maintenance.html">Maintenance</a>: the worker that purges.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java</code>, <code>GovernanceSettings.java</code> and <code>GovernanceWiring.java</code> in the same folder, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code> and <code>docs/refs.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>
