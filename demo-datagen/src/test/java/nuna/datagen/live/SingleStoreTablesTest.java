@@ -25,7 +25,7 @@ class SingleStoreTablesTest {
     }
 
     @Test
-    void everyFeedButTheOrdersHasATableKeyedOnSeqAndAnAppendOnlyChangeFeedInOnePipeline() {
+    void everyFeedButTheOrdersHasATableKeyedOnSeqAndEachKafkaFeedAnAppendOnlyChangeFeedInOnePipeline() {
         String tables = SingleStoreTables.tables(KIT);
         String pipelines = SingleStoreTables.pipelines();
         java.util.List<String> fed = new java.util.ArrayList<>();
@@ -35,9 +35,11 @@ class SingleStoreTablesTest {
                 continue;
             }
             assertThat(tables).contains("CREATE TABLE IF NOT EXISTS " + f.table + " (\n  seq BIGINT NOT NULL,");
-            fed.add(f.table);
+            if (f.path == Feed.Path.KAFKA) {
+                fed.add(f.table);
+            }
         }
-        assertThat(fed).hasSize(11);
+        assertThat(fed).hasSize(16);
         assertThat(pipelines.split("CREATE OR REPLACE PIPELINE ", -1)).hasSize(2);
         assertThat(pipelines).contains("CREATE OR REPLACE PIPELINE brokerage_world_to_lake AS LOAD DATA CONNECTOR 'ChangeFeedConnector'")
             .contains("\"singlestore.append-only\": \"true\"")
@@ -46,5 +48,24 @@ class SingleStoreTablesTest {
         assertThat(tables).contains("  lots JSON,").contains("  event_time DATETIME(6),")
             .contains("  locate_id TEXT,\n  PRIMARY KEY (seq)");
         assertThat(SingleStoreTables.columns(KIT).get(Feed.FINANCIAL_TRANSACTIONS)).last().isEqualTo("locate_id");
+    }
+
+    /**
+     * The order management system's tables are SingleStore's own: feeds.sql's pipeline brokerage_oms_to_lake copies
+     * exactly them, append-only, into brokerage.trading, and the toy ops.orders and its change feed are gone (item 151).
+     */
+    @Test
+    void feedsSqlCopiesTheOrderManagementSystemsTablesInOneAppendOnlyPipeline() throws Exception {
+        String feeds = Files.readString(DIR.resolve("feeds.sql"));
+        int at = feeds.indexOf("CREATE OR REPLACE PIPELINE " + SingleStoreTables.OMS_PIPELINE
+            + " AS LOAD DATA CONNECTOR");
+        assertThat(at).as("feeds.sql makes " + SingleStoreTables.OMS_PIPELINE).isPositive();
+        String oms = feeds.substring(at, feeds.indexOf("SET committed_at", at));
+        assertThat(oms).contains("\"singlestore.tables\": \"order_events,routes,executions\"")
+            .contains("\"singlestore.tables\": \"" + SingleStoreTables.tableList(Feed.Path.SINGLESTORE) + "\"")
+            .contains("\"singlestore.append-only\": \"true\"")
+            .contains("\"iceberg.namespace\": \"brokerage.trading\"")
+            .doesNotContain("iceberg.partition-by").doesNotContain("\"iceberg.table\"");
+        assertThat(feeds).doesNotContain("CREATE TABLE ops.orders").doesNotContain("PIPELINE orders_to_lake AS");
     }
 }

@@ -12,10 +12,14 @@ dependencies {
     implementation("org.apache.iceberg:iceberg-core")
     implementation("org.apache.kafka:kafka-clients")
     implementation("org.mariadb.jdbc:mariadb-java-client")
+    // The CDC leg's CockroachDB custody, which speaks PostgreSQL's protocol (Main custody).
+    implementation("org.postgresql:postgresql")
     runtimeOnly("org.slf4j:slf4j-simple")
 
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.assertj:assertj-core")
+    // The reconciliation views' SQL, run against the world's own rows.
+    testImplementation("com.h2database:h2")
 }
 
 // The image's class path (demo/k8s/brokerage.Dockerfile): the module's jar and every library it runs on.

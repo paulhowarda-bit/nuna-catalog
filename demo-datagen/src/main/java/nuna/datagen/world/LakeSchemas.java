@@ -13,10 +13,11 @@ import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 
 /**
- * The Iceberg table each Kafka feed lands in: its columns, in the order the world writes them, and its partitioning.
- * The bootstrap creates the tables from these; the sink writes into them and never changes them (its schema evolution
- * is off), so a column missing here is a value dropped on the way in. Orders are not here: the SingleStore change feed
- * makes its own table from SingleStore's.
+ * The Iceberg table each numbered feed lands in through Kafka: its columns, in the order the world writes them, and its
+ * partitioning. The bootstrap creates the tables from these; the sink writes into them and never changes them (its
+ * schema evolution is off), so a column missing here is a value dropped on the way in. SingleStore's tables have the
+ * same columns ({@code SingleStoreTables}). The orders are not here: they go through SingleStore only, and its change
+ * feed makes their table from SingleStore's.
  */
 public final class LakeSchemas {
 
@@ -43,7 +44,7 @@ public final class LakeSchemas {
     private LakeSchemas() {
     }
 
-    /** The table's schema as the bootstrap creates it: the Kafka path's table, order_events for the orders. */
+    /** The table's schema as the bootstrap creates it: the Kafka path's table. */
     public static Schema schema(Feed feed, Kit kit) {
         Columns c = new Columns();
         switch (feed) {
@@ -91,25 +92,58 @@ public final class LakeSchemas {
                 .add("ledger_account_id", LONG).add("sub_ledger", TEXT).add("definition_id", INT)
                 .add("definition_name", TEXT).add("security_id", LONG).add("lot", LONG).add("measure", TEXT)
                 .add("normal_side", TEXT).add("balance", AMOUNT);
-            // brokerage.trading.order_events, for when SingleStore is off: SingleStore's orders table, every change of
-            // every order a row (SingleStore's own copy, brokerage.trading.orders, is its change feed's).
-            case ORDERS -> c.add("order_id", LONG).add("order_ref", TEXT).add("brokerage_account", LONG)
-                .add("security_id", LONG).add("symbol", TEXT).add("side", TEXT).add("order_type", TEXT)
-                .add("limit_price", PRICE).add("quantity", LONG).add("filled_quantity", LONG)
-                .add("average_price", PRICE).add("status", TEXT).add(LOCATE_ID, TEXT)
-                .add("accepted_financial_transaction_id", LONG).add("trade_date", DATE).add("accepted_at", TIME)
-                .add("updated_at", TIME);
+            case ORDERS -> throw new IllegalArgumentException("the orders go through SingleStore only");
+            case ORDER_EVENTS -> c.add("event_id", LONG).add("order_id", LONG).add("order_ref", TEXT)
+                .add("event_type", TEXT).add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT)
+                .add("side", TEXT).add("order_type", TEXT).add("limit_price", PRICE).add("quantity", LONG)
+                .add("filled_quantity", LONG).add("leaves_quantity", LONG).add("average_price", PRICE)
+                .add("status", TEXT).add(LOCATE_ID, TEXT).add("route_id", TEXT).add("exec_id", TEXT)
+                .add("trade_date", DATE).add("event_time", TIME);
+            case ROUTES -> c.add("route_id", TEXT).add("order_id", LONG).add("order_ref", TEXT)
+                .add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT).add("side", TEXT)
+                .add("venue", TEXT).add("routed_quantity", LONG).add("limit_price", PRICE).add("trade_date", DATE)
+                .add("sent_at", TIME);
+            case EXECUTIONS -> c.add("exec_id", TEXT).add("order_id", LONG).add("order_ref", TEXT)
+                .add("route_id", TEXT).add("fill_id", TEXT).add("financial_transaction_id", LONG)
+                .add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT).add("side", TEXT)
+                .add("venue", TEXT).add("last_quantity", LONG).add("last_price", PRICE).add("gross_amount", MONEY)
+                .add("cum_quantity", LONG).add("leaves_quantity", LONG).add("trade_date", DATE)
+                .add("settlement_date", DATE).add("executed_at", TIME);
+            case CNS_OBLIGATIONS -> c.add("obligation_id", TEXT).add("security_id", LONG).add("symbol", TEXT)
+                .add("cusip", TEXT).add("trade_date", DATE).add("settlement_date", DATE).add("buy_quantity", LONG)
+                .add("buy_amount", MONEY).add("sell_quantity", LONG).add("sell_amount", MONEY)
+                .add("short_sale_quantity", LONG).add("net_quantity", LONG).add("net_amount", MONEY)
+                .add("direction", TEXT).add("computed_at", TIME);
+            case SETTLEMENTS -> c.add("settlement_id", TEXT).add("obligation_id", TEXT).add("security_id", LONG)
+                .add("symbol", TEXT).add("settlement_date", DATE).add("direction", TEXT).add("quantity_due", LONG)
+                .add("quantity_settled", LONG).add("quantity_failed", LONG).add("net_amount", MONEY)
+                .add("status", TEXT).add("settled_at", TIME);
+            case FAILS -> c.add("fail_event_id", LONG).add("fail_id", TEXT).add("event_type", TEXT)
+                .add("obligation_id", TEXT).add("security_id", LONG).add("symbol", TEXT).add("settlement_date", DATE)
+                .add("quantity", LONG).add("reason", TEXT).add("reg_sho_rule", TEXT).add("close_out_deadline", TIME)
+                .add("close_out_price", MONEY).add("close_out_amount", MONEY).add("business_date", DATE)
+                .add("event_time", TIME);
+            case STOCK_RECORD -> c.add("business_date", DATE).add("position_id", TEXT).add("security_id", LONG)
+                .add("symbol", TEXT).add("cusip", TEXT).add("side", TEXT).add("category", TEXT)
+                .add("brokerage_account", LONG).add("quantity", LONG).add("close_price", MONEY)
+                .add("market_value", MONEY);
+            case LOCATES -> c.add("locate_id", TEXT).add("brokerage_account", LONG).add("security_id", LONG)
+                .add("symbol", TEXT).add("quantity", LONG).add("source", TEXT).add("easy_to_borrow", FLAG)
+                .add("borrow_rate", RATE).add("order_ref", TEXT).add("business_date", DATE)
+                .add("requested_at", TIME).add("expires_at", TIME);
         }
         return new Schema(c.fields);
     }
 
-    /** The table's partitioning: the daily tables by business date, reference data not at all. */
+    /** The table's partitioning: the daily tables by business or trade date, small ones by month, reference data not. */
     public static PartitionSpec spec(Feed feed, Schema schema) {
         return switch (feed) {
-            case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD ->
+            case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD, STOCK_RECORD ->
                 PartitionSpec.builderFor(schema).day("business_date").build();
-            case ORDERS -> PartitionSpec.builderFor(schema).day("trade_date").build();
-            case PRICES_EOD -> PartitionSpec.builderFor(schema).month("business_date").build();
+            case ORDER_EVENTS, ROUTES, EXECUTIONS -> PartitionSpec.builderFor(schema).day("trade_date").build();
+            case PRICES_EOD, LOCATES -> PartitionSpec.builderFor(schema).month("business_date").build();
+            case CNS_OBLIGATIONS -> PartitionSpec.builderFor(schema).month("trade_date").build();
+            case SETTLEMENTS -> PartitionSpec.builderFor(schema).month("settlement_date").build();
             default -> PartitionSpec.unpartitioned();
         };
     }

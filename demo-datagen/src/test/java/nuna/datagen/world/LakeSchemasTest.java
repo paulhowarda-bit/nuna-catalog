@@ -25,8 +25,8 @@ class LakeSchemasTest {
     void everyRowTheWorldSendsFitsItsTableAndEveryColumnIsUsed() {
         Map<Feed, Schema> schemas = new EnumMap<>(Feed.class);
         Map<Feed, Set<String>> used = new EnumMap<>(Feed.class);
-        // Every feed's table through Kafka, the orders' order_events among them.
-        for (Feed f : Feed.values()) {
+        // Every numbered feed's table through Kafka (the orders go through SingleStore only).
+        for (Feed f : Feed.numbered()) {
             schemas.put(f, LakeSchemas.schema(f, KIT));
             used.put(f, new HashSet<>());
         }
@@ -37,6 +37,9 @@ class LakeSchemasTest {
         Sink check = new Sink() {
             @Override
             public void accept(Event e) {
+                if (e.feed() == Feed.ORDERS) {
+                    return;
+                }
                 e.row().forEach((column, value) -> {
                     Types.NestedField field = schemas.get(e.feed()).findField(column);
                     if (field == null && e.feed() == Feed.FINANCIAL_TRANSACTIONS) {

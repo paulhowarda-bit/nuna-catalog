@@ -79,11 +79,11 @@ public final class KafkaTopics implements Publisher.Topics, AutoCloseable {
             AdminClientConfig.CLIENT_ID_CONFIG, "brokerage-world-admin"));
     }
 
-    /** Creates each feed's topic (the orders' too, for when SingleStore is off) and the sink's control topic, where missing. */
+    /** Creates each numbered feed's topic (the SingleStore feeds' too, for when it is off) and the sink's control topic, where missing. */
     public static void create(String bootstrap, String controlTopic) throws InterruptedException, ExecutionException {
         try (Admin admin = admin(bootstrap)) {
             List<NewTopic> topics = new ArrayList<>();
-            for (Feed f : Feed.values()) {
+            for (Feed f : Feed.numbered()) {
                 topics.add(new NewTopic(f.topic, 1, (short) 1).configs(Map.of("retention.ms", RETENTION_MS)));
             }
             topics.add(new NewTopic(controlTopic, 1, (short) 1));
@@ -100,12 +100,12 @@ public final class KafkaTopics implements Publisher.Topics, AutoCloseable {
         }
     }
 
-    /** The records each feed's topic holds. */
+    /** The records each numbered feed's topic holds. */
     public static Map<Feed, Long> endOffsets(String bootstrap) throws InterruptedException, ExecutionException {
         try (Admin admin = admin(bootstrap)) {
             Map<TopicPartition, OffsetSpec> latest = new HashMap<>();
             Map<TopicPartition, Feed> feeds = new HashMap<>();
-            for (Feed f : Feed.values()) {
+            for (Feed f : Feed.numbered()) {
                 TopicPartition tp = new TopicPartition(f.topic, 0);
                 latest.put(tp, OffsetSpec.latest());
                 feeds.put(tp, f);

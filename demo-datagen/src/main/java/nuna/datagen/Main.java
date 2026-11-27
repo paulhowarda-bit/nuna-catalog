@@ -5,8 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import nuna.datagen.kit.Kit;
+import nuna.datagen.live.Custody;
 import nuna.datagen.live.IcebergLake;
 import nuna.datagen.live.KafkaTopics;
 import nuna.datagen.live.Pacer;
@@ -32,6 +34,10 @@ import nuna.datagen.world.World;
  *   <li>{@code drain kafka|singlestore}: waits until what went that way is all in the lake ({@link #drain}).</li>
  *   <li>{@code sql <dir>}: writes brokerage-feeds.sql and brokerage-feeds-pipelines.sql into {@code dir}
  *       ({@link SingleStoreTables}).</li>
+ *   <li>{@code custody}: brings the CDC leg's CockroachDB {@code custody} up to the lake's last business day
+ *       ({@link Custody}).</li>
+ *   <li>{@code history <dir>}: writes the custody tables' history tables, one create-table request each, into
+ *       {@code dir}.</li>
  * </ul>
  *
  * <p>{@code BROKERAGE_ROUTE} says which of Kafka and SingleStore are on ({@link Route}; D50, amended 2026-11-24): the
@@ -55,8 +61,11 @@ public final class Main {
             case "run" -> run();
             case "sql" -> sql(Path.of(args.length > 1 ? args[1] : "."));
             case "drain" -> drain(args.length > 1 ? args[1] : "");
+            case "custody" -> custody();
+            case "history" -> history(Path.of(args.length > 1 ? args[1] : "."));
             default -> {
-                System.err.println("usage: Main bootstrap | run | sql <dir> | drain kafka|singlestore");
+                System.err.println("usage: Main bootstrap | run | sql <dir> | drain kafka|singlestore | custody"
+                    + " | history <dir>");
                 System.exit(2);
             }
         }
@@ -66,6 +75,39 @@ public final class Main {
         Kit kit = Kit.load();
         Files.writeString(dir.resolve("brokerage-feeds.sql"), SingleStoreTables.tables(kit));
         Files.writeString(dir.resolve("brokerage-feeds-pipelines.sql"), SingleStoreTables.pipelines());
+    }
+
+    static void history(Path dir) throws Exception {
+        Files.createDirectories(dir);
+        for (Custody.Table t : Custody.Table.values()) {
+            Files.writeString(dir.resolve(t.table + ".json"), Custody.history(t));
+        }
+    }
+
+    /**
+     * Replays the world to the last business day the lake tagged and writes the clearing books into the CDC leg's
+     * CockroachDB, as user {@code clearing} ({@code COCKROACH_URL}, {@code COCKROACH_USER}, {@code COCKROACH_PASSWORD}).
+     * demo.sh runs it each time the leg starts, while the generator is stopped.
+     */
+    static void custody() throws Exception {
+        Kit kit = Kit.load();
+        try (IcebergLake lake = lake()) {
+            LocalDate last = lake.lastEndOfDay(List.of(Feed.BALANCES_EOD.lakeTable(Feed.Path.KAFKA),
+                Feed.BALANCES_EOD.lakeTable(Feed.Path.SINGLESTORE)));
+            if (last == null) {
+                System.out.println("custody: no business day has ended in the lake yet, so the books are empty");
+                return;
+            }
+            World world = new World(lake.settings(), kit);
+            Custody.Book book = new Custody.Book();
+            while (!world.day().isAfter(last)) {
+                world.runDay(book);
+            }
+            try (Custody db = Custody.open(env("COCKROACH_URL", "jdbc:postgresql://cockroach:26257/custody?sslmode=disable"),
+                     env("COCKROACH_USER", "clearing"), env("COCKROACH_PASSWORD", null))) {
+                System.out.println(db.load(book));
+            }
+        }
     }
 
     static void bootstrap() throws Exception {
@@ -118,19 +160,20 @@ public final class Main {
                     viaKafka.put(feed, sent);
                 });
             } else {
-                for (Feed f : Feed.values()) {
+                for (Feed f : Feed.numbered()) {
                     viaKafka.put(f, lake.records(f.lakeTable(Feed.Path.KAFKA)));
                 }
             }
             if (route.singlestore()) {
                 viaSingleStore.putAll(store.counts());
             } else {
-                for (Feed f : Feed.values()) {
-                    if (f != Feed.ORDERS) {
-                        viaSingleStore.put(f, lake.records(f.lakeTable(Feed.Path.SINGLESTORE)));
-                    }
+                for (Feed f : Feed.numbered()) {
+                    viaSingleStore.put(f, lake.records(f.lakeTable(Feed.Path.SINGLESTORE)));
                 }
             }
+            // The reconciliation views read every lake table each feed has; a change feed makes its copy as it first
+            // runs, which on a new lake is after the bootstrap made the views.
+            lake.reconViews();
             System.out.println("the world: " + settings + ", live from " + lake.pacedFrom() + " on the real clock, route "
                 + route + "; already sent through Kafka " + viaKafka + ", through SingleStore " + viaSingleStore);
             Publisher publisher = new Publisher(route, topics, store, store, lake, pacer::await, viaKafka,

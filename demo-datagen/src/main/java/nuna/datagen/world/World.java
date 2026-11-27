@@ -64,6 +64,8 @@ public final class World {
     private final Rng rng;
     private final Market market;
     private final List<Account> accounts = new ArrayList<>();
+    private final Oms oms = new Oms(this::emit);
+    private final Clearing clearing;
     private Sink sink;
     private LocalDate day;
     private boolean started;
@@ -134,6 +136,7 @@ public final class World {
         this.engine = new Engine(kit);
         this.rng = new Rng(settings.seed());
         this.market = new Market(rng, settings.securities());
+        this.clearing = new Clearing(this::emit, calendar, market, true);
         String[] personas = {"dormant", "buy_and_hold", "active_trader", "short_seller"};
         double[] weights = {0.30, 0.42, 0.23, 0.05};
         for (int i = 0; i < settings.accounts(); i++) {
@@ -178,6 +181,17 @@ public final class World {
         return unexpectedRejections;
     }
 
+    /** The world without its seeded fail to deliver (item 151): a clean world, for tests. Before the first day. */
+    public World withoutSeededFail() {
+        clearing.withoutBreak();
+        return this;
+    }
+
+    /** Whether the seeded fail to deliver has happened yet. */
+    public boolean clearingBreakSeeded() {
+        return clearing.breakSeeded();
+    }
+
     private Instant at(LocalTime t) {
         return day.atTime(t).atZone(NEW_YORK).toInstant();
     }
@@ -203,6 +217,9 @@ public final class World {
             }
         }
         settleDue();
+        int played = businessDays;
+        schedule(at(LocalTime.of(8, 0)), () -> clearing.settle(current, day, played));
+        schedule(at(LocalTime.of(9, 30)), () -> clearing.closeOuts(current, day));
         for (Account a : accounts) {
             planDay(a);
         }
@@ -629,6 +646,11 @@ public final class World {
         o.acceptance = t.id();
         openOrders.put(o.id, o);
         upsertOrder(o);
+        oms.accepted(current, state(o));
+        if (o.locate != null) {
+            clearing.locate(current, day, o.locate, o.account.id(), o.security, o.quantity, o.ref,
+                at(LocalTime.of(16, 0)));
+        }
         // Shorts and covers fill in full (v14 books no cancel for them); a buy or sell may stay part-filled to the close.
         boolean full = o.side.equals("sell_short") || o.side.equals("buy_to_cover") || rng.chance(0.85);
         int fills = 1 + (o.quantity >= 10 ? rng.below(3) : 0);
@@ -713,6 +735,8 @@ public final class World {
             settlements.computeIfAbsent(calendar.settlement(day), k -> new ArrayList<>()).add(o);
         }
         upsertOrder(o);
+        oms.executed(current, state(o), venue, q, p, fillId, t.id(), calendar.settlement(day));
+        clearing.trade(a.id(), s, o.side, q, value);
     }
 
     /** The lots a fill names: the account's disposal method over lots with free shares (short lots oldest first). */
@@ -816,6 +840,7 @@ public final class World {
             } else {
                 // A short or cover always fills in full; one still open had a fill refused, already counted.
                 openOrders.remove(o.id);
+                oms.dropped(o.id);
                 continue;
             }
             if (book(now, ft(template, o.account, "oms", f), false)) {
@@ -823,6 +848,7 @@ public final class World {
                 o.status = o.filled == 0 ? "expired" : "partially_filled_expired";
                 openOrders.remove(o.id);
                 upsertOrder(o);
+                oms.expired(now, state(o));
             }
         }
     }
@@ -879,6 +905,7 @@ public final class World {
                 emit(now, Feed.BALANCES_EOD, row);
             }
         }
+        clearing.endOfDay(now, day);
     }
 
     private void bars(LocalTime start) {
@@ -919,6 +946,11 @@ public final class World {
         row.put("accepted_at", o.acceptedAt);
         row.put("updated_at", current);
         emit(current, Feed.ORDERS, row);
+    }
+
+    private Oms.OrderState state(Order o) {
+        return new Oms.OrderState(o.id, o.ref, o.account.id(), o.security, o.side, o.type, o.limitPrice, o.quantity,
+            o.filled, o.value, o.status, o.locate, o.tradeDate);
     }
 
     private static BigDecimal dollars(double v, int multiple) {
