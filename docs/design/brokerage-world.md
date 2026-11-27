@@ -146,10 +146,10 @@ Under `lakehouse.brokerage`, beside the existing samples.
   from Debezium and from plain topics, the Java library, Spark.
 - Regulated namespaces (D27): `party.beneficial_owners` lands unclassified, is refused to everyone, and a steward
   classifies it during the demo. This replaces the refusal the toy `finance.ledger.accounts` shows today.
-- Flagged tables for trusted engines only (D20), masks once item 115 lands: Trino reads tax ids, PyIceberg gets 403.
-  The writers of these tables, the Iceberg sinks, SingleStore's change feed and the generator, are registered as
-  trusted engines (D48, amended 2026-11-27; item 308), so they still write them, and so SingleStore's own reads of
-  them are not refused either: it signs in as one client both ways.
+- Flagged tables for trusted engines only (D20), masks once item 115 lands: Trino reads tax ids, SingleStore and
+  PyIceberg get 403. The writers of these tables, the Iceberg sinks, SingleStore's change feed and the generator, are
+  registered as trusted engines (D48, amended 2026-11-27; item 308), so they still write them; the change feed signs
+  in as a client of its own, so SingleStore's other pipelines stay refused.
 - A legal hold (D24) on `compliance.aml_cases`; SAR confidentiality as a grant: a new person, `cora`, in a new group,
   `demo-compliance`, alone reads `compliance`.
 - Time travel: one commit per business day; tags `eod-YYYY-MM-DD` and `month-end-YYYY-MM`; a trade busted after the

@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import nuna.datagen.kit.Kit;
+import nuna.datagen.live.SingleStoreTables;
 import nuna.datagen.live.Sources;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.LakeSchemas;
@@ -60,16 +61,18 @@ class FlaggedTablesTest {
     }
 
     /**
-     * Every writer of a flagged table is a trusted engine: Kafka Connect's sinks, the world's and the CDC leg's (user
-     * cdc, connect.yaml); SingleStore's change feeds (user singlestore); the generator, which tags each end of day and
-     * counts each table's rows (user brokerage); and Trino (user trino), which reads them for its users. Each user's
-     * client is its token's azp, which Mint.java gives.
+     * Every writer of a flagged table is a trusted engine, and no other client: Kafka Connect's sinks, the world's and
+     * the CDC leg's (user cdc, connect.yaml); SingleStore's change feeds (user singlestore-feed, whose token their
+     * pipeline carries, never the singlestore user's, which SingleStore's own reads use and which must stay refused);
+     * the generator, which tags each end of day and counts each table's rows (user brokerage); and Trino (user trino),
+     * which reads them for its users. Each user's client is its token's azp, which Mint.java gives.
      */
     @Test
     void demoShTrustsEveryWriterOfAFlaggedTable() throws IOException {
         String mint = Files.readString(DEMO.resolve("Mint.java"));
         List<String> clients = new ArrayList<>();
-        for (String user : List.of("trino", "cdc", "singlestore", "brokerage")) {
+        assertThat(SingleStoreTables.pipelines()).contains("${SINGLESTORE_FEED_TOKEN}").doesNotContain("${SINGLESTORE_TOKEN}");
+        for (String user : List.of("trino", "cdc", "singlestore-feed", "brokerage")) {
             Matcher m = Pattern.compile("USERS\\.put\\(\"" + user + "\", new String\\[] \\{\"([^\"]+)\"").matcher(mint);
             assertThat(m.find()).as(user + " in Mint.java").isTrue();
             clients.add(m.group(1));

@@ -300,10 +300,11 @@ s2() {
     2> >(grep -v -e 'getopt: command not found' -e 'Using a password on the command line' >&2)
 }
 
-# A SQL file from demo/singlestore, with the singlestore user's catalog token and the root password put in (the
-# pipelines' CREDENTIALS).
+# A SQL file from demo/singlestore, with the singlestore user's catalog token, the singlestore-feed user's (the
+# brokerage world's change feeds', item 308) and the root password put in (the pipelines' CREDENTIALS).
 s2_file() {
   sed -e "s|\${SINGLESTORE_TOKEN}|$(token_of singlestore)|g" \
+    -e "s|\${SINGLESTORE_FEED_TOKEN}|$(token_of singlestore-feed)|g" \
     -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$(secret_of singlestore-root)|g" "$REPO/demo/singlestore/$1" | s2
 }
 
@@ -793,10 +794,11 @@ SQL
 # each query, whose own token the query carries (trino.yaml), so a flagged table's data reaches them through Trino
 # with their row filter and column masks applied (D20, backlog 115).
 # The brokerage world's writers too (item 308; D48, amended 2026-11-27): Kafka Connect's (kafka-connect-demo: the
-# world's sinks and the CDC leg's), SingleStore's (singlestore-demo: its change feeds) and the generator's
-# (brokerage-world-demo: it counts each table's rows and tags its ends of day), since FLAGGED_TABLES opens its files only
-# to trusted engines. Each acts as itself, with its own grants; none names an end user.
-TRUSTED_CLIENTS="trino-demo kafka-connect-demo singlestore-demo brokerage-world-demo"
+# world's sinks and the CDC leg's), SingleStore's change feeds' (singlestore-feed-demo, their own: SingleStore's
+# other pipelines sign in as singlestore-demo, which stays untrusted, so its reads of flagged tables get 403) and the
+# generator's (brokerage-world-demo: it counts each table's rows and tags its ends of day), since FLAGGED_TABLES opens
+# its files only to trusted engines. Each acts as itself, with its own grants; none names an end user.
+TRUSTED_CLIENTS="trino-demo kafka-connect-demo singlestore-feed-demo brokerage-world-demo"
 trusted_engines() {
   local client
   say "registering the trusted engines, as oscar, the platform operator: $TRUSTED_CLIENTS"
@@ -1708,7 +1710,7 @@ Compliance  cora  (group demo-compliance: with the presenter's, the only group t
 $(token_of cora)
 
 Tag steward stella, platform operator oscar, SingleStore, the lake writer, the brokerage world, the engine matrix,
-Kafka Connect and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,brokerage,engine-matrix,cdc,trino}.jwt
+Kafka Connect and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,singlestore-feed,lake,brokerage,engine-matrix,cdc,trino}.jwt
 oscar administers kafbat, Studio and CloudBeaver; in kafbat, ana, gary and stella administer topics, but only
 read the catalog's (nuna.*), the Connect worker's, the brokerage world's and those starting with _, and none of
 the compliance topics (brokerage.compliance.*, backoffice.compliance.*), which cora reads. oscar reads kafbat's
