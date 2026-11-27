@@ -154,6 +154,9 @@ class MaintenanceNightsRoutesTest {
                 .hasSize(1);
         assertThat(JsonPath.<List<Object>>read(expect(api.send("GET", "/management/v1/maintenance/nights?days=1&jobs=0",
                 null), 200).body(), "$.nights[*]")).hasSize(1);
+        // A number that is not one is the caller's mistake, named, not a 500 (backlog 311).
+        expectError(api.send("GET", "/management/v1/maintenance/nights?jobs=abc", null), 400, "BadRequestException");
+        expectError(api.send("GET", "/management/v1/maintenance/nights?days=1.5", null), 400, "BadRequestException");
     }
 
     private LocalDate today() {

@@ -77,6 +77,24 @@ class OpaAnswersTest {
     }
 
     @Test
+    void anAskNamingNoCatalogGetsNoneAndOneNamingNoSchemaOrTableInAServedCatalogGetsNoRows() {
+        // /opa/v1 takes no token, so any caller may send any body: none answers 500 (backlog 310).
+        JsonNode noCatalog = JSON.readTree("""
+                {"input":{"context":{"identity":{"extraCredentials":{"token":"ana-token"}}},
+                 "action":{"operation":"GetRowFilters","resource":{"table":{"schemaName":"brokerage.trading",
+                  "tableName":"orders"}}}}}""");
+        assertThat(answers.rowFilters(noCatalog)).isEqualTo("{\"result\":[]}");
+        assertThat(answers.rowFilters(JSON.readTree("{}"))).isEqualTo("{\"result\":[]}");
+        assertThat(answers.columnMasks(columnMasks("ana-token", "{\"column\":{\"tableName\":\"orders\"}}")))
+                .isEqualTo("{\"result\":[]}");
+        JsonNode noTable = JSON.readTree("""
+                {"input":{"context":{"identity":{"extraCredentials":{"token":"ana-token"}}},
+                 "action":{"operation":"GetRowFilters","resource":{"table":{"catalogName":"lakehouse"}}}}}""");
+        assertThat(answers.rowFilters(noTable)).isEqualTo("{\"result\":[{\"expression\":\"false\"}]}");
+        assertThat(asked).isEmpty();
+    }
+
+    @Test
     void aMissingOrUnacceptedTokenOrATableTheUserCannotSeeGetsNoRows() {
         String none = "{\"result\":[{\"expression\":\"false\"}]}";
         assertThat(answers.rowFilters(rowFilters("lakehouse", "brokerage.trading", "orders", null))).isEqualTo(none);
