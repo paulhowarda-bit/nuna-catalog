@@ -1,0 +1,16 @@
+Breaks: FINRA's short maintenance drops its per-share floor and takes the percentage alone
+Module: demo-datagen
+Test: MarginTest#finraShortMaintenanceIsTheGreaterOfPerShareAndPercent
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Margin.java b/demo-datagen/src/main/java/nuna/datagen/world/Margin.java
+index 44950f2c..898c7f63 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Margin.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Margin.java
+@@ -124,7 +124,7 @@ final class Margin {
+     static BigDecimal finraShort(BigDecimal price, BigDecimal shares) {
+         BigDecimal value = price.multiply(shares);
+         return price.compareTo(BigDecimal.valueOf(5)) >= 0
+-            ? FINRA_SHORT_PER_SHARE.multiply(shares).max(value.multiply(FINRA_SHORT))
++            ? value.multiply(FINRA_SHORT)
+             : FINRA_SHORT_PER_SHARE_LOW.multiply(shares).max(value.multiply(FINRA_SHORT_LOW));
+     }
+ 

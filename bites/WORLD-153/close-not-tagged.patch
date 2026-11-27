@@ -1,0 +1,15 @@
+Breaks: the month-end close commits but is never tagged month-end-YYYY-MM
+Module: demo-datagen
+Test: MonthEndWriterTest
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/MonthEndWriter.java b/demo-datagen/src/main/java/nuna/datagen/live/MonthEndWriter.java
+index 899d0fed..d428474e 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/MonthEndWriter.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/MonthEndWriter.java
+@@ -101,7 +101,6 @@ public final class MonthEndWriter {
+         if (!inHistory(catalog, MonthEnd.Table.STATEMENTS, CLOSE, marker)) {
+             commit(catalog, close.period().toString(), close.rows(), CLOSE, marker);
+         }
+-        refs.createTag(tag, "main", "The month-end close of " + close.period() + " as first published");
+         System.out.println("closed " + close.period() + " in one commit; tagged " + tag);
+     }
+ 

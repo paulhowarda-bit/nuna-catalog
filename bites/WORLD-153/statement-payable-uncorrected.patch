@@ -1,0 +1,16 @@
+Breaks: the bust's restatement keeps the busted buy in the account's unsettled purchases payable
+Module: demo-datagen
+Test: ReconTest#theSeededBustShowsAsTheRestatedLinesOnMainAndNothingAtTheTag
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/World.java b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+index d117b1e7..4bf71406 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/World.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+@@ -2062,7 +2062,7 @@ public final class World {
+             }
+             Map<String, Object> c = new LinkedHashMap<>(st);
+             c.put("unsettled_purchases_payable",
+-                ((BigDecimal) st.get("unsettled_purchases_payable")).subtract(b.value()));
++                ((BigDecimal) st.get("unsettled_purchases_payable")));
+             c.put("long_market_value", ((BigDecimal) st.get("long_market_value")).subtract(lmvOff));
+             BigDecimal equity = ((BigDecimal) st.get("total_equity")).add(b.value()).subtract(lmvOff);
+             c.put("total_equity", equity);

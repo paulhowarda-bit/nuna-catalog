@@ -1,0 +1,16 @@
+Breaks: a trade bust's CNS adjustment adds its money to the buy instead of taking it off
+Module: demo-datagen
+Test: ReconTest#theSeededBustShowsAsTheRestatedLinesOnMainAndNothingAtTheTag
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+index 66b4294a..29ecd683 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+@@ -289,7 +289,7 @@ final class Clearing {
+         row.put("sell_amount", BigDecimal.ZERO);
+         row.put("short_sale_quantity", 0L);
+         row.put("net_quantity", -quantity);
+-        row.put("net_amount", value);
++        row.put("net_amount", value.negate());
+         row.put("direction", "adjustment");
+         row.put("computed_at", at);
+         emitter.emit(at, Feed.CNS_OBLIGATIONS, row);

@@ -1,0 +1,16 @@
+Breaks: an order routed out reports no MEOR to CAT
+Module: demo-datagen
+Test: ReconTest#onACleanWorldEveryViewIsEmpty
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Reporting.java b/demo-datagen/src/main/java/nuna/datagen/world/Reporting.java
+index 9c15ba7e..203a56c7 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Reporting.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Reporting.java
+@@ -82,7 +82,7 @@ final class Reporting {
+                 Route r = new Route((String) row.get("route_id"), (Instant) row.get("sent_at"), category,
+                     (String) row.get("venue"), securityClass(security), category);
+                 routes.put(r.id(), r);
+-                cat(at, (Instant) row.get("sent_at"), "MEOR", "industry_member", REPORTER, row, r.id(), null,
++                if (false) cat(at, (Instant) row.get("sent_at"), "MEOR", "industry_member", REPORTER, row, r.id(), null,
+                     row.get("limit_price"), row.get("routed_quantity"), r.venue());
+                 long q = (Long) row.get("routed_quantity");
+                 Routing g = routing.computeIfAbsent(List.of(r.securityClass(), category, r.venue()), k -> new Routing());
