@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**30 open:** 9 S, 12 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
+**29 open:** 9 S, 11 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,7 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [302](backlog/302.md) | M | Heavy: SingleStore's dev container never becomes healthy, so ChangeFeedTest does not start | the cause is not known yet: finding why the container never reports healthy (memory beside the other module under test, the image's own start, or Podman), then the fix | 2026-11-27 |
 | [303](backlog/303.md) | M | Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest) | the cause is not known yet: finding whether the archive writer is late or the reconcile's proof is wrong, then the fix | 2026-11-27 |
 | [304](backlog/304.md) | S | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | one test's assertion and its bite recorded again in one module | 2026-11-27 |
 | [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
@@ -1306,24 +1305,6 @@ marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalanc
 than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
 5xx seen in work's Grafana.
 
-### 302. Heavy: SingleStore's dev container never becomes healthy, so ChangeFeedTest does not start
-
-- Added: 2026-11-27 by overnight run 2026-11-27
-- Touches: singlestore-change-feed/src/test/java/nuna/changefeed/engine/ChangeFeedTest.java
-- Effort: M, the cause is not known yet: finding why the container never reports healthy (memory beside the other module under test, the image's own start, or Podman), then the fix
-
-In the heavy build of the overnight run of 2026-11-27 (commit a7a929ac), `ChangeFeedTest#initializationError` failed:
-`ContainerLaunchException: Container startup failed for image ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88`,
-caused by `Timed out waiting for container to become healthy` (`ChangeFeedTest.java:66`, its `@BeforeAll`, which waits
-up to 5 minutes on the health check and gives the container 3 GB). None of the module's 39 tests but this class ran
-into it; the class's two bites (`bites/SingleStore/lost-receipts-not-sent-again.patch`,
-`stale-offset-not-resnapshotted.patch`) were not run that night. The fix agent started for the module ended at once
-(the claude CLI's OAuth session had expired) and claimed nothing.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\heavy.log` (line 378 on), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\heavy-results\singlestore-change-feed`, `podman-info.txt` beside it.
-
-Done when the cause is known and ChangeFeedTest starts and passes in the overnight run's heavy build.
-
 ### 303. Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest)
 
 - Added: 2026-11-27 by overnight run 2026-11-27
@@ -1835,5 +1816,6 @@ document only repeats it, it may point there instead.
 | [299](backlog/299.md) | Console prototype: bring its header up to the built console (the Reading slot, items 231 and 297) | done | 2026-11-26 |
 | [300](backlog/300.md) | Console: on a phone the Reading menu may run past the window and main may end in an ellipsis (from 299) | done | 2026-11-26 |
 | [301](backlog/301.md) | A documentation site: every console page and command, installation, configuration, API and operations, as static web pages | done | 2026-11-27 |
+| [302](backlog/302.md) | Heavy: SingleStore's dev container never becomes healthy, so ChangeFeedTest does not start | done | 2026-11-27 |
 | [307](backlog/307.md) | The console links to the documentation, served at /docs/ from the server | done | 2026-11-27 |
 | [308](backlog/308.md) | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | done | 2026-11-27 |
