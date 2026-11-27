@@ -64,8 +64,10 @@ import org.apache.iceberg.util.PropertyUtil;
  * <p>A row from the log also carries the server run that logged its record and its number there, {@code log_run} and
  * {@code log_seq} (backlog 272), which place it in the run's archive chain. A commit, a read or a ref record names
  * the catalog ref in {@code branch}, and a ref record its ref and tables in {@code subject_ids} (backlog 169). These
- * four columns came after the table's first: a table made without them is given them when the writer opens it, with
- * no file rewritten, so its earlier rows read null there.
+ * four columns came after the table's first: a table made without them is given them by the catalog server when it
+ * starts ({@link EventsColumns}; D23, amended 2026-11-27), with no file rewritten, so its earlier rows read null there.
+ * The writer adds any still absent when it opens the table, which a writer holding only {@code create} and
+ * {@code write} on the audit catalog is refused.
  */
 final class EventsTable {
 
@@ -76,7 +78,7 @@ final class EventsTable {
     static final String ROWS = "nuna.audit-tables.rows";
 
     /** The columns the table was first made with; a table is still made with these, then given {@link #ADDED}. */
-    private static final Schema FIRST = new Schema(
+    static final Schema FIRST = new Schema(
             required(1, "event_id", Types.StringType.get()),
             required(2, "time", Types.TimestampType.withZone()),
             required(3, "type", Types.StringType.get()),
@@ -101,7 +103,7 @@ final class EventsTable {
      * was logged (backlog 272), then the catalog ref a record went through or is about and the ids it is about besides
      * its object (backlog 169). A list's element takes the id after its own.
      */
-    private static final List<Types.NestedField> ADDED = List.of(
+    static final List<Types.NestedField> ADDED = List.of(
             optional(20, "log_run", Types.StringType.get(), "the server run that logged the record (nunarun)"),
             optional(21, "log_seq", Types.LongType.get(), "the record's number in that run (nunaseq)"),
             optional(22, "branch", Types.StringType.get(),
@@ -169,7 +171,8 @@ final class EventsTable {
 
     /**
      * Gives {@code table} the {@link #ADDED} columns it lacks, in their order, through {@code update}; commits nothing
-     * when it has them all. A table made before them needs a caller with {@code modify} to be given them.
+     * when it has them all. A table made before them needs a caller with {@code modify} to be given them: the catalog
+     * server gives them at startup ({@link EventsColumns}), so the writer finds none absent.
      */
     private static void addAbsent(Table table, UpdateSchema update) {
         List<Types.NestedField> absent = ADDED.stream().filter(c -> table.schema().findField(c.name()) == null)
