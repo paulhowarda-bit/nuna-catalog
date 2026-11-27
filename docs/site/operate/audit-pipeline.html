@@ -28,8 +28,33 @@
       </header>
 
       <p>The record of audit is a log. Every audit record is one INFO line of the logger <code>nuna.audit</code>, holding the record's CloudEvent JSON. Everything else, the Kafka copy, the audit tables behind the console's Audit page, and the seven-year archive, is fed from that log or alongside it.</p>
-      <figure class="diagram pending" id="fig-audit-pipeline">
-        <p class="shot-todo">Diagram to draw: the catalog server writing the nuna.audit log to stdout and over OTLP; the outbox relay writing changes to the log; the optional Kafka copy; the audit tables writer taking the log over OTLP and writing the audit table and the archive; the servers' hourly archive check.</p>
+      <figure class="diagram" id="fig-audit-pipeline">
+        <svg viewBox="0 0 720 400" role="img" aria-labelledby="fig-audit-pipeline-t fig-audit-pipeline-d">
+          <title id="fig-audit-pipeline-t">Where an audit record goes</title>
+          <desc id="fig-audit-pipeline-d">The catalog server writes reads, denials and credential issues to the nuna.audit log before it answers. Changes go into the database outbox in their own transaction, and the outbox relay writes them to the log. The log goes to stdout always, to Kafka only when it is configured, and over OTLP to the audit tables writer, which can also read the Kafka topic. The writer fills the audit table and writes the archive. Each catalog server reads and verifies the archive hourly.</desc>
+          <rect class="d-node" x="20" y="40" width="190" height="56" rx="10"/><text class="d-label" x="115" y="65">Catalog server</text><text class="d-note" x="115" y="83">reads, denials, credentials</text>
+          <rect class="d-node d-store" x="20" y="150" width="190" height="56" rx="10"/><text class="d-label" x="115" y="175">Outbox</text><text class="d-note" x="115" y="193">changes, in their transaction</text>
+          <rect class="d-node" x="20" y="250" width="190" height="56" rx="10"/><text class="d-label" x="115" y="275">Outbox relay</text><text class="d-note" x="115" y="293">every 250 ms, at least once</text>
+          <rect class="d-node d-accent" x="260" y="130" width="170" height="76" rx="12"/><text class="d-label" x="345" y="165">nuna.audit log</text><text class="d-note" x="345" y="183">one INFO line per record</text>
+          <rect class="d-node" x="500" y="20" width="200" height="50" rx="10"/><text class="d-label" x="600" y="42">Stdout</text><text class="d-note" x="600" y="60">always</text>
+          <rect class="d-node" x="500" y="90" width="200" height="50" rx="10"/><text class="d-label" x="600" y="112">Kafka copy</text><text class="d-note" x="600" y="130">optional, best effort</text>
+          <rect class="d-node" x="500" y="170" width="200" height="56" rx="10"/><text class="d-label" x="600" y="195">Audit tables writer</text><text class="d-note" x="600" y="213">from the log or the topic</text>
+          <rect class="d-node d-store" x="490" y="280" width="100" height="50" rx="10"/><text class="d-label" x="540" y="302">Audit table</text><text class="d-note" x="540" y="320">the Audit page</text>
+          <rect class="d-node d-store" x="600" y="280" width="100" height="50" rx="10"/><text class="d-label" x="650" y="302">Archive</text><text class="d-note" x="650" y="320">S3, Object Lock</text>
+          <rect class="d-node" x="260" y="320" width="170" height="56" rx="10"/><text class="d-label" x="345" y="345">Archive check</text><text class="d-note" x="345" y="363">each server, hourly</text>
+          <path class="d-edge" d="M210 68C240 68 235 150 258 150" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M115 206V248" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M210 278C240 278 235 190 258 190" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M430 145C465 145 465 45 498 45" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M430 160C465 160 465 115 498 115" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M430 190C465 190 465 198 498 198" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="462" y="216">OTLP</text>
+          <path class="d-edge-dash" d="M600 140V168" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M560 226L540 278" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M640 226L650 278" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M430 355H650V332" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="540" y="372">reads and verifies</text>
+        </svg>
         <figcaption>Where an audit record goes.</figcaption>
       </figure>
 

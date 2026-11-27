@@ -26,7 +26,7 @@
         <p class="lead">A table's page answers everything about one table: its current state, its schemas and partitioning, every commit, what each group may do with it, how it is governed, how it is maintained, its audit trail and its settings. Engine users, data stewards, grant admins and auditors each use different tabs.</p>
       </header>
 
-      <figure class="shot pending" id="fig-console-table" data-shot="console-table" data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Fequities%1Feu%1Fxetra&amp;n=trades" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Table markets.equities.eu.xetra.trades on main, Overview tab, under its legal hold."><figcaption>The Overview tab of a table under a legal hold.</figcaption></figure>
+      <figure class="shot" id="fig-console-table"><img src="../img/shots/console-table-light.png" data-dark="../img/shots/console-table-dark.png" width="1440" height="900" alt="The Overview tab of table markets.equities.eu.xetra.trades, marked Held: rows, data files, snapshots and schemas, its current snapshot, location and metadata file, the maintenance verdict, the legal hold with its reason, and the engine-level refs kept on the table."><figcaption>The Overview tab of a table under a legal hold.</figcaption></figure>
 
       <h2 id="who-sees-it">Who sees it</h2>
       <p>The page opens for anyone whose groups hold describe on the table or above. Each tab is checked on its own:</p>
@@ -67,7 +67,7 @@
 
       <h2 id="access">Access</h2>
       <p>The <b class="ui">Access</b> tab shows, in order, <b class="ui">Grant access</b> (for those who manage grants), <b class="ui">What you may do</b>, <b class="ui">Your view of this table</b>, the governance panel, <b class="ui">Kept by branches and tags</b>, <b class="ui">Row filters and column masks</b> and the grants.</p>
-      <figure class="shot pending" id="fig-console-table-access" data-shot="console-table-access" data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Fdesks&amp;n=positions&amp;tab=access" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Table markets.desks.positions, flagged, with rules for demo-analysts and demo-stewards."><figcaption>The Access tab of a flagged table with two rules.</figcaption></figure>
+      <figure class="shot" id="fig-console-table-access"><img src="../img/shots/console-table-access-light.png" data-dark="../img/shots/console-table-access-dark.png" width="1440" height="900" alt="The Access tab of table markets.desks.positions: what presenter may do, its governance values with where each was set, what the catalog enforces, and the buttons to set a classification, change the owner, set a retention class, remove the flag and place a hold."><figcaption>The Access tab of a flagged table with two rules.</figcaption></figure>
 
       <h3 id="what-you-may-do">What you may do</h3>
       <p>What your groups' grants allow on the table, one line per level: <b class="ui">See it, but not read its data</b>, <b class="ui">Read its data</b>, <b class="ui">Read its data and write rows to it</b>, <b class="ui">Read and write its data, and change it: its schema, properties and maintenance</b>, <b class="ui">Set its labels and holds</b>, <b class="ui">Grant on it, and see who holds what</b>. With none: "Your groups hold no grant that reaches this table." "The catalog decides each request; this is what your grants allow."</p>

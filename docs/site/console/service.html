@@ -26,7 +26,7 @@
         <p class="lead">The Service page answers, for platform operators, how the whole deployment did over the last day: whether its latency objectives were met, whether every server answered, how audit copying and credential vending went, what alerts fired, and how the maintenance worker, DR replication and the database stand.</p>
       </header>
 
-      <figure class="shot pending" id="fig-console-service" data-shot="console-service" data-shot-route="#p=service" data-shot-user="oscar" data-shot-width="1440" data-shot-state="Every server answered; at least one worker scan reported."><figcaption>The Service page.</figcaption></figure>
+      <figure class="shot" id="fig-console-service"><img src="../img/shots/console-service-light.png" data-dark="../img/shots/console-service-dark.png" width="1440" height="900" alt="The Service page as oscar sees it: one server answered and three latency objectives missed, each objective with its count and share within, then audit, credential vending, alerts fired, the server list and the worker's scans."><figcaption>The Service page.</figcaption></figure>
 
       <h2 id="who-sees-it">Who sees it</h2>
       <p>Platform operators only: the rail shows <b class="ui">Service</b> to them alone, and every route behind it refuses anyone else with <code>only platform operators may call <var>operation</var></code>, audited as a denial. Anyone else who opens it sees "Service is shown to platform operators only, and your groups include none. The catalog answered:" and the refusal. The page covers every catalog, so the catalog picker is hidden.</p>

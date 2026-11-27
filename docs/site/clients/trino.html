@@ -41,8 +41,28 @@
 
       <h2 id="how-a-query-reaches-nuna">How a query reaches nuna</h2>
       <p>The person's client sends their token to Trino as the extra credential <code>token</code>. With <code>iceberg.rest-catalog.session=USER</code>, Trino sends that token to nuna in <code>Authorization</code>, and its own token in <code>X-Nuna-Engine-Authorization</code>. nuna then sees Trino acting for the person, checks the person's grants, and records both in the audit trail. Because Trino is a trusted engine, nuna gives it the files of tables that carry row filters or column masks, and Trino applies them.</p>
-      <figure class="diagram pending" id="fig-trino-query-path">
-        <p class="shot-todo">Diagram to draw: a person's client sends a query with its token to Trino; Trino calls nuna's Iceberg API with the person's token plus its own engine token, and nuna's OPA routes for filters and masks; Trino reads the files with vended credentials.</p>
+      <figure class="diagram" id="fig-trino-query-path">
+        <svg viewBox="0 0 720 330" role="img" aria-labelledby="fig-trino-query-path-t fig-trino-query-path-d">
+          <title id="fig-trino-query-path-t">How a Trino query reaches nuna</title>
+          <desc id="fig-trino-query-path-d">A person's client sends a query with the person's token to Trino. Trino calls nuna's Iceberg REST API with the person's token and its own engine token, and gets the table and vended credentials. It asks nuna's OPA decision routes for the row filter and column masks, passing the person's token. Then it reads the table's files from the object store with the vended credentials.</desc>
+          <rect class="d-group" x="505" y="10" width="210" height="225" rx="14"/>
+          <text class="d-note" x="610" y="252">nuna server</text>
+          <rect class="d-node" x="520" y="30" width="180" height="66" rx="10"/><text class="d-label" x="610" y="60">Iceberg REST API</text><text class="d-note" x="610" y="78">table + vended credentials</text>
+          <rect class="d-node" x="520" y="150" width="180" height="66" rx="10"/><text class="d-label" x="610" y="180">OPA decision routes</text><text class="d-note" x="610" y="198">row filters, column masks</text>
+          <rect class="d-node" x="20" y="120" width="130" height="60" rx="10"/><text class="d-label" x="85" y="147">Person</text><text class="d-note" x="85" y="165">own token</text>
+          <rect class="d-node" x="240" y="110" width="150" height="80" rx="10"/><text class="d-label" x="315" y="147">Trino</text><text class="d-note" x="315" y="165">applies filter and masks</text>
+          <rect class="d-node d-store" x="240" y="260" width="150" height="56" rx="10"/><text class="d-label" x="315" y="285">Object store</text><text class="d-note" x="315" y="303">the table's files</text>
+          <path class="d-edge" d="M150 150H238" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="195" y="142">query + token</text>
+          <path class="d-edge d-accent" d="M390 125C440 125 470 86 518 86" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="445" y="50">person's token</text>
+          <text class="d-note" x="445" y="66">+ Trino's token</text>
+          <path class="d-edge" d="M390 170C450 170 460 183 518 183" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="450" y="206">asks for filter and masks</text>
+          <text class="d-note" x="450" y="222">with the person's token</text>
+          <path class="d-edge" d="M315 190V258" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="480" y="292">reads with vended credentials</text>
+        </svg>
         <figcaption>How a Trino query reaches nuna as the person who runs it.</figcaption>
       </figure>
 

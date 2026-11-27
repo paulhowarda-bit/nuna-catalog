@@ -70,8 +70,32 @@
 
       <h3 id="one-winner">How the database decides one winner</h3>
       <p>A pointer records the location of the current metadata file, a version number that starts at 1 and grows by 1 with each commit, and the file's SHA-256. The swap succeeds only if the stored pointer still has the location and version the server read. In the transaction, the server locks each pointer it swaps, always in the same order, so two transactions never wait on each other in a cycle. On a mismatch it rolls the transaction back. Two commits to one table can both write a metadata file, but only one moves the pointer; the other's file is never named by any pointer.</p>
-      <figure class="diagram pending" id="fig-commit-race">
-        <p class="shot-todo">Diagram to draw: two engines commit to one table from version 41; both servers write a metadata file; the database swaps the pointer to the first engine's file as version 42 and refuses the second, whose server re-reads version 42, checks the requirements again and either commits version 43 or answers 409.</p>
+      <figure class="diagram" id="fig-commit-race">
+        <svg viewBox="0 0 720 450" role="img" aria-labelledby="fig-commit-race-t fig-commit-race-d">
+          <title id="fig-commit-race-t">Two commits to one table race</title>
+          <desc id="fig-commit-race-d">Engines A and B both start from version 41. Each server reads the pointer at version 41 and writes its own metadata file, a.json and b.json. The database swaps the pointer from 41 to 42 for a.json and refuses the swap for b.json, because the pointer is no longer at 41. Server B starts again: it reads version 42 and checks the requirements again. If they still hold it commits version 43; if one fails it answers 409.</desc>
+          <rect class="d-node" x="20" y="40" width="110" height="56" rx="10"/><text class="d-label" x="75" y="65">Engine A</text><text class="d-note" x="75" y="83">from version 41</text>
+          <rect class="d-node" x="160" y="40" width="130" height="56" rx="10"/><text class="d-label" x="225" y="65">Read pointer</text><text class="d-note" x="225" y="83">version 41</text>
+          <rect class="d-node" x="320" y="40" width="130" height="56" rx="10"/><text class="d-label" x="385" y="65">Write metadata</text><text class="d-note" x="385" y="83">file a.json</text>
+          <rect class="d-node" x="20" y="230" width="110" height="56" rx="10"/><text class="d-label" x="75" y="255">Engine B</text><text class="d-note" x="75" y="273">from version 41</text>
+          <rect class="d-node" x="160" y="230" width="130" height="56" rx="10"/><text class="d-label" x="225" y="255">Read pointer</text><text class="d-note" x="225" y="273">version 41</text>
+          <rect class="d-node" x="320" y="230" width="130" height="56" rx="10"/><text class="d-label" x="385" y="255">Write metadata</text><text class="d-note" x="385" y="273">file b.json</text>
+          <path class="d-edge" d="M130 68H160" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M290 68H320" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M130 258H160" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M290 258H320" marker-end="url(#d-arrow)"/>
+          <rect class="d-node d-store d-accent" x="500" y="120" width="200" height="86" rx="12"/><text class="d-label" x="600" y="148">Database</text><text class="d-note" x="600" y="168">one pointer per table</text><text class="d-note" x="600" y="186">swaps 41 → 42 once</text>
+          <path class="d-edge" d="M450 68C485 68 480 140 500 140" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="385" y="116">swap done: pointer at 42</text>
+          <path class="d-edge" d="M450 258C485 258 480 186 500 186" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="385" y="306">swap refused: not at 41</text>
+          <rect class="d-node" x="300" y="340" width="220" height="60" rx="10"/><text class="d-label" x="410" y="367">Server B starts again</text><text class="d-note" x="410" y="385">reads 42, checks requirements again</text>
+          <path class="d-edge" d="M600 206V296C600 322 470 312 470 338" marker-end="url(#d-arrow)"/>
+          <rect class="d-node d-ok" x="548" y="316" width="160" height="52" rx="10"/><text class="d-label" x="628" y="339">Commits version 43</text><text class="d-note" x="628" y="357">requirements hold</text>
+          <rect class="d-node d-bad" x="548" y="384" width="160" height="52" rx="10"/><text class="d-label" x="628" y="407">Answers 409</text><text class="d-note" x="628" y="425">a requirement fails</text>
+          <path class="d-edge" d="M520 362L546 344" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M520 380L546 406" marker-end="url(#d-arrow)"/>
+        </svg>
         <figcaption>Two commits race; one wins and the other is tried again against the winner's metadata.</figcaption>
       </figure>
 

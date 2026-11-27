@@ -58,14 +58,7 @@
             </li>
           </ol>
           <p>The console edits the catalog's policy only. A table's <b class="ui">Maintenance</b> tab shows <b class="ui">Policy for this table</b>, each key with where it was set; set a namespace's or table's own keys with the API.</p>
-          <figure class="shot pending" id="fig-maintenance-policy"
-                  data-shot="guides-maintenance-policy"
-                  data-shot-route="#p=maintenance&amp;c=lakehouse"
-                  data-shot-user="ana"
-                  data-shot-width="1440"
-                  data-shot-state="The lakehouse catalog's policy as demo.sh up sets it; the policy panel is in view.">
-            <figcaption>The Maintenance page's policy panel, each setting with where it was set.</figcaption>
-          </figure>
+          <figure class="shot" id="fig-maintenance-policy"><img src="../img/shots/guides-maintenance-policy-light.png" data-dark="../img/shots/guides-maintenance-policy-dark.png" width="1440" height="900" alt="The Maintenance page scrolled to Policy for lakehouse: snapshot expiry, keep snapshots for PT1H, keep at least 5, orphan removal older than P14D, compaction with its target file size, fewest input files and delete-file share, and manifest rewrite, each set by the catalog or built in, with the Edit the catalog's policy button."><figcaption>The Maintenance page's policy panel, each setting with where it was set.</figcaption></figure>
         </section>
         <section class="tab" data-tab="curl" data-label="curl">
           <div class="code" data-lang="bash" data-title="Set the catalog's own keys">

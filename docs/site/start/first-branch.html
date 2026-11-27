@@ -91,14 +91,7 @@
           <p>A branch expires 30 days (<code>PT720H</code>) after it was made or last renewed, and never later than 180 days after it was made. A tag never expires.</p>
         </li>
       </ol>
-      <figure class="shot pending" id="fig-first-branch-refs"
-              data-shot="start-first-branch-refs"
-              data-shot-route="#c=lakehouse&amp;tab=refs"
-              data-shot-user="ana"
-              data-shot-width="1440"
-              data-shot-state="As up left the demo: branch dev with its 2 changed tables and tag sample, both made by ana.">
-        <figcaption>Branches and tags of catalog <code>lakehouse</code>: the branch <code>@dev</code> and the tag <code>@sample</code>.</figcaption>
-      </figure>
+      <figure class="shot" id="fig-first-branch-refs"><img src="../img/shots/start-first-branch-refs-light.png" data-dark="../img/shots/start-first-branch-refs-dark.png" width="1440" height="900" alt="Branches and tags of catalog lakehouse as ana sees them: the branch @dev and the tag @sample."><figcaption>Branches and tags of catalog <code>lakehouse</code>: the branch <code>@dev</code> and the tag <code>@sample</code>.</figcaption></figure>
       <aside class="callout check">
         <p class="callout-title">The page lists @dev and @sample</p>
         <p><code>@dev</code> is a branch with 2 changed tables and <code>@sample</code> a tag, both made by <code>ana</code>. If <code>@dev</code> is missing, someone merged or deleted it: make it again as the last stage of this page says, then come back.</p>
@@ -230,14 +223,7 @@ SELECT pair, rate, as_of FROM lakehouse_dev."markets.fx".rates ORDER BY as_of, p
           <p>If the console says <code>@dev cannot merge: 1 table changed on main too</code>, someone committed to one of the branch's tables on main after the branch was cut, for example with <code>demo/demo.sh rate</code>, which appends to main's rates. The server refuses the whole merge with <code>409</code> <code>RefMergeConflictException</code>, because every table moves or none does. Make a new branch from main and redo the change there.</p>
         </li>
       </ol>
-      <figure class="shot pending" id="fig-first-branch-merge"
-              data-shot="start-first-branch-merge"
-              data-shot-route="#c=lakehouse&amp;k=ref&amp;n=dev&amp;tab=merge"
-              data-shot-user="ana"
-              data-shot-width="1440"
-              data-shot-state="After this page's write to markets.fx.rates on dev, before the merge, with nothing committed to the branch's tables on main since the branch was cut.">
-        <figcaption>The Merge tab of <code>@dev</code>: the dry run says both tables would move to main in one transaction.</figcaption>
-      </figure>
+      <figure class="shot" id="fig-first-branch-merge"><img src="../img/shots/start-first-branch-merge-light.png" data-dark="../img/shots/start-first-branch-merge-dark.png" width="1440" height="900" alt="The Merge tab of @dev as demo.sh up leaves it: the dry run says both tables would move to main in one transaction."><figcaption>The Merge tab of @dev: the dry run says both tables would move to main in one transaction. Taken as demo.sh up leaves the branch, before this page's write.</figcaption></figure>
       <aside class="callout check">
         <p class="callout-title">Main now has the branch's rows</p>
         <p>The first query of the previous check now lists the rates of 2026-11-11, <code>USDJPY</code> among them. The second fails, because <code>lakehouse_dev</code> names a branch that no longer exists.</p>

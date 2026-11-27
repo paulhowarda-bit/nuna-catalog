@@ -26,8 +26,33 @@
         <p class="lead">Disaster recovery brings every table back, in a second region, to a version whose every file that region's object store holds, using the DR watermark the worker keeps.</p>
       </header>
 
-      <figure class="diagram pending" id="fig-dr">
-        <p class="shot-todo">Diagram to draw: the primary region's database and object store each replicate to the DR region on their own; in DR the database names table versions 40 to 44 but the DR store holds files only up to 42, the watermark; the rewind moves the pointer back to 42 and the walk forward takes any later version whose files have arrived.</p>
+      <figure class="diagram" id="fig-dr">
+        <svg viewBox="0 0 720 400" role="img" aria-labelledby="fig-dr-t fig-dr-d">
+          <title id="fig-dr-t">The DR region after the primary is lost</title>
+          <desc id="fig-dr-d">In the primary region the database and the object store each replicate to the DR region on their own. The DR database names one table's versions 40 to 44, but the DR object store holds files only up to version 42, the DR watermark. Versions 43 and 44 lack files. The rewind moves the pointer back to 42; the walk forward then takes version 43 or later once its files have arrived.</desc>
+          <rect class="d-group" x="20" y="20" width="280" height="165" rx="14"/>
+          <text class="d-note" x="160" y="42">Primary region</text>
+          <rect class="d-group" x="420" y="20" width="280" height="165" rx="14"/>
+          <text class="d-note" x="560" y="42">DR region</text>
+          <rect class="d-node" x="60" y="55" width="200" height="50" rx="10"/><text class="d-label" x="160" y="77">Database</text><text class="d-note" x="160" y="95">pointer at version 44</text>
+          <rect class="d-node d-store" x="60" y="120" width="200" height="50" rx="10"/><text class="d-label" x="160" y="142">Object store</text><text class="d-note" x="160" y="160">files to version 44</text>
+          <rect class="d-node d-store" x="460" y="55" width="200" height="50" rx="10"/><text class="d-label" x="560" y="77">DR database</text><text class="d-note" x="560" y="95">names versions to 44</text>
+          <rect class="d-node d-store" x="460" y="120" width="200" height="50" rx="10"/><text class="d-label" x="560" y="142">DR object store</text><text class="d-note" x="560" y="160">files only to version 42</text>
+          <path class="d-edge-dash" d="M260 80H458" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="360" y="72">replicates on its own</text>
+          <path class="d-edge-dash" d="M260 145H458" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="360" y="137">replicates on its own</text>
+          <rect class="d-node d-ok" x="70" y="250" width="100" height="50" rx="10"/><text class="d-label" x="120" y="272">version 40</text><text class="d-note" x="120" y="290">files here</text>
+          <rect class="d-node d-ok" x="190" y="250" width="100" height="50" rx="10"/><text class="d-label" x="240" y="272">version 41</text><text class="d-note" x="240" y="290">files here</text>
+          <rect class="d-node d-ok d-accent" x="310" y="250" width="100" height="50" rx="10"/><text class="d-label" x="360" y="272">version 42</text><text class="d-note" x="360" y="290">the watermark</text>
+          <rect class="d-node d-bad" x="430" y="250" width="100" height="50" rx="10"/><text class="d-label" x="480" y="272">version 43</text><text class="d-note" x="480" y="290">files missing</text>
+          <rect class="d-node d-bad" x="550" y="250" width="100" height="50" rx="10"/><text class="d-label" x="600" y="272">version 44</text><text class="d-note" x="600" y="290">files missing</text>
+          <path class="d-edge-dash" d="M360 249C360 222 480 222 480 249" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="420" y="214">walk forward, once its files arrive</text>
+          <path class="d-edge" d="M600 301C600 345 360 345 360 303" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="480" y="356">rewind to the watermark</text>
+          <text class="d-note" x="360" y="388">one table's versions as the DR database names them</text>
+        </svg>
         <figcaption>The database and the object store replicate separately, so DR can name files it does not have.</figcaption>
       </figure>
 

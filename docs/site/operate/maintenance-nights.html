@@ -77,9 +77,7 @@
       <h2 id="read-last-night-in-the-console">Read last night in the console</h2>
       <p>The overview's <strong>Maintenance, last night</strong> figure shows the newest night's tables compacted, small files merged, snapshots expired, unreferenced files deleted and jobs cut off at the window's end, for every catalog. Select it to open the Maintenance page.</p>
       <p>The Maintenance page shows four figures with a sparkline over the nights reported, and a <strong>Last night</strong> panel that draws each compaction Job on its slot and the orphan scans in a lane of their own, with a dashed line at the window's end. Under it are the counts <strong>Compaction jobs finished</strong>, <strong>Cut off at</strong> the window's end, <strong>Failed</strong> and <strong>Still running</strong>.</p>
-      <figure class="shot pending" id="fig-maintenance-last-night" data-shot="operate-maintenance-last-night" data-shot-route="#p=maintenance&amp;c=lakehouse" data-shot-user="presenter" data-shot-width="1440" data-shot-state="the demo after at least one night with compaction Jobs">
-        <figcaption>The Maintenance page: last night's figures and its jobs on their slots.</figcaption>
-      </figure>
+      <figure class="shot" id="fig-maintenance-last-night"><img src="../img/shots/operate-maintenance-last-night-light.png" data-dark="../img/shots/operate-maintenance-last-night-dark.png" width="1440" height="900" alt="The Maintenance page: last night's figures, one table compacted, five small files merged into two and sixteen snapshots expired, and the Last night panel with its jobs on the slot timeline."><figcaption>The Maintenance page: last night's figures and its jobs on their slots.</figcaption></figure>
       <p>Anyone signed in sees the totals. A job names its table only to someone who may <code>select</code> it; others see the job without a name.</p>
 
       <h2 id="read-the-nights-with-the-api">Read the nights with the API</h2>

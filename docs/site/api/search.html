@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/search">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Name search and listings · nuna docs</title>
+  <meta name="description" content="Find namespaces, tables and views by part of their name across every catalog, and list a namespace's tables and child namespaces with their figures, under /management/v1.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Name search and listings</h1>
+        <p class="lead">Find namespaces, tables and views by part of their name across every catalog, and list a namespace's tables and child namespaces with their figures, under <code>/management/v1</code>.</p>
+      </header>
+
+      <p>The console uses these reads for <b class="ui">Go to a path</b> and for the Contents of a catalog or namespace. Each lists only what the caller may see and skips the rest without naming or counting it, so a listing never refuses an object and writes no audit record for one. None of them loads a table or reads its data. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+      <p>The <code>{namespace}</code> segment joins its levels with the unit separator, <code>%1F</code> in a URL: <code>equities%1Fdaily</code>. A caller who holds nothing in a catalog it names gets <code>404</code> <code>NoSuchWarehouseException</code> (<code>The given warehouse does not exist: trading</code>), and the refusal is audited.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Name search and listing endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-names"><code>/management/v1/names</code></a></td><td>Finds namespaces, tables and views whose name holds a fragment.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-namespace-tables"><code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/tables</code></a></td><td>Lists a namespace's tables with their format, snapshots and last commit.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-namespaces"><code>/management/v1/catalogs/{catalog}/namespaces</code></a></td><td>Lists a catalog's top namespaces with totals over the tables beneath each.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-namespace-namespaces"><code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/namespaces</code></a></td><td>Lists a namespace's child namespaces with the same totals.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-names"><span class="method" data-method="GET">GET</span> <code>/management/v1/names</code></h3>
+        <p>Finds every namespace, table and view whose name holds the fragment <code>q</code>, ignoring case, in every catalog the caller holds something in, or in one catalog. A name is matched alone, not as a path: <code>q=order</code> finds <code>equities.orders</code> but <code>q=equities.orders</code> finds nothing.</p>
+        <p>The search lists:</p>
+        <ul>
+          <li>a catalog only where the caller holds a grant on it or on anything in it, as the <a href="catalogs.html#get-catalogs">catalog list</a> counts it;</li>
+          <li>a namespace only where one of the caller's grants is on it, above it or on something in it;</li>
+          <li>a table or view only where the caller may <code>describe</code> it.</li>
+        </ul>
+        <p>Namespaces come first, all on the first page, catalog by catalog in name order. Then come tables, then views, across catalogs. A page looks at <code>5000</code> objects at most, and ends early with a token when it has not found enough; keep reading while <code>next-page-token</code> is there. Namespaces after the first page's are never returned: when the first page could not hold every matching namespace, or the walk stopped at its limit, the answer says <code>"more-namespaces": true</code>, and a longer fragment narrows the search.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on each object listed</span></p>
+        <h4 id="get-names-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>q</code></td><td>query</td><td>string</td><td>Yes</td><td>Part of a name. Spaces around it are dropped.</td></tr>
+              <tr><td><code>catalog</code></td><td>query</td><td>string</td><td>No</td><td>Search one catalog only. It must be a catalog in <a href="../configure/storage.html#nuna-storage-catalogs"><code>nuna.storage.catalogs</code></a> that the caller holds something in.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Rows in one page. Default <code>50</code>; a value outside <code>1</code> to <code>200</code> is taken as the nearer bound.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-names-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"names": [<var>name</var>, …], "more-namespaces", "next-page-token"}</code>, each name as in <a href="#name">Name</a>. A caller who holds nothing in any catalog gets <code>{"names": []}</code> at once.</td></tr>
+              <tr><td><code>400</code></td><td><code>Give part of a name to search for</code>, <code>Required parameter 'q' is not present.</code>, or <code>Invalid page token: <var>…</var></code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>catalog</code> names a catalog the server does not declare, or one you hold nothing in (<code>NoSuchWarehouseException</code>). Only the second is audited.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-names-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/names?q=order" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "names": [
+    {"catalog": "trading", "kind": "table", "namespace": ["equities"], "name": "orders"},
+    {"catalog": "trading", "kind": "view", "namespace": ["equities"], "name": "open_orders"}
+  ]
+}</code></pre>
+        </div>
+        <p>A fragment that matches more namespaces than one page holds ends the first page with them:</p>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response to q=e&amp;pageSize=2">
+<pre><code>{
+  "names": [
+    {"catalog": "trading", "kind": "namespace", "namespace": [], "name": "equities"},
+    {"catalog": "trading", "kind": "namespace", "namespace": [], "name": "reference"}
+  ],
+  "more-namespaces": true,
+  "next-page-token": "AAAAAXQAAAAAAAAAATA"
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-namespace-tables"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/tables</code></h3>
+        <p>Lists the active tables directly in the namespace, by name, each with its format version, its number of snapshots and its last commit. Views and dropped tables are not listed. The figures come from what the server stores beside each table's pointer and from the commit journal: no metadata file is read, no table is loaded, and nothing is audited per table.</p>
+        <p>A table is listed only to a caller who may <code>describe</code> it. A page holds fewer rows than <code>pageSize</code>, even none, when the caller may describe few of the tables it looks at (<code>1000</code> at most), so keep reading while <code>next-page-token</code> is there.</p>
+        <p>Through <code>ref</code>, the list is the namespace and tables of that catalog branch or tag's cut, by the names the cut has, and each table as the ref reads it. Rights are main's: a table is listed to a caller who may describe it on main.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a grant on the namespace, above it or in it</span></p>
+        <h4 id="get-namespace-tables-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>namespace</code></td><td>path</td><td>string</td><td>Yes</td><td>The namespace's levels, joined by <code>%1F</code>.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Rows in one page. Default <code>100</code>; a value outside <code>1</code> to <code>200</code> is taken as the nearer bound.</td></tr>
+              <tr><td><code>ref</code></td><td>query</td><td>string</td><td>No</td><td>A catalog branch or tag to list through.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespace-tables-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"tables": [<var>table row</var>, …], "next-page-token"}</code>, each row as in <a href="#table-row">Table row</a>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid page token: <var>…</var></code>, or <code>Invalid namespace: <var>…</var></code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: equities.daily</code> (<code>NoSuchNamespaceException</code>): the namespace is not there, its cut has no such namespace, or you hold nothing on it, above it or in it (audited). <code>Ref does not exist: <var>ref</var></code> (<code>NoSuchRefException</code>): no live ref has the name.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespace-tables-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables?pageSize=2" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "tables": [
+    {
+      "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+      "name": "fills",
+      "format-version": 2,
+      "snapshots": 5,
+      "last-commit": {
+        "version": 14,
+        "committed-at": "2026-11-25T22:07:00.947643Z",
+        "principal": "service-account-maintenance",
+        "engine": "nuna-maintenance"
+      }
+    },
+    {
+      "id": "3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7",
+      "name": "orders",
+      "format-version": 2,
+      "snapshots": 0,
+      "last-commit": {
+        "version": 1,
+        "committed-at": "2026-11-25T21:01:33.117895Z",
+        "principal": "ingest",
+        "engine": "spark-batch"
+      }
+    }
+  ]
+}</code></pre>
+        </div>
+        <p>Through a branch, each row also says which pointer it read:</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/reference/tables?ref=dev" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "tables": [
+    {
+      "id": "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+      "name": "instruments",
+      "format-version": 2,
+      "snapshots": 1,
+      "ref": {"pointer": "cut", "version": 2, "line": "main"},
+      "last-commit": {
+        "version": 2,
+        "line": "main",
+        "committed-at": "2026-11-25T15:17:13.384644Z",
+        "principal": "ingest",
+        "engine": "spark-batch"
+      }
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-namespaces"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces</code></h3>
+        <p>Lists the catalog's top namespaces, by name, each with totals over every table beneath it, at every depth, that the caller may <code>describe</code>: how many, their snapshots summed, and the newest commit among them. A namespace the caller holds nothing on, above or in is not a row, so its name is not given. Views and dropped tables are not counted. Any caller who holds something in the catalog is answered.</p>
+        <p>A page looks at <code>1000</code> tables and namespaces at most. A namespace whose walk would pass that waits for the next page, so its totals are whole there, unless it is the page's first row: then its totals cover what it looked at and say <code>"complete": false</code>.</p>
+        <p>Through <code>ref</code>, the namespaces and tables are the cut's, each table counted as the ref reads it, and the walk goes down only into namespaces the caller holds something on, above or in.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a grant in the catalog</span></p>
+        <h4 id="get-catalog-namespaces-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Rows in one page. Default <code>100</code>; a value outside <code>1</code> to <code>200</code> is taken as the nearer bound.</td></tr>
+              <tr><td><code>ref</code></td><td>query</td><td>string</td><td>No</td><td>A catalog branch or tag to list through.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-namespaces-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"namespaces": [<var>namespace row</var>, …], "next-page-token"}</code>, each row as in <a href="#namespace-row">Namespace row</a>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid page token: <var>…</var></code>.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist (<code>NoSuchWarehouseException</code>). <code>Ref does not exist: <var>ref</var></code> (<code>NoSuchRefException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-namespaces-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "namespaces": [
+    {
+      "name": "equities",
+      "tables": 3,
+      "snapshots": 11,
+      "complete": true,
+      "newest-commit": {
+        "version": 14,
+        "committed-at": "2026-11-25T22:07:00.947643Z",
+        "principal": "service-account-maintenance",
+        "engine": "nuna-maintenance",
+        "table": ["fills"]
+      }
+    },
+    {
+      "name": "reference",
+      "tables": 1,
+      "snapshots": 1,
+      "complete": true,
+      "newest-commit": {
+        "version": 2,
+        "committed-at": "2026-11-25T15:17:13.384644Z",
+        "principal": "ingest",
+        "engine": "spark-batch",
+        "table": ["instruments"]
+      }
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-namespace-namespaces"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/namespaces</code></h3>
+        <p>Lists a namespace's child namespaces with the same totals, paging and <code>ref</code> as <a href="#get-catalog-namespaces">the catalog's top namespaces</a>. The parent namespace is answered to a caller who holds something on it, above it or in it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a grant on the namespace, above it or in it</span></p>
+        <h4 id="get-namespace-namespaces-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>namespace</code></td><td>path</td><td>string</td><td>Yes</td><td>The parent namespace's levels, joined by <code>%1F</code>.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Rows in one page. Default <code>100</code>; a value outside <code>1</code> to <code>200</code> is taken as the nearer bound.</td></tr>
+              <tr><td><code>ref</code></td><td>query</td><td>string</td><td>No</td><td>A catalog branch or tag to list through.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespace-namespaces-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"namespaces": [<var>namespace row</var>, …], "next-page-token"}</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid page token: <var>…</var></code>, or <code>Invalid namespace: <var>…</var></code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>…</var></code> (<code>NoSuchNamespaceException</code>): the namespace is not there, or you hold nothing on it, above it or in it (audited). <code>Ref does not exist: <var>ref</var></code> (<code>NoSuchRefException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespace-namespaces-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/namespaces" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "namespaces": [
+    {
+      "name": "daily",
+      "tables": 1,
+      "snapshots": 4,
+      "complete": true,
+      "newest-commit": {
+        "version": 6,
+        "committed-at": "2026-11-25T18:25:43.781439Z",
+        "principal": "ingest",
+        "engine": "spark-batch",
+        "table": ["positions"]
+      }
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="name">Name</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>catalog</code></td><td>string</td><td>The catalog's name, as the server's settings declare it.</td></tr>
+            <tr><td><code>kind</code></td><td>string</td><td><code>namespace</code>, <code>table</code> or <code>view</code>.</td></tr>
+            <tr><td><code>namespace</code></td><td>array of strings</td><td>The levels above the name, outermost first; empty for a top namespace.</td></tr>
+            <tr><td><code>name</code></td><td>string</td><td>The matching name.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="table-row">Table row</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code></td><td>string</td><td>The table's id.</td></tr>
+            <tr><td><code>name</code></td><td>string</td><td>The table's name; through a ref, the name the cut has.</td></tr>
+            <tr><td><code>format-version</code></td><td>integer</td><td>The Iceberg format version of the metadata the pointer names.</td></tr>
+            <tr><td><code>snapshots</code></td><td>integer</td><td>The number of snapshots in that metadata.</td></tr>
+            <tr><td><code>ref</code></td><td>object</td><td>Through a ref only. <code>pointer</code> is <code>own</code> for a branch's own pointer, which its commits made, or <code>cut</code> for the pointer its cut took. <code>version</code> is that pointer's version, numbered on <code>line</code>: the ref's own name for its own pointer, or <code>main</code>, or the ref the cut took a branch's own pointer from. <code>line</code> is left out when the journal that wrote the pointer cannot be found.</td></tr>
+            <tr><td><code>last-commit</code></td><td>object</td><td>The journal's entry that wrote the pointer: <code>version</code>, <code>line</code> (through a ref), <code>committed-at</code>, <code>principal</code>, and <code>end-user</code> and <code>engine</code> when there were any. Left out when the entry cannot be found.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Through a ref, a cut's pointer keeps no stored figures. While main's pointer is still the cut's file, main's figures serve; otherwise the server reads the cut's metadata file, checked against the SHA-256 the cut kept. A file that no longer matches gives no <code>format-version</code> or <code>snapshots</code>, and raises the metadata integrity alert.</p>
+
+      <h3 id="namespace-row">Namespace row</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>name</code></td><td>string</td><td>The child namespace's name.</td></tr>
+            <tr><td><code>tables</code></td><td>integer</td><td>Active tables beneath it, at every depth, that the caller may describe.</td></tr>
+            <tr><td><code>snapshots</code></td><td>integer</td><td>Their snapshots, summed.</td></tr>
+            <tr><td><code>complete</code></td><td>boolean</td><td><code>false</code> when the page's limit cut the walk short and the totals cover only what it looked at.</td></tr>
+            <tr><td><code>newest-commit</code></td><td>object</td><td>The latest commit among those tables: as <code>last-commit</code> in a table row, with <code>table</code>, the table's levels below the child namespace. Left out when no table is counted.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../console/index.html#go-to-path">The console</a>: Go to a path, which the name search serves.</li>
+          <li><a href="../console/namespace.html#contents">The namespace page</a>: the Contents tab the listings fill.</li>
+          <li><a href="iceberg-namespaces.html">Iceberg REST: namespaces</a>: the standard namespace listing engines use.</li>
+          <li><a href="refs.html">Branches and tags</a>: the refs <code>ref</code> names.</li>
+          <li><a href="../concepts/access.html">Identity and access</a>: what <code>describe</code> covers and how grants pass down.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java</code>, <code>NamespaceTablesRoutes.java</code>, <code>Management.java</code> and <code>ManagementGuard.java</code> in the same folder, <code>catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java</code> and <code>docs/observability/namespace-tables.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Every example was run against the demo, together with the missing-<code>q</code>, blank-<code>q</code> and unknown-ref refusals, and the responses rewritten to the fictional estate.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -59,14 +59,7 @@
               <p>The dialog confirms with <b class="ui">Held:</b> and the object's name, and the hold appears in the <b class="ui">Legal holds</b> panel.</p>
             </li>
           </ol>
-          <figure class="shot pending" id="fig-hold-dialog"
-                  data-shot="guides-hold-dialog"
-                  data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Fequities%1Feu%1Fxetra&amp;n=trades&amp;tab=access"
-                  data-shot-user="stella"
-                  data-shot-width="1440"
-                  data-shot-state="The demo's held table markets.equities.eu.xetra.trades, with its seeded hold in the Legal holds panel.">
-            <figcaption>A held table's Access tab, with the hold and its reason in the Legal holds panel.</figcaption>
-          </figure>
+          <figure class="shot" id="fig-hold-dialog"><img src="../img/shots/guides-hold-dialog-light.png" data-dark="../img/shots/guides-hold-dialog-dark.png" width="1440" height="900" alt="The Access tab of table markets.equities.eu.xetra.trades as stella sees it: the Governance panel shows one legal hold, and the Legal holds panel lists Matter 2026-114, trade surveillance review, placed by stella, with a Release button."><figcaption>A held table's Access tab, with the hold and its reason in the Legal holds panel.</figcaption></figure>
         </section>
         <section class="tab" data-tab="curl" data-label="curl">
           <p>Post the reason to the object's <code>holds</code>. A catalog's are at <code>/management/v1/catalogs/trading/holds</code>, a namespace's at <code>…/namespaces/equities/holds</code>, a view's at <code>…/views/<var>view</var>/holds</code>.</p>

@@ -26,7 +26,7 @@
         <p class="lead">The Maintenance page answers, for data owners and platform operators, which tables the maintenance worker will compact tonight and why, what the last 30 nights did, how the catalog's policy is set, and what the worker still needs before it can maintain the catalog.</p>
       </header>
 
-      <figure class="shot pending" id="fig-console-maintenance" data-shot="console-maintenance" data-shot-route="#p=maintenance&amp;c=lakehouse" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Catalog lakehouse with at least one table queued and a reported night."><figcaption>The Maintenance page of a catalog.</figcaption></figure>
+      <figure class="shot" id="fig-console-maintenance"><img src="../img/shots/console-maintenance-light.png" data-dark="../img/shots/console-maintenance-dark.png" width="1440" height="900" alt="The Maintenance page of lakehouse: one table queued for tonight, last night's figures, tonight's queue, the timeline of last night's slot and the policy panel with each setting and where it was set."><figcaption>The Maintenance page of a catalog.</figcaption></figure>
 
       <h2 id="who-sees-it">Who sees it</h2>
       <p>The rail shows <b class="ui">Maintenance</b> when your groups may read data in the catalog, and its badge counts the tables queued for tonight. Every list counts only the tables you may read; jobs on other tables are drawn without a name. Editing the policy needs modify on the catalog; <b class="ui">Compact a table now</b> needs modify somewhere in it. The setup checklist appears only to those who may read it (a grant held on the catalog itself, a grant admin or a platform operator). <b class="ui">Worker scans</b> is for platform operators.</p>

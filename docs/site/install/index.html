@@ -28,6 +28,36 @@
 
       <p>There are four ways in. To look around, start the demo (<a href="../start/quickstart.html">Run nuna on your laptop</a>), which runs everything on your machine with made-up data. To try the charts, run the catalog on a local kind cluster with throwaway PostgreSQL, Kafka and Silo (<a href="kind.html">Run nuna on a local kind cluster</a>). For a production cluster, follow the pages below in order: check the requirements, build and push the images, prepare the database, the object store and the identity provider, install the catalog server, then the maintenance worker and, if you want the audit tables, the audit tables writer, and finish by checking the install. On a network with no outbound access, read <a href="locked-down.html">Install on a locked-down network</a> first: it says what to mirror before you start.</p>
 
+      <figure class="diagram" id="fig-install-order">
+        <svg viewBox="0 0 720 310" role="img" aria-labelledby="fig-install-order-t fig-install-order-d">
+          <title id="fig-install-order-t">The order of an install</title>
+          <desc id="fig-install-order-d">First the requirements. Then the container images, the database, object storage and the identity provider. Then the catalog server chart, then the maintenance worker chart, then, if you want the audit tables, the audit tables writer. Last, check the install. Telemetry is optional and can be set up at any time with the charts.</desc>
+          <rect class="d-node" x="15" y="125" width="100" height="56" rx="10"/><text class="d-label" x="65" y="150">Requirements</text><text class="d-note" x="65" y="168">what must exist</text>
+          <rect class="d-node" x="150" y="40" width="130" height="44" rx="10"/><text class="d-label" x="215" y="67">Images</text>
+          <rect class="d-node" x="150" y="96" width="130" height="44" rx="10"/><text class="d-label" x="215" y="123">Database</text>
+          <rect class="d-node" x="150" y="152" width="130" height="44" rx="10"/><text class="d-label" x="215" y="179">Object storage</text>
+          <rect class="d-node" x="150" y="208" width="130" height="44" rx="10"/><text class="d-label" x="215" y="235">Identity provider</text>
+          <path class="d-edge" d="M115 153C132 153 131 62 148 62" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M115 153C132 153 131 118 148 118" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M115 153C132 153 131 174 148 174" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M115 153C132 153 131 230 148 230" marker-end="url(#d-arrow)"/>
+          <rect class="d-node d-accent" x="320" y="123" width="125" height="60" rx="10"/><text class="d-label" x="382.5" y="150">Catalog server</text><text class="d-note" x="382.5" y="168">Helm chart</text>
+          <path class="d-edge" d="M280 62C300 62 298 140 318 140" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 118C300 118 298 147 318 147" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 174C300 174 298 159 318 159" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 230C300 230 298 166 318 166" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="320" y="240" width="125" height="52" rx="10"/><text class="d-label" x="382.5" y="263">Telemetry</text><text class="d-note" x="382.5" y="281">optional, any time</text>
+          <path class="d-edge-dash" d="M382 183V238" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="475" y="123" width="120" height="60" rx="10"/><text class="d-label" x="535" y="150">Maintenance</text><text class="d-note" x="535" y="168">worker chart</text>
+          <path class="d-edge" d="M445 153H473" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="615" y="30" width="100" height="56" rx="10"/><text class="d-label" x="665" y="55">Audit tables</text><text class="d-note" x="665" y="73">writer, optional</text>
+          <path class="d-edge-dash" d="M595 140C605 140 605 58 613 58" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="615" y="123" width="100" height="60" rx="10"/><text class="d-label" x="665" y="150">Check</text><text class="d-note" x="665" y="168">the install</text>
+          <path class="d-edge" d="M595 153H613" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M665 86V121" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>The order of an install: what must exist, the catalog server, the worker, the audit tables writer if you want it, then the check. Telemetry is optional.</figcaption>
+      </figure>
       <ul class="cards">
         <li>
           <a href="requirements.html">

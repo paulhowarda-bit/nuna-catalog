@@ -62,9 +62,7 @@ ORDER BY committed_at DESC LIMIT 10;</code></pre>
         <li><p class="step-title">Find the commits in the console.</p>
           <p>Open the console at <code>https://localhost:8181/ui/</code>, go to <code>brokerage.trading.orders</code> in catalog <code>lakehouse</code> and select <b class="ui">History</b>. Each receipt is a snapshot there.</p></li>
       </ol>
-      <figure class="shot pending" id="fig-demo-singlestore-orders-history" data-shot="demo-singlestore-orders-history" data-shot-route="#c=lakehouse&amp;k=table&amp;ns=brokerage%1Ftrading&amp;n=orders&amp;tab=history" data-shot-user="ana" data-shot-width="1440" data-shot-state="gen and ss on, after a trading day's orders">
-        <figcaption>The History tab of <code>brokerage.trading.orders</code>, one snapshot per change-feed commit.</figcaption>
-      </figure>
+      <figure class="shot" id="fig-demo-singlestore-orders-history"><img src="../img/shots/demo-singlestore-orders-history-light.png" data-dark="../img/shots/demo-singlestore-orders-history-dark.png" width="1440" height="900" alt="The History tab of brokerage.trading.orders: the snapshot timeline and the list of commits, one per change-feed commit, with the selected snapshot's summary."><figcaption>The History tab of <code>brokerage.trading.orders</code>, one snapshot per change-feed commit.</figcaption></figure>
       <p>Each commit stores SingleStore's offsets in the Iceberg snapshot, so a feed that stops resumes from Iceberg with nothing copied twice or skipped.</p>
 
       <h2 id="load-from-iceberg">Load from Iceberg into SingleStore</h2>

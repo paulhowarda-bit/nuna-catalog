@@ -184,14 +184,7 @@ fills.append(restated)  # a pyarrow Table</code></pre>
       <div class="tabs" data-group="client">
         <section class="tab" data-tab="console" data-label="Console">
           <p>Open the branch's <b class="ui">Merge</b> tab. Under <b class="ui">Table by table</b> it draws each table's commits on the branch and on main since the point; under <b class="ui">In one transaction</b> it lists what the merge would do, with the button <b class="ui">Merge @dev into main</b>. The button is off while a table conflicts or your groups lack a right the merge needs, and the page says which.</p>
-          <figure class="shot pending" id="fig-branch-merge-tab"
-                  data-shot="guides-branch-merge-tab"
-                  data-shot-route="#c=lakehouse&amp;k=ref&amp;n=dev&amp;tab=merge"
-                  data-shot-user="ana"
-                  data-shot-width="1440"
-                  data-shot-state="Branch dev exists with its two changed tables, as demo.sh up makes it, and main has not changed those tables since.">
-            <figcaption>A branch's Merge tab: each table moves to main, and the merge button is on.</figcaption>
-          </figure>
+          <figure class="shot" id="fig-branch-merge-tab"><img src="../img/shots/guides-branch-merge-tab-light.png" data-dark="../img/shots/guides-branch-merge-tab-dark.png" width="1440" height="900" alt="The Merge tab of branch @dev as ana sees it: each table that will move to main, and the Merge @dev into main button enabled."><figcaption>A branch's Merge tab: each table moves to main, and the merge button is on.</figcaption></figure>
         </section>
         <section class="tab" data-tab="curl" data-label="curl">
           <div class="code" data-lang="bash" data-title="Preview the merge of dev">

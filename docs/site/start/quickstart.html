@@ -105,14 +105,7 @@ in this user's Windows trust store (Windows asks you to confirm): certutil -user
           <p><code>presenter</code> is in every demo group at once, so one sign-in shows every page of the console. <a href="../demo/sign-in.html">Demo users and sign-in</a> lists the other users, who each hold one duty.</p>
         </li>
       </ol>
-      <figure class="shot pending" id="fig-quickstart-overview"
-              data-shot="start-quickstart-overview"
-              data-shot-route="#p=overview&amp;c=lakehouse"
-              data-shot-user="presenter"
-              data-shot-width="1440"
-              data-shot-state="Signed in as presenter just now, with the sample data loaded and the maintenance worker running.">
-        <figcaption>The console's Overview page, where <code>presenter</code> lands after signing in.</figcaption>
-      </figure>
+      <figure class="shot" id="fig-quickstart-overview"><img src="../img/shots/start-quickstart-overview-light.png" data-dark="../img/shots/start-quickstart-overview-dark.png" width="1440" height="900" alt="The console's Overview page for presenter: 31 of 32 assessed tables in shape and one queued for tonight, every table as one mark, and figure cards below."><figcaption>The console's Overview page, where <code>presenter</code> lands after signing in.</figcaption></figure>
       <aside class="callout check">
         <p class="callout-title">The console opens on its Overview page</p>
         <p>The rail on the left lists <b class="ui">Overview</b>, <b class="ui">Catalog</b>, <b class="ui">Branches and tags</b>, <b class="ui">Maintenance</b>, <b class="ui">Governance</b>, <b class="ui">Grants</b>, <b class="ui">Audit</b> and <b class="ui">Service</b>, and the catalog picker shows one of the demo's catalogs.</p>
@@ -136,14 +129,7 @@ in this user's Windows trust store (Windows asks you to confirm): certutil -user
           <p>It lists the table's versions, newest first: each commit, when it was made, what it changed, the snapshot it added and who made it. Select <b class="ui">Show</b> on a row to see the commit's updates as JSON.</p>
         </li>
       </ol>
-      <figure class="shot pending" id="fig-quickstart-history"
-              data-shot="start-quickstart-rates-history"
-              data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Ffx&amp;n=rates&amp;tab=history"
-              data-shot-user="presenter"
-              data-shot-width="1440"
-              data-shot-state="The sample data as up loaded it, before any change to markets.fx.rates on main.">
-        <figcaption>The History tab of <code>markets.fx.rates</code>: one row per version of the table.</figcaption>
-      </figure>
+      <figure class="shot" id="fig-quickstart-history"><img src="../img/shots/start-quickstart-rates-history-light.png" data-dark="../img/shots/start-quickstart-rates-history-dark.png" width="1440" height="900" alt="The History tab of markets.fx.rates: the snapshot timeline, the list of commits with version, time, change, snapshot, rows and who wrote it, and the selected snapshot's summary with Copy time-travel SQL."><figcaption>The History tab of <code>markets.fx.rates</code>: one row per version of the table.</figcaption></figure>
       <aside class="callout check">
         <p class="callout-title">The History tab lists the sample data's commits</p>
         <p>You see the appends that wrote the rates and the commit that added the column <code>source</code>, made by the demo's user <code>lake</code>, and any commits the maintenance worker has made since. The <a href="../console/table.html">table page</a> explains every tab.</p>

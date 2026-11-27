@@ -26,7 +26,7 @@
         <p class="lead">The console is the web interface the server serves at <code>/ui/</code>. This page answers, for anyone who signs in to it, how it is laid out: the header, the rail of pages, Go to a path, the keys and the phone layout, and which pages your groups let you see.</p>
       </header>
 
-      <figure class="shot pending" id="fig-console-layout" data-shot="console-layout" data-shot-route="#p=overview&amp;c=lakehouse" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Signed in as presenter, the rail unfolded, catalog lakehouse picked, reading main."><figcaption>The console's header, its rail and the Overview page.</figcaption></figure>
+      <figure class="shot" id="fig-console-layout"><img src="../img/shots/console-layout-light.png" data-dark="../img/shots/console-layout-dark.png" width="1440" height="900" alt="The console signed in as presenter: the header with the catalog picker on lakehouse, reading main, Go to a path and the theme switch; the rail with Overview, Catalog, Branches and tags, Maintenance, Governance, Grants, Audit and Service; and the Overview page."><figcaption>The console's header, its rail and the Overview page.</figcaption></figure>
 
       <h2 id="who-sees-it">Who sees it</h2>
       <p>Anyone the server accepts a token from can sign in. The console draws only the pages, tabs and buttons your groups can use, from what <code>GET /management/v1/catalogs</code> says your groups hold in each catalog. The server still decides every request itself: a page you reach by a link and may not use shows the server's refusal.</p>

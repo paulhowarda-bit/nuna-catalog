@@ -522,3 +522,5 @@ h2:hover .anchor, h3:hover .anchor, h4:hover .anchor, .anchor:focus-visible { op
   .diagram svg { min-width: 600px; }
   .diagram figcaption { position: sticky; left: 0; max-width: calc(100vw - 32px); }
 }
+/* long console messages wrap on a phone rather than push the page sideways */
+@media (max-width:640px){.ui{white-space:normal;-webkit-box-decoration-break:clone;box-decoration-break:clone}}
