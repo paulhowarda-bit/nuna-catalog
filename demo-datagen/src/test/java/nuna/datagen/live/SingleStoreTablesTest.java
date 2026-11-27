@@ -88,4 +88,26 @@ class SingleStoreTablesTest {
             .doesNotContain("iceberg.partition-by").doesNotContain("\"iceberg.table\"");
         assertThat(feeds).doesNotContain("CREATE TABLE ops.orders").doesNotContain("PIPELINE orders_to_lake AS");
     }
+
+    // SingleStore makes its tables with unquoted names, so a column named as a reserved word (MySQL's list) refuses
+    // the whole file: item 152's sanctions screens had a column trigger, found on the demo (item 318).
+    private static final java.util.Set<String> RESERVED = java.util.Set.of("add", "all", "alter", "and", "as", "before",
+        "between", "both", "by", "call", "case", "change", "check", "column", "condition", "constraint", "create",
+        "cross", "current_date", "current_time", "current_timestamp", "current_user", "database", "default", "delete",
+        "desc", "describe", "distinct", "div", "drop", "each", "else", "exists", "explain", "false", "fetch", "for",
+        "foreign", "from", "grant", "group", "groups", "having", "if", "ignore", "in", "index", "inner", "insert",
+        "interval", "into", "is", "join", "key", "keys", "kill", "lag", "lead", "leading", "left", "like", "limit",
+        "lines", "load", "lock", "long", "match", "mod", "natural", "not", "null", "on", "option", "or", "order",
+        "out", "outer", "over", "partition", "primary", "range", "rank", "read", "references", "regexp", "release",
+        "rename", "repeat", "replace", "require", "return", "revoke", "right", "row", "rows", "schema", "select",
+        "set", "show", "system", "table", "then", "to", "trailing", "trigger", "true", "union", "unique", "unlock",
+        "update", "usage", "use", "using", "values", "when", "where", "while", "window", "with", "write", "xor");
+
+    @Test
+    void noColumnIsAReservedWord() {
+        java.util.List<String> reserved = SingleStoreTables.tables(KIT).lines()
+            .filter(l -> l.matches("^  [a-z_]+ .*")).map(l -> l.trim().split(" ")[0])
+            .filter(RESERVED::contains).distinct().toList();
+        assertThat(reserved).as("SingleStore columns named as reserved words").isEmpty();
+    }
 }

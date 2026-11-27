@@ -518,7 +518,7 @@ CREATE TABLE IF NOT EXISTS sanctions_screens (
   seq BIGINT NOT NULL,
   screen_id BIGINT,
   list_version TEXT,
-  trigger TEXT,
+  screen_trigger TEXT,
   subject_type TEXT,
   subject_id TEXT,
   subject_name TEXT,
