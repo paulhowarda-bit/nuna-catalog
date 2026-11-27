@@ -5,20 +5,25 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.TreeMap;
 import nuna.datagen.kit.Engine;
 import nuna.datagen.kit.Engine.BalanceKey;
 import nuna.datagen.kit.Engine.LedgerKey;
 import nuna.datagen.kit.FinancialTransaction;
 import nuna.datagen.kit.FinancialTransaction.LotShares;
+import nuna.datagen.kit.FinancialTransaction.ReceivedLot;
 import nuna.datagen.kit.JournalLine;
 import nuna.datagen.kit.Kit;
 import nuna.datagen.kit.Rejected;
@@ -62,6 +67,11 @@ public final class World {
     private final Engine engine;
     private final MarketCalendar calendar = new MarketCalendar();
     private final Rng rng;
+    /**
+     * The second source of chance, for the events of the demo kit's templates 70 to 91 (item 155), so the first draws
+     * exactly as it did before them: world 1's events differ only where a new event changed a balance they read.
+     */
+    private final Rng rng2;
     private final Market market;
     private final List<Account> accounts = new ArrayList<>();
     private Sink sink;
@@ -118,7 +128,12 @@ public final class World {
         }
     }
 
-    private record Payment(Account account, long initiation, BigDecimal amount, BigDecimal goodFaith) {}
+    /**
+     * A payment awaiting settlement. An ACH deposit the receiving bank will return carries its Nacha return code and
+     * when the return arrives: before settlement (-1) or that many business days after it.
+     */
+    private record Payment(Account account, long initiation, BigDecimal amount, BigDecimal goodFaith, String returnCode,
+                           int returnAfter) {}
 
     private final Map<LocalDate, List<Order>> settlements = new TreeMap<>();
     private final Map<LocalDate, List<Payment>> depositSettlements = new TreeMap<>();
@@ -133,6 +148,7 @@ public final class World {
         this.kit = kit;
         this.engine = new Engine(kit);
         this.rng = new Rng(settings.seed());
+        this.rng2 = new Rng(settings.seed() * 31 + 155);
         this.market = new Market(rng, settings.securities());
         String[] personas = {"dormant", "buy_and_hold", "active_trader", "short_seller"};
         double[] weights = {0.30, 0.42, 0.23, 0.05};
@@ -206,6 +222,7 @@ public final class World {
         for (Account a : accounts) {
             planDay(a);
         }
+        planServicing();
         LocalTime t = LocalTime.of(9, 30);
         for (int b = 0; b < Market.BARS; b++) {
             LocalTime start = t;
@@ -410,10 +427,24 @@ public final class World {
                     lots.add(m);
                 }
                 row.put(column, lots);
+            } else if (name.equals("receivedLots")) {
+                List<Map<String, Object>> lots = new ArrayList<>();
+                List<ReceivedLot> received = t.receivedLots();
+                for (int i = 0; i < received.size(); i++) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("lot", Engine.receivedLot(t.id(), i + 1));
+                    m.put("shares", received.get(i).shares());
+                    m.put("cost", Engine.cents(received.get(i).cost()));
+                    m.put("acquired_date", LocalDate.ofEpochDay(received.get(i).acquired()));
+                    lots.add(m);
+                }
+                row.put(column, lots);
             } else if (name.endsWith("Date") || name.equals("periodStart") || name.equals("periodEnd")) {
                 row.put(column, LocalDate.ofEpochDay(((Number) v).longValue()));
             } else if (v instanceof String) {
                 row.put(column, v);
+            } else if (LakeSchemas.isWhole(name)) {
+                row.put(column, ((Number) v).longValue());
             } else {
                 row.put(column, t.decimal(fid));
             }
@@ -435,6 +466,9 @@ public final class World {
     private Instant current;
 
     private void planDay(Account a) {
+        if (closed.contains(a.id())) {      // transferred out in full by ACATS
+            return;
+        }
         double orders = switch (a.persona()) {
             case "dormant" -> 0.02;
             case "buy_and_hold" -> 0.10;
@@ -452,8 +486,12 @@ public final class World {
         }
         if (rng.chance(active ? 0.01 : 0.002)) {
             BigDecimal amount = dollars(rng.lognormal(10000, 0.8), 100);
-            schedule(at(LocalTime.of(8, 30).plusSeconds(rng.below(8 * 3600))), () -> book(current,
-                ft(30, a, "payments", Map.of(10, amount, 11, "PAY-" + (50_000_000 + nextPayment++))), false));
+            schedule(at(LocalTime.of(8, 30).plusSeconds(rng.below(8 * 3600))), () -> {
+                if (!closed.contains(a.id())) {
+                    book(current, ft(30, a, "payments", Map.of(10, amount, 11, "PAY-" + (50_000_000 + nextPayment++))),
+                        false);
+                }
+            });
         }
         if (rng.chance(active ? 0.015 : 0.003)) {
             double fraction = 0.1 + rng.uniform() * 0.4;
@@ -463,16 +501,31 @@ public final class World {
     }
 
     private void achDeposit(Account a, BigDecimal amount) {
+        if (closed.contains(a.id())) {
+            return;
+        }
         BigDecimal goodFaith = amount.min(new BigDecimal("1000.00"));
         LocalDate expected = rng.chance(0.7) ? calendar.next(day) : calendar.next(calendar.next(day));
         FinancialTransaction t = ft(31, a, "payments", Map.of(10, amount, 11, expected.toEpochDay(), 12, goodFaith,
             13, "PAY-" + (50_000_000 + nextPayment++)));
+        // One in forty comes back (Nacha): three in five before the deposit settles, the rest one to three business
+        // days after (R10, unauthorized, can come much later; the world keeps it short).
+        String returnCode = null;
+        int returnAfter = 0;
+        if (rng2.chance(0.025)) {
+            returnAfter = rng2.chance(0.6) ? -1 : 1 + rng2.below(3);
+            returnCode = returnAfter < 0 ? pickCode(RETURNS_BEFORE) : pickCode(RETURNS_AFTER);
+        }
         if (book(current, t, false)) {
-            depositSettlements.computeIfAbsent(expected, k -> new ArrayList<>()).add(new Payment(a, t.id(), amount, goodFaith));
+            depositSettlements.computeIfAbsent(expected, k -> new ArrayList<>())
+                .add(new Payment(a, t.id(), amount, goodFaith, returnCode, returnAfter));
         }
     }
 
     private void withdraw(Account a, double fraction, boolean cancel) {
+        if (closed.contains(a.id())) {
+            return;
+        }
         BigDecimal withdrawable = engine.normalBalance(a.id(), 5201).min(engine.balance(a.id(), 1001, null, null));
         BigDecimal amount = dollars(withdrawable.doubleValue() * fraction, 10);
         if (amount.compareTo(new BigDecimal(100)) < 0) {
@@ -489,7 +542,8 @@ public final class World {
             Instant latest = at(LocalTime.of(16, 30));
             schedule(later.isAfter(latest) ? latest : later, () -> book(current, ft(35, a, "payments", Map.of(9, t.id(), 10, amount)), false));
         } else {
-            withdrawalSettlements.computeIfAbsent(expected, k -> new ArrayList<>()).add(new Payment(a, t.id(), amount, null));
+            withdrawalSettlements.computeIfAbsent(expected, k -> new ArrayList<>())
+                .add(new Payment(a, t.id(), amount, null, null, 0));
         }
     }
 
@@ -497,7 +551,20 @@ public final class World {
         Instant eight = at(LocalTime.of(8, 0));
         schedule(eight, () -> {
             for (Payment p : depositSettlements.getOrDefault(day, List.of())) {
+                if (p.returnAfter() < 0) {
+                    book(current, ft(74, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount(),
+                        12, p.goodFaith(), 13, p.returnCode())), false);
+                    continue;
+                }
                 book(current, ft(32, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount(), 12, p.goodFaith())), false);
+                if (p.returnAfter() > 0) {
+                    LocalDate back = day;
+                    for (int i = 0; i < p.returnAfter(); i++) {
+                        back = calendar.next(back);
+                    }
+                    later(back, LocalTime.of(8, 0), () -> book(current, ft(75, p.account(), "payments",
+                        Map.of(9, p.initiation(), 10, p.amount(), 13, p.returnCode())), false));
+                }
             }
             for (Payment p : withdrawalSettlements.getOrDefault(day, List.of())) {
                 FinancialTransaction t = ft(34, p.account(), "payments", Map.of(9, p.initiation(), 10, p.amount()));
@@ -535,6 +602,9 @@ public final class World {
     }
 
     private void placeOrder(Account a) {
+        if (closed.contains(a.id())) {      // transferred out in full by ACATS this morning
+            return;
+        }
         boolean shortSeller = a.persona().equals("short_seller");
         if (shortSeller && rng.chance(0.5) && current.isBefore(at(LocalTime.of(15, 30)))) {
             List<Long> covers = shortsToCover(a);
@@ -598,6 +668,10 @@ public final class World {
         if (longLots.getOrDefault(a.id(), Map.of()).containsKey(s.id()) && engine.normalBalance(a.id(), 3002, s.id()).signum() > 0) {
             return;
         }
+        // No new short in a security with a split announced: a split leaves no fractional short to settle.
+        if (pendingSplits.containsKey(s.id())) {
+            return;
+        }
         BigDecimal p = market.price(s);
         BigDecimal est = p.multiply(new BigDecimal("0.99")).setScale(2, RoundingMode.HALF_UP);
         long qty = (long) Math.floor(equity.doubleValue() * (0.1 + rng.uniform() * 0.2) / est.doubleValue());
@@ -629,8 +703,9 @@ public final class World {
         o.acceptance = t.id();
         openOrders.put(o.id, o);
         upsertOrder(o);
-        // Shorts and covers fill in full (v14 books no cancel for them); a buy or sell may stay part-filled to the close.
-        boolean full = o.side.equals("sell_short") || o.side.equals("buy_to_cover") || rng.chance(0.85);
+        // A short or cover fills in full nine times in ten, the rest cancelled at the close (templates 80 and 81, drawn
+        // from the second source); a buy or sell may stay part-filled to the close.
+        boolean full = o.side.equals("sell_short") || o.side.equals("buy_to_cover") ? rng2.chance(0.9) : rng.chance(0.85);
         int fills = 1 + (o.quantity >= 10 ? rng.below(3) : 0);
         long left = full ? o.quantity : Math.max(0, o.quantity - Math.max(1, o.quantity / 3));
         Instant last = at(LocalTime.of(15, 58));
@@ -692,6 +767,7 @@ public final class World {
         }
         if (template == 41) {
             longLots.computeIfAbsent(a.id(), k -> new TreeMap<>()).computeIfAbsent(s.id(), k -> new ArrayList<>()).add(t.id());
+            acquired.put(t.id(), day);
         }
         if (template == 61) {
             shortLots.computeIfAbsent(a.id(), k -> new TreeMap<>()).computeIfAbsent(s.id(), k -> new ArrayList<>()).add(t.id());
@@ -715,7 +791,10 @@ public final class World {
         upsertOrder(o);
     }
 
-    /** The lots a fill names: the account's disposal method over lots with free shares (short lots oldest first). */
+    /**
+     * The lots a fill names: the account's disposal method over lots with free shares, FIFO by acquisition date (a lot
+     * received by transfer keeps the delivering firm's), short lots oldest first.
+     */
     private List<LotShares> nameLots(Map<Long, Map<Long, List<Long>>> book, Account a, long sec, long q, boolean shortSide) {
         List<Long> lots = new ArrayList<>(book.getOrDefault(a.id(), Map.of()).getOrDefault(sec, List.of()));
         if (!shortSide && a.disposalMethod().equals("HIFO")) {
@@ -723,18 +802,21 @@ public final class World {
                 Engine.LotRef r = engine.lots().get(l);
                 return r.amount().divide(r.shares(), 10, RoundingMode.HALF_UP);
             }).reversed().thenComparing(l -> l));
+        } else if (!shortSide) {
+            lots.sort(Comparator.comparing((Long l) -> acquired.get(l)).thenComparing(l -> l));
         }
         List<LotShares> out = new ArrayList<>();
-        long need = q;
+        BigDecimal need = BigDecimal.valueOf(q);
         for (long lot : lots) {
-            if (need == 0) {
+            if (need.signum() == 0) {
                 break;
             }
+            // A lot a split left with a fraction of a share gives it up like any other share.
             BigDecimal free = shortSide ? engine.freeShort(a.id(), sec, lot) : engine.freeShares(a.id(), sec, lot);
-            long take = Math.min(need, free.longValue());
-            if (take > 0) {
-                out.add(new LotShares(lot, BigDecimal.valueOf(take)));
-                need -= take;
+            BigDecimal take = need.min(free).stripTrailingZeros();
+            if (take.signum() > 0) {
+                out.add(new LotShares(lot, take.scale() < 0 ? take.setScale(0) : take));
+                need = need.subtract(take);
             }
         }
         return out;
@@ -814,11 +896,13 @@ public final class World {
             } else if (o.side.equals("sell")) {
                 template = 47;
             } else {
-                // A short or cover always fills in full; one still open had a fill refused, already counted.
-                openOrders.remove(o.id);
-                continue;
+                template = o.side.equals("sell_short") ? 80 : 81;
+                f.put(11, o.estimateLeft);
             }
             if (book(now, ft(template, o.account, "oms", f), false)) {
+                if (template == 81) {
+                    openCovers.get(o.account.id()).merge(o.security.id(), -open, Long::sum);
+                }
                 o.estimateLeft = BigDecimal.ZERO;
                 o.status = o.filled == 0 ? "expired" : "partially_filled_expired";
                 openOrders.remove(o.id);
@@ -846,6 +930,7 @@ public final class World {
                 book(now, ft(52, a, "interest", Map.of(10, interest, 11, day.toEpochDay())), false);
             }
         }
+        borrowFees();
         for (Account a : accounts) {
             Map<BalanceKey, BigDecimal> balances = new TreeMap<>(Comparator.comparingInt(BalanceKey::definition)
                 .thenComparing(k -> k.security() == null ? 0 : k.security())
@@ -919,6 +1004,501 @@ public final class World {
         row.put("accepted_at", o.acceptedAt);
         row.put("updated_at", current);
         emit(current, Feed.ORDERS, row);
+    }
+
+    // ---------------------------------------------------------------- the demo kit's events (templates 70 to 91, item 155)
+    //
+    // Drawn from the second source of chance. Per business day at 1,000 accounts, about: 3 wire deposits, 2 wire
+    // withdrawals (8% cancelled before release, each sent one charged a $25 fee), 1 cash journal, 0.6 ACATS receipts
+    // and 0.25 deliveries (a $75 fee each), 2.6 dividend announcements; one in forty ACH deposits returned, one in ten
+    // short and cover orders part-filled and cancelled at the close, one in eight wire and ACATS fees given back; each
+    // month a forward and a reverse split and the hard-to-borrow fees.
+
+    private static final BigDecimal WIRE_FEE = new BigDecimal("25.00"), ACATS_FEE = new BigDecimal("75.00");
+    /** Nacha return codes, repeated by how often each comes back: before settlement, and after it. */
+    private static final List<String> RETURNS_BEFORE = List.of("R01", "R01", "R01", "R02", "R03", "R16");
+    private static final List<String> RETURNS_AFTER = List.of("R01", "R01", "R10", "R10", "R08");
+    /** The other firms of ACATS transfers, by a number that is not a DTC participant's (those are four digits). */
+    private static final List<String> CONTRA_FIRMS = List.of("S0412", "S0587", "S0733", "S0906", "S1148", "S1290");
+    /** Split ratios (new, old), repeated by how often each is drawn. */
+    private static final long[][] FORWARD = {{2, 1}, {2, 1}, {2, 1}, {3, 1}, {4, 1}, {3, 2}, {3, 2}};
+    private static final long[][] REVERSE = {{1, 10}, {1, 10}, {1, 5}, {1, 20}, {1, 4}};
+
+    /** A task planned for a later business day, at its time of day. */
+    private record Dated(LocalTime at, Runnable run) {}
+
+    private record Split(String id, Security security, long ratioNew, long ratioOld, LocalDate ex) {}
+
+    private record Dividend(String id, Security security, BigDecimal rate, LocalDate ex, LocalDate pay) {}
+
+    private final Map<LocalDate, List<Dated>> dated = new TreeMap<>();
+    /** Brokerage accounts transferred out in full by ACATS: they plan nothing more. */
+    private final Set<Long> closed = new HashSet<>();
+    /** Each long lot's acquisition date: its buy fill's trade date, or the delivering firm's for a lot received. */
+    private final Map<Long, LocalDate> acquired = new HashMap<>();
+    private final Set<YearMonth> splitsAnnounced = new HashSet<>();
+    private final Map<LocalDate, List<Split>> splitsByEx = new TreeMap<>();
+    private final Map<LocalDate, List<Dividend>> dividendsByEx = new TreeMap<>();
+    private final Map<Long, Split> pendingSplits = new HashMap<>();
+    /** Per security, the last day of a corporate action under way: a split's ex-date, a dividend's pay date. */
+    private final Map<Long, LocalDate> busyUntil = new HashMap<>();
+    /** Hard-to-borrow fees accrued this month per brokerage account and security, and since when. */
+    private final Map<Long, Map<Long, BigDecimal>> borrowAccrued = new TreeMap<>();
+    private final Map<Long, Map<Long, LocalDate>> borrowSince = new TreeMap<>();
+    private long nextJournal = 1, nextAcats = 1, nextCorporateAction = 1;
+
+    /** Plans a task on a later business day (today's run at once, in their place among today's tasks). */
+    private void later(LocalDate d, LocalTime t, Runnable run) {
+        if (d.equals(day)) {
+            schedule(at(t), run);
+        } else {
+            dated.computeIfAbsent(d, k -> new ArrayList<>()).add(new Dated(t, run));
+        }
+    }
+
+    private LocalDate businessDaysAfter(LocalDate d, int n) {
+        for (int i = 0; i < n; i++) {
+            d = calendar.next(d);
+        }
+        return d;
+    }
+
+    private String pickCode(List<String> codes) {
+        return codes.get(rng2.below(codes.size()));
+    }
+
+    private String payment() {
+        return "PAY-" + (50_000_000 + nextPayment++);
+    }
+
+    private void planServicing() {
+        for (Dated d : dated.getOrDefault(day, List.of())) {
+            schedule(at(d.at()), d.run());
+        }
+        dated.remove(day);
+        if (splitsAnnounced.add(YearMonth.from(day))) {
+            announceSplits();
+        }
+        announceDividends();
+        schedule(at(LocalTime.of(8, 5)), this::corporateActions);
+        for (Account a : accounts) {
+            planMoney(a);
+        }
+    }
+
+    private void planMoney(Account a) {
+        if (closed.contains(a.id())) {
+            return;
+        }
+        boolean active = !a.persona().equals("dormant");
+        if (rng2.chance(active ? 0.004 : 0.001)) {
+            BigDecimal amount = dollars(rng2.lognormal(25000, 0.9), 100);
+            schedule(at(LocalTime.of(9, 0).plusSeconds(rng2.below(8 * 3600))), () -> {
+                if (!closed.contains(a.id())) {
+                    book(current, ft(70, a, "payments", Map.of(10, amount, 11, payment())), false);
+                }
+            });
+        }
+        if (rng2.chance(active ? 0.003 : 0.0008)) {
+            double fraction = 0.2 + rng2.uniform() * 0.6;
+            boolean cancel = rng2.chance(0.08);
+            schedule(at(LocalTime.of(9, 0).plusSeconds(rng2.below(5 * 3600))), () -> wireOut(a, fraction, cancel));
+        }
+        if (rng2.chance(active ? 0.0015 : 0.0003)) {
+            double fraction = 0.1 + rng2.uniform() * 0.4;
+            Account to = accounts.get(rng2.below(accounts.size()));
+            schedule(at(LocalTime.of(8, 30).plusSeconds(rng2.below(8 * 3600))), () -> journal(a, to, fraction));
+        }
+        if (rng2.chance(0.0006)) {
+            schedule(at(LocalTime.of(10, 0).plusSeconds(rng2.below(5 * 3600))), () -> acatsIn(a));
+        }
+        if (rng2.chance(0.00025)) {
+            boolean full = rng2.chance(0.3);
+            // After the morning's settlements and corporate actions, before the open: no order is open.
+            schedule(at(LocalTime.of(8, 10)), () -> acatsOut(a, full));
+        }
+    }
+
+    private BigDecimal withdrawable(Account a) {
+        return engine.normalBalance(a.id(), 5201).min(engine.balance(a.id(), 1001, null, null));
+    }
+
+    /** A wire out: instructed now, released to Fedwire 30 minutes to 2.5 hours later with its fee, or cancelled. */
+    private void wireOut(Account a, double fraction, boolean cancel) {
+        if (closed.contains(a.id())) {
+            return;
+        }
+        BigDecimal amount = dollars(withdrawable(a).doubleValue() * fraction, 100);
+        if (amount.compareTo(new BigDecimal(1000)) < 0) {
+            return;
+        }
+        String pay = payment();
+        FinancialTransaction t = ft(71, a, "payments", Map.of(10, amount, 11, day.toEpochDay(), 12, pay));
+        if (!book(current, t, false)) {
+            return;
+        }
+        Instant release = current.plusSeconds(1800 + rng2.below(7200));
+        Instant cutoff = at(LocalTime.of(16, 45));
+        boolean reverseFee = rng2.chance(0.12);
+        schedule(release.isAfter(cutoff) ? cutoff : release, () -> {
+            if (cancel) {
+                book(current, ft(73, a, "payments", Map.of(9, t.id(), 10, amount)), false);
+            } else if (book(current, ft(72, a, "payments", Map.of(9, t.id(), 10, amount)), false)) {
+                charge(a, WIRE_FEE, "wire_out", Map.of(12, pay), reverseFee);
+            }
+        });
+    }
+
+    /** An account fee charged now (template 78) and, if so drawn, given back one to three business days later (79). */
+    private void charge(Account a, BigDecimal amount, String feeType, Map<Integer, Object> about, boolean reverse) {
+        Map<Integer, Object> f = new HashMap<>(about);
+        f.put(10, amount);
+        f.put(11, feeType);
+        FinancialTransaction t = ft(78, a, "fees", f);
+        if (!book(current, t, false) || !reverse) {
+            return;
+        }
+        LocalDate when = businessDaysAfter(day, 1 + rng2.below(3));
+        String reason = rng2.chance(0.8) ? "courtesy_waiver" : "billing_error";
+        later(when, LocalTime.of(10, 0).plusSeconds(rng2.below(6 * 3600)), () -> book(current,
+            ft(79, a, "fees", Map.of(9, t.id(), 10, amount, 11, feeType, 12, reason)), false));
+    }
+
+    /** A cash journal of collected cash to another brokerage account (templates 76 and 77). */
+    private void journal(Account from, Account to, double fraction) {
+        if (to.id() == from.id() || closed.contains(from.id()) || closed.contains(to.id())) {
+            return;
+        }
+        BigDecimal amount = dollars(withdrawable(from).doubleValue() * fraction, 10);
+        if (amount.compareTo(new BigDecimal(100)) < 0) {
+            return;
+        }
+        String journal = "JNL-" + (80_000_000 + nextJournal++);
+        FinancialTransaction sent = ft(76, from, "payments", Map.of(10, amount, 11, journal, 12, to.id()));
+        if (book(current, sent, false)) {
+            book(current, ft(77, to, "payments", Map.of(9, sent.id(), 10, amount, 11, journal, 12, from.id())), false);
+        }
+    }
+
+    private String acatsControl() {
+        return "AC" + day.toString().replace("-", "") + String.format("%04d", nextAcats++);
+    }
+
+    /**
+     * An ACATS receipt from another firm (FINRA 11870) on its settlement date: often a cash balance (template 82), and
+     * one to four positions (83), each of one to three lots at the delivering firm's cost and acquisition date.
+     */
+    private void acatsIn(Account a) {
+        if (closed.contains(a.id())) {
+            return;
+        }
+        String control = acatsControl();
+        String contra = CONTRA_FIRMS.get(rng2.below(CONTRA_FIRMS.size()));
+        String type = rng2.chance(0.6) ? "full" : "partial";
+        if (rng2.chance(0.7)) {
+            BigDecimal cash = BigDecimal.valueOf(Math.max(10_000, Math.round(rng2.lognormal(6000, 1.1) * 100)), 2);
+            book(current, ft(82, a, "acats", Map.of(10, cash, 11, control, 12, contra, 13, type)), false);
+        }
+        int positions = 1 + rng2.below(4);
+        Set<Long> taken = new HashSet<>();
+        int n = market.securities().size();
+        for (int p = 0; p < positions; p++) {
+            Security s = market.byIndex((int) Math.min(n - 1, Math.floor(Math.pow(rng2.uniform(), 2) * n)));
+            // A long position never sits beside a short one in the same security.
+            if (!taken.add(s.id()) || engine.normalBalance(a.id(), 3102, s.id()).signum() > 0) {
+                continue;
+            }
+            List<ReceivedLot> lots = new ArrayList<>();
+            long total = 0;
+            for (int k = 1 + rng2.below(3); k > 0; k--) {
+                long shares = 5 + rng2.below(296);
+                LocalDate bought = calendar.previous(day.minusDays(200 + rng2.below(2800)));
+                BigDecimal perShare = market.price(s).multiply(BigDecimal.valueOf(rng2.lognormal(0.7, 0.35)));
+                lots.add(new ReceivedLot(BigDecimal.valueOf(shares),
+                    perShare.multiply(BigDecimal.valueOf(shares)).setScale(2, RoundingMode.HALF_UP), bought.toEpochDay()));
+                total += shares;
+            }
+            FinancialTransaction t = ft(83, a, "acats", Map.of(6, s.id(), 8, total, 11, control, 12, contra, 13, type,
+                18, lots));
+            if (book(current, t, false)) {
+                List<Long> held = longLots.computeIfAbsent(a.id(), k -> new TreeMap<>())
+                    .computeIfAbsent(s.id(), k -> new ArrayList<>());
+                for (int k = 0; k < lots.size(); k++) {
+                    long lot = Engine.receivedLot(t.id(), k + 1);
+                    held.add(lot);
+                    acquired.put(lot, LocalDate.ofEpochDay(lots.get(k).acquired()));
+                }
+            }
+        }
+    }
+
+    /**
+     * An ACATS delivery to another firm on its settlement date: the $75 fee, then one or two positions (partial) or
+     * every position and the cash (full), each position's lots out at their remaining cost (templates 78, 84, 85). Only
+     * from a brokerage account with no margin debit and no short position: those transfer with the receiving firm
+     * paying off the debit and buying in the short, which the world leaves out.
+     */
+    private void acatsOut(Account a, boolean full) {
+        if (closed.contains(a.id()) || engine.balance(a.id(), 1001, null, null).signum() < 0) {
+            return;
+        }
+        for (long sec : shortLots.getOrDefault(a.id(), Map.of()).keySet()) {
+            if (engine.normalBalance(a.id(), 3102, sec).signum() > 0) {
+                return;
+            }
+        }
+        List<Long> held = new ArrayList<>();
+        for (long sec : longLots.getOrDefault(a.id(), Map.of()).keySet()) {
+            if (engine.normalBalance(a.id(), 3002, sec).signum() > 0) {
+                held.add(sec);
+            }
+        }
+        if (held.isEmpty() && (!full || withdrawable(a).compareTo(BigDecimal.ONE) < 0)) {
+            return;
+        }
+        List<Long> deliver = new ArrayList<>(held);
+        if (!full) {
+            deliver.clear();
+            deliver.add(held.remove(rng2.below(held.size())));
+            if (!held.isEmpty() && rng2.chance(0.4)) {
+                deliver.add(held.get(rng2.below(held.size())));
+            }
+        }
+        String control = acatsControl();
+        String contra = CONTRA_FIRMS.get(rng2.below(CONTRA_FIRMS.size()));
+        String type = full ? "full" : "partial";
+        charge(a, ACATS_FEE, "acats_out", Map.of(13, control), rng2.chance(0.12));
+        for (long sec : deliver) {
+            List<LotShares> named = new ArrayList<>();
+            BigDecimal quantity = BigDecimal.ZERO;
+            for (long lot : longLots.get(a.id()).get(sec)) {
+                BigDecimal free = engine.freeShares(a.id(), sec, lot);
+                if (free.signum() > 0) {
+                    named.add(new LotShares(lot, free));
+                    quantity = quantity.add(free);
+                }
+            }
+            book(current, ft(84, a, "acats", Map.of(6, sec, 8, quantity, 11, control, 12, contra, 13, type, 18, named)),
+                false);
+        }
+        if (full) {
+            BigDecimal cash = withdrawable(a);
+            if (cash.compareTo(BigDecimal.ONE) >= 0) {
+                book(current, ft(85, a, "acats", Map.of(10, cash, 11, control, 12, contra, 13, type)), false);
+            }
+            closed.add(a.id());
+        }
+    }
+
+    private String corporateAction() {
+        return "CA-" + (60_000_000 + nextCorporateAction++);
+    }
+
+    private boolean busy(Security s) {
+        LocalDate until = busyUntil.get(s.id());
+        return until != null && !until.isBefore(day);
+    }
+
+    /**
+     * The month's splits, announced on its first business day the world plays: a forward split of one of the five
+     * dearest of the forty most popular common stocks, a reverse split of one of the five cheapest, each in a security
+     * no brokerage account is short (and none may short it until its ex-date).
+     */
+    private void announceSplits() {
+        Set<Long> shorted = new HashSet<>();
+        for (Account a : accounts) {
+            for (long sec : shortLots.getOrDefault(a.id(), Map.of()).keySet()) {
+                if (engine.normalBalance(a.id(), 3102, sec).signum() > 0) {
+                    shorted.add(sec);
+                }
+            }
+        }
+        List<Security> candidates = new ArrayList<>();
+        for (int i = 0; i < Math.min(40, market.securities().size()); i++) {
+            Security s = market.byIndex(i);
+            if (s.type().equals("Common Stock") && !shorted.contains(s.id()) && !busy(s)) {
+                candidates.add(s);
+            }
+        }
+        if (candidates.size() < 2) {
+            return;
+        }
+        candidates.sort(Comparator.comparing(market::price).thenComparing(Security::id));
+        Security reverse = candidates.remove(rng2.below(Math.min(5, candidates.size() - 1)));
+        Security forward = candidates.get(candidates.size() - 1 - rng2.below(Math.min(5, candidates.size())));
+        announceSplit(forward, FORWARD[rng2.below(FORWARD.length)], 8 + rng2.below(5));
+        announceSplit(reverse, REVERSE[rng2.below(REVERSE.length)], 6 + rng2.below(5));
+    }
+
+    private void announceSplit(Security s, long[] ratio, int businessDays) {
+        LocalDate ex = businessDaysAfter(day, businessDays);
+        Split split = new Split(corporateAction(), s, ratio[0], ratio[1], ex);
+        splitsByEx.computeIfAbsent(ex, k -> new ArrayList<>()).add(split);
+        pendingSplits.put(s.id(), split);
+        busyUntil.put(s.id(), ex);
+    }
+
+    /** Whether a security pays a quarterly cash dividend: every ETF and about half the common stocks. */
+    private boolean paysDividends(Security s) {
+        return s.type().equals("ETF") || Math.floorMod(market.index(s) * 7919, 100) < 55;
+    }
+
+    /**
+     * Each payer not in a corporate action already announces a dividend on one business day in 63: ex-date five to
+     * eight business days on (the record date with it, under T+1), paid five to fifteen after that, at a quarter of a
+     * yield of 0.8% to 4.4% of today's price.
+     */
+    private void announceDividends() {
+        for (Security s : market.securities()) {
+            if (!paysDividends(s) || busy(s) || !rng2.chance(1.0 / 63)) {
+                continue;
+            }
+            LocalDate ex = businessDaysAfter(day, 5 + rng2.below(4));
+            LocalDate pay = businessDaysAfter(ex, 5 + rng2.below(11));
+            BigDecimal yield = BigDecimal.valueOf(8 + Math.floorMod(market.index(s) * 104729, 37), 3);
+            BigDecimal rate = market.price(s).multiply(yield).divide(new BigDecimal(4), 4, RoundingMode.HALF_UP)
+                .max(new BigDecimal("0.0100"));
+            dividendsByEx.computeIfAbsent(ex, k -> new ArrayList<>())
+                .add(new Dividend(corporateAction(), s, rate, ex, pay));
+            busyUntil.put(s.id(), pay);
+        }
+    }
+
+    /** 08:05, after the settlements and before the open: the day's splits, then the dividends going ex. */
+    private void corporateActions() {
+        for (Split s : splitsByEx.getOrDefault(day, List.of())) {
+            applySplit(s);
+        }
+        splitsByEx.remove(day);
+        for (Dividend d : dividendsByEx.getOrDefault(day, List.of())) {
+            for (Account a : accounts) {
+                BigDecimal held = engine.normalBalance(a.id(), 3002, d.security().id());
+                BigDecimal shorted = engine.normalBalance(a.id(), 3102, d.security().id());
+                if (held.signum() > 0) {
+                    income(a, d, 88, 89, held);
+                }
+                if (shorted.signum() > 0) {
+                    income(a, d, 90, 91, shorted);
+                }
+            }
+        }
+        dividendsByEx.remove(day);
+    }
+
+    /** A dividend entitled (88) or a payment in lieu owed (90) at the ex-date, paid or charged on the pay date. */
+    private void income(Account a, Dividend d, int exTemplate, int payTemplate, BigDecimal quantity) {
+        BigDecimal amount = quantity.multiply(d.rate()).setScale(2, RoundingMode.DOWN);
+        if (amount.signum() == 0) {
+            return;
+        }
+        long sec = d.security().id();
+        FinancialTransaction t = ft(exTemplate, a, "corporate_actions", Map.of(6, sec, 8, quantity, 10, amount,
+            11, d.id(), 12, d.rate(), 13, d.ex().toEpochDay(), 14, d.ex().toEpochDay(), 15, d.pay().toEpochDay()));
+        if (book(current, t, false)) {
+            later(d.pay(), LocalTime.of(8, 5), () -> book(current, ft(payTemplate, a, "corporate_actions",
+                Map.of(6, sec, 9, t.id(), 10, amount, 11, d.id(), 15, d.pay().toEpochDay())), false));
+        }
+    }
+
+    /**
+     * A split on its ex-date: the price divided by the ratio, then each holder's lots rescaled (template 86) and any
+     * fraction of a share left paid out at once as cash in lieu at the adjusted price (87). An agent would sell the
+     * fractions over the following days; the world pays them with the split.
+     */
+    private void applySplit(Split split) {
+        pendingSplits.remove(split.security().id());
+        market.split(split.security(), split.ratioNew(), split.ratioOld());
+        long sec = split.security().id();
+        for (Account a : accounts) {
+            BigDecimal held = engine.normalBalance(a.id(), 3002, sec);
+            if (held.signum() == 0 && engine.normalBalance(a.id(), 3102, sec).signum() == 0) {
+                continue;
+            }
+            Map<Integer, Object> f = new HashMap<>(Map.of(6, sec, 10, split.id(), 11, split.ratioNew(),
+                12, split.ratioOld(), 13, split.ex().toEpochDay()));
+            if (held.signum() > 0) {
+                f.put(8, held);
+            }
+            FinancialTransaction t = ft(86, a, "corporate_actions", f);
+            if (!book(current, t, false)) {
+                continue;
+            }
+            BigDecimal now = engine.normalBalance(a.id(), 3002, sec);
+            BigDecimal fraction = now.subtract(now.setScale(0, RoundingMode.DOWN));
+            if (fraction.signum() > 0) {
+                cashInLieu(a, split, t.id(), fraction);
+            }
+        }
+    }
+
+    /** Names the fraction from the lots' fractional parts, in lot order, and pays it at the adjusted price. */
+    private void cashInLieu(Account a, Split split, long splitTransaction, BigDecimal fraction) {
+        long sec = split.security().id();
+        List<LotShares> named = new ArrayList<>();
+        BigDecimal need = fraction;
+        for (long lot : longLots.getOrDefault(a.id(), Map.of()).getOrDefault(sec, List.of())) {
+            BigDecimal free = engine.freeShares(a.id(), sec, lot);
+            BigDecimal part = free.subtract(free.setScale(0, RoundingMode.DOWN)).min(need);
+            if (part.signum() > 0) {
+                named.add(new LotShares(lot, part));
+                need = need.subtract(part);
+            }
+            if (need.signum() == 0) {
+                break;
+            }
+        }
+        BigDecimal price = market.price(split.security());
+        BigDecimal amount = fraction.multiply(price).setScale(2, RoundingMode.HALF_UP);
+        if (amount.signum() == 0) {
+            return;
+        }
+        book(current, ft(87, a, "corporate_actions", Map.of(6, sec, 8, fraction, 9, splitTransaction, 10, amount,
+            11, split.id(), 12, price, 18, named)), false);
+    }
+
+    /** A security's annual borrow rate when it is hard to borrow (one in nine, 15% to 45%), else null. */
+    private BigDecimal borrowRate(Security s) {
+        int i = market.index(s);
+        return i % 9 == 4 ? new BigDecimal("0.15").add(BigDecimal.valueOf(i % 7 * 5L, 2)) : null;
+    }
+
+    /**
+     * 17:00: each short position in a hard-to-borrow security accrues its borrow fee, its market value times the rate
+     * over 360, for each calendar day to the next business day; at month end each accrual is charged (template 78).
+     */
+    private void borrowFees() {
+        BigDecimal days = BigDecimal.valueOf(ChronoUnit.DAYS.between(day, calendar.next(day)));
+        for (Account a : accounts) {
+            for (long sec : shortLots.getOrDefault(a.id(), Map.of()).keySet()) {
+                Security s = market.byIndex((int) (sec - 100001));
+                BigDecimal rate = borrowRate(s), quantity = engine.normalBalance(a.id(), 3102, sec);
+                if (rate == null || quantity.signum() <= 0) {
+                    continue;
+                }
+                BigDecimal fee = quantity.multiply(market.price(s)).multiply(rate).multiply(days)
+                    .divide(new BigDecimal(360), 6, RoundingMode.HALF_UP);
+                borrowAccrued.computeIfAbsent(a.id(), k -> new TreeMap<>()).merge(sec, fee, BigDecimal::add);
+                borrowSince.computeIfAbsent(a.id(), k -> new TreeMap<>()).putIfAbsent(sec, day);
+            }
+        }
+        if (!calendar.isMonthEnd(day)) {
+            return;
+        }
+        for (Account a : accounts) {
+            Map<Long, BigDecimal> accrued = borrowAccrued.remove(a.id());
+            Map<Long, LocalDate> since = borrowSince.remove(a.id());
+            if (accrued == null) {
+                continue;
+            }
+            accrued.forEach((sec, fee) -> {
+                BigDecimal amount = fee.setScale(2, RoundingMode.HALF_UP);
+                if (amount.signum() > 0) {
+                    charge(a, amount, "hard_to_borrow", Map.of(6, sec, 14,
+                        borrowRate(market.byIndex((int) (sec - 100001))), 15, since.get(sec).toEpochDay(),
+                        16, day.toEpochDay()), false);
+                }
+            });
+        }
     }
 
     private static BigDecimal dollars(double v, int multiple) {

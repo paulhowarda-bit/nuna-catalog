@@ -2,6 +2,7 @@ package nuna.datagen.world;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDate;
@@ -10,6 +11,9 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.IntStream;
+import nuna.datagen.kit.Engine.BalanceKey;
 import nuna.datagen.kit.Kit;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +26,10 @@ class WorldTest {
         final Map<Feed, Integer> counts = new EnumMap<>(Feed.class);
         final Map<String, Integer> reasons = new HashMap<>();
         final Map<Long, String> lastOrderStatus = new HashMap<>();
+        /** Financial transactions posted, by template. */
+        final Map<Integer, Integer> templates = new TreeMap<>();
         final MessageDigest digest;
+        World world;
         int days;
 
         Recorder() throws Exception {
@@ -35,6 +42,9 @@ class WorldTest {
             digest.update((e.at() + " " + e.feed() + " " + e.row() + "\n").getBytes(StandardCharsets.UTF_8));
             if (e.feed() == Feed.POSTING_REJECTIONS) {
                 reasons.merge((String) e.row().get("reason"), 1, Integer::sum);
+            }
+            if (e.feed() == Feed.FINANCIAL_TRANSACTIONS) {
+                templates.merge((Integer) e.row().get("template_id"), 1, Integer::sum);
             }
             if (e.feed() == Feed.ORDERS) {
                 lastOrderStatus.put((Long) e.row().get("order_id"), (String) e.row().get("status"));
@@ -56,6 +66,7 @@ class WorldTest {
     private static Recorder play(long seed, int accounts, int days) throws Exception {
         World w = new World(World.Settings.of(seed, LocalDate.of(2026, 10, 1), accounts), KIT);
         Recorder r = new Recorder();
+        r.world = w;
         for (int i = 0; i < days; i++) {
             w.runDay(r);
         }
@@ -80,8 +91,18 @@ class WorldTest {
         assertThat(r.counts.get(Feed.PRICES_EOD)).isEqualTo(22 * 300);
         assertThat(r.counts.get(Feed.ACCOUNTS)).isEqualTo(1000);
         assertThat(r.counts.get(Feed.SECURITIES)).isEqualTo(300);
-        assertThat(r.counts.get(Feed.BOOKING_SCHEMES)).isEqualTo(22);
+        assertThat(r.counts.get(Feed.BOOKING_SCHEMES)).isEqualTo(44);
         assertThat(r.counts).containsKeys(Feed.ORDERS, Feed.BALANCES_EOD, Feed.CALENDAR, Feed.CHART_OF_ACCOUNTS);
+        // Item 155: every template of the demo kit's brokerage events posts in the month.
+        assertThat(r.templates.keySet()).as("templates posted: " + r.templates)
+            .containsAll(IntStream.rangeClosed(70, 91).boxed().toList());
+        // And every brokerage account's books still balance, each sub-ledger in its own measure.
+        r.world.engine().snapshot().forEach((ba, balances) -> {
+            Map<Integer, BigDecimal> perSubLedger = new TreeMap<>();
+            balances.forEach((BalanceKey k, BigDecimal v) ->
+                perSubLedger.merge(KIT.definition(k.definition()).root(), v, BigDecimal::add));
+            perSubLedger.forEach((root, sum) -> assertThat(sum.signum()).as(ba + " sub-ledger " + root).isZero());
+        });
     }
 
     @Test
