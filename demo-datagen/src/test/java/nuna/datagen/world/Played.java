@@ -9,12 +9,13 @@ import nuna.datagen.kit.Kit;
 
 /**
  * A world played for the tests of its order management system, clearing and reconciliation views: two weeks of 400
- * accounts, with its seeded fail to deliver or without, each played once per test run. Bars and journal lines are not
+ * accounts, with its seeded fail to deliver or without, each played once per test run. The seed is one whose two weeks
+ * hold ACATS transfers in and out and a split, which move positions besides fills. Bars and journal lines are not
  * kept: nothing here reads them.
  */
 public final class Played implements Sink {
 
-    public static final World.Settings SETTINGS = World.Settings.of(151, LocalDate.of(2026, 9, 1), 400);
+    public static final World.Settings SETTINGS = World.Settings.of(160, LocalDate.of(2026, 9, 1), 400);
     public static final int DAYS = 10;
     private static final Kit KIT = Kit.load();
     private static Played seeded, clean;

@@ -114,11 +114,6 @@ final class Oms {
         forget(o.id());
     }
 
-    /** An order that leaves the book without an event of its own (a short or cover whose fill the ledger refused). */
-    void dropped(long order) {
-        forget(order);
-    }
-
     private void forget(long order) {
         routes.remove(order);
         lastEvent.remove(order);

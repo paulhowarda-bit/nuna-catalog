@@ -61,7 +61,7 @@ public final class Custody implements AutoCloseable {
         STOCK_RECORD("stock_record", List.of(col("position_id", "STRING", false), col("business_date", "DATE", false),
             col("security_id", "INT8", false), col("symbol", "STRING", false), col("cusip", "STRING", false),
             col("side", "STRING", false), col("category", "STRING", false), col("brokerage_account", "INT8", true),
-            col("quantity", "INT8", false), col("close_price", "DECIMAL(18, 2)", false),
+            col("quantity", "DECIMAL(18, 5)", false), col("close_price", "DECIMAL(18, 2)", false),
             col("market_value", "DECIMAL(18, 2)", false))),
         CNS_OBLIGATIONS("cns_obligations", List.of(col("obligation_id", "STRING", false),
             col("security_id", "INT8", false), col("symbol", "STRING", false), col("cusip", "STRING", false),

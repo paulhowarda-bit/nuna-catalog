@@ -1,0 +1,16 @@
+Breaks: a split reads a short lot's shares as a long lot's (none), so short lots are not rescaled
+Module: demo-datagen
+Test: DemoKitTemplatesTest#aSplitRescalesShortLotsAtUnchangedProceeds
+diff --git a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+index 9f989242..6ae39511 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
++++ b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+@@ -312,7 +312,7 @@ public final class Engine {
+         Map<Long, LotRef> rescaled = new LinkedHashMap<>();
+         BigDecimal total = BigDecimal.ZERO;
+         for (long lot : sortedLots(shortSide ? book(ba).shortLotsBySecurity : book(ba).lotsBySecurity, sec)) {
+-            BigDecimal free = shortSide ? freeShort(ba, sec, lot) : freeShares(ba, sec, lot);
++            BigDecimal free = freeShares(ba, sec, lot);
+             if (free.signum() == 0) {
+                 continue;
+             }

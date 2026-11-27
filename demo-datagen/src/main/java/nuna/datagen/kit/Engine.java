@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import nuna.datagen.kit.FinancialTransaction.LotShares;
+import nuna.datagen.kit.FinancialTransaction.ReceivedLot;
 import nuna.datagen.kit.Kit.Binding;
 import nuna.datagen.kit.Kit.BookingScheme;
 import nuna.datagen.kit.Kit.Calculation;
@@ -29,9 +30,10 @@ import nuna.datagen.kit.Kit.Template;
  * each lot's reference, the opening fill's amount and shares (schema 11 R12). A lot's remaining cost is computed from
  * its shares not yet pending, never carried.
  *
- * <p>{@link #post} runs DuplicateTransaction, F13 at admission, NoBookingScheme, the calculations (LotNotHeld), J1,
- * J11, J12 and J16 (BalanceBelowZero), then applies the lines and runs the self-checks (J4), which {@link Halt}. A
- * rejection changes nothing: the calculations read state and never write it.
+ * <p>{@link #post} runs DuplicateTransaction, F13 at admission, NoBookingScheme, the calculations (LotNotHeld,
+ * FractionalShares), J1, J11, J12 and J16 (BalanceBelowZero), then applies the lines and what the calculations change
+ * in the lots' references (a lot received by transfer, a split's rescaling) and runs the self-checks (J4), which
+ * {@link Halt}. A rejection changes nothing: the calculations read state and never write it.
  *
  * <p>Balances are kept debit-positive, as the kit keeps them, and summed per definition and per (definition, security)
  * as they change, so a self-check reads a sum instead of scanning the brokerage account's ledger accounts.
@@ -77,13 +79,21 @@ public final class Engine {
     }
 
     /**
-     * A lot a calculation yields: the lot, its shares and, from IdentifyLotsNamed and IdentifyShortLotsNamed, the cost
-     * or proceeds it relieves, under that output's name.
+     * A lot a calculation yields: the lot, its shares and, from IdentifyLotsNamed, IdentifyShortLotsNamed and
+     * OpenLotsReceived, the cost or proceeds it relieves or opens, under that output's name.
      */
     private record Part(long lot, BigDecimal shares, String amountName, BigDecimal amount) {}
 
-    /** A calculation's outputs: named values, and the lots for a journal line that repeats over them. */
-    private record Outcome(Map<String, BigDecimal> values, List<Part> lots) {}
+    /**
+     * A calculation's outputs: named values, the lots for a journal line that repeats over them, and what it changes
+     * in the lots' references once the posting is applied (null: nothing). A calculation reads state and never writes
+     * it, so a rejection changes nothing.
+     */
+    private record Outcome(Map<String, BigDecimal> values, List<Part> lots, Runnable apply) {
+        Outcome(Map<String, BigDecimal> values, List<Part> lots) {
+            this(values, lots, null);
+        }
+    }
 
     private final Kit kit;
     private final Map<Long, Book> books = new HashMap<>();
@@ -226,7 +236,10 @@ public final class Engine {
         return total;
     }
 
-    /** IdentifyLotsNamed: per named (lot, shares), cost = remaining cost before - remaining cost after. */
+    /**
+     * IdentifyLotsNamed: per named (lot, shares), cost = remaining cost before - remaining cost after; realizedGain
+     * only when the booking scheme gives proceeds (an ACATS delivery gives none: a transfer is not a sale).
+     */
     private Outcome identifyNamed(long ba, Long sec, List<LotShares> named, BigDecimal proceeds) throws Rejected {
         List<Part> out = new ArrayList<>();
         Map<Long, BigDecimal> taken = new HashMap<>();
@@ -246,7 +259,84 @@ public final class Engine {
             total = total.add(cost);
             taken.merge(ls.lot(), s, BigDecimal::add);
         }
-        return new Outcome(Map.of("totalCost", total, "realizedGain", cents(proceeds).subtract(total)), out);
+        return new Outcome(proceeds == null ? Map.of("totalCost", total)
+            : Map.of("totalCost", total, "realizedGain", cents(proceeds).subtract(total)), out);
+    }
+
+    /** The lot id of the n-th lot (from 1) an ACATS receipt brings in: the receipt's id times 1,000 plus n. */
+    public static long receivedLot(long transaction, int n) {
+        return transaction * 1000 + n;
+    }
+
+    /**
+     * OpenLotsReceived (item 155): a lot per received element, keyed {@link #receivedLot}, whose reference (R12) is the
+     * delivering firm's cost and the shares received, so its remaining cost carries over from the other firm.
+     */
+    private Outcome openReceived(FinancialTransaction t, long ba, Long sec) throws Rejected {
+        List<ReceivedLot> received = t.receivedLots();
+        if (received.isEmpty()) {
+            throw new Rejected("LotNotHeld", t.id() + ": no lots received");
+        }
+        List<Part> out = new ArrayList<>();
+        BigDecimal cost = BigDecimal.ZERO, shares = BigDecimal.ZERO;
+        for (int i = 0; i < received.size(); i++) {
+            ReceivedLot r = received.get(i);
+            BigDecimal c = cents(r.cost());
+            out.add(new Part(receivedLot(t.id(), i + 1), r.shares(), "cost", c));
+            cost = cost.add(c);
+            shares = shares.add(r.shares());
+        }
+        Runnable apply = () -> {
+            Book b = book(ba);
+            for (Part p : out) {
+                lots.put(p.lot(), new LotRef(ba, sec, p.amount(), p.shares()));
+                b.lotsBySecurity.computeIfAbsent(sec, k -> new ArrayList<>()).add(p.lot());
+            }
+        };
+        return new Outcome(Map.of("totalCost", cost, "totalShares", shares), out, apply);
+    }
+
+    /**
+     * RescaleLots and RescaleShortLots (item 155): a split of ratioNew for ratioOld rescales each lot's shares not
+     * pending delivery or cover, and its reference shares, by the ratio; the reference's cost or proceeds is unchanged,
+     * so the lot's remaining cost or proceeds is too (R12). Shares already pending are delivered or covered in the
+     * shares they were traded in. Yields each lot's change in shares (negative for a reverse split) and their total.
+     */
+    private Outcome rescale(long id, long ba, Long sec, BigDecimal ratioNew, BigDecimal ratioOld, boolean shortSide)
+        throws Rejected {
+        if (ratioNew.signum() <= 0 || ratioOld.signum() <= 0) {
+            throw new Rejected("NegativeAmount", id + ": split ratio " + ratioNew + " for " + ratioOld);
+        }
+        Map<Long, LotRef> refs = shortSide ? shortLots : lots;
+        List<Part> out = new ArrayList<>();
+        Map<Long, LotRef> rescaled = new LinkedHashMap<>();
+        BigDecimal total = BigDecimal.ZERO;
+        for (long lot : sortedLots(shortSide ? book(ba).shortLotsBySecurity : book(ba).lotsBySecurity, sec)) {
+            BigDecimal free = shortSide ? freeShort(ba, sec, lot) : freeShares(ba, sec, lot);
+            if (free.signum() == 0) {
+                continue;
+            }
+            LotRef ref = refs.get(lot);
+            BigDecimal now = scaled(id, lot, free, ratioNew, ratioOld);
+            if (now.stripTrailingZeros().scale() > kit.chart().unitExponent()) {
+                throw new Rejected("FractionalShares", id + ": lot " + lot + " would hold " + now + " shares");
+            }
+            BigDecimal delta = now.subtract(free);
+            out.add(new Part(lot, delta, null, null));
+            total = total.add(delta);
+            rescaled.put(lot, new LotRef(ba, sec, ref.amount(), scaled(id, lot, ref.shares(), ratioNew, ratioOld)));
+        }
+        return new Outcome(Map.of("totalShares", total), out, () -> refs.putAll(rescaled));
+    }
+
+    private static BigDecimal scaled(long id, long lot, BigDecimal shares, BigDecimal ratioNew, BigDecimal ratioOld)
+        throws Rejected {
+        try {
+            return shares.multiply(ratioNew).divide(ratioOld);
+        } catch (ArithmeticException e) {      // no exact decimal: a third of a share
+            throw new Rejected("FractionalShares", id + ": lot " + lot + ", " + shares + " x " + ratioNew + " / "
+                + ratioOld + " has no exact number of shares");
+        }
     }
 
     /** IdentifyShortLotsNamed: per named (short lot, shares), proceeds = remaining before - remaining after. */
@@ -338,6 +428,14 @@ public final class Engine {
                 }
             }
         }
+        if ("receivedLots".equals(fields.get(FinancialTransaction.LOTS))) {
+            for (ReceivedLot r : t.receivedLots()) {
+                // A received lot of no shares would have no remaining cost to compute (R12 divides by its shares).
+                if (r.shares().signum() <= 0 || r.cost().signum() < 0) {
+                    throw new Rejected("NegativeAmount", id + ": receivedLots " + r.shares() + " shares at " + r.cost());
+                }
+            }
+        }
         BookingScheme scheme = kit.schemeFor(t.template());
         if (scheme == null) {
             throw new Rejected("NoBookingScheme", id + ": template " + t.template());
@@ -352,8 +450,13 @@ public final class Engine {
                     if (t.lots().isEmpty()) {
                         throw new Rejected("LotNotHeld", id + ": no lots named");
                     }
-                    yield identifyNamed(ba, sec, t.lots(), value(t, co, in.get("proceeds"), null));
+                    yield identifyNamed(ba, sec, t.lots(),
+                        in.containsKey("proceeds") ? value(t, co, in.get("proceeds"), null) : null);
                 }
+                case Kit.OPEN_LOTS_RECEIVED -> openReceived(t, ba, sec);
+                case Kit.RESCALE_LOTS, Kit.RESCALE_SHORT_LOTS -> rescale(id, ba, sec,
+                    value(t, co, in.get("ratioNew"), null), value(t, co, in.get("ratioOld"), null),
+                    c.kind() == Kit.RESCALE_SHORT_LOTS);
                 case Kit.SETTLE_PENDING -> settlePending(ba, sec);
                 case Kit.IDENTIFY_SHORT_LOTS_NAMED -> {
                     if (t.lots().isEmpty()) {
@@ -430,6 +533,12 @@ public final class Engine {
         if (t.template() == OPENS_SHORT_LOT) {
             shortLots.put(id, new LotRef(ba, sec, cents(t.decimal(13)), t.decimal(FinancialTransaction.QUANTITY)));
             book.shortLotsBySecurity.computeIfAbsent(sec, k -> new ArrayList<>()).add(id);
+        }
+        for (Calculation c : scheme.calculations()) {
+            Runnable apply = co.get(c.id()).apply();
+            if (apply != null) {
+                apply.run();
+            }
         }
         posted.add(id);
         selfCheck(ba, touched);

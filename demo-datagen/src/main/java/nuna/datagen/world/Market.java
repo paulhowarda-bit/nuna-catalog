@@ -110,6 +110,12 @@ public final class Market {
         return BigDecimal.valueOf(price[index(s)]).setScale(2, RoundingMode.HALF_UP);
     }
 
+    /** A split of ratioNew for ratioOld on its ex-date, before the open: the price is divided by the ratio. */
+    void split(Security s, long ratioNew, long ratioOld) {
+        int i = index(s);
+        price[i] = Math.max(0.01, Math.round(price[i] * ratioOld / ratioNew * 100) / 100.0);
+    }
+
     /** Moves every price one five-minute step and returns the step's bars. */
     List<Bar> step() {
         double market = rng.normal() * 0.0012;

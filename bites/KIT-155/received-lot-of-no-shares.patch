@@ -1,0 +1,16 @@
+Breaks: an ACATS receipt may bring a lot of no shares
+Module: demo-datagen
+Test: DemoKitTemplatesTest#anAcatsReceiptMustBringLotsOfSharesAtACostOfZeroOrMore
+diff --git a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+index 9f989242..977cd8bb 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
++++ b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+@@ -431,7 +431,7 @@ public final class Engine {
+         if ("receivedLots".equals(fields.get(FinancialTransaction.LOTS))) {
+             for (ReceivedLot r : t.receivedLots()) {
+                 // A received lot of no shares would have no remaining cost to compute (R12 divides by its shares).
+-                if (r.shares().signum() <= 0 || r.cost().signum() < 0) {
++                if (r.shares().signum() < 0 || r.cost().signum() < 0) {
+                     throw new Rejected("NegativeAmount", id + ": receivedLots " + r.shares() + " shares at " + r.cost());
+                 }
+             }

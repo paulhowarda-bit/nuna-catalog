@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import nuna.datagen.kit.FinancialTransaction;
 import nuna.datagen.kit.Kit;
@@ -125,7 +126,7 @@ public final class LakeSchemas {
                 .add("event_time", TIME);
             case STOCK_RECORD -> c.add("business_date", DATE).add("position_id", TEXT).add("security_id", LONG)
                 .add("symbol", TEXT).add("cusip", TEXT).add("side", TEXT).add("category", TEXT)
-                .add("brokerage_account", LONG).add("quantity", LONG).add("close_price", MONEY)
+                .add("brokerage_account", LONG).add("quantity", SHARES).add("close_price", MONEY)
                 .add("market_value", MONEY);
             case LOCATES -> c.add("locate_id", TEXT).add("brokerage_account", LONG).add("security_id", LONG)
                 .add("symbol", TEXT).add("quantity", LONG).add("source", TEXT).add("easy_to_borrow", FLAG)
@@ -164,6 +165,14 @@ public final class LakeSchemas {
         return columns;
     }
 
+    /** The template fields that are whole numbers: the other brokerage account of a journal, a split's ratio. */
+    private static final Set<String> WHOLE = Set.of("contraBrokerageAccount", "ratioNew", "ratioOld");
+
+    /** Whether a template field's column is a long (the world writes the value as a Long). */
+    public static boolean isWhole(String name) {
+        return WHOLE.contains(name);
+    }
+
     /** The type of a template field's column, from its name as the kit gives it; a nested type takes ids from ids[0]. */
     public static Type templateType(String name, int[] ids) {
         if (name.equals("lots")) {
@@ -171,10 +180,21 @@ public final class LakeSchemas {
                 Types.NestedField.optional(ids[0]++, "lot", LONG),
                 Types.NestedField.optional(ids[0]++, "shares", SHARES)));
         }
+        if (name.equals("receivedLots")) {
+            return Types.ListType.ofOptional(ids[0]++, Types.StructType.of(
+                Types.NestedField.optional(ids[0]++, "lot", LONG),
+                Types.NestedField.optional(ids[0]++, "shares", SHARES),
+                Types.NestedField.optional(ids[0]++, "cost", MONEY),
+                Types.NestedField.optional(ids[0]++, "acquired_date", DATE)));
+        }
         if (name.endsWith("Date") || name.equals("periodStart") || name.equals("periodEnd")) {
             return DATE;
         }
-        if (name.endsWith("Id") || name.equals("venue")) {
+        if (isWhole(name)) {
+            return LONG;
+        }
+        if (name.endsWith("Id") || name.equals("venue") || name.endsWith("Code") || name.endsWith("Type")
+            || name.endsWith("Number")) {
             return TEXT;
         }
         if (name.endsWith("Price")) {

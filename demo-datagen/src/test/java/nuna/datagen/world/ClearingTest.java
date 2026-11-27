@@ -3,6 +3,7 @@ package nuna.datagen.world;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -221,11 +222,11 @@ class ClearingTest {
             LocalDate d = (LocalDate) r.get("business_date");
             if (r.get("category").equals("fail_to_deliver")) {
                 assertThat(d).isIn(s, closeOutDay);
-                assertThat(r.get("quantity")).isEqualTo(-q);
+                assertThat((BigDecimal) r.get("quantity")).isEqualByComparingTo(BigDecimal.valueOf(-q));
             }
             if (r.get("category").equals("firm")) {
                 assertThat(d).isAfterOrEqualTo(closeOutDay);
-                assertThat(r.get("quantity")).isEqualTo(q);
+                assertThat((BigDecimal) r.get("quantity")).isEqualByComparingTo(BigDecimal.valueOf(q));
             }
         }
         assertThat(p.of(Feed.STOCK_RECORD)).filteredOn(r -> r.get("category").equals("fail_to_deliver")).hasSize(2);
@@ -252,28 +253,44 @@ class ClearingTest {
                     }
                 }
             }
-            Map<String, Long> balance = new TreeMap<>();
+            Map<String, BigDecimal> balance = new TreeMap<>();
             Set<String> days = new HashSet<>();
             for (Map<String, Object> r : p.of(Feed.STOCK_RECORD)) {
-                long q = longOf(r.get("quantity"));
+                BigDecimal q = (BigDecimal) r.get("quantity");
                 days.add(r.get("business_date").toString());
                 if (r.get("category").equals("customer")) {
-                    record.put(r.get("business_date") + "/" + r.get("brokerage_account") + "/" + r.get("security_id"),
-                        BigDecimal.valueOf(q));
+                    record.put(r.get("business_date") + "/" + r.get("brokerage_account") + "/" + r.get("security_id"), q);
                 }
                 balance.merge(r.get("business_date") + "/" + r.get("security_id"),
-                    r.get("side").equals("owner") ? q : -q, Long::sum);
-                assertThat((BigDecimal) r.get("market_value"))
-                    .isEqualByComparingTo(((BigDecimal) r.get("close_price")).multiply(BigDecimal.valueOf(q)));
+                    r.get("side").equals("owner") ? q : q.negate(), BigDecimal::add);
+                assertThat((BigDecimal) r.get("market_value")).isEqualByComparingTo(
+                    ((BigDecimal) r.get("close_price")).multiply(q).setScale(2, RoundingMode.HALF_UP));
             }
             ledger.values().removeIf(v -> v.signum() == 0);
             lots.values().removeIf(v -> v.signum() == 0);
             assertThat(record).hasSizeGreaterThan(1000);
             assertThat(days).hasSize(Played.DAYS);
-            assertThat(ledger).usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
-                .isEqualTo(record);
-            assertThat(lots).usingComparatorForType(BigDecimal::compareTo, BigDecimal.class).isEqualTo(record);
+            assertThat(differences(ledger, record)).as("Share Position less Short Position against the stock record")
+                .isEmpty();
+            assertThat(differences(lots, record)).as("the open lots against the stock record").isEmpty();
             assertThat(balance).allSatisfy((k, v) -> assertThat(v).as("owners less locations of " + k).isZero());
         }
+        // The positions moved by more than fills: ACATS transfers in and out, and a split.
+        assertThat(Played.seeded().of(Feed.FINANCIAL_TRANSACTIONS)).extracting(ft -> ft.get("template_id"))
+            .contains(83, 84, 86);
+    }
+
+    /** Each key whose value differs between the two, with both values (a missing one as 0). */
+    private static Map<String, String> differences(Map<String, BigDecimal> a, Map<String, BigDecimal> b) {
+        Map<String, String> out = new TreeMap<>();
+        Set<String> keys = new HashSet<>(a.keySet());
+        keys.addAll(b.keySet());
+        for (String k : keys) {
+            BigDecimal x = a.getOrDefault(k, BigDecimal.ZERO), y = b.getOrDefault(k, BigDecimal.ZERO);
+            if (x.compareTo(y) != 0) {
+                out.put(k, x.toPlainString() + " against " + y.toPlainString());
+            }
+        }
+        return out;
     }
 }
