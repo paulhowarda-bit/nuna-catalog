@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**21 open:** 2 S, 8 M, 7 L, 4 XL.
+**20 open:** 2 S, 8 M, 6 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -29,7 +29,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
-| [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
@@ -1035,36 +1034,6 @@ note in `docs/install-at-work.md` on sizing it there.
 What done looks like: after a live day the health dashboard (D38) ranks the streaming tables among the neediest, and a
 maintenance run fixes them without touching the held `compliance.aml_cases`.
 
-### 155. The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48)
-
-- Decided: 2026-11-22, D48 (amended)
-- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo-datagen/
-- Effort: L, about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port)
-
-Rescoped by Paul, 2026-11-22 (D48 as amended): "the kit chat is for building the sequencer. This kit is just for
-filling iceberg with data. So they are 2 separate kits." This item first read as kit v15 and v16 of the sequencer's
-ledger kit. It is the demo's own kit instead: item 150 forks ledger kit v14 into `demo-datagen`, and this item extends
-that fork. It never follows the ledger kit's later versions, and needs none of its workbook or reviews.
-
-A month at a brokerage has events v14 cannot book, and the generator produces none until the demo kit can:
-
-- Money and fees (for item 152): wire deposit received; wire withdrawal initiated, settled and cancelled; an ACH
-  deposit returned before and after settlement, with its Nacha return code; a cash journal between two brokerage
-  accounts; an account fee charged and reversed (wire, ACATS-out, hard-to-borrow on shorts); short sell and buy to
-  cover cancelled.
-- Transfers and asset servicing (for items 152 and 153): ACATS received (cash, and positions whose lots carry the
-  delivering firm's cost and acquisition date) and delivered (lots out at remaining cost, no gain); a cash dividend on
-  a long position; a payment in lieu charged to a short position; forward and reverse splits (lots rescaled, cost
-  unchanged, cash in lieu of fractions).
-
-The bar: every template books on all four sub-ledgers with the engine's self-checks holding after every Posting
-(each journal entry balanced in its unit, lots tied to their controls, mirrors, J16 floors), and reads as believable to
-a brokerage person.
-
-What done looks like: for each template, a lifecycle on a cash and a margin account runs through the engine in the
-fast build with every self-check passing, and the generator produces those events.
-
 ### 167. Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -1565,6 +1534,7 @@ than one collector, `telemetry.sampling` at 1.0 in work's values, README.md sayi
 | [148](backlog/148.md) | The audit feed and summary answer 500 where audit tables are configured: the reader loads Iceberg's AWS client factory, which needs the KMS SDK the server leaves out | done | 2026-11-22 |
 | [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
+| [155](backlog/155.md) | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | done | 2026-11-26 |
 | [156](backlog/156.md) | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | done | 2026-11-25 |
 | [157](backlog/157.md) | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | done | 2026-11-25 |
 | [158](backlog/158.md) | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | done | 2026-11-25 |

@@ -1,5 +1,5 @@
 {
- "source": "ledger kit v14, defs.py (chart of accounts v24); the demo kit's own copy from here on (D48)",
+ "source": "ledger kit v14, defs.py (chart of accounts v24); the demo kit's own copy from here on (D48); extended for the brokerage world's events by item 155",
  "dimensions": [
   {
    "id": 1,
@@ -19,7 +19,7 @@
   {
    "id": 4,
    "name": "Lot",
-   "description": "the financialTransactionId of the fill that opened the lot: a buy fill for a share lot, a short sale fill for a short lot"
+   "description": "the financialTransactionId of the fill that opened the lot: a buy fill for a share lot, a short sale fill for a short lot; for a lot received by transfer, the receipt's financialTransactionId times 1,000 plus the lot's place in it (1 to 999)"
   }
  ],
  "roots": [
@@ -225,6 +225,21 @@
    "root": 2
   },
   {
+   "id": 1005,
+   "parent": 1000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1005",
+   "name": "Dividends Receivable",
+   "description": "A cash dividend the brokerage account is entitled to, from the ex-date (the record date under T+1) to the pay date (templates 88, 89). Neither clock recognizes it before the pay date brings the cash: buying power and the collected balance never count a dividend not yet paid.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
    "id": 1401,
    "parent": 1000,
    "naturalClass": "Asset",
@@ -331,6 +346,21 @@
    "root": 2
   },
   {
+   "id": 1108,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1108",
+   "name": "Payment in Lieu Payable",
+   "description": "A payment in lieu of a dividend the brokerage account owes on a short position held over the ex-date, from the ex-date to the pay date (templates 90, 91). Both clocks recognize it at the ex-date, as they do fees and interest (4109, 5107).",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
    "id": 1402,
    "parent": 1100,
    "naturalClass": "Liability",
@@ -391,6 +421,36 @@
    "root": 2
   },
   {
+   "id": 1203,
+   "parent": 1200,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "1203",
+   "name": "Securities Transferred at Cost",
+   "description": "Securities received in kind by ACATS (credit) and delivered (debit), at cost: a received lot at the delivering firm's cost, a delivered lot at its remaining cost; a transfer realizes no gain or loss (templates 83, 84). Cash transferred by ACATS goes to Net Deposits (1201). MayReverse: delivering lots bought here takes it below zero.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1204,
+   "parent": 1200,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "1204",
+   "name": "Dividend Income",
+   "description": "Cash dividends the brokerage account was entitled to, recognized at the ex-date (template 88). Whether a dividend is qualified is the 1099-DIV's question, not this ledger's.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
    "id": 1301,
    "parent": 1300,
    "naturalClass": "Expense",
@@ -436,13 +496,43 @@
    "root": 2
   },
   {
+   "id": 1304,
+   "parent": 1300,
+   "naturalClass": "Expense",
+   "measure": "Money",
+   "code": "1304",
+   "name": "Account Fees",
+   "description": "Service fees charged to the brokerage account: an outgoing wire, an ACATS transfer out, the hard-to-borrow fee on a short position; the kind is the transaction's feeType (templates 78, 79). A reversal credits it, never below zero (J16), so no more can be reversed than was charged.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1305,
+   "parent": 1300,
+   "naturalClass": "Expense",
+   "measure": "Money",
+   "code": "1305",
+   "name": "Payment in Lieu of Dividends",
+   "description": "Payments in lieu of dividends charged to short positions held over an ex-date (template 90): the short seller owes the lender the dividend the lent shares paid.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
    "id": 3001,
    "parent": 3000,
    "naturalClass": "Asset",
    "measure": "Units",
    "code": "3001",
    "name": "Share Lot - [Fill]",
-   "description": "Debit-normal. One ledger account per buy fill, keyed by (BrokerageAccount, Security, Lot = the fill id). Its balance is the lot's remaining shares. Opened at buy execution; relieved at sell settlement (calculation SettlePending); closes at zero (R13). The lot's fill amount and shares (the reference of the remaining-cost rule, R12) and its acquisition date are the buy fill transaction's; they are not posted.",
+   "description": "Debit-normal. One ledger account per buy fill, keyed by (BrokerageAccount, Security, Lot = the fill id). Its balance is the lot's remaining shares. Opened at buy execution, or by an ACATS receipt at the delivering firm's cost (template 83); rescaled by a split, its cost unchanged (template 86); relieved at sell settlement (calculation SettlePending); closes at zero (R13). The lot's fill amount and shares (the reference of the remaining-cost rule, R12) and its acquisition date are the buy fill transaction's; they are not posted.",
    "normalSide": "Debit",
    "keyDimensions": [
     1,
@@ -710,13 +800,28 @@
    "root": 4
   },
   {
+   "id": 4109,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4109",
+   "name": "Commitment - Payment in Lieu",
+   "description": "Mirrors SL-CA 1108 on the trade clock: committed at the ex-date, cleared at the pay date. Credit-normal.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
    "id": 4201,
    "parent": 4200,
    "naturalClass": "Equity",
    "measure": "Money",
    "code": "4201",
    "name": "Net Equity - Trade Clock",
-   "description": "SL-BP's own net equity: 4001 - commitments (4101-4105, 4107, 4108) + credits (4002, 4003). The balancing journal line of every SL-BP journal entry, posted only when that balance changes, by exactly the change; settlement never posts it. Buying power is derived on read, never posted.",
+   "description": "SL-BP's own net equity: 4001 - commitments (4101-4105, 4107-4109) + credits (4002, 4003). The balancing journal line of every SL-BP journal entry, posted only when that balance changes, by exactly the change; settlement never posts it. Buying power is derived on read, never posted.",
    "normalSide": "Credit",
    "keyDimensions": [
     1,
@@ -815,13 +920,28 @@
    "root": 5
   },
   {
+   "id": 5107,
+   "parent": 5100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "5107",
+   "name": "Encumbrance - Payment in Lieu",
+   "description": "Mirrors SL-CA 1108 on the withdraw clock: encumbered at the ex-date, cleared at the pay date. Credit-normal.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  },
+  {
    "id": 5201,
    "parent": 5200,
    "naturalClass": "Equity",
    "measure": "Money",
    "code": "5201",
    "name": "Net Equity - Withdraw Clock",
-   "description": "SL-RCB's own net equity: 5001 - encumbrances (5101-5104, 5106). The balancing journal line of every SL-RCB journal entry, posted only when that balance changes, by exactly the change; settlement posts it for money arriving (sale proceeds, deposits), which this clock recognizes only then. The running collected balance is derived on read, never posted.",
+   "description": "SL-RCB's own net equity: 5001 - encumbrances (5101-5104, 5106, 5107). The balancing journal line of every SL-RCB journal entry, posted only when that balance changes, by exactly the change; settlement posts it for money arriving (sale proceeds, deposits), which this clock recognizes only then. The running collected balance is derived on read, never posted.",
    "normalSide": "Credit",
    "keyDimensions": [
     1,
@@ -884,6 +1004,14 @@
   {
    "register": 4108,
    "of": 1107
+  },
+  {
+   "register": 5107,
+   "of": 1108
+  },
+  {
+   "register": 4109,
+   "of": 1108
   }
  ],
  "mayReverse": [
@@ -894,7 +1022,8 @@
   5201,
   1201,
   1202,
-  5106
+  5106,
+  1203
  ],
  "unitExponent": 5
 }

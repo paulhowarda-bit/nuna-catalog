@@ -1,0 +1,16 @@
+Breaks: a lot received by ACATS keeps no cost instead of the delivering firm's
+Module: demo-datagen
+Test: DemoKitTemplatesTest#lotsReceivedByAcatsKeepTheDeliveringFirmsCostAndSellLikeAnyLot
+diff --git a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+index 9f989242..3e055caf 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
++++ b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+@@ -289,7 +289,7 @@ public final class Engine {
+         Runnable apply = () -> {
+             Book b = book(ba);
+             for (Part p : out) {
+-                lots.put(p.lot(), new LotRef(ba, sec, p.amount(), p.shares()));
++                lots.put(p.lot(), new LotRef(ba, sec, BigDecimal.ZERO, p.shares()));
+                 b.lotsBySecurity.computeIfAbsent(sec, k -> new ArrayList<>()).add(p.lot());
+             }
+         };

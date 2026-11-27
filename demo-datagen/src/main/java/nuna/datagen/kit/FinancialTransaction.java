@@ -20,6 +20,12 @@ public record FinancialTransaction(int template, long brokerageAccount, Map<Inte
     /** A lot a sell or cover fill names, and the shares it takes from it. */
     public record LotShares(long lot, BigDecimal shares) {}
 
+    /**
+     * A lot an ACATS receipt brings in (template 83, field 18), as the delivering firm's cost basis report gives it: its
+     * shares, its cost and its acquisition date (epoch day).
+     */
+    public record ReceivedLot(BigDecimal shares, BigDecimal cost, long acquired) {}
+
     public FinancialTransaction {
         fields = new TreeMap<>(fields);
     }
@@ -71,6 +77,19 @@ public record FinancialTransaction(int template, long brokerageAccount, Map<Inte
                 List<Object> pair = (List<Object>) o;
                 out.add(new LotShares(((Number) pair.get(0)).longValue(), new BigDecimal(pair.get(1).toString())));
             }
+        }
+        return out;
+    }
+
+    /** Field 18 as the lots an ACATS receipt brings in; empty when absent. */
+    public List<ReceivedLot> receivedLots() {
+        Object v = fields.get(LOTS);
+        if (!(v instanceof List<?> list)) {
+            return List.of();
+        }
+        List<ReceivedLot> out = new ArrayList<>();
+        for (Object o : list) {
+            out.add((ReceivedLot) o);
         }
         return out;
     }

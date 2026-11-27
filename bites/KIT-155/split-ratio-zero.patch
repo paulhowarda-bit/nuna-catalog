@@ -1,0 +1,16 @@
+Breaks: a split of zero for one is applied, taking every share
+Module: demo-datagen
+Test: DemoKitTemplatesTest#aSplitThatWouldLeaveSharesTheUnitsCannotHoldIsRefused
+diff --git a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+index 9f989242..3a435294 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
++++ b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+@@ -304,7 +304,7 @@ public final class Engine {
+      */
+     private Outcome rescale(long id, long ba, Long sec, BigDecimal ratioNew, BigDecimal ratioOld, boolean shortSide)
+         throws Rejected {
+-        if (ratioNew.signum() <= 0 || ratioOld.signum() <= 0) {
++        if (ratioNew.signum() < 0 || ratioOld.signum() <= 0) {
+             throw new Rejected("NegativeAmount", id + ": split ratio " + ratioNew + " for " + ratioOld);
+         }
+         Map<Long, LotRef> refs = shortSide ? shortLots : lots;

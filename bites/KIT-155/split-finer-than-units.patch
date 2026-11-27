@@ -1,0 +1,16 @@
+Breaks: a split may leave a lot more decimals of a share than the units hold
+Module: demo-datagen
+Test: DemoKitTemplatesTest#aSplitThatWouldLeaveSharesTheUnitsCannotHoldIsRefused
+diff --git a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+index 9f989242..71a7515c 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
++++ b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+@@ -318,7 +318,7 @@ public final class Engine {
+             }
+             LotRef ref = refs.get(lot);
+             BigDecimal now = scaled(id, lot, free, ratioNew, ratioOld);
+-            if (now.stripTrailingZeros().scale() > kit.chart().unitExponent()) {
++            if (false) {
+                 throw new Rejected("FractionalShares", id + ": lot " + lot + " would hold " + now + " shares");
+             }
+             BigDecimal delta = now.subtract(free);

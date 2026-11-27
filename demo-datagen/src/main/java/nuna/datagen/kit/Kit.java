@@ -30,9 +30,13 @@ public final class Kit {
         }
     }
 
-    /** The closed list of calculations (schema 12); 1, 4, 7 and 8 are retired and never reused. */
+    /**
+     * The closed list of calculations (schema 12); 1, 4, 7 and 8 are retired and never reused. 11 to 13 are the demo
+     * kit's own (item 155): lots received by transfer, and lots and short lots rescaled by a split.
+     */
     public static final int IDENTIFY_LOTS_NAMED = 2, SETTLE_PENDING = 3, DIFFERENCE = 5, SUM = 6,
-        IDENTIFY_SHORT_LOTS_NAMED = 9, SETTLE_SHORT_PENDING = 10;
+        IDENTIFY_SHORT_LOTS_NAMED = 9, SETTLE_SHORT_PENDING = 10, OPEN_LOTS_RECEIVED = 11, RESCALE_LOTS = 12,
+        RESCALE_SHORT_LOTS = 13;
 
     /** Key dimensions (schema 11 LedgerDimension). */
     public static final int BROKERAGE_ACCOUNT = 1, CURRENCY = 2, SECURITY = 3, LOT = 4;
