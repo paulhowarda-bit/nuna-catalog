@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 3 S, 9 M, 7 L, 5 XL.
+**21 open:** 2 S, 8 M, 7 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -18,7 +18,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | the milestone over build items 102 to 112 (seven L, four M; see the design below) | 2026-11-14 |
-| [28](backlog/28.md) | XL | DR replication-watermark verifier (v1.x) | the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
@@ -34,8 +33,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
-| [296](backlog/296.md) | S | Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind | one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down | 2026-11-26 |
 
 ## Open items in full
 
@@ -353,238 +350,6 @@ their areas do not overlap (the stores; the Iceberg routes; the management route
 in `bites/D33/` and names its heavy and overnight tests, which the overnight run runs.
 
 **Landing order (2026-11-20, at Paul's "can you fix these"):** items 106 and 108 land together, in one merge. Item 106's create route is the only way a ref comes to exist, and until item 108 lands the worker's orphan scan and expiry read only main, so a tag's or a branch's files could be deleted in between. Item 108's worktree starts from item 106's finished branch, and the session lands item 108's branch, which holds both. Item 105 may land on its own: without item 106 no branch exists to commit to.
-
-### 28. DR replication-watermark verifier (v1.x)
-
-- Decided: 2026-11-20, D37
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: XL, the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in
-
-`build-plan.md`, v1.x milestones: a DR replication-watermark verifier. Not started.
-
-Done when the milestone's scope is settled with Paul, built, and its gate is green.
-
-**Decided 2026-11-19 (D37):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
-
-**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
-
-**What it is for:** platform operators running the DR runbook (D37; the DR routes are theirs, D18). Storage and the
-database both replicate to DR asynchronously (D37), so after losing the primary region the DR database can name files
-the DR store never got. Nothing says today how far behind DR storage is, or which tables DR could serve whole. The
-reconcile covers only a database behind its storage: when the pointer's own file is missing it stops ("storage is
-behind the database", `Reconcile.plan`), and nothing moves the table back. The research behind D37 recommended this
-verifier, the rewind being the minimum (`research_notes/Enterprise Iceberg REST catalog plan/persistence_scale_ha.md`).
-
-**In:**
-- A DR-safe watermark per table: the newest journaled version such that every file it and each earlier version
-  added is in the DR store. It lives in the catalog database (a new record, a schema step on all four stores, as
-  D38's table assessment was), because it must reach DR with the database. It is written after the version it names,
-  so a replica that keeps commit order never holds a watermark above its pointer.
-- The verifier, a job in the maintenance worker (D30), which already reads every manifest for its orphan scan and
-  holds a storage identity per store. Every `dr-verify-interval` (1 min by default) it reads a new work list,
-  `GET /management/v1/maintenance/dr-work` (each table's watermark and the journaled versions above it), and checks
-  in the DR store each version's metadata file, manifest list, new manifests, the data and delete files they add, and
-  statistics files; for a view, the metadata file. A table with no watermark is checked once, whole, by listing its
-  location. It reports with `PUT /management/v1/maintenance/tables/{id}/dr-watermark` as a maintenance principal
-  acting as itself; a version below the stored one or above the pointer is refused. As with D38's reports, only
-  refusals are audited. The DR store: each worker storage profile names a read-only replica (endpoint, region, keys),
-  bucket and paths unchanged, as on-prem site replication keeps them.
-- The readout, for platform operators by name (D18 as amended 2026-11-20, item 78):
-  `GET /management/v1/dr/watermarks`, the tables behind, each with pointer, watermark, versions behind and lag (time
-  since its oldest unverified commit); table-free worker meters (tables behind, largest lag), and an alert in
-  `deploy/grafana` past 15 minutes (S3 Replication Time Control's 99.9% bound) until PLT-4 gives the SLA.
-- The rewind, `dr-reconcile` with `"rewind": true`: a table under a DR freeze whose pointer is above its watermark
-  moves back to it in one journaled commit, published like the fast-forward. It writes the watermark's metadata again
-  as the next version, because the walk stops where a file's version is not the pointer's. The answer lists the lost
-  tail (versions, commit ids, times) for business reconciliation. The runbook runs one verifier pass in DR first, so
-  the watermark goes as far as the DR store allows; the runbook is written down in `deploy/README.md`, which has none.
-
-**Out:**
-- The forward walk on async storage: `Reconcile.plan` reads metadata files only, so it can step to a proven file
-  whose manifests or data never reached DR. Checking there needs files the journal lacks; worth an item of its own.
-- Serving DR-region readers the watermark before any failover (the research's full design).
-- Renamed buckets: S3 bucket names are global, so an AWS DR bucket has another name while every path in the metadata
-  names the primary's. Rewriting locations, or Multi-Region Access Points, waits on PLT-4 at work.
-- A console panel, and the demo, which has one store.
-
-**The gate:**
-- Fast build: `DrVerifyTest` (`catalog-maintenance`), two in-memory stores: the watermark stops before the first
-  version missing any file, never moves back, and passes a commit that adds no snapshot on its metadata file alone.
-- Heavy (PostgreSQL, two Silo stores, a replicator the test pauses): the store suite's watermark cases on all four
-  backends; the routes in `ManagementAuthorizationTest` and `MutatingRoutesAuditTest`; `DrRewindRouteTest`: frozen
-  tables only, the lost tail reported, every file of the new version present.
-- Overnight: `DrDrillTest` gains a leg with the DR store behind: region lost, DR promoted, verifier pass, freeze,
-  rewind, thaw; every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived.
-- Bites in `bites/D37/`: data files left out of the check; a lower watermark accepted; a rewind without a freeze; a
-  rewind past the watermark.
-
-**Effort,** XL as proposed, more than five days: a schema step on four stores, three routes, a worker job, the rewind
-and a drill leg; L without the rewind. It touches `Reconcile.java` and `ReconcileRoutes.java`, as items 69 and 10 do,
-so their claims overlap and they go one at a time, 69 (S) first.
-
-**Questions for Paul:**
-1. What must reach DR before a version is safe? Recommended: every file it adds, data included, so a table at its
-   watermark reads whole. Or: metadata and manifests only, data trusted to the SLA (fewer checks; a data file can
-   still be missing at failover).
-2. Build the rewind now? Recommended: yes. Or: verifier and readout now, rewind later (then L).
-3. Where does the verifier run? Recommended: in the maintenance worker. Or: in the catalog server, which reads no
-   manifests today and would need the DR store's keys.
-4. Model the DR store as the same bucket on another endpoint (on-prem site replication) and leave renamed AWS
-   buckets to PLT-4 at work? Recommended: yes.
-
-**Paul's answers on the proposed scope, 2026-11-20 (D37, amended):** all four as recommended: every file, data included, must reach DR ("Every file, data too"); the rewind is built now ("Yes, now"), so the item is XL; the verifier runs in the maintenance worker ("Maintenance worker"); the DR store is the same bucket on another endpoint, renamed AWS buckets wait on PLT-4 ("Yes"). Item 83 is folded in ("Fold into 28"): the reconcile stops at the watermark, so it never moves a table to a version whose files are not all in the DR store. The proposed scope above is settled; build it after items 69 and 10, which edit the same reconcile code.
-
-**Built, 2026-11-20 (worktree-agent-a84494e1252023a8f); open until item 92 lands, which holds what is left.** The
-scope's "In", but the worker chart and the overnight drill leg:
-- The watermark on all four stores: `recordDrWatermark` (only rises, never above the pointer, active objects only),
-  `listDrBehind`, purged with its object; PostgreSQL V9, CockroachDB V8, Oracle V10, MongoDB step 8; `DrSuite` in each
-  store suite (heavy).
-- The routes: `GET /management/v1/maintenance/dr-work` and `PUT .../maintenance/tables/{id}/dr-watermark` for the
-  maintenance principal, `GET /management/v1/dr/watermarks` for platform operators (`DrRoutes`, `DrRoutesTest`).
-- The verifier in the worker (`DrVerify`, `DrVerifier`, `DrStores`): every `nuna.maintenance.dr.verify-interval`
-  when `nuna.maintenance.dr.replicas.<profile>` names a DR store; every file a version adds, data included; a whole
-  check in one listing for a table with no watermark (`DrVerifyTest`, `DrVerifierTest`, `DrStoresTest`).
-- Meters `nuna.maintenance.dr.*`, alerts `NunaDrLagging` (past 15 minutes) and `NunaDrVerifierNotPassing`.
-- The rewind (`dr-reconcile` with `"rewind": true`) and the walk stopping at the watermark (item 83):
-  `ReconcileWatermarkTest`, `DrRewindRouteTest` (heavy).
-- Docs: `docs/observability/dr-watermark.md`, worker-metrics.md, dashboards-and-alerts.md, the DR runbook in
-  `deploy/README.md`. Bites in `bites/D37/`: data files left out, a lower watermark accepted, a rewind without a
-  freeze, a rewind past the watermark, the walk past the watermark.
-
-Left (item 92): the worker chart's values comments, the settings in `catalog-maintenance/README.md` and
-`docs/install-at-work.md` (items 87 and 88 held those files), and `DrDrillTest`'s leg with the DR store behind.
-
-Two choices made in building it, for Paul to confirm:
-1. A version that adds nothing to the newest safe version (no snapshot or statistics file it lacks) is safe on its
-   metadata file alone, even after a version that is not. Without it the version a rewind writes could never pass,
-   since it follows the versions it gave up.
-2. The walk stops at the watermark literally: a table with a watermark never walks forward (its watermark is never
-   above its pointer), so commits the DR store holds whole beyond the DR database's pointer are not recovered; a
-   table with no watermark walks as before. The rewind is for tables; views are neither walked nor rewound, as
-   before.
-
-**Paul's answers to the questions above, 2026-11-20 (D37, amended again).** Left for item 28, on top of what landed
-at d176a3b:
-1. "Walk with a file check": the reconcile walks every table forward from the DR database's pointer, watermark or
-   not, only through versions whose every added file, data included, is in the DR store, checked at recovery,
-   stopping at the first that is not. This replaces "stops at the watermark" and covers the tables with no
-   watermark, which walk unchecked today. `bites/D37/walk-past-the-watermark` is recorded again for the new check.
-2. "Accept it": the relaxed safe-version rule stays as built.
-3. "Rewind views too": `dr-reconcile`'s rewind moves each frozen view back to its watermark as it does tables,
-   with a Java-only test and a bite.
-4. "Owner decides": a table still without a watermark is reported and left alone, as built.
-Done when 1 and 3 are built with Java-only tests and bites, and the heavy and overnight tests named above pass.
-
-**Built, 2026-11-20 (worktree-agent-a34b673c32ed6d84d): answers 1 and 3; open until the heavy and overnight tests
-pass.**
-- "Walk with a file check": `Reconcile.plan` walks every table as before, then checks each step in the store the
-  server runs on (the DR store, in DR): every file it adds to the version before it, data included, must be there; it
-  keeps the steps before the first that lacks one, takes no tip, and names the missing file. The watermark plays no
-  part in the walk any more. What a version adds is counted once, by `AddedFiles` in catalog-iceberg, for the worker's
-  `DrVerify` and for the walk: catalog-iceberg is the one catalog module that may import iceberg-core (D2,
-  `IcebergImportBoundaryTest`), so the worker (an Iceberg client, D30) and catalog-core both use it, and no boundary
-  changed. `TableFiles` gains `exists` and `bytes` (one `HEAD`; a whole read), in catalog-objectstore and the server's
-  traced wrapper (spans.md lists both). Tests: `ReconcileFileCheckTest` (new, Java-only, an Iceberg client's table in
-  memory), `ReconcileWatermarkTest`'s walk cases rewritten; `MetadataFilesTest#anyFileIsFoundAndRead` (heavy).
-- "Rewind views too": `dr-reconcile`'s rewind lists and moves views as tables, under `views` (`views-checked`),
-  reading each as its kind's metadata (`Metadata.viewFacts`). Tests: `ReconcileWatermarkTest#aFrozenViewIsRewoundToItsWatermark`
-  (Java-only); `DrRewindRouteTest#aFrozenViewAboveItsWatermarkIsRewoundToIt` (heavy).
-- Bites in `bites/D37/` recorded again against the moved code with the same breaks (`data-files-left-out` now in
-  `AddedFiles`, `rewind-past-the-watermark`, `rewind-without-freeze`), `walk-past-the-watermark` recorded again for
-  the file check, and `views-not-rewound` added.
-- Docs: `docs/observability/dr-watermark.md`, the runbook in `deploy/README.md` (rewind before walking; the walk now
-  covers every table), spans.md, build-plan.md.
-
-Left: the heavy tests (`DrRewindRouteTest`, `MetadataFilesTest`, `DrSuite`, `ManagementAuthorizationTest`,
-`MutatingRoutesAuditTest`, `DrReconcileRouteTest`) and the overnight `DrDrillTest` have not run; the overnight run takes them once this is on
-`main`. `DrDrillTest` will fail its dry run until item 93 makes its appender write the manifest lists its snapshots
-name; item 92 still holds the drill's leg with the DR store behind.
-
-**Paul, 2026-11-20, on the walk's start (D37, amended again):** "Check from the watermark". The file check landed at
-9d801ee starts at the DR database's pointer, which may sit above the watermark on a version whose own files never
-reached DR. Left: the walk checks every version from the table's watermark up, those at or below the pointer
-included; if any between the watermark and the pointer is missing a file, it takes nothing for that table and
-reports it for the rewind. A table with no watermark walks from its pointer, as built. Java-only tests and a bite (the check starting at the pointer).
-
-**Built, 2026-11-20 (worktree-agent-ac1ed31ffd65b1122): "Check from the watermark"; open until the heavy and
-overnight tests pass.**
-- `Reconcile.plan` checks a table whose pointer is above its DR watermark before walking it: each version the DR
-  database's journal records above the watermark, the pointer's included, must hold every file it adds to the version
-  before it (the watermark's, for the first), its own metadata file among them, counted by `AddedFiles` as the steps
-  are. If one lacks a file, the plan takes nothing (no step, no tip) and `problem` names the file and says to rewind
-  the table to its watermark. A table at its watermark or with none walks from its pointer, as built.
-- The versions come from the journal, the records the verifier's work list and the rewind's `lost` tail read, not
-  from the metadata log or the archive: the journal is written with the pointer in one transaction, so the DR
-  database holds every version up to its pointer, while a metadata log is trimmed and a rewind's file repeats the
-  watermark's log, which skips the versions it gave up. When a version cannot be found, nothing is taken and
-  `problem` says why: a version the journal does not hold (the versions must run one by one up to the pointer), or
-  the watermark's file missing from the store, "cannot be checked"; a version's metadata file missing from the store
-  is a missing file like any other ("storage does not hold the pointer's file ..." for the pointer's).
-- Tests, Java only, in `ReconcileFileCheckTest`: a whole stretch walks on and applies; a stretch missing a file
-  (a data file a later version deletes, a manifest list, a version's metadata file, the pointer's) takes nothing and
-  is reported; a pointer at its watermark, and no watermark, walk from the pointer as before; a journal gap or a
-  missing watermark file takes nothing. Its watermark-blind case is replaced; in `ReconcileWatermarkTest` only the
-  Javadoc and one display name change.
-- Bite `bites/D37/check-from-the-pointer` (the check skipped, so it starts at the pointer again): with it applied the
-  two stretch tests failed on assertions and no other catalog-core test did. The other D37 bites apply unchanged.
-- Docs: the runbook in `deploy/README.md` (step 5: the check from the watermark; rewind before walking stays the
-  order, no longer the only guard) and `docs/observability/dr-watermark.md`.
-
-Left: the heavy tests named above and the overnight `DrDrillTest` have not run. `DrRewindRouteTest`'s forward walk now
-stops in the new check, whose message for the pointer's own file keeps the words it asserts ("storage does not hold
-the pointer's file"). Question for Paul, not decided: a table rewound in step 4 of the runbook is reported by the walk,
-with nothing taken, until the verifier passes its rewind's version, since the versions it gave up lie between its
-watermark and its pointer and lack files (nothing builds on the rewind's file, so there is nothing to take for it).
-The runbook now says to run the verifier again before walking. Or the walk could judge the versions as the verifier
-does ("Accept it": a version adding nothing beyond the newest whole one is whole), and a rewound table would walk at
-once.
-
-**Paul, 2026-11-20, after the check from the watermark landed (D37, amended again):** "Judge like the verifier":
-the walk judges the versions between the watermark and the pointer as the verifier does, so a pointer version that
-adds nothing beyond the newest whole one (the version a rewind writes) counts as whole and the table walks at once,
-with no second verifier pass; the runbook drops that pass. Left for item 28, with item 100.
-
-**Built, 2026-11-20 (worktree-agent-a5f1bf763c08126f3): "Judge like the verifier", with item 100; open until the
-heavy and overnight tests pass.**
-- `Reconcile.plan`'s check from the watermark judges the journaled versions above it as `DrVerify` does, with the
-  same `AddedFiles.firstMissing` and `addsNothing`: a version is whole when the one before it is and it adds no
-  missing file, and after one that is not, only when it adds nothing to the newest whole version. The table is walked
-  only when the pointer's version is whole that way; otherwise `problem` names the first file missing since the newest
-  whole version. So a rewound table walks at once, its watermark at the rewind's version (item 100) or still below it.
-  `planRewind` no longer refuses a pointer that holds the watermark's metadata "until the verifier passes it": after
-  item 100 that pointer is the watermark, and "the pointer is at the DR watermark" answers it.
-- Tests, Java only, in `ReconcileFileCheckTest`: `aRewoundTableWalksAtOnce` (rewound through `planRewind` and
-  `rewind`, then walked to the next version, with the watermark at the rewind's version and at the old one) and
-  `theGivenUpVersionsNeverCount` (a version built on one missing a file never counts, whether it adds files or only
-  a property). The earlier stretch tests are unchanged.
-- Bite `bites/D37/walk-counts-given-up-versions` (a version after one not whole counts as whole).
-- The runbook (`deploy/README.md`, steps 4 and 5) and `docs/observability/dr-watermark.md` drop the second verifier
-  pass. `DrDrillTest` (overnight) checks the rewinds' watermarks at once instead of waiting for a verifier pass, and
-  no longer asserts that its lost tails stay under 100 versions.
-
-Left: the heavy tests named above and the overnight `DrDrillTest` have not run. `catalog-maintenance/README.md`
-(not this branch's) still says the drill's verifier "passes the rewound versions (backlog 92)" after the rewind.
-
-**Decided 2026-11-20 (D37, amended):** both DR alerts stay severity `page`. Paul: "Both page".
-
-Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach `DrSuite`: on MongoDB, five
-of its cases failed (`MongoStoreSuiteTest$Dr`):
-
-- "a watermark is kept, rises, never moves back, and never passes the pointer" (`DrSuite.java:79`): [one above the
-  pointer] expected `Refused[WATERMARK_AHEAD]` but was `Unchanged[]`.
-- "a view keeps a watermark; a dropped table, an object with no pointer or an unknown id is Missing"
-  (`DrSuite.java:133`): expected `Missing[OBJECT]` but was `Refused[WATERMARK_AHEAD]`.
-- "the tables and views behind are listed by id ..." (`DrSuite.java:161`): one id more than expected in the list.
-- "a journal page can start after any version ..." (`DrSuite.java:200`): expected empty but held a main journal record.
-- the rewind swap's watermark (`DrSuite.java:104`): expected 103 but was 104 (item 100's case).
-
-PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this module (item 122).
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
-
-2026-11-22: `DrSuite` was fixed on `worktree-heavy-fixes` (its versions now count the one creating an object commits;
-item 100 says how) and passed on all four stores in two full heavy builds. The third, clean in every module, also passed
-`DrRewindRouteTest`, `MetadataFilesTest`, `ManagementAuthorizationTest`, `MutatingRoutesAuditTest` and
-`DrReconcileRouteTest`. Left: item 92 and the overnight `DrDrillTest`.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -1646,121 +1411,18 @@ at work with item 43: the collector's `loadbalancing` and `tail_sampling` tiers,
 values for the deployment, README.md saying which mode work runs, and a forced 5xx seen as a trace in work's Grafana
 (or the doc saying why the deployment keeps head sampling). The item stays open for that.
 
-### 278. A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left)
-
-- Added: 2026-11-25 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-store-api/src/main/java/nuna/catalog/store/PointerHold.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-core/src/test/java/nuna/catalog/core/commit/ catalog-store-api/src/test/java/nuna/catalog/store/suite/ bites/D33/
-- Effort: M, a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build
-
-Part of item 26 (D33), moved here from item 105's Left on 2026-11-25 so it is tracked.
-
-What is wrong: a transaction on a branch (`/transactions/commit` through `catalog@<branch>`) that checks a table it
-leaves unchanged, and that the branch has not yet committed to, reads the cut's version for it. `PointerHold`
-(`catalog-store-api`) holds an existing pointer, compared on location and version, and cannot say "no pointer here".
-So a first commit to that table on the branch, landing between the transaction's read and its COMMIT, goes unseen:
-the transaction commits against a table state that is no longer the branch's, which D15 forbids on main.
-
-Evidence: `backlog/105.md`, Left: "A transaction on a branch cannot hold a table it leaves unchanged and has not
-committed to yet: it reads the cut's version, and `PointerHold` cannot say "no pointer here", so a first commit to
-that table on the branch landing meanwhile goes unseen. Holding an absent pointer needs the four stores."
-
-Done when a hold can expect no pointer (on all four stores: the key locked or its absence checked inside the batch,
-so a pointer created meanwhile fails the batch as a changed one does); a transaction on a branch holds each table it
-only checks by the branch's own pointer, or by its absence when the branch has none; a fast `CommitEngine` test and a
-store suite case (heavy) where a first commit to the held table lands between the read and the COMMIT, and the
-transaction answers 409 `CommitFailedException`; a bite recorded (`git apply --check`, not run).
-
-## Built 2026-11-25 (branch worktree-agent-a200bccb56369329a)
-
-What changed:
-- `PointerHold` takes `Optional<Pointer> expected` (`catalog-store-api/.../PointerHold.java:16`); empty holds the
-  key's absence. A second constructor keeps `new PointerHold(key, pointer)` for a pointer that exists, so the
-  existing callers (Merge, the suites) are unchanged.
-- Each store takes the absent key as a create takes it, in `lockAndCompare`'s key order (after the ref, as every
-  pointer lock), then deletes the placeholder at once in the same transaction:
-  - PostgreSQL and CockroachDB, `catalog-store-sql/.../sql/Pointers.java:129` and `absent` at `:174`:
-    `INSERT … ON CONFLICT (object_id, branch) DO NOTHING`, then `DELETE`; nothing inserted is a `Conflict`.
-  - Oracle, `catalog-store-oracle/.../oracle/Pointers.java:127` and `absent` at `:157`: `INSERT`, ORA-00001 on
-    `POINTER_PK` is a `Conflict`, then `DELETE`.
-  - MongoDB, `catalog-store-mongo/.../mongo/Pointers.java:132` and `holdAbsent` at `:189`: an upsert with
-    `$setOnInsert`, then `deleteOne`; matching a document is a `Conflict`.
-- `CommitEngine.transaction` holds every table it only checks by `base.expected()`, the branch's own pointer or its
-  absence (`catalog-core/.../CommitEngine.java:986`); on main `expected` is always the pointer read, so main is
-  unchanged.
-- `docs/storage-design.md` section 3 (`PointerHold`) and section 4 step 2 say how a hold of no pointer is taken.
-- The fake stores of `BranchCommitTest`, `MergeTest` and `RefMergeRoutesTest` compare `hold.expected()` as given.
-
-Why the placeholder cannot miss a racing create, by store:
-- PostgreSQL (READ COMMITTED): a missing row cannot be locked `FOR UPDATE`, and `SELECT … FOR UPDATE` skips an
-  uncommitted insert. The placeholder goes through the unique index, as a first commit's insert does: an open insert
-  of the key makes it wait on that transaction, and a committed one makes it insert nothing (the dirty-snapshot check
-  of `ON CONFLICT` sees both, whatever the statement snapshot). The deleted placeholder keeps the key's index entry,
-  with this transaction as its inserter, until COMMIT, so a later create's `ON CONFLICT` check waits on this
-  transaction and only then finds the row dead and inserts.
-- CockroachDB (READ COMMITTED): the insert and the delete both leave write intents on the key. A create meeting the
-  intent waits for this transaction and then reads the tombstone; this insert meeting a create's intent waits, then
-  sees the row and inserts nothing. A write committed after the statement's read timestamp is caught by the
-  statement's own write-too-old retry, which reads again.
-- Oracle (READ COMMITTED): an insert under `POINTER_PK` waits for any uncommitted change to that key by another
-  transaction (insert or delete), then fails with ORA-00001 if the row is there; the delete leaves the key's index
-  entry locked by this transaction until COMMIT, so a later create waits for it.
-- MongoDB (snapshot transactions): reads take no lock, so the hold writes the key. An upsert meets an open insert of
-  the key, or one committed after this snapshot, with `WriteConflict` (storage-design, M1 MongoDB deviation 1 and M2c
-  deviation 8), and the transaction runs again from a new snapshot, where it matches the pointer. A create after the
-  hold meets the hold's write to the same unique-index key the same way and runs again after it. On a branch the
-  ref's mark already makes two commits on one branch conflict, but the hold does not lean on it.
-- It is the means two racing first commits to one key already serialize by on every store
-  (`BranchCommitTest#twoFirstCommitsRace`, and the M1 placeholder insert of findCommit).
-
-Tests:
-- Fast, run and passing: `BranchCommitTest#aTransactionHoldsWhatItOnlyChecks` (the batch holds the checked table's
-  own pointer and the absence of the one with none, and creates no pointer) and
-  `BranchCommitTest#aFirstCommitToAHeldTableLandsMeanwhile` (Bob's first commit to `fills` on the branch adds a
-  column between the transaction's read and its swap; the transaction asserts schema 0 on `fills`: the hold fails the
-  batch, the retry reads the branch's own pointer and answers 409 `CommitFailedException`, and nothing of it lands).
-  `MergeTest`, `TransactionTest` and `catalog-store-api`'s tests pass too.
-- Heavy, written and compiled, not run (the overnight heavy build runs them on all four stores):
-  `CommitSuite#heldAbsenceIsComparedNotWritten` (a hold of no pointer commits and leaves none and no journal row; a
-  create afterwards gets version 1; the same hold once a pointer is there is `Conflict` with it and writes nothing)
-  and `CommitSuite#heldAbsenceAndACreateTakeTurns` (a create held open before COMMIT keeps the hold waiting, which
-  then answers `Conflict` with the created pointer; a hold held open keeps the create waiting, which then lands).
-
-Bites recorded (`bites/D33/`, `git apply --check` only, not run): `engine-holds-no-absent-pointer` (catalog-core),
-`hold-absent-sql-select-only-postgres`, `hold-absent-sql-select-only-cockroach`, `hold-absent-sql-placeholder-left`,
-`hold-absent-sql-pointer-there-passes`, `hold-absent-oracle-select-only`, `hold-absent-mongo-find-only`.
-
-Choices made (Paul may overrule):
-- A placeholder insert and delete, not the ref locked for update when a batch holds an absent key. The ref lock would
-  serialize every commit on the branch with the transaction, and would leave a hold of no pointer on main, or on keys
-  no ref guards, unprotected; the placeholder guards exactly one key in any batch, by the means creates already use.
-- The placeholder is deleted at once, not at the end of the batch: the key stays the transaction's either way, and no
-  later statement of the batch can meet it.
-- On MongoDB the hold marks nothing for the outbox clock (9 b): it leaves no document, and the transaction's events
-  are about the tables it swaps, not the held one.
-
-Left: the overnight heavy build has to pass the two `CommitSuite` cases on all four stores, and the six store bites
-have to bite. The CockroachDB select-only bite assumes `SELECT … FOR UPDATE` on a missing key locks nothing under
-READ COMMITTED; if it reports NO BITE, record that store's bite another way. Then `./backlog.sh done 278`.
-
-### 296. Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind
-
-- Added: 2026-11-26 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/test/java/nuna/catalog/server/ConsoleBrowser.java
-- Effort: S, one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down
-
-`ConsoleBrowser.refuseBesideTheDemo()` (backlog 209, 218) stops the console's browser tests from starting while the
-nuna-demo stack runs. It counts Docker containers labelled `io.kubernetes.pod.namespace=nuna-demo`, which Docker
-Desktop's Kubernetes made. Since backlog 287 the demo runs in kind cluster `nuna` inside Podman: its pods run inside the
-kind node container, so Testcontainers' Docker client lists none of them and the check always passes.
-
-Evidence: on 2026-11-26, while working on items 231 and 232, `ConsoleBrowserTest` ran (and its bites ran) with the demo's
-pods up (`kubectl --context kind-nuna -n nuna-demo get pods` listed 10 to 13) and never refused. The runs passed, but
-the guard is there because beside the demo they have run past half an hour with their waits running out, and a wait
-that runs out in a bite is a failure the bite counts as BITES.
-
-Done when the guard refuses while the demo's pods run in kind (for example by asking `kubectl --context kind-nuna -n
-nuna-demo get pods`, or by the kind node container being up with the demo's namespace in it), still lets
-`-Pnuna.demo-beside` through, and still starts the tests when the demo is down or kind is absent (a machine at work).
+**Progress, 2026-11-26 (secret-scanning): the tail-sampling tier, built and checked in the demo's configuration.** The
+demo's collector (`demo/k8s/metrics.yaml`) now runs `tail_sampling` in its traces pipeline: every trace with status
+ERROR, every one over 300 ms (the commit SLO's bound) and 10 % of the rest, with `decision_wait` 10 s and
+`num_traces` 5,000; its image is the contrib build (`demo/demo.sh`, `OTEL_COLLECTOR_IMAGE`), as the core build has no
+`tail_sampling`, and its memory limit is 256 MiB (memory_limiter 200). Checked by running that configuration in the
+contrib collector 0.166.0 with a file exporter in place of Tempo and sending 202 single-span traces: the ERROR one and
+the 500 ms one kept, 19 of the 200 others. `otelcol validate` passed a misspelt policy type, so it proves nothing about
+the policies. README.md, "Sampling", points work at it. Not checked live: the demo's metrics switch was off and is
+left off, and forcing a 5xx on an Iceberg route in the shared demo means breaking its database; the catalog's ERROR
+marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalancing` tier in front if work runs more
+than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
+5xx seen in work's Grafana.
 
 ## Done and dropped
 
@@ -1787,6 +1449,7 @@ nuna-demo get pods`, or by the kind node container being up with the demo's name
 | [21](backlog/21.md) | A CA bundle per storage profile | done | 2026-11-20 |
 | [23](backlog/23.md) | Per-request SSE-KMS keys | done | 2026-11-20 |
 | [27](backlog/27.md) | Queryable audit tables (v1.x, D23) | done | 2026-11-20 |
+| [28](backlog/28.md) | DR replication-watermark verifier (v1.x) | done | 2026-11-26 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
 | [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |
@@ -2017,6 +1680,7 @@ nuna-demo get pods`, or by the kind node container being up with the demo's name
 | [275](backlog/275.md) | The worker's first scan after a restart can't get a token, and readiness then says storage is missing | done | 2026-11-25 |
 | [276](backlog/276.md) | Audit topic: each record's Kafka copy carries its run and number, as the log's line does | done | 2026-11-25 |
 | [277](backlog/277.md) | The console says no worker has reported when its newest scan reported no storage | done | 2026-11-25 |
+| [278](backlog/278.md) | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | done | 2026-11-26 |
 | [279](backlog/279.md) | Console: take a table out of refs, item 156's route, from the table page (item 156's Left) | done | 2026-11-25 |
 | [280](backlog/280.md) | Credential-shaped literals in tests, docs and the Job's trust store block a push to work's GitHub | done | 2026-11-25 |
 | [281](backlog/281.md) | The demo's catalog signs in to its PostgreSQL with a client certificate, and the engine matrix with it | done | 2026-11-25 |
@@ -2034,6 +1698,7 @@ nuna-demo get pods`, or by the kind node container being up with the demo's name
 | [293](backlog/293.md) | The CDC leg and CloudBeaver keep their data on volumes: cdc stop and down pause the leg, the next cdc carries on, cdc reset starts it anew | done | 2026-11-26 |
 | [294](backlog/294.md) | kind's node caps every container at 307 tasks: SingleStore's pipelines, and the JVMs, run out of threads | done | 2026-11-26 |
 | [295](backlog/295.md) | AuditTablesTest's ForbiddenException for updateTable: confirm the cause and guard the fix with a bite | done | 2026-11-26 |
+| [296](backlog/296.md) | Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind | done | 2026-11-26 |
 | [297](backlog/297.md) | Console: on a phone, a branch carried onto a page that shows main only makes the header 630 px wide (Atelier decides) | done | 2026-11-26 |
 | [298](backlog/298.md) | Change feeds stop once maintenance compacts their copy: the feed reads where to resume only from the copy's current snapshot | done | 2026-11-26 |
 | [299](backlog/299.md) | Console prototype: bring its header up to the built console (the Reading slot, items 231 and 297) | done | 2026-11-26 |

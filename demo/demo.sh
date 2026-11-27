@@ -141,7 +141,7 @@ CONNECT_AUTH=(-K "$SECRETS/connect.curlrc")
 NGINX_IMAGE=nginx:1.30.6-alpine
 # The switch metrics (metrics.yaml), and what its four pods ask, 64 + 256 + 128 + 256 MiB. Turning it on also rolls the
 # catalog, whose new pod (768 MiB) starts before the old one stops, so metrics_start checks the cluster has both free.
-OTEL_COLLECTOR_IMAGE=otel/opentelemetry-collector:0.166.0
+OTEL_COLLECTOR_IMAGE=otel/opentelemetry-collector-contrib:0.166.0
 PROMETHEUS_IMAGE=prom/prometheus:v3.16.0
 TEMPO_IMAGE=grafana/tempo:2.10.10
 GRAFANA_IMAGE=grafana/grafana:13.3.2
