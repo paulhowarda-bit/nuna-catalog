@@ -34,8 +34,11 @@ spec:
             - name: SINGLESTORE_PASSWORD
               valueFrom: {secretKeyRef: {name: singlestore-root, key: password}}
             - {name: BROKERAGE_ROUTE, value: "${BROKERAGE_ROUTE}"}
-            - {name: BROKERAGE_ACCOUNTS, value: "1000"}
-            - {name: BROKERAGE_CATCH_UP_DAYS, value: "3"}
+            # The world's scale, fixed when it begins (demo.sh: NUNA_DEMO_ACCOUNTS, NUNA_DEMO_SECURITIES,
+            # NUNA_DEMO_CATCH_UP_DAYS; item 154).
+            - {name: BROKERAGE_ACCOUNTS, value: "${BROKERAGE_ACCOUNTS}"}
+            - {name: BROKERAGE_SECURITIES, value: "${BROKERAGE_SECURITIES}"}
+            - {name: BROKERAGE_CATCH_UP_DAYS, value: "${BROKERAGE_CATCH_UP_DAYS}"}
             - {name: BROKERAGE_SEED, value: "20261122"}
             - {name: BROKERAGE_COMMIT_INTERVAL_MS, value: "15000"}
             # custody: the CDC leg's CockroachDB, as its login clearing (demo/cdc/cockroach.sql).
@@ -55,4 +58,6 @@ spec:
               valueFrom: {secretKeyRef: {name: demo-secrets, key: treasury, optional: true}}
           securityContext: {allowPrivilegeEscalation: false}
           resources:
-            limits: {memory: 384Mi}
+            # cdc replays the world, so its memory grows with the world's scale as the generator's (demo.sh
+            # world_memory; item 154).
+            limits: {memory: ${BROKERAGE_MEMORY_LIMIT}Mi}

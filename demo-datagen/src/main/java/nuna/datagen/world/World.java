@@ -78,6 +78,12 @@ public final class World {
      */
     private final Rng rng3;
     private final BackOffice office;
+    /**
+     * The streams (item 154): the market's quotes and the digital channels' sessions and click events, each drawing from
+     * a source of chance of its own, so the rest of the world draws exactly as it did before them.
+     */
+    private final Quotes quotes;
+    private final Digital digital;
     private final Market market;
     private final List<Account> accounts = new ArrayList<>();
     private final Oms oms = new Oms(this::emit);
@@ -199,6 +205,8 @@ public final class World {
                 settings.start().minusDays(30 + rng.below(3000)), rng.chance(0.15) ? "HIFO" : "FIFO"));
         }
         this.office = new BackOffice(this::emit, calendar, rng3, accounts);
+        this.quotes = new Quotes(market, new Rng(settings.seed() * 31 + 154), this::emitRaw);
+        this.digital = new Digital(accounts, market.securities(), new Rng(settings.seed() * 37 + 154), this::emitRaw);
         this.day = calendar.isBusinessDay(settings.start()) ? settings.start() : calendar.next(settings.start());
     }
 
@@ -299,6 +307,8 @@ public final class World {
         }
         planServicing();
         planBackOffice(played);
+        quotes.plan(day, this::at, this::schedule);
+        digital.plan(day, this::at, this::schedule);
         LocalTime t = LocalTime.of(9, 30);
         for (int b = 0; b < Market.BARS; b++) {
             LocalTime start = t;

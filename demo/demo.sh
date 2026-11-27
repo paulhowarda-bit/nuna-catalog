@@ -54,6 +54,12 @@
 # Every page is HTTPS, at https://<NUNA_DEMO_HOST>:<port> (default localhost), with the certificate in
 # $NUNA_DEMO_HOME/tls (publish_tls). At work, put work's certificate there and set NUNA_DEMO_HOST to its name
 # (docs/install-at-work.md).
+#
+# The brokerage world's scale (item 154): NUNA_DEMO_ACCOUNTS brokerage accounts (default 1000, from 200 to 20000),
+# NUNA_DEMO_SECURITIES securities (default 300, from 50 to 1000) and NUNA_DEMO_CATCH_UP_DAYS business days played
+# before the day it begins (default 3, from 1 to 30), read by the gen that begins a world (the first, or the first
+# after wipe), which fixes them in the lake; a later gen keeps the world's own and says so. The generator's memory
+# follows NUNA_DEMO_ACCOUNTS (world_memory), so keep it as it was when the world began.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -133,6 +139,26 @@ SPARK_IMAGE=nuna-engines/spark:4.1.4-iceberg-1.12.0
 # The brokerage world's generator (brokerage.Dockerfile), and its image's id.
 BROKERAGE_IMAGE=
 BROKERAGE_IMAGE_ID=
+# The world's scale (item 154; the header above), which the generator's bootstrap checks against its bounds.
+BROKERAGE_ACCOUNTS="${NUNA_DEMO_ACCOUNTS:-1000}"
+BROKERAGE_SECURITIES="${NUNA_DEMO_SECURITIES:-300}"
+BROKERAGE_CATCH_UP_DAYS="${NUNA_DEMO_CATCH_UP_DAYS:-3}"
+for scale in "NUNA_DEMO_ACCOUNTS=$BROKERAGE_ACCOUNTS" "NUNA_DEMO_SECURITIES=$BROKERAGE_SECURITIES" \
+    "NUNA_DEMO_CATCH_UP_DAYS=$BROKERAGE_CATCH_UP_DAYS"; do
+  [[ "${scale#*=}" =~ ^[0-9]{1,6}$ ]] || { echo "${scale%%=*} is a whole number, not ${scale#*=}" >&2; exit 2; }
+done
+# The generator's memory, and its Jobs' (brokerage.yaml, brokerage-bootstrap.yaml), in MiB: 256 of up to 384 at up to
+# 2,000 accounts, and 64 more of the limit for each 1,000 above. Measured on 2026-11-27, six days of the world held
+# 37 MB of heap at 1,000 accounts and 173 MB at 10,000 (the JVM takes 60% of the limit), and the books grow with
+# the days.
+world_memory() {
+  local extra=$(( (BROKERAGE_ACCOUNTS - 2000 + 999) / 1000 ))
+  (( extra > 0 )) || extra=0
+  case "$1" in
+    limit) echo $(( 384 + 64 * extra )) ;;
+    request) echo $(( (384 + 64 * extra) * 2 / 3 )) ;;
+  esac
+}
 # Kafka Connect's REST API (connect.yaml, ports.yaml).
 CONNECT_URL="https://$DEMO_HOST:8186"
 # Its password, user operator, which the front door asks for (backlog 283), as a curl config file.
@@ -188,6 +214,10 @@ fill() {
     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
     -e "s|\${BROKERAGE_IMAGE}|$BROKERAGE_IMAGE|g" -e "s|\${BROKERAGE_IMAGE_ID}|$BROKERAGE_IMAGE_ID|g" \
     -e "s|\${BROKERAGE_ROUTE}|$(world_route)|g" \
+    -e "s|\${BROKERAGE_ACCOUNTS}|$BROKERAGE_ACCOUNTS|g" -e "s|\${BROKERAGE_SECURITIES}|$BROKERAGE_SECURITIES|g" \
+    -e "s|\${BROKERAGE_CATCH_UP_DAYS}|$BROKERAGE_CATCH_UP_DAYS|g" \
+    -e "s|\${BROKERAGE_MEMORY_LIMIT}|$(world_memory limit)|g" \
+    -e "s|\${BROKERAGE_MEMORY_REQUEST}|$(world_memory request)|g" \
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
     -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
     -e "s|\${ORACLE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/oracle.sql" | cut -c1-12)|g" \
@@ -1050,6 +1080,55 @@ maintenance_policy() {
     "orphan-removal.enabled": "true", "compaction.enabled": "true", "manifest-rewrite.enabled": "true"}'
 }
 
+# The brokerage world's maintenance policies (D30; item 154), one a line: namespace or table, its name, and its own
+# keys, which replace the level's earlier ones; every other key it inherits from lakehouse's (maintenance_policy).
+# The streams' namespaces, whose sink commits every 15 seconds all day (quotes, bars, sessions, click events), keep
+# their snapshots short and are compacted and their manifests rewritten as soon as a partition holds 2 small files
+# or a table 10 manifests, against the catalog's 5 and 100, so the worker's nightly assessment finds them first:
+# markets keeps an hour, the least the catalog allows, and its newest snapshot alone; digital keeps 7 days
+# (docs/design/brokerage-world.md, the namespace tree). No policy reaches brokerage.compliance.aml_cases but its own,
+# which stops compaction and manifest rewrites there: its legal hold (D24) already stops expiry and orphan removal,
+# and a held table's files and snapshots are left as the hold found them. demo-datagen's MaintenancePoliciesTest holds
+# this list.
+MAINTENANCE_POLICIES='
+table brokerage.compliance.aml_cases {"compaction.enabled": "false", "manifest-rewrite.enabled": "false"}
+namespace brokerage.markets {"snapshot-expiry.max-snapshot-age": "PT1H", "snapshot-expiry.min-snapshots-to-keep": "1", "compaction.min-input-files": "2", "manifest-rewrite.min-manifests": "10"}
+namespace brokerage.digital {"snapshot-expiry.max-snapshot-age": "P7D", "snapshot-expiry.min-snapshots-to-keep": "1", "compaction.min-input-files": "2", "manifest-rewrite.min-manifests": "10"}
+'
+# Sets MAINTENANCE_POLICIES, on every gen after lake_grants: as ana, whose demo-analysts hold modify on every
+# brokerage namespace but compliance's; and as presenter, the one person who may modify in brokerage.compliance (no
+# compliance group changes data or definitions). Setting the same keys again changes nothing. Returns at its first
+# failure, so aml_cases' line goes first.
+brokerage_maintenance() {
+  local m=/management/v1/catalogs/$CATALOG kind target keys path who
+  say "the brokerage world's maintenance policies: the streams' namespaces, and aml_cases left as its hold keeps it"
+  while read -r kind target keys; do
+    [[ -n "$kind" ]] || continue
+    if [[ "$kind" == table ]]; then
+      path="namespaces/${target%.*}/tables/${target##*.}"
+    else
+      path="namespaces/$target"
+    fi
+    path=${path//./%1F}
+    who=ana
+    [[ "$target" == brokerage.compliance* ]] && who=presenter
+    api "$who" PUT "$m/${path}/maintenance-policy" "$keys" || return 1
+  done <<<"$MAINTENANCE_POLICIES"
+}
+
+# Governance of the streams (item 154), apart from brokerage_governance so a world governed before them gets it too
+# (setting a value again changes nothing): the quotes internal, as markets' other tables, and the digital channels'
+# namespace internal, owned by digital channels.
+brokerage_streams_governance() {
+  local m=/management/v1/catalogs/$CATALOG
+  api stella PUT "$m/namespaces/brokerage%1Fmarkets/tables/quotes/attributes/classification" \
+    '{"value":"internal","provenance":"demo-seed: data catalogue"}' &&
+  api stella PUT "$m/namespaces/brokerage%1Fdigital/attributes/classification" \
+    '{"value":"internal","provenance":"demo-seed: data catalogue"}' &&
+  api stella PUT "$m/namespaces/brokerage%1Fdigital/attributes/owner" \
+    '{"value":"digital-channels","provenance":"demo-seed: HR feed"}'
+}
+
 # Waits for a Job to end: prints its output, deletes it, fails if it failed.
 finish_job() {
   local job=$1 what=$2 succeeded= failed=
@@ -1482,7 +1561,11 @@ gen_start() {
     "finance) are not all governed: gen carries on; the next gen tries again"
   brokerage_backoffice_governance || say "brokerage.party, money_movement and compliance are not all governed: the" \
     "world's sink stops at a table the catalog closes until it is; the next gen tries again"
+  brokerage_streams_governance || say "brokerage.markets.quotes and brokerage.digital are not governed: gen carries" \
+    "on; the next gen tries again"
   lake_grants
+  brokerage_maintenance || say "the brokerage world's maintenance policies are not all set (see above): the streams" \
+    "keep lakehouse's policy until the next gen"
   if is_on ss; then
     world_tables
   fi

@@ -254,6 +254,16 @@ public final class LakeSchemas {
                 .add("party_id", LONG).add("channel", TEXT).add("category", TEXT).add("product", TEXT)
                 .add("status", TEXT).add("received_on", DATE).add("closed_on", DATE).add("disposition", TEXT)
                 .add("business_date", DATE).add("event_time", TIME);
+            case QUOTES -> c.add("quote_id", LONG).add("security_id", LONG).add("symbol", TEXT)
+                .add("business_date", DATE).add("quoted_at", TIME).add("bid_price", BAR_PRICE).add("bid_size", LONG)
+                .add("bid_venue", TEXT).add("ask_price", BAR_PRICE).add("ask_size", LONG).add("ask_venue", TEXT);
+            case SESSIONS -> c.add("session_id", LONG).add("brokerage_account", LONG).add("logged_in", FLAG)
+                .add("channel", TEXT).add("device_os", TEXT).add("client", TEXT).add("started_at", TIME)
+                .add("ended_at", TIME).add("ended_by", TEXT).add("page_views", INT).add("events", INT)
+                .add("business_date", DATE);
+            case CLICK_EVENTS -> c.add("event_id", LONG).add("session_id", LONG).add("brokerage_account", LONG)
+                .add("event_type", TEXT).add("page", TEXT).add("element", TEXT).add("security_id", LONG)
+                .add("symbol", TEXT).add("business_date", DATE).add("event_time", TIME);
         }
         return new Schema(c.fields);
     }
@@ -298,7 +308,8 @@ public final class LakeSchemas {
     /** The table's partitioning: the daily tables by business or trade date, small ones by month, reference data not. */
     public static PartitionSpec spec(Feed feed, Schema schema) {
         return switch (feed) {
-            case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD, STOCK_RECORD, TAX_LOTS ->
+            case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD, STOCK_RECORD, TAX_LOTS, QUOTES, SESSIONS,
+                 CLICK_EVENTS ->
                 PartitionSpec.builderFor(schema).day("business_date").build();
             case ORDER_EVENTS, ROUTES, EXECUTIONS -> PartitionSpec.builderFor(schema).day("trade_date").build();
             case PRICES_EOD, LOCATES, PAYMENTS, SANCTIONS_SCREENS, ENTITLEMENTS, INCOME_PAYMENTS,

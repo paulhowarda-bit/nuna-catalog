@@ -11,9 +11,10 @@ import nuna.datagen.live.Sources;
 /**
  * A world played for the tests of its order management system, clearing and reconciliation views: two weeks of 400
  * accounts, with its seeded fail to deliver or without, each played once per test run. The seed is one whose two weeks
- * hold ACATS transfers in and out and a split, which move positions besides fills. Bars are not kept, nor journal
- * lines other than Realized Gain/Loss's (tie 8 reads those); the source databases' books ({@link Sources.Book}: the
- * back office, the bank's payments and the General Ledger, which ties 5 and 6 read) are.
+ * hold ACATS transfers in and out and a split, which move positions besides fills. The streams (bars, quotes, sessions
+ * and click events) are not kept, nor journal lines other than Realized Gain/Loss's (tie 8 reads those); the source
+ * databases' books ({@link Sources.Book}: the back office, the bank's payments and the General Ledger, which ties 5
+ * and 6 read) are.
  */
 public final class Played implements Sink {
 
@@ -97,8 +98,8 @@ public final class Played implements Sink {
     @Override
     public void accept(Event e) {
         book.accept(e);
-        // Of the journal lines, only Realized Gain/Loss (1202): tie 8 reads them.
-        if (e.feed() != Feed.BARS_5M && (e.feed() != Feed.JOURNAL_LINES
+        // Of the journal lines, only Realized Gain/Loss (1202): tie 8 reads them. No stream: no tie reads one.
+        if (!e.feed().streaming() && (e.feed() != Feed.JOURNAL_LINES
             || Integer.valueOf(1202).equals(e.row().get("definition_id")))) {
             rows.computeIfAbsent(e.feed(), k -> new ArrayList<>()).add(e.row());
         }
