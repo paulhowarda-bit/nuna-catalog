@@ -38,6 +38,13 @@ class WorldTest {
 
         @Override
         public void accept(Event e) {
+            // Every event has its time, which the live pacer waits for; an announcement made while the day is planned
+            // had none on the first day, or the day before's (item 318).
+            assertThat(e.at()).as(e.feed() + " " + e.row()).isNotNull();
+            if (e.feed() == Feed.CORPORATE_ACTIONS) {
+                assertThat(e.at().atZone(java.time.ZoneId.of("America/New_York")).toLocalDate())
+                    .as("announced on its business date: " + e.row()).isEqualTo(e.row().get("business_date"));
+            }
             counts.merge(e.feed(), 1, Integer::sum);
             digest.update((e.at() + " " + e.feed() + " " + e.row() + "\n").getBytes(StandardCharsets.UTF_8));
             if (e.feed() == Feed.POSTING_REJECTIONS) {

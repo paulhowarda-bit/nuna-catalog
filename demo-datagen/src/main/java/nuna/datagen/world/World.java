@@ -287,6 +287,9 @@ public final class World {
     public LocalDate runDay(Sink sink) {
         this.sink = sink;
         LocalDate d = day;
+        // What the day's planning emits (the splits and dividends announced) goes out at 07:00, before the first task:
+        // before this, current was null on the first day and the pacer threw, or yesterday's last time (item 318).
+        current = at(LocalTime.of(7, 0));
         if (!started) {
             started = true;
             reference();
