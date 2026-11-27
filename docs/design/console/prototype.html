@@ -163,7 +163,7 @@ a { color: var(--accent); text-underline-offset: 3px; }
 /* ===================================================================================== console shell (direction A) */
 .nc-app { display: grid; grid-template-columns: 212px minmax(0, 1fr); grid-template-rows: 52px minmax(0, 1fr); min-height: 640px; background: var(--bg); }
 .nc-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
-.nc-brand { display: flex; align-items: center; gap: 8px; font: 600 17px/1 var(--f-ui); letter-spacing: -0.02em; min-width: 180px; }
+.nc-brand { display: flex; align-items: center; gap: 8px; font: 600 17px/1 var(--f-ui); letter-spacing: -0.02em; }
 .nc-brand .peak { width: 24px; height: 18px; }
 .peak .rock { fill: none; stroke: var(--text); stroke-width: 1.8; stroke-linejoin: round; }
 .peak .ice { stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; filter: var(--glow); }
@@ -471,7 +471,7 @@ a { color: var(--accent); text-underline-offset: 3px; }
   .nc-nav { display: none; }
   .nc-top { gap: 10px; padding: 0 12px; }
   .nc-brand { min-width: 0; }
-  .nc-go, .nc-who .who-text, .nc-top .seg, .nc-top .signout, .nc-pick .lbl { display: none; }
+  .nc-go, .nc-who .who-text, .nc-top .seg, .nc-top .signout { display: none; }
   .nc-menu { display: inline-flex; }
   .nc-main { padding: 16px 14px 24px; gap: 14px; }
   .ph { grid-template-columns: minmax(0, 1fr); }
@@ -610,7 +610,6 @@ pre.raw { overflow: visible; }
 .ph.hero .side { grid-column: 1; grid-row: auto; justify-content: flex-start; }
 /* v11: the console between a phone and a wide screen */
 @container frame (min-width: 761px) and (max-width: 1240px) {
-  .nc-who .who-text { display: none; }
   .feed-row { grid-template-columns: 118px minmax(0, 1fr) auto; }
   .feed-row > .t { grid-column: 1; grid-row: 1; }
   .feed-row > .w { grid-column: 1; grid-row: 2; }
@@ -647,7 +646,6 @@ code, kbd, .mono { font-size: max(12px, 0.93em); }
   .kpis:has(.kpi-list) .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
 }
 @container frame (min-width: 761px) and (max-width: 1100px) {
-  .nc-go > span { display: none; }
   .tbl.contents th:last-child, .tbl.contents td:last-child { display: none; }
 }
 /* an edge that fades says there is more to scroll to */
@@ -1162,6 +1160,74 @@ td.acts { width: 1%; white-space: nowrap; }
   .refs-explain { grid-template-columns: minmax(0, 1fr); }
   .kpi-v.sm { font-size: var(--t-14); }
 }
+/* ===================================================================================== v17: the header as the console builds it */
+/* The Reading control in the header, beside the catalog picker (backlog 201). */
+.reading-slot { display: flex; align-items: center; }
+.reading-slot:empty { display: none; }
+.reading-slot .main-only { font: 500 var(--t-12)/1.3 var(--f-ui); color: var(--text-2); margin-left: 8px; white-space: nowrap; }
+@container frame (max-width: 760px) { .nc-top .ref-pick .lbl { display: none; } }
+
+/* The header between a phone and a wide screen (backlog 231). Every control keeps its place; what gives way as the
+   window narrows, first to last: the prototype's own tag, the brand's room, the session's end, the who-text, Go to a
+   path's words, the Catalog and Reading labels, then Sign out's words and the / hint. The theme switch shows its icons
+   at every width. Hidden words stay in each control's accessible name; a long name ends in an ellipsis. */
+.seg .ic-auto { display: none; }
+@container frame (min-width: 761px) {
+  .nc-brand { flex: 0 1 180px; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm, .nc-who .who-text b { display: inline-block; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .reading-slot { flex: none; }
+  .reading-slot .main-only { max-width: 8.5em; white-space: normal; line-height: 1.25; }
+  .nc-top .seg .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nc-top .seg .ic-auto { display: inline; }
+  .nc-top .seg button { padding: 0 7px; }
+}
+@container frame (min-width: 761px) and (max-width: 1400px) { .nc-who .who-until { display: none; } }
+@container frame (min-width: 761px) and (max-width: 1320px) { .nc-who .who-text { display: none; } }
+@container frame (min-width: 761px) and (max-width: 1240px) {
+  .nc-go > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@container frame (min-width: 761px) and (max-width: 1100px) {
+  .nc-top { gap: 10px; }
+  .nc-top .nc-pick .lbl, .nc-top .ref-pick .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 10ch; }
+}
+@container frame (min-width: 761px) and (max-width: 900px) {
+  .nc-top { gap: 8px; }
+  .nc-go kbd { display: none; }
+  .nc-top .signout .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 8ch; }
+}
+
+/* The header on a phone (backlog 297): the brand shows whole from 521 px and not at all below; the catalog and ref
+   names share the room and end in an ellipsis; the note that a page shows main only hangs under the header as a
+   strip, and the page moves down to clear it. */
+@container frame (max-width: 760px) {
+  .nc-top { gap: 8px; }
+  .nc-brand { flex: none; }
+  .nc-top .nc-pick .lbl { display: inline; position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .pick-wrap, .reading-slot, .reading-slot .ref-wrap, .nc-top .ref-pick .cref { min-width: 0; }
+  .nc-pick, .nc-top .ref-pick { max-width: 100%; padding: 0 8px; gap: 4px; }
+  .nc-top .ref-pick .cref .at { display: none; }
+  .nc-pick b, .nc-top .ref-pick .cref .nm { min-width: 0; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* main is four letters and never ends in an ellipsis: the catalog's name gives way instead */
+  .nc-top .reading-slot:has(> .ref-wrap > .ref-pick .cref.m) { flex: none; }
+  .nc-top .ref-pick .cref.m .nm { min-width: max-content; }
+  /* the chip sits mid-header, so its menu hangs from the header, inside the window, not from the chip */
+  .nc-top .reading-slot .ref-wrap { position: static; }
+  .nc-top .reading-slot .ref-menu { left: 12px; right: auto; width: min(380px, calc(100% - 24px)); min-width: 0; }
+  .reading-slot .main-only { position: absolute; top: calc(100% + 1px); left: 0; right: 0; height: 28px; display: flex; align-items: center; margin: 0; padding: 0 14px; background: var(--surface-2); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nc-app:has(.reading-slot .main-only) .slot > .nc-main { padding-top: 44px; }
+}
+@container frame (max-width: 520px) { .nc-brand { display: none; } }
+
+/* The prototype's own mark, which the console lacks. It takes no room the console's header needs: the spacer is a size
+   container (so it asks for no width of its own), and the tag shows only while the room left over holds it, and never
+   on a phone. Every page's foot says the same at every width. */
+.nc-spacer { container: spacer / inline-size; min-width: 0; display: flex; justify-content: flex-end; overflow: hidden; }
+.nc-spacer .proto-tag { display: none; }
+@container spacer (min-width: 140px) { .nc-spacer .proto-tag { display: inline-block; } }
+@container frame (max-width: 760px) { .nc-top .nc-spacer .proto-tag { display: none; } }
+@container frame (min-width: 761px) { .proto-foot { padding: 0 28px 24px; } }
 </style>
 </head>
 <body>
@@ -1199,27 +1265,28 @@ td.acts { width: 1%; white-space: nowrap; }
   <symbol id="i-key" viewBox="0 0 16 16"><circle cx="5" cy="8" r="3"/><path d="M8 8h6.5M12.5 8v2.5"/></symbol>
   <symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1.5V3M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></symbol>
   <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13 9.5A5.5 5.5 0 1 1 6.5 3a4.5 4.5 0 0 0 6.5 6.5z"/></symbol>
+  <symbol id="i-auto" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></symbol>
 </svg>
 <a class="skip" href="#slot">Skip to the page</a>
 <div class="app" id="app">
   <div class="nc-app" id="console" hidden>
     <header class="nc-top" id="top">
-      <button class="btn ghost sm nc-menu" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="nav" data-act="menu"><svg class="ic"><use href="#i-menu"/></svg></button>
+      <button class="btn ghost sm nc-menu" type="button" aria-label="Open the menu" aria-expanded="false" aria-controls="nav" data-act="menu"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></button>
       <a class="nc-brand" data-p="overview" aria-label="nuna, overview"><svg class="peak" viewBox="0 0 24 18" aria-hidden="true"><path class="rock" d="M3 14 9.5 4l3.2 4.8 2.3-2.8L21 14"/><path class="ice" d="M1 14h22"/></svg>nuna</a>
       <div class="pick-wrap">
-        <button class="nc-pick" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="cat-menu" data-act="pick"><span class="lbl">Catalog</span><b data-cat>lakehouse</b><svg class="ic"><use href="#i-chev"/></svg></button>
+        <button class="nc-pick" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="cat-menu" data-act="pick"><span class="lbl">Catalog</span><b data-cat>lakehouse</b><svg class="ic" aria-hidden="true"><use href="#i-chev"/></svg></button>
         <div class="menu" id="cat-menu" role="menu" aria-label="Catalogs" hidden>
           <button type="button" role="menuitemradio" aria-checked="true" data-cat-pick="lakehouse"><b>lakehouse</b><span>1,284 tables · 12 queued</span></button>
           <button type="button" role="menuitemradio" aria-checked="false" data-cat-pick="engines"><b>engines</b><span>64 tables · nothing queued</span></button>
         </div>
       </div>
-      <button class="nc-go" type="button" data-act="goto"><svg class="ic"><use href="#i-search"/></svg><span>Go to a path</span><kbd>/</kbd></button>
-      <span class="nc-spacer"></span>
-      <button class="btn ghost sm nc-go-sm" type="button" aria-label="Go to a path" data-act="goto"><svg class="ic"><use href="#i-search"/></svg></button>
-      <span class="proto-tag">Illustrative data</span>
-      <span class="nc-who"><span class="avatar" data-initials>P</span><span class="who-text"><b data-name>presenter</b> · <span data-groups>4 groups</span> · until <span data-until>18:42</span></span></span>
-      <span class="seg" role="group" aria-label="Theme"><button type="button" aria-pressed="false" data-theme-pick="light"><svg class="ic"><use href="#i-sun"/></svg>Light</button><button type="button" aria-pressed="false" data-theme-pick="dark"><svg class="ic"><use href="#i-moon"/></svg>Dark</button><button type="button" aria-pressed="true" data-theme-pick="auto">Auto</button></span>
-      <button class="btn ghost sm signout" type="button" data-act="signout"><svg class="ic"><use href="#i-ext"/></svg>Sign out</button>
+      <div class="reading-slot" id="reading-slot"></div>
+      <button class="nc-go" type="button" data-act="goto" aria-keyshortcuts="/"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span>Go to a path</span><kbd aria-hidden="true">/</kbd></button>
+      <span class="nc-spacer"><span class="proto-tag" title="Names from the nuna demo; counts, sizes and times invented">Illustrative data</span></span>
+      <button class="btn ghost sm nc-go-sm" type="button" aria-label="Go to a path" data-act="goto"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg></button>
+      <span class="nc-who" id="who"><span class="avatar" data-initials>P</span><span class="who-text"><b data-name>presenter</b> · <span data-groups>4 groups</span><span class="who-until"> · until <span data-until>18:42</span></span></span></span>
+      <span class="seg" role="group" aria-label="Theme"><button type="button" aria-pressed="false" data-theme-pick="light" title="Light"><svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg><span class="tw">Light</span></button><button type="button" aria-pressed="false" data-theme-pick="dark" title="Dark"><svg class="ic" aria-hidden="true"><use href="#i-moon"/></svg><span class="tw">Dark</span></button><button type="button" aria-pressed="true" data-theme-pick="auto" title="Auto: matches your system setting"><svg class="ic ic-auto" aria-hidden="true"><use href="#i-auto"/></svg><span class="tw">Auto</span></button></span>
+      <button class="btn ghost sm signout" type="button" data-act="signout"><svg class="ic" aria-hidden="true"><use href="#i-ext"/></svg><span class="tw">Sign out</span></button>
     </header>
     <nav class="nc-nav" id="nav" aria-label="Console">
       <div class="nav-in">
@@ -3262,15 +3329,22 @@ async function copyText(text, btn) {
 const consoleEl = $('#console'), slot = $('#slot'), navEl = $('#nav'), signinEl = $('#signin');
 let railPick = null; // the caller's own choice of a full or rail menu on a wide screen, kept for the session
 const narrow = () => consoleEl.clientWidth <= 760;
-function setChrome(navKey, rail, c) {
+function setChrome(navKey, rail, c, ref) {
   consoleEl.classList.toggle('rail', railPick ?? !!rail);
   syncMenuBtn();
-  for (const b of $$('[data-cat]')) b.replaceChildren(c, ...(RN ? [h('span', { class: 'pick-ref' }, '@' + RN.name)] : []));
+  // the catalog chip names the catalog; the Reading control beside it names the ref read (item 201)
+  for (const b of $$('[data-cat]')) b.replaceChildren(c);
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === c));
   for (const n of $$('[data-name]')) n.textContent = user.id;
   for (const n of $$('[data-groups]')) n.textContent = user.groups;
   for (const n of $$('[data-initials]')) n.textContent = user.initials;
-  const hrefs = { overview: pageHref('overview', c), catalog: href({ c }), maintenance: pageHref('maintenance', c), governance: pageHref('governance', c), audit: pageHref('audit', c), health: pageHref('health') };
+  // the avatar carries the who-text's facts, since that text gives way from 761 to 1,320 px (item 231)
+  const signedIn = `Signed in as ${user.id}, ${user.groups}, until 18:42`, av = $('#who .avatar');
+  $('#who').title = signedIn + '. The catalog checks what you may do on every request.';
+  av.setAttribute('role', 'img'); av.setAttribute('aria-label', signedIn);
+  // the ref read goes along to the pages that show main only, which say so beside it
+  const hrefs = { overview: href({ page: 'overview', c, r: ref }), catalog: href({ c, r: ref }), maintenance: href({ page: 'maintenance', c, r: ref }),
+    governance: href({ page: 'governance', c, r: ref }), audit: href({ page: 'audit', c, r: ref }), health: pageHref('health') };
   for (const a of $$('a[data-k]', navEl)) {
     const k = a.dataset.k;
     a.href = hrefs[k];
@@ -3460,7 +3534,7 @@ function tableHead(t, ref, tab) {
   ph.append(title);
   const where = { c: t.cat, k: t.kind === 'view' ? 'view' : 'table', ns: t.ns, n: t.name, tab };
   if (!ref && t.kind === 'table') {
-    ph.append(h('div', { class: 'side tbl-acts' }, refPick(where),
+    ph.append(h('div', { class: 'side tbl-acts' },
       h('button', { class: 'btn sm', type: 'button', 'data-copy': 'link' }, icon('link'), 'Copy link'),
       h('button', { class: 'btn sm', type: 'button', 'data-act': 'export-meta', 'data-path': t.path }, icon('down'), 'Export metadata'),
       RN ? null : h('button', { class: 'btn sm', type: 'button', 'data-act': 'compact', 'data-path': t.path }, icon('play'), 'Compact now')));
@@ -3468,7 +3542,6 @@ function tableHead(t, ref, tab) {
   }
   const list = t.kind === 'view' ? [['', 'Overview'], ['versions', 'Versions', t.versions], ['grants', 'Grants'], ['audit', 'Audit']]
     : TABLE_TABS(t).filter(([k]) => !ref || ref.open.includes(k));
-  if (!ref && t.kind === 'view') ph.append(h('div', { class: 'side' }, refPick(where)));
   if (t.base && t.base.gone) ph.append(h('div', { class: 'notice ref-note' }, icon('info'), h('span', null, h('b', null, `${t.base.gone.by} dropped ${t.path} on main on ${refAt(t.base.gone.at)}.`), ` @${t.ref.name} was made before then, so it still reads the table as it was; main answers 404 for it.`)));
   return [ph, RN && !ref ? refBand(RN, where) : '', tabsNav(t.kind === 'view' ? 'View' : 'Table', list, tab, (k) => tableHref(t, k || null))];
 }
@@ -3853,7 +3926,7 @@ function pageNamespace(dotted, tab) {
   ph.append(h('p', { class: 'sub' }, dotted
     ? [`${count(tables, 'table')} · ${views ? count(views, 'view') : 'no views'} · ${nss.length ? count(nss.length, 'child namespace') : 'no child namespaces'} · owner `, h('b', null, c === 'engines' ? 'engine-platform' : OWNERS[top]), parts.length > 1 ? [', set on ', h('code', null, top)] : ', set here']
     : [`${count(ROOTS[c].length, 'namespace')} · `, h('b', null, `${fmt(all.length)} tables`), ' · ', user.reads ? [queued ? `${queued} queued for tonight` : 'nothing queued for tonight', ' · ', held ? `${held} held` : 'nothing held', frozen.length ? ` · ${frozen.join(', ')} frozen for DR` : ''] : 'tables you may describe']));
-  ph.append(h('div', { class: 'side' }, tab === 'refs' ? null : refPick({ c, k: dotted ? 'namespace' : null, ns: parts, tab }), h('button', { class: 'btn sm', type: 'button', 'data-copy': 'text', 'data-text': dotted || c }, icon('copy'), 'Copy path'),
+  ph.append(h('div', { class: 'side' }, h('button', { class: 'btn sm', type: 'button', 'data-copy': 'text', 'data-text': dotted || c }, icon('copy'), 'Copy path'),
     h('button', { class: 'btn sm', type: 'button', 'data-copy': 'link' }, icon('link'), 'Copy link')));
   // the catalog's own Governance, Grants and Audit are its pages; a namespace draws its own
   const rootPage = { governance: pageHref('governance', c), grants: pageHref('governance', c, 'grants'), audit: pageHref('audit', c) };
@@ -4363,10 +4436,15 @@ function render() {
   else if (page === 'health') { navKey = 'health'; title = 'Health'; content = !user.reads ? notOffered('Health') : pageHealth(); }
   else if (r.c && !page) { navKey = 'catalog'; rail = true; content = pageBrowse(r); title = r.k === 'ref' ? '@' + r.n : r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat); }
   else { navKey = null; title = 'Not found'; content = notFound(); }
-  setChrome(navKey, rail, cat);
+  // a page that is not a catalog's browse page shows main only, and keeps the ref the caller was reading (item 201)
+  const carried = page && page !== 'health' && r.r ? r.r : null, carriedRef = carried ? findRef(cat, carried) : null;
+  setChrome(navKey, rail, cat, RN ? RN.name : carried);
+  if (page === 'health' || navKey == null) showReading(null);
+  else if (!page && r.k !== 'ref' && r.tab !== 'refs') showReading({ c: cat, k: r.k, ns: r.ns, n: r.n, tab: r.tab }, RN, r.r && !RN ? r.r : null, false);
+  else showReading({ c: cat }, carriedRef, carried && !carriedRef ? carried : null, !!carried);
   const keepTree = rail && content.classList.contains('browse');
   if (!keepTree || !slot.contains(content)) slot.replaceChildren(content);
-  slot.append(h('p', { class: 'proto-foot only-sm' }, 'Illustrative data: names from the nuna demo; counts, sizes and times invented.'));
+  slot.append(h('p', { class: 'proto-foot' }, 'Illustrative data: names from the nuna demo; counts, sizes and times invented.'));
   for (const old of $$(':scope > .proto-foot', slot).slice(0, -1)) old.remove();
   enhance(keepTree ? $(':scope > .nc-main', content) : content);
   doc.title = `${title} · ${cat}${RN ? '@' + RN.name : ''} · nuna`;
@@ -5337,7 +5415,7 @@ function grantsTab(main, g, c) {
 function cref(r, o = {}) {
   const name = typeof r === 'string' ? r : r.name, kind = typeof r === 'string' ? (r === 'main' ? 'main' : 'branch') : r.kind;
   return h('span', { class: 'cref ' + (kind === 'tag' ? 't' : kind === 'main' ? 'm' : 'b') + (o.big ? ' big' : '') + (o.warn ? ' warn' : '') },
-    icon(kind === 'tag' ? 'tag' : kind === 'main' ? 'catalog' : 'branch'), kind === 'main' ? null : h('span', { class: 'at' }, '@'), name);
+    icon(kind === 'tag' ? 'tag' : kind === 'main' ? 'catalog' : 'branch'), kind === 'main' ? null : h('span', { class: 'at' }, '@'), h('span', { class: 'nm' }, name));
 }
 const refHref = (c, name, tab) => href({ c, k: 'ref', n: name, tab, r: null });
 const refsHref = (c) => href({ c, tab: 'refs', r: null });
@@ -5351,14 +5429,16 @@ function refFacts(r) {
   return made;
 }
 
-/* ------------------------------------------------------------------ the ref selector, on the catalog, namespace and table pages */
-function refPick(where) {
-  const c = where.c, cur = RN;
+/* ------------------------------------------------------------------ the Reading control, in the header beside the catalog picker (item 201) */
+// "Reading main" and its menu of the catalog's refs, each a link to `where` through it. A link naming a ref that is not
+// live reads it struck through, with none current.
+function refPick(where, cur, dead) {
+  const c = where.c;
   const btn = h('button', { class: 'ref-pick' + (cur ? ' on ' + (cur.kind === 'tag' ? 't' : 'b') : ''), type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-    'aria-label': `Reading ${cur ? kindWord(cur) + ' ' + cur.name : 'main'}. Choose a branch or tag` },
-  h('span', { class: 'lbl' }, 'Reading'), cur ? cref(cur) : cref('main'), icon('chev'));
+    'aria-label': dead ? `Reading ${dead}, which is not live. Choose a branch or tag` : `Reading ${cur ? kindWord(cur) + ' ' + cur.name : 'main'}. Choose a branch or tag` },
+  h('span', { class: 'lbl' }, 'Reading'), dead ? h('span', { class: 'cref gone' }, icon('branch'), h('span', { class: 'at' }, '@'), h('span', { class: 'nm' }, dead)) : cur ? cref(cur) : cref('main'), icon('chev'));
   const item = (r) => {
-    const name = r ? r.name : null, on = (cur ? cur.name : null) === name;
+    const name = r ? r.name : null, on = !dead && (cur ? cur.name : null) === name;
     const sub = !r ? 'the catalog as it is now' : r.kind === 'tag' ? `tag · ${refAt(r.at)} · read-only` : `branch · ${plural(seenPaths(r).length, 'table')} changed · ${expiring(r) ? 'expires ' + untilWords(r.expires) : 'expires ' + fullDate(r.expires)}`;
     return h('a', { role: 'menuitemradio', 'aria-checked': String(on), href: href(Object.assign({}, where, { r: name })), class: r && expiring(r) ? 'is-warn' : null },
       h('b', null, r ? cref(r) : cref('main')), h('span', null, sub));
@@ -5377,8 +5457,24 @@ function refPick(where) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
     if (e.key === 'Escape') { e.stopPropagation(); set(false); btn.focus(); }
   });
-  doc.addEventListener('click', (e) => { if (!wrap.contains(e.target)) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); } });
+  // one listener per control drawn, dropped once that control has left the page: the header's is drawn on every page
+  const away = (e) => {
+    if (!wrap.isConnected) { doc.removeEventListener('click', away); return; }
+    if (!wrap.contains(e.target)) set(false);
+  };
+  doc.addEventListener('click', away);
   return wrap;
+}
+// The header's Reading slot: a page read through a ref links each ref to itself; any other page with a catalog links
+// each ref to the catalog through it. A page that shows main only keeps the ref the caller was reading and says so
+// beside it; the note cannot take focus, so the chip carries it (items 201 and 297).
+function showReading(where, cur, dead, mainOnly) {
+  const slotEl = $('#reading-slot');
+  if (!where) { slotEl.replaceChildren(); return; }
+  const pick = refPick(where, cur, dead);
+  const note = mainOnly ? h('span', { class: 'main-only', id: 'main-only' }, 'This page shows main only') : null;
+  if (note) $('.ref-pick', pick).setAttribute('aria-describedby', 'main-only');
+  slotEl.replaceChildren(pick, ...(note ? [note] : []));
 }
 
 /* ------------------------------------------------------------------ the band every page read through a ref carries */
