@@ -12,8 +12,10 @@ dependencies {
     implementation("org.apache.iceberg:iceberg-core")
     implementation("org.apache.kafka:kafka-clients")
     implementation("org.mariadb.jdbc:mariadb-java-client")
-    // The CDC leg's CockroachDB custody, which speaks PostgreSQL's protocol (Main custody).
+    // The CDC leg's CockroachDB custody, which speaks PostgreSQL's protocol, and its PostgreSQL backoffice (Main cdc).
     implementation("org.postgresql:postgresql")
+    // The CDC leg's Oracle treasury (Main cdc, item 152).
+    implementation("com.oracle.database.jdbc:ojdbc17")
     runtimeOnly("org.slf4j:slf4j-simple")
 
     testImplementation("org.junit.jupiter:junit-jupiter")

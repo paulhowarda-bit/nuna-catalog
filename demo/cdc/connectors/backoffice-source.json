@@ -10,7 +10,7 @@
   "plugin.name": "pgoutput",
   "slot.name": "nuna_demo",
   "publication.autocreate.mode": "filtered",
-  "table.include.list": "settlement.instructions",
+  "table.include.list": "party.parties,party.accounts,party.account_roles,party.cip_checks,party.suitability_profiles,party.beneficial_owners,party.trusted_contacts,money_movement.payments,money_movement.ach_returns,money_movement.acats_transfers,compliance.aml_alerts,compliance.aml_cases,compliance.complaints",
   "tombstones.on.delete": "false",
   "time.precision.mode": "connect"
 }

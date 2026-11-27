@@ -75,6 +75,17 @@ class IcebergLakeTest {
         assertThat(((SQLViewRepresentation) view.sqlFor("trino")).sql())
             .isEqualTo("SELECT business_date, brokerage_account, CAST(balance AS decimal(18, 2)) AS buying_power"
                 + " FROM lakehouse.\"brokerage.ledger\".balances_eod WHERE definition_id = 4201");
+        // The back office's current-state views, each in its feed's namespace (item 152).
+        for (Feed f : LakeSchemas.VERSIONED) {
+            View current = catalog.loadView(TableIdentifier.of(Namespace.of(f.namespace.split("\\.")),
+                f.table + "_current"));
+            assertThat(((SQLViewRepresentation) current.sqlFor("trino")).sql()).as(f.name())
+                .contains("FROM lakehouse.\"" + f.namespace + "\"." + f.table)
+                .contains("MAX(\"version\") AS latest");
+            assertThat(current.properties().get("comment")).as(f.name()).contains("latest version");
+        }
+        assertThat(catalog.listNamespaces(Namespace.of("brokerage"))).contains(Namespace.of("brokerage", "money_movement"),
+            Namespace.of("brokerage", "compliance"));
         assertThat(lake.settings()).isEqualTo(SETTINGS);
         assertThat(lake.pacedFrom()).isEqualTo(LocalDate.of(2026, 11, 22));
         assertThat(lake.startOffsets(Map.of())).containsEntry(Feed.JOURNAL_LINES, 40L)
@@ -164,14 +175,14 @@ class IcebergLakeTest {
         catalog.buildTable(IcebergLake.id("brokerage.trading.executions"),
             LakeSchemas.schema(Feed.EXECUTIONS, KIT)).create();
         int versions = catalog.loadView(id).currentVersion().versionId();
-        lake.reconViews();
+        lake.views();
         assertThat(((SQLViewRepresentation) catalog.loadView(id).sqlFor("trino")).sql())
             .contains("FROM lakehouse.\"brokerage.kafka\".executions UNION ALL SELECT")
             .contains("FROM lakehouse.\"brokerage.trading\".executions");
         assertThat(catalog.loadView(id).currentVersion().versionId()).isGreaterThan(versions);
         // Remade only when the tables change.
         versions = catalog.loadView(id).currentVersion().versionId();
-        lake.reconViews();
+        lake.views();
         assertThat(catalog.loadView(id).currentVersion().versionId()).isEqualTo(versions);
     }
 

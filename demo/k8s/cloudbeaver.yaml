@@ -8,7 +8,7 @@
 # the client's roles: Keycloak group demo-operators holds role admin) in two headers. It sets those, and drops
 # the other headers CloudBeaver would sign a person in from, on every request, so a browser can set none of them.
 # CloudBeaver trusts the headers, so it listens on 127.0.0.1 only and has no password sign-in
-# (cloudbeaver.Dockerfile). oscar is CloudBeaver's administrator, ana, gary and stella are users, and presenter is
+# (cloudbeaver.Dockerfile). oscar is CloudBeaver's administrator, ana, gary, stella and cora are users, and presenter is
 # a user in team admin, as a member of demo-operators (backlog 273); anyone else Keycloak signs in is refused. CloudBeaver's Logout ends CloudBeaver's session, the
 # proxy's and Keycloak's (signout.html, below). Each person has four connections of their own, which sign in as
 # them:

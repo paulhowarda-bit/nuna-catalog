@@ -21,6 +21,7 @@ import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.catalog.ViewCatalog;
+import org.apache.iceberg.exceptions.ForbiddenException;
 import org.apache.iceberg.inmemory.InMemoryFileIO;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.types.Types;
@@ -28,7 +29,7 @@ import org.apache.iceberg.types.Types;
 /**
  * The world's side of the catalog: it makes the namespaces, tables and views the sink writes into, adds the locate_id
  * column when the world first sells short, tags each table at the end of each day, and keeps the reconciliation views
- * ({@link Recon}) reading every lake table each feed has. It only ever changes metadata, so it reads and writes no files
+ * ({@link Recon}) and the current-state views ({@link Current}) reading every lake table each feed has. It only ever changes metadata, so it reads and writes no files
  * (an in-memory FileIO stands in) and asks for no credentials.
  */
 public final class IcebergLake implements Publisher.Lake, AutoCloseable {
@@ -37,7 +38,8 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
     static final List<Namespace> NAMESPACES = List.of(ROOT, Namespace.of("brokerage", "reference"),
         Namespace.of("brokerage", "markets"), Namespace.of("brokerage", "party"), Namespace.of("brokerage", "ledger"),
         Namespace.of("brokerage", "trading"), Namespace.of("brokerage", "clearing"), Recon.NAMESPACE,
-        Namespace.of("brokerage", "kafka"));
+        Namespace.of("brokerage", "kafka"), Namespace.of("brokerage", "money_movement"),
+        Namespace.of("brokerage", "compliance"));
     static final Namespace LEDGER = Namespace.of("brokerage", "ledger");
 
     /**
@@ -123,26 +125,33 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
             + " (4201).", 4201);
         view("running_collected_balance", "Each brokerage account's running collected balance at each day's end: the"
             + " withdraw clock's net equity (5201).", 5201);
-        reconViews();
+        views();
     }
 
     /**
-     * Makes or remakes the reconciliation views ({@link Recon}) over the lake tables that exist now: a change feed makes
-     * its copy only as it first runs, so a view made before reads the other way's table alone. Run at the bootstrap,
-     * as a run starts and at each day's end; a view already reading those tables is left as it is.
+     * Makes or remakes the reconciliation views ({@link Recon}) and the back office's current-state views
+     * ({@link Current}) over the lake tables that exist now: a change feed makes its copy only as it first runs, so a
+     * view made before reads the other way's table alone. Run at the bootstrap, as a run starts and at each day's end; a
+     * view already reading those tables is left as it is.
      */
-    public void reconViews() {
+    public void views() {
         for (Recon.View v : Recon.views(TRINO_CATALOG, t -> catalog.tableExists(id(t)))) {
-            TableIdentifier id = TableIdentifier.of(Recon.NAMESPACE, v.name());
-            boolean exists = views.viewExists(id);
-            if (exists && v.sql().equals(views.loadView(id).sqlFor("trino").sql())) {
-                continue;
-            }
-            views.buildView(id).withSchema(v.schema()).withDefaultCatalog(TRINO_CATALOG)
-                .withDefaultNamespace(Recon.NAMESPACE).withQuery("trino", v.sql()).withProperty("comment", v.comment())
-                .createOrReplace();
-            System.out.println((exists ? "remade view " : "created view ") + id);
+            derived(Recon.NAMESPACE, v.name(), v.comment(), v.schema(), v.sql());
         }
+        for (Current.View v : Current.views(TRINO_CATALOG, t -> catalog.tableExists(id(t)))) {
+            derived(v.namespace(), v.name(), v.comment(), v.schema(), v.sql());
+        }
+    }
+
+    private void derived(Namespace ns, String name, String comment, Schema schema, String sql) {
+        TableIdentifier id = TableIdentifier.of(ns, name);
+        boolean exists = views.viewExists(id);
+        if (exists && sql.equals(views.loadView(id).sqlFor("trino").sql())) {
+            return;
+        }
+        views.buildView(id).withSchema(schema).withDefaultCatalog(TRINO_CATALOG).withDefaultNamespace(ns)
+            .withQuery("trino", sql).withProperty("comment", comment).createOrReplace();
+        System.out.println((exists ? "remade view " : "created view ") + id);
     }
 
     /** The last business day whose end is tagged ({@code eod-<day>}) on any of the given lake tables, or null. */
@@ -218,14 +227,23 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
         return offsets;
     }
 
-    /** The records a lake table holds, 0 if it does not exist yet (a change feed makes its copy as it first starts). */
+    /**
+     * The records a lake table holds, 0 if it does not exist yet (a change feed makes its copy as it first starts), or if
+     * the catalog refuses it: a table in a regulated namespace with no classification of its own is closed to everyone
+     * (D27), as {@code brokerage.party.beneficial_owners} is until a steward classifies it (item 152).
+     */
     public long records(String table) {
         TableIdentifier id = id(table);
         if (!catalog.tableExists(id)) {
             return 0;
         }
-        Snapshot s = catalog.loadTable(id).currentSnapshot();
-        return s == null ? 0 : Long.parseLong(s.summary().getOrDefault("total-records", "0"));
+        try {
+            Snapshot s = catalog.loadTable(id).currentSnapshot();
+            return s == null ? 0 : Long.parseLong(s.summary().getOrDefault("total-records", "0"));
+        } catch (ForbiddenException e) {
+            System.out.println("WARN the catalog refuses " + table + ", so its records count as 0: " + e.getMessage());
+            return 0;
+        }
     }
 
     private Map<String, String> rootProperties() {
@@ -266,7 +284,16 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
                 if (!catalog.tableExists(id(e.getKey()))) {
                     continue;
                 }
-                Table t = catalog.loadTable(id(e.getKey()));
+                Table t;
+                try {
+                    t = catalog.loadTable(id(e.getKey()));
+                } catch (ForbiddenException refused) {
+                    // Closed until it is classified (D27); its sink waits too, so its rows are late, not lost.
+                    System.out.println("WARN the catalog refuses " + e.getKey() + "; not tagged " + tag + ": "
+                        + refused.getMessage());
+                    it.remove();
+                    continue;
+                }
                 if (t.refs().containsKey(tag)) {
                     it.remove();
                     continue;
@@ -300,9 +327,9 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
         System.out.println("end of " + day + ": tagged " + (totals.size() - waiting.size()) + " of " + totals.size()
             + " tables " + tag);
         try {
-            reconViews();
+            views();
         } catch (RuntimeException e) {
-            System.out.println("WARN the reconciliation views were not remade: " + e);
+            System.out.println("WARN the reconciliation and current-state views were not remade: " + e);
         }
     }
 

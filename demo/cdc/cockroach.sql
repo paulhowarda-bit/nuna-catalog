@@ -1,6 +1,6 @@
 -- The CDC leg's CockroachDB source (demo/k8s/cdc.yaml, Service cockroach): custody, the brokerage world's clearing
 -- books (item 151): the stock record by owner and location, CNS obligations, fails to deliver and locates, as they
--- stand after the world's last end of day. demo.sh's cdc loads them as login clearing (demo-datagen's Main custody,
+-- stand after the world's last end of day. demo.sh's cdc loads them as login clearing (demo-datagen's Main cdc,
 -- writing only what changed), and Debezium captures each change through a CockroachDB changefeed into the Iceberg
 -- history tables history.cockroach.clearing.*. Run once as root, by the image's entrypoint, as the single node is
 -- first started on an empty volume; the entrypoint then writes /cockroach/init_success, which the pod's readiness
@@ -75,7 +75,7 @@ CREATE TABLE clearing.locates (
     updated_at TIMESTAMP(3) NOT NULL DEFAULT now()
 );
 
--- The books' loader (Main custody, with the Secret demo-secrets' clearing).
+-- The books' loader (Main cdc, with the Secret demo-secrets' clearing).
 CREATE USER clearing WITH PASSWORD '${PASSWORD_CLEARING}';
 GRANT USAGE ON SCHEMA clearing TO clearing;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE clearing.stock_record, clearing.cns_obligations, clearing.fails,
@@ -95,12 +95,13 @@ CREATE USER gary WITH PASSWORD '${PASSWORD_GARY}';
 CREATE USER stella WITH PASSWORD '${PASSWORD_STELLA}';
 CREATE USER oscar WITH PASSWORD '${PASSWORD_OSCAR}';
 CREATE USER presenter WITH PASSWORD '${PASSWORD_PRESENTER}';
+CREATE USER cora WITH PASSWORD '${PASSWORD_CORA}';
 GRANT admin TO gary, presenter;
 GRANT CREATE ON DATABASE custody TO ana;
 GRANT ALL ON SCHEMA clearing TO ana;
 GRANT ALL ON TABLE clearing.stock_record, clearing.cns_obligations, clearing.fails, clearing.locates TO ana;
-GRANT USAGE ON SCHEMA clearing TO stella, oscar;
+GRANT USAGE ON SCHEMA clearing TO stella, oscar, cora;
 GRANT SELECT ON TABLE clearing.stock_record, clearing.cns_obligations, clearing.fails, clearing.locates
-    TO stella, oscar;
+    TO stella, oscar, cora;
 -- Tables ana makes are read by the others too.
-ALTER DEFAULT PRIVILEGES FOR ROLE ana GRANT SELECT ON TABLES TO stella, oscar;
+ALTER DEFAULT PRIVILEGES FOR ROLE ana GRANT SELECT ON TABLES TO stella, oscar, cora;

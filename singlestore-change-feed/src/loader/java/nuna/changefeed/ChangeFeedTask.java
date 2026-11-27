@@ -133,7 +133,9 @@ public final class ChangeFeedTask extends SourceTask {
 
     /**
      * The engine's configuration for each table: the pipeline's own, or with {@code singlestore.tables} one per table
-     * listed (separated by commas or spaces), each copying its table into an Iceberg table of the same name.
+     * listed (separated by commas or spaces), each copying its table into an Iceberg table of the same name, in
+     * {@code iceberg.namespace}, or in {@code iceberg.namespace.<table>} where the pipeline gives one for it (item 152:
+     * the brokerage world's compliance tables go under brokerage.compliance, which only its readers read).
      */
     static List<Map<String, String>> perTable(Map<String, String> props) {
         if (!props.containsKey(TABLES)) {
@@ -149,6 +151,10 @@ public final class ChangeFeedTask extends SourceTask {
             config.remove(TABLES);
             config.put("singlestore.table", table);
             config.put("iceberg.table", table);
+            String namespace = props.get("iceberg.namespace." + table);
+            if (namespace != null) {
+                config.put("iceberg.namespace", namespace);
+            }
             configs.add(Map.copyOf(config));
         }
         return configs;

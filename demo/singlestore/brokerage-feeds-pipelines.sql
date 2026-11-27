@@ -3,16 +3,23 @@
 -- tables on its first start), all in one pipeline so they share one extractor's memory. demo.sh runs it while
 -- Kafka is off and the generator writes these tables (D50, amended 2026-11-24, item 238), with the singlestore
 -- user's catalog token and the root password put in, then starts it, and stops it when Kafka is back.
--- Append-only: the generator only ever inserts, so a feed stops at an update.
+-- Append-only: the generator only ever inserts, so a feed stops at an update. The compliance tables' copies go
+-- under brokerage.compliance.singlestore instead, which only compliance's readers read (item 152).
 USE brokerage;
 
 CREATE OR REPLACE PIPELINE brokerage_world_to_lake AS LOAD DATA CONNECTOR 'ChangeFeedConnector'
 CONFIG '{"singlestore.url": "jdbc:mariadb://localhost:3306/brokerage", "singlestore.user": "root",
          "singlestore.database": "brokerage", "singlestore.append-only": "true",
-         "singlestore.tables": "calendar,securities,chart_of_accounts,booking_schemes,accounts,bars_5m,prices_eod,financial_transactions,journal_lines,posting_rejections,balances_eod,cns_obligations,settlements,fails,stock_record,locates",
+         "singlestore.tables": "calendar,securities,chart_of_accounts,booking_schemes,accounts,bars_5m,prices_eod,financial_transactions,journal_lines,posting_rejections,balances_eod,cns_obligations,settlements,fails,stock_record,locates,parties,account_roles,cip_checks,suitability_profiles,beneficial_owners,trusted_contacts,payments,ach_returns,acats_transfers,sanctions_list,sanctions_screens,aml_alerts,aml_cases,surveillance_alerts,complaints",
          "iceberg.catalog.uri": "http://nuna-catalog:8181", "iceberg.catalog.warehouse": "lakehouse",
          "iceberg.catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
-         "iceberg.namespace": "brokerage.singlestore", "commit.interval.ms": "15000"}'
+         "iceberg.namespace": "brokerage.singlestore",
+         "iceberg.namespace.sanctions_list": "brokerage.compliance.singlestore",
+         "iceberg.namespace.sanctions_screens": "brokerage.compliance.singlestore",
+         "iceberg.namespace.aml_alerts": "brokerage.compliance.singlestore",
+         "iceberg.namespace.aml_cases": "brokerage.compliance.singlestore",
+         "iceberg.namespace.surveillance_alerts": "brokerage.compliance.singlestore",
+         "iceberg.namespace.complaints": "brokerage.compliance.singlestore", "commit.interval.ms": "15000"}'
 CREDENTIALS '{"singlestore.password": "${SINGLESTORE_ROOT_PASSWORD}", "iceberg.catalog.token": "${SINGLESTORE_TOKEN}"}'
 BATCH_INTERVAL 1000
 REPLACE INTO TABLE lake_commits

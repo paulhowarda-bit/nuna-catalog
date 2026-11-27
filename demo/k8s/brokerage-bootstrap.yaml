@@ -3,8 +3,9 @@
 # up runs it after the catalog and Kafka are up, waits for it and deletes it; then it sets the tables' governance,
 # registers Kafka Connect's sink brokerage-lake and starts the generator (brokerage.yaml), whose environment this
 # repeats. It makes the topics only while BROKERAGE_ROUTE includes Kafka. demo.sh runs the same Job, renamed, with
-# args drain kafka or drain singlestore before it turns a way off (brokerage_job, backlog 238), and custody as the CDC
-# leg starts, which loads the clearing books into its CockroachDB (item 151).
+# args drain kafka or drain singlestore before it turns a way off (brokerage_job, backlog 238), and cdc as the CDC leg
+# starts, which loads the clearing books into its CockroachDB (item 151), the back office into its PostgreSQL and the bank
+# payments into its Oracle (item 152).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -42,6 +43,16 @@ spec:
             - {name: COCKROACH_USER, value: clearing}
             - name: COCKROACH_PASSWORD
               valueFrom: {secretKeyRef: {name: demo-secrets, key: clearing, optional: true}}
+            # backoffice and treasury: the CDC leg's PostgreSQL, as its owner, and Oracle, as the schema's user (item 152;
+            # demo/cdc/backoffice.sql, demo/cdc/oracle.sql).
+            - {name: BACKOFFICE_URL, value: "jdbc:postgresql://backoffice:5432/backoffice"}
+            - {name: BACKOFFICE_USER, value: backoffice}
+            - name: BACKOFFICE_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: backoffice, optional: true}}
+            - {name: TREASURY_URL, value: "jdbc:oracle:thin:@//oracle:1521/FREEPDB1"}
+            - {name: TREASURY_USER, value: treasury}
+            - name: TREASURY_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: treasury, optional: true}}
           securityContext: {allowPrivilegeEscalation: false}
           resources:
             limits: {memory: 384Mi}
