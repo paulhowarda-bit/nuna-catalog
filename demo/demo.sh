@@ -1654,8 +1654,10 @@ brokerage_bootstrap() {
 # feed has not yet.
 brokerage_governance() {
   local m=/management/v1/catalogs/$CATALOG table
-  if curl -fs "${CURL_TLS[@]}" -H "Authorization: Bearer $(token_of stella)" \
-      "$URL$m/namespaces/brokerage%1Fledger/governance" 2>/dev/null | grep -q '"regulated"'; then
+  # Read whole, then matched: piped into grep -q, which stops reading at the first match, curl can fail writing the
+  # rest, and with pipefail the check said no when the answer was yes (item 320).
+  if [[ "$(curl -fs "${CURL_TLS[@]}" -H "Authorization: Bearer $(token_of stella)" \
+      "$URL$m/namespaces/brokerage%1Fledger/governance" 2>/dev/null)" == *'"regulated"'* ]]; then
     return 0
   fi
   say "governance of the brokerage world: classifications, owners, regulated areas"
@@ -1730,8 +1732,13 @@ brokerage_backoffice_governance() {
     '{"value":"money-movement-operations","provenance":"demo-seed: HR feed"}' &&
   api stella PUT "$m/namespaces/brokerage%1Fcompliance/attributes/owner" \
     '{"value":"compliance-office","provenance":"demo-seed: HR feed"}' || return 1
-  if ! tls_curl -fs -H "Authorization: Bearer $(token_of stella)" \
-      "$URL$m/namespaces/brokerage%1Fcompliance/tables/aml_cases/governance" | grep -q '"placed-by"'; then
+  # Read whole, then matched, as in brokerage_governance: piped into grep -q, the check failed about one time in ten,
+  # which warned that the back office was not governed (item 320). A read that fails places nothing: it may only be the
+  # catalog slow to answer, and a second hold would stand beside the first.
+  local governance
+  governance=$(tls_curl -fs -H "Authorization: Bearer $(token_of stella)" \
+    "$URL$m/namespaces/brokerage%1Fcompliance/tables/aml_cases/governance") || return 1
+  if [[ "$governance" != *'"placed-by"'* ]]; then
     api stella POST "$m/namespaces/brokerage%1Fcompliance/tables/aml_cases/holds" \
       '{"reason":"Matter 2026-152: AML case files and SARs kept five years (31 CFR 1023.320(d))"}' || return 1
   fi
