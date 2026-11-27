@@ -3,11 +3,11 @@ Module: catalog-audit-tables
 Test: EventsReaderTest#aTableMadeBeforeTheRefColumnsIsGivenThemAndItsEarlierRowsMatchNoRefOrSubject
 
 diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
-index efd82106..aa3c901a 100644
+index 60b858f9..6a31922d 100644
 --- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
 +++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
-@@ -169,7 +169,7 @@ final class EventsTable {
-      * when it has them all. A table made before them needs a caller with {@code modify} to be given them.
+@@ -175,7 +175,7 @@ final class EventsTable {
+      * server gives them at startup ({@link EventsColumns}), so the writer finds none absent.
       */
      private static void addAbsent(Table table, UpdateSchema update) {
 -        List<Types.NestedField> absent = ADDED.stream().filter(c -> table.schema().findField(c.name()) == null)
