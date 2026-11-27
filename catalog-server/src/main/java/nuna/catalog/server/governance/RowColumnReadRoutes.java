@@ -3,6 +3,7 @@ package nuna.catalog.server.governance;
 import static nuna.catalog.server.governance.Management.CATALOG;
 import static nuna.catalog.server.governance.Management.TABLE;
 
+import nuna.catalog.audit.Export;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
@@ -189,6 +190,9 @@ class RowColumnReadRoutes {
                 node.put("set-at", stored.setAt().toString());
             }
         }
+        // As the grants' export is (backlog 312): who took the catalog's rules, and how many.
+        trail.record(new Export(new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG,
+                catalog.id(), catalog.name(), List.of()), Export.ROW_COLUMN_RULES, out.size(), request.actor()));
         return GovernanceRoutes.json(200, body);
     }
 

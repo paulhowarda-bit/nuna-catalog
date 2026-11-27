@@ -633,6 +633,7 @@ export function describe(type, d, catalog) {
     case 'rename': return `renamed from ${(d.fromPath || []).join('.')}`;
     case 'namespace': return `namespace ${String(d.action).toLowerCase()}`;
     case 'audit-read': return `read ${d.returned} audit records`;
+    case 'export': return `exported ${d.returned} ${d.what === 'grants' ? 'grants' : 'row and column rules'}`;
     // Who and which table are on the row already; the sentence names the group, as a grant's does (Atelier, 2026-11-24).
     case 'row-column-rule': return `${String(d.action).toUpperCase() === 'REMOVED' ? 'removed' : 'set'} the rule for ${d.group}`;
     default: return '';
@@ -657,7 +658,7 @@ export const AUDIT_KINDS = [
   ['ref', 'Branches and tags', 'Branch or tag', ['ref']],
   ['commit', 'Commits', 'Commit', ['commit']],
   ['change', 'Other changes', 'Change', CHANGES.filter(t => !['grant', 'row-column-rule', 'hold', 'governance', 'ref', 'commit'].includes(t))],
-  ['read', 'Reads', 'Read', ['read', 'audit-read']],
+  ['read', 'Reads', 'Read', ['read', 'audit-read', 'export']],
   ['cred', 'Credentials', 'Credential', ['credential-issue']],
   ['refusal', 'Refusals', 'Refusal', ['denial', 'auth-failure']],
 ];

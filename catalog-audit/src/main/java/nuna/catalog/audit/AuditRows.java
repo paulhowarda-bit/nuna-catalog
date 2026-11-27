@@ -63,6 +63,7 @@ public final class AuditRows {
             case Undrop e -> on(e.actor(), e.object());
             case Purge e -> on(e.actor(), e.object());
             case AuditRead e -> on(e.actor(), e.target());
+            case Export e -> on(e.actor(), e.catalog());
             case Unregister e -> on(e.actor(), e.object());
             // A ref is no securable: its row names the catalog it belongs to.
             case RefChange e -> on(e.actor(), e.catalog());

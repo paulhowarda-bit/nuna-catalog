@@ -2,6 +2,7 @@ package nuna.catalog.server.security;
 
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.Export;
 import nuna.catalog.audit.GrantChange;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
@@ -349,6 +350,10 @@ class GrantRoutes {
         out.put("exported-at", clock.instant().toString());
         out.put("exported-by", request.caller().subject().id());
         out.put("grants", grants);
+        // The whole access map leaves with the caller: who took it, and how much, is audited (backlog 312).
+        denials.record(new Export(new nuna.catalog.audit.Securable(
+                nuna.catalog.audit.Securable.Kind.CATALOG, record.id(), record.name(), List.of()), Export.GRANTS,
+                grants.size(), request.actor()));
         return json(out);
     }
 

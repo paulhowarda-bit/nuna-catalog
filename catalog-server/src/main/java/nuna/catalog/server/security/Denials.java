@@ -3,6 +3,8 @@ package nuna.catalog.server.security;
 import nuna.catalog.audit.Actor;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Denial;
+import nuna.catalog.audit.EventData;
+import nuna.catalog.audit.Export;
 import nuna.catalog.audit.Securable;
 import nuna.catalog.server.rest.AccessDenied;
 import nuna.catalog.server.rest.AuditPublisher;
@@ -46,5 +48,13 @@ public class Denials {
                     securable == null ? "the engine registry" : securable.id(), actor, e);
         }
         return new AccessDenied(message);
+    }
+
+    /**
+     * Publishes a security route's own read record, such as an {@link Export} (backlog 312), before the route answers
+     * (D23: a read is published synchronously).
+     */
+    public void record(EventData data) {
+        audit.publish(CatalogEvent.create(settings.auditSource(), clock.instant(), data));
     }
 }
