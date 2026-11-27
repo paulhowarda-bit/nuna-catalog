@@ -1639,3 +1639,4 @@ finds is fixed here or put in an item of its own.
 | [314](backlog/314.md) | Grafana dashboards and demo.sh messages name backlog items and D rows | done | 2026-11-27 |
 | [315](backlog/315.md) | Console: small faults the documentation writers found | done | 2026-11-27 |
 | [316](backlog/316.md) | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | done | 2026-11-27 |
+| [319](backlog/319.md) | Console: a link to Grafana's charts on the Service page, when a Grafana URL is configured | done | 2026-11-27 |

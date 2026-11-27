@@ -1,0 +1,16 @@
+Breaks: The Service page drops its link to Grafana though nuna.ui.grafana-url names one.
+Module: catalog-server
+Test: ConsoleHealthTest#anOperatorSeesTheWholeDeploymentsHealth
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/health.js b/catalog-server/src/main/resources/nuna/ui/health.js
+index c67cf88a..e382ac13 100644
+--- a/catalog-server/src/main/resources/nuna/ui/health.js
++++ b/catalog-server/src/main/resources/nuna/ui/health.js
+@@ -116,7 +116,6 @@ async function catalogHealth(focus, grafana) {
+           : 'Every latency objective was met.'],
+       sub: 'Each server counts its own last day; this page adds them up. A server that does not answer is named here '
+         + 'and its figures are left out, never guessed.',
+-      side: grafanaLink(grafana),
+     }),
+     h('div', {class: 'health-figures'},
+       panel('Latency objectives', 'met when 99 in 100 finish within the objective',

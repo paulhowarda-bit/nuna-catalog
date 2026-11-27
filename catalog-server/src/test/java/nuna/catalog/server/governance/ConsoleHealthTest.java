@@ -75,10 +75,12 @@ class ConsoleHealthTest {
     private static final String PEER_NAME = "nuna-catalog-zone-b";
     private static final Peer PEER = new Peer();
     private static final int SILENT = freePort();
+    private static final String GRAFANA = "https://grafana.nuna.example/";
 
     @DynamicPropertySource
     static void peers(DynamicPropertyRegistry registry) {
         registry.add("nuna.health.peers", () -> PEER.address() + ",127.0.0.1:" + SILENT);
+        registry.add("nuna.ui.grafana-url", () -> GRAFANA);
     }
 
     @Autowired
@@ -190,6 +192,12 @@ class ConsoleHealthTest {
         WebElement gathered = browser.await(By.id("health-gathered"));
         assertThat(gathered.getText()).isEqualTo("Gathered from 2 servers; 1 did not answer, so their figures are "
                 + "missing.");
+        WebElement grafana = driver.findElement(By.cssSelector("#catalog-health .ph .side a[data-grafana]"));
+        assertThat(grafana.getText()).as("the Service page's way on to the same figures over time (backlog 319)")
+                .isEqualTo("Charts over time in Grafana");
+        assertThat(grafana.getAttribute("href")).isEqualTo(GRAFANA);
+        assertThat(grafana.getAttribute("target")).isEqualTo("_blank");
+        assertThat(grafana.getAttribute("rel")).isEqualTo("noopener");
         List<WebElement> servers = driver.findElements(By.cssSelector("#health-servers > div[data-server]"));
         assertThat(servers).hasSize(3);
         assertThat(servers.get(0).getText()).contains("this server", "answered");

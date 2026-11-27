@@ -73,13 +73,17 @@ function verdict(met) {
  * The Service page. `tab` "worker-storage" brings the Worker storage panel into view, and `profile` marks that profile's
  * row there, as the links from Maintenance do (backlog 254).
  */
-export function healthPage(tab, profile) {
+export function healthPage(tab, profile, grafana) {
   const main = h('div', {class: 'nc-main', id: 'catalog-health'});
-  load(main, () => catalogHealth(tab === 'worker-storage' ? profile || '' : undefined));
+  load(main, () => catalogHealth(tab === 'worker-storage' ? profile || '' : undefined, grafana));
   return main;
 }
 
-async function catalogHealth(focus) {
+/** The way on to Grafana's charts, the same figures over time, when the server names a Grafana (backlog 319). */
+const grafanaLink = url => url ? h('a', {class: 'btn ghost sm', href: url, target: '_blank', rel: 'noopener', 'data-grafana': ''},
+  icon('ext'), h('span', {class: 'hide-sm'}, 'Charts over time in Grafana'), h('span', {class: 'only-sm'}, 'Grafana')) : null;
+
+async function catalogHealth(focus, grafana) {
   let health;
   try {
     health = await api.catalogHealth();
@@ -112,6 +116,7 @@ async function catalogHealth(focus) {
           : 'Every latency objective was met.'],
       sub: 'Each server counts its own last day; this page adds them up. A server that does not answer is named here '
         + 'and its figures are left out, never guessed.',
+      side: grafanaLink(grafana),
     }),
     h('div', {class: 'health-figures'},
       panel('Latency objectives', 'met when 99 in 100 finish within the objective',

@@ -88,6 +88,7 @@ class UiRoutes {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("dev-token-login", settings.devTokenLogin());
         out.put("docs-url", settings.docsLink());
+        out.put("grafana-url", settings.grafanaUrl());
         if (settings.oidc() == null) {
             out.put("oidc", null);
         } else {

@@ -882,7 +882,8 @@ catalog_release() {
 # the charts' default, no endpoint, exports nothing.
 telemetry_values() {
   if is_on metrics && running otel-collector; then
-    printf '%s\n' --set-string telemetry.endpoint=http://otel-collector:4318 --set-string telemetry.sampling=1
+    printf '%s\n' --set-string telemetry.endpoint=http://otel-collector:4318 --set-string telemetry.sampling=1 \
+      --set-string "config.nuna.ui.grafana-url=https://$DEMO_HOST:8188"
   fi
 }
 
