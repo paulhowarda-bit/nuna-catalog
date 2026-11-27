@@ -156,7 +156,7 @@ class DeletePolicyAwsTest {
                     .description("a nuna test's worker role with no policy of its own; deleted when the test ends")
                     .assumeRolePolicyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
                             + "\"Principal\":{\"AWS\":\"arn:aws:iam::" + account + ":root\"},"
-                            + "\"Action\":\"sts:AssumeRole\"}]}")).role().arn();
+                            + "\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\",\"sts:SetSourceIdentity\"]}]}")).role().arn();
             boolean removed = true;
             try (StsClient sts = StsClient.builder().region(Region.of(TestS3.REGION))
                     .credentialsProvider(store.credentials).build();
