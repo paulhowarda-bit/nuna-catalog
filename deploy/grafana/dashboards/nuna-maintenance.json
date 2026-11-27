@@ -1,7 +1,7 @@
 {
   "uid": "nuna-maintenance",
   "title": "nuna maintenance worker",
-  "description": "The maintenance worker: its last successful scan, failures by kind, the work it did and compaction (backlog 44).",
+  "description": "The maintenance worker: its last successful scan, failures by kind, the work it did and compaction.",
   "tags": [
     "nuna"
   ],
@@ -93,7 +93,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Draft (backlog 44, D43).** Written at home against nuna's own meter names and Prometheus' default OTLP translation (dots to underscores, unit and `_total` suffixes); not yet run against live data. The names it assumes, and what to rename if work's Prometheus differs, are in `docs/observability/dashboards-and-alerts.md`."
+        "content": "**Draft.** Written at home against nuna's own meter names and Prometheus' default OTLP translation (dots to underscores, unit and `_total` suffixes); not yet run against live data. The names it assumes, and what to rename if work's Prometheus differs, are in `docs/observability/dashboards-and-alerts.md`."
       }
     },
     {
@@ -1263,7 +1263,7 @@
       "id": 20,
       "type": "table",
       "title": "The neediest tables",
-      "description": "nuna.maintenance.table.compaction.need: how far past its compaction thresholds each needy table was at its last assessment (1 at a threshold, 2 twice past it). The one meter labelled by table (D30, amended 2026-11-15): everyone who can see this dashboard sees these names. Behind a ServiceMonitor without honorLabels the table's namespace label arrives as exported_namespace.",
+      "description": "nuna.maintenance.table.compaction.need: how far past its compaction thresholds each needy table was at its last assessment (1 at a threshold, 2 twice past it). The one meter labelled by table: everyone who can see this dashboard sees these names. Behind a ServiceMonitor without honorLabels the table's namespace label arrives as exported_namespace.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

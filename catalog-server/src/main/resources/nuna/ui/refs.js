@@ -1112,13 +1112,15 @@ async function mergeTab(c, r, list) {
   const btn = h('button', {class: 'btn primary', type: 'button', 'data-act': 'ref-merge', disabled: blocked || !plan['may-merge'] ? true : null,
     onclick: () => mergeDialog(c, r, plan)}, icon('branch'), `Merge @${r.name} into main`);
   const actBox = h('div', {class: 'panel merge-act'}, h('h2', null, 'In one transaction'), steps, steps2,
-    !blocked && may && rightsMissing.length ? h('p', {class: 'fine warn-ink'}, h('b', null, `Your groups hold no write on ${rightsMissing.join(', ')}.`),
+    !blocked && may && rightsMissing.length ? h('p', {class: 'fine warn-ink'}, h('b', null, `Your groups lack the right a merge needs on ${rightsMissing.join(', ')}.`),
       ' The catalog would refuse the merge, so the console doesn\'t offer it.') : null,
     h('p', {class: 'fine'}, `Every table moves or none does; at most ${fmt(plan['max-tables'] || lim['max-merge-tables'])} tables a merge. `
       + 'If main commits to one of them between this preview and the merge, the catalog checks again, and a new conflict refuses the merge.'),
     may ? h('div', {class: 'refusal-acts'}, btn, blocked ? h('span', {class: 'fine'}, 'Refused while a table conflicts.')
-      : h('span', {class: 'fine'}, 'Needs create on ', code(c), ' and write on each table.'))
-      : h('p', {class: 'fine'}, h('b', null, `Merging needs create on ${c}`), ' and write on every table it moves. Your groups hold none, so the console offers no merge.'));
+      : h('span', {class: 'fine'}, 'Needs create on ', code(c), ', write on each table it moves, and modify on each view'
+        + ' and each table whose definition changes.'))
+      : h('p', {class: 'fine'}, h('b', null, `Merging needs create on ${c}`), ', write on every table it moves and modify on every view and changed'
+        + ' definition. Your groups hold no create, so the console offers no merge.'));
   const changedOnBoth = conflicts.filter(x => !(x['dropped-at'] || x['main-version'] === undefined));
   const settle = blocked && conflicts.length ? panel('What you can do', null, h('ul', {class: 'fine settle'},
     changedOnBoth.length ? h('li', null, h('b', null, 'Start again from main: '), `make a branch from main now and redo @${r.name}'s change to `

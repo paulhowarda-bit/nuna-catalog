@@ -566,7 +566,8 @@ public final class EventsReader implements AutoCloseable {
             for (FileScanTask task : tasks) {
                 if (!task.deletes().isEmpty()) {
                     throw new IllegalStateException("rows were deleted from " + table.name() + " (" + task.file()
-                            .location() + "); the audit table is never deleted from (D24), and the feed reads no deletes");
+                            // The rule behind this message: D24.
+                            .location() + "); the audit table is never deleted from, and the feed reads no deletes");
                 }
                 DataFile file = task.file();
                 if (file.format() != FileFormat.PARQUET) {

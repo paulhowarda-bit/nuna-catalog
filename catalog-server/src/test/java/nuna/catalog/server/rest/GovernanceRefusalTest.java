@@ -358,7 +358,7 @@ class GovernanceRefusalTest {
 
         assertThat(message).isEqualTo("The change renames or drops a column a row filter or column mask names: group"
                 + " traders's rule names account. A rename would leave the column unmasked; the grant admin changes"
-                + " or removes the rule first (D20, backlog 240)");
+                + " or removes the rule first");
         assertThat(denials()).singleElement().satisfies(denial -> {
             assertThat(denial.operation()).isEqualTo("updateTable");
             assertThat(denial.securable().id()).isEqualTo(orders.id());

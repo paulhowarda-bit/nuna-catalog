@@ -97,7 +97,9 @@ function gantt(host, W, t, jobs, slots) {
     svg.append(g);
   });
   const hour = 3600_000;
-  const step = (t1 - t0) / hour > 8 ? 2 : 1;
+  // A label every so many hours that two never meet: an "HH:MM" is some 32 px wide, and the last is anchored at its end.
+  const perHour = (X1 - X0) / Math.max(1, (t1 - t0) / hour);
+  const step = [1, 2, 3, 4, 6, 12, 24].find(k => k * perHour >= 56) || 24;
   for (let x = Math.ceil(t0 / hour) * hour; x <= t1; x += hour) {
     svg.append(s('line', {class: 'tick', x1: px(x), y1: TOP - 4, x2: px(x), y2: bottom - LG + 4}));
     if (Math.round((x - Math.ceil(t0 / hour) * hour) / hour) % step === 0) {

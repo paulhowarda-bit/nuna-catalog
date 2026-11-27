@@ -59,8 +59,8 @@ final class Current {
                 + "\nFROM h JOIN (SELECT " + key + ", MAX(\"version\") AS latest FROM h GROUP BY " + key + ") l"
                 + " ON h." + key + " = l." + key + " AND h.\"version\" = l.latest";
             views.add(new View(Namespace.of(f.namespace.split("\\.")), f.table + "_current",
-                "Each " + LakeSchemas.key(f) + "'s latest version in " + f.table + ", which keeps every version"
-                    + " (item 152).", schema, sql));
+                "Each " + LakeSchemas.key(f) + "'s latest version in " + f.table + ", which keeps every version.",
+                schema, sql));
         }
         return views;
     }

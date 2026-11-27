@@ -2,10 +2,10 @@ Breaks: a row filter that names a column the table lacks is kept, and fails ever
 Module: catalog-security
 Test: RuleColumnsTest#aFilterOnAColumnTheSchemaLacksIsRefusedNamingIt
 diff --git a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
-index 98bc2f6f..0d5fa1f5 100644
+index caf19ab1..90002797 100644
 --- a/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
 +++ b/catalog-security/src/main/java/nuna/catalog/security/RuleColumns.java
-@@ -90,7 +90,7 @@ public final class RuleColumns {
+@@ -91,7 +91,7 @@ public final class RuleColumns {
              }
          }
          Set<String> known = lowered(columns);
@@ -13,4 +13,4 @@ index 98bc2f6f..0d5fa1f5 100644
 +        List<String> unknown = referenced.stream().filter(name -> false).toList();
          if (!unknown.isEmpty()) {
              return new Checked.Unfit("row-filter names " + listed(unknown) + ", which the table's current schema"
-                     + " does not have; a filter's columns are the table's as it is now (D20)");
+                     // The rule behind this message: D20.

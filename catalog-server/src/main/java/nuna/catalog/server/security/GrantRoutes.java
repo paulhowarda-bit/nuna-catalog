@@ -471,7 +471,8 @@ class GrantRoutes {
     private Asked asked(CatalogRecord record, String body, RequestContext request, Operation operation) {
         GrantSpec spec = read(body, GrantSpec.class);
         if (spec.group() == null || spec.group().isBlank()) {
-            throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals (D19)");
+            // The rule behind this message: D19.
+            throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals");
         }
         Privilege privilege = privilege(spec.privilege());
         Securables securables = new Securables(store, record);

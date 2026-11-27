@@ -150,7 +150,8 @@ public final class TokenAuthenticator {
         Map<String, Object> moved = jwt.getClaimAsMap(MOVED_CLAIMS);
         if (moved != null && moved.containsKey(claim)) {
             throw AuthenticationFailure.invalidToken("token from " + iss + " does not carry its " + claim
-                    + " claim (group overage); the catalog's app must emit only the groups assigned to it (D19)");
+                    // The rule behind this message: D19.
+                    + " claim (group overage); the catalog's app must emit only the groups assigned to it");
         }
         List<String> groups = jwt.getClaimAsStringList(claim);
         return groups == null ? Set.of() : Set.copyOf(groups);

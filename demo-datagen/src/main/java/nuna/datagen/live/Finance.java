@@ -39,13 +39,13 @@ final class Finance {
         List<View> views = new ArrayList<>();
         add(views, catalog, exists, Sources.Table.GL_JOURNAL, Sources.Table.GL_JOURNAL.columnNames(),
             "The General Ledger's journal: per business day and GL control account, the day's debits and credits of"
-                + " the customer sub-ledger definition it controls (Oracle treasury.gl_journal, item 153).");
+                + " the customer sub-ledger definition it controls (Oracle treasury.gl_journal).");
         add(views, catalog, exists, Sources.Table.GL_BALANCES, Sources.Table.GL_BALANCES.columnNames(),
             "The General Ledger's balances: each GL control account at each day's end, on its normal side (Oracle"
-                + " treasury.gl_balances, item 153).");
+                + " treasury.gl_balances).");
         add(views, catalog, exists, Sources.Table.BANK_PAYMENTS, BANK,
             "Each ACH and wire as the firm's bank sees it now, without the counterparty's bank details (Oracle"
-                + " treasury.bank_payments, item 152).");
+                + " treasury.bank_payments).");
         return views;
     }
 

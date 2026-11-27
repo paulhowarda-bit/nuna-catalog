@@ -236,7 +236,8 @@ public final class CatalogStorage implements AutoCloseable {
         if (!held.equals(Optional.of(wanted))) {
             throw new IllegalStateException("catalog " + name + " is bound to " + held.map(Object::toString)
                     .orElse("no storage profile") + " in the store, but configured as " + wanted
-                    + "; a catalog's boundary never changes (D28)");
+                    // The rule behind this message: D28.
+                    + "; a catalog's boundary never changes");
         }
     }
 
