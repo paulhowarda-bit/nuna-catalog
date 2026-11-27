@@ -1,0 +1,16 @@
+Breaks: A parameter of the wrong type falls to the catch-all and answers 500.
+Module: catalog-server
+Test: ErrorResponsesTest
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java b/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java
+index c8591d0e..39cfb93e 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java
+@@ -68,7 +68,6 @@ class ErrorResponses {
+      * for a number: 400 naming it. Spring's own answer for it is no {@code ErrorResponse}, so without this it fell to
+      * 500 (backlog 311).
+      */
+-    @ExceptionHandler(TypeMismatchException.class)
+     ResponseEntity<String> mismatch(TypeMismatchException error) {
+         String name = error instanceof MethodArgumentTypeMismatchException argument ? argument.getName()
+                 : error.getPropertyName();
