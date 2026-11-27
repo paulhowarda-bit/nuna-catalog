@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 3 S, 9 M, 7 L, 5 XL.
+**23 open:** 3 S, 9 M, 7 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -18,7 +18,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | the milestone over build items 102 to 112 (seven L, four M; see the design below) | 2026-11-14 |
-| [28](backlog/28.md) | XL | DR replication-watermark verifier (v1.x) | the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
@@ -353,238 +352,6 @@ their areas do not overlap (the stores; the Iceberg routes; the management route
 in `bites/D33/` and names its heavy and overnight tests, which the overnight run runs.
 
 **Landing order (2026-11-20, at Paul's "can you fix these"):** items 106 and 108 land together, in one merge. Item 106's create route is the only way a ref comes to exist, and until item 108 lands the worker's orphan scan and expiry read only main, so a tag's or a branch's files could be deleted in between. Item 108's worktree starts from item 106's finished branch, and the session lands item 108's branch, which holds both. Item 105 may land on its own: without item 106 no branch exists to commit to.
-
-### 28. DR replication-watermark verifier (v1.x)
-
-- Decided: 2026-11-20, D37
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: XL, the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in
-
-`build-plan.md`, v1.x milestones: a DR replication-watermark verifier. Not started.
-
-Done when the milestone's scope is settled with Paul, built, and its gate is green.
-
-**Decided 2026-11-19 (D37):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
-
-**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
-
-**What it is for:** platform operators running the DR runbook (D37; the DR routes are theirs, D18). Storage and the
-database both replicate to DR asynchronously (D37), so after losing the primary region the DR database can name files
-the DR store never got. Nothing says today how far behind DR storage is, or which tables DR could serve whole. The
-reconcile covers only a database behind its storage: when the pointer's own file is missing it stops ("storage is
-behind the database", `Reconcile.plan`), and nothing moves the table back. The research behind D37 recommended this
-verifier, the rewind being the minimum (`research_notes/Enterprise Iceberg REST catalog plan/persistence_scale_ha.md`).
-
-**In:**
-- A DR-safe watermark per table: the newest journaled version such that every file it and each earlier version
-  added is in the DR store. It lives in the catalog database (a new record, a schema step on all four stores, as
-  D38's table assessment was), because it must reach DR with the database. It is written after the version it names,
-  so a replica that keeps commit order never holds a watermark above its pointer.
-- The verifier, a job in the maintenance worker (D30), which already reads every manifest for its orphan scan and
-  holds a storage identity per store. Every `dr-verify-interval` (1 min by default) it reads a new work list,
-  `GET /management/v1/maintenance/dr-work` (each table's watermark and the journaled versions above it), and checks
-  in the DR store each version's metadata file, manifest list, new manifests, the data and delete files they add, and
-  statistics files; for a view, the metadata file. A table with no watermark is checked once, whole, by listing its
-  location. It reports with `PUT /management/v1/maintenance/tables/{id}/dr-watermark` as a maintenance principal
-  acting as itself; a version below the stored one or above the pointer is refused. As with D38's reports, only
-  refusals are audited. The DR store: each worker storage profile names a read-only replica (endpoint, region, keys),
-  bucket and paths unchanged, as on-prem site replication keeps them.
-- The readout, for platform operators by name (D18 as amended 2026-11-20, item 78):
-  `GET /management/v1/dr/watermarks`, the tables behind, each with pointer, watermark, versions behind and lag (time
-  since its oldest unverified commit); table-free worker meters (tables behind, largest lag), and an alert in
-  `deploy/grafana` past 15 minutes (S3 Replication Time Control's 99.9% bound) until PLT-4 gives the SLA.
-- The rewind, `dr-reconcile` with `"rewind": true`: a table under a DR freeze whose pointer is above its watermark
-  moves back to it in one journaled commit, published like the fast-forward. It writes the watermark's metadata again
-  as the next version, because the walk stops where a file's version is not the pointer's. The answer lists the lost
-  tail (versions, commit ids, times) for business reconciliation. The runbook runs one verifier pass in DR first, so
-  the watermark goes as far as the DR store allows; the runbook is written down in `deploy/README.md`, which has none.
-
-**Out:**
-- The forward walk on async storage: `Reconcile.plan` reads metadata files only, so it can step to a proven file
-  whose manifests or data never reached DR. Checking there needs files the journal lacks; worth an item of its own.
-- Serving DR-region readers the watermark before any failover (the research's full design).
-- Renamed buckets: S3 bucket names are global, so an AWS DR bucket has another name while every path in the metadata
-  names the primary's. Rewriting locations, or Multi-Region Access Points, waits on PLT-4 at work.
-- A console panel, and the demo, which has one store.
-
-**The gate:**
-- Fast build: `DrVerifyTest` (`catalog-maintenance`), two in-memory stores: the watermark stops before the first
-  version missing any file, never moves back, and passes a commit that adds no snapshot on its metadata file alone.
-- Heavy (PostgreSQL, two Silo stores, a replicator the test pauses): the store suite's watermark cases on all four
-  backends; the routes in `ManagementAuthorizationTest` and `MutatingRoutesAuditTest`; `DrRewindRouteTest`: frozen
-  tables only, the lost tail reported, every file of the new version present.
-- Overnight: `DrDrillTest` gains a leg with the DR store behind: region lost, DR promoted, verifier pass, freeze,
-  rewind, thaw; every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived.
-- Bites in `bites/D37/`: data files left out of the check; a lower watermark accepted; a rewind without a freeze; a
-  rewind past the watermark.
-
-**Effort,** XL as proposed, more than five days: a schema step on four stores, three routes, a worker job, the rewind
-and a drill leg; L without the rewind. It touches `Reconcile.java` and `ReconcileRoutes.java`, as items 69 and 10 do,
-so their claims overlap and they go one at a time, 69 (S) first.
-
-**Questions for Paul:**
-1. What must reach DR before a version is safe? Recommended: every file it adds, data included, so a table at its
-   watermark reads whole. Or: metadata and manifests only, data trusted to the SLA (fewer checks; a data file can
-   still be missing at failover).
-2. Build the rewind now? Recommended: yes. Or: verifier and readout now, rewind later (then L).
-3. Where does the verifier run? Recommended: in the maintenance worker. Or: in the catalog server, which reads no
-   manifests today and would need the DR store's keys.
-4. Model the DR store as the same bucket on another endpoint (on-prem site replication) and leave renamed AWS
-   buckets to PLT-4 at work? Recommended: yes.
-
-**Paul's answers on the proposed scope, 2026-11-20 (D37, amended):** all four as recommended: every file, data included, must reach DR ("Every file, data too"); the rewind is built now ("Yes, now"), so the item is XL; the verifier runs in the maintenance worker ("Maintenance worker"); the DR store is the same bucket on another endpoint, renamed AWS buckets wait on PLT-4 ("Yes"). Item 83 is folded in ("Fold into 28"): the reconcile stops at the watermark, so it never moves a table to a version whose files are not all in the DR store. The proposed scope above is settled; build it after items 69 and 10, which edit the same reconcile code.
-
-**Built, 2026-11-20 (worktree-agent-a84494e1252023a8f); open until item 92 lands, which holds what is left.** The
-scope's "In", but the worker chart and the overnight drill leg:
-- The watermark on all four stores: `recordDrWatermark` (only rises, never above the pointer, active objects only),
-  `listDrBehind`, purged with its object; PostgreSQL V9, CockroachDB V8, Oracle V10, MongoDB step 8; `DrSuite` in each
-  store suite (heavy).
-- The routes: `GET /management/v1/maintenance/dr-work` and `PUT .../maintenance/tables/{id}/dr-watermark` for the
-  maintenance principal, `GET /management/v1/dr/watermarks` for platform operators (`DrRoutes`, `DrRoutesTest`).
-- The verifier in the worker (`DrVerify`, `DrVerifier`, `DrStores`): every `nuna.maintenance.dr.verify-interval`
-  when `nuna.maintenance.dr.replicas.<profile>` names a DR store; every file a version adds, data included; a whole
-  check in one listing for a table with no watermark (`DrVerifyTest`, `DrVerifierTest`, `DrStoresTest`).
-- Meters `nuna.maintenance.dr.*`, alerts `NunaDrLagging` (past 15 minutes) and `NunaDrVerifierNotPassing`.
-- The rewind (`dr-reconcile` with `"rewind": true`) and the walk stopping at the watermark (item 83):
-  `ReconcileWatermarkTest`, `DrRewindRouteTest` (heavy).
-- Docs: `docs/observability/dr-watermark.md`, worker-metrics.md, dashboards-and-alerts.md, the DR runbook in
-  `deploy/README.md`. Bites in `bites/D37/`: data files left out, a lower watermark accepted, a rewind without a
-  freeze, a rewind past the watermark, the walk past the watermark.
-
-Left (item 92): the worker chart's values comments, the settings in `catalog-maintenance/README.md` and
-`docs/install-at-work.md` (items 87 and 88 held those files), and `DrDrillTest`'s leg with the DR store behind.
-
-Two choices made in building it, for Paul to confirm:
-1. A version that adds nothing to the newest safe version (no snapshot or statistics file it lacks) is safe on its
-   metadata file alone, even after a version that is not. Without it the version a rewind writes could never pass,
-   since it follows the versions it gave up.
-2. The walk stops at the watermark literally: a table with a watermark never walks forward (its watermark is never
-   above its pointer), so commits the DR store holds whole beyond the DR database's pointer are not recovered; a
-   table with no watermark walks as before. The rewind is for tables; views are neither walked nor rewound, as
-   before.
-
-**Paul's answers to the questions above, 2026-11-20 (D37, amended again).** Left for item 28, on top of what landed
-at d176a3b:
-1. "Walk with a file check": the reconcile walks every table forward from the DR database's pointer, watermark or
-   not, only through versions whose every added file, data included, is in the DR store, checked at recovery,
-   stopping at the first that is not. This replaces "stops at the watermark" and covers the tables with no
-   watermark, which walk unchecked today. `bites/D37/walk-past-the-watermark` is recorded again for the new check.
-2. "Accept it": the relaxed safe-version rule stays as built.
-3. "Rewind views too": `dr-reconcile`'s rewind moves each frozen view back to its watermark as it does tables,
-   with a Java-only test and a bite.
-4. "Owner decides": a table still without a watermark is reported and left alone, as built.
-Done when 1 and 3 are built with Java-only tests and bites, and the heavy and overnight tests named above pass.
-
-**Built, 2026-11-20 (worktree-agent-a34b673c32ed6d84d): answers 1 and 3; open until the heavy and overnight tests
-pass.**
-- "Walk with a file check": `Reconcile.plan` walks every table as before, then checks each step in the store the
-  server runs on (the DR store, in DR): every file it adds to the version before it, data included, must be there; it
-  keeps the steps before the first that lacks one, takes no tip, and names the missing file. The watermark plays no
-  part in the walk any more. What a version adds is counted once, by `AddedFiles` in catalog-iceberg, for the worker's
-  `DrVerify` and for the walk: catalog-iceberg is the one catalog module that may import iceberg-core (D2,
-  `IcebergImportBoundaryTest`), so the worker (an Iceberg client, D30) and catalog-core both use it, and no boundary
-  changed. `TableFiles` gains `exists` and `bytes` (one `HEAD`; a whole read), in catalog-objectstore and the server's
-  traced wrapper (spans.md lists both). Tests: `ReconcileFileCheckTest` (new, Java-only, an Iceberg client's table in
-  memory), `ReconcileWatermarkTest`'s walk cases rewritten; `MetadataFilesTest#anyFileIsFoundAndRead` (heavy).
-- "Rewind views too": `dr-reconcile`'s rewind lists and moves views as tables, under `views` (`views-checked`),
-  reading each as its kind's metadata (`Metadata.viewFacts`). Tests: `ReconcileWatermarkTest#aFrozenViewIsRewoundToItsWatermark`
-  (Java-only); `DrRewindRouteTest#aFrozenViewAboveItsWatermarkIsRewoundToIt` (heavy).
-- Bites in `bites/D37/` recorded again against the moved code with the same breaks (`data-files-left-out` now in
-  `AddedFiles`, `rewind-past-the-watermark`, `rewind-without-freeze`), `walk-past-the-watermark` recorded again for
-  the file check, and `views-not-rewound` added.
-- Docs: `docs/observability/dr-watermark.md`, the runbook in `deploy/README.md` (rewind before walking; the walk now
-  covers every table), spans.md, build-plan.md.
-
-Left: the heavy tests (`DrRewindRouteTest`, `MetadataFilesTest`, `DrSuite`, `ManagementAuthorizationTest`,
-`MutatingRoutesAuditTest`, `DrReconcileRouteTest`) and the overnight `DrDrillTest` have not run; the overnight run takes them once this is on
-`main`. `DrDrillTest` will fail its dry run until item 93 makes its appender write the manifest lists its snapshots
-name; item 92 still holds the drill's leg with the DR store behind.
-
-**Paul, 2026-11-20, on the walk's start (D37, amended again):** "Check from the watermark". The file check landed at
-9d801ee starts at the DR database's pointer, which may sit above the watermark on a version whose own files never
-reached DR. Left: the walk checks every version from the table's watermark up, those at or below the pointer
-included; if any between the watermark and the pointer is missing a file, it takes nothing for that table and
-reports it for the rewind. A table with no watermark walks from its pointer, as built. Java-only tests and a bite (the check starting at the pointer).
-
-**Built, 2026-11-20 (worktree-agent-ac1ed31ffd65b1122): "Check from the watermark"; open until the heavy and
-overnight tests pass.**
-- `Reconcile.plan` checks a table whose pointer is above its DR watermark before walking it: each version the DR
-  database's journal records above the watermark, the pointer's included, must hold every file it adds to the version
-  before it (the watermark's, for the first), its own metadata file among them, counted by `AddedFiles` as the steps
-  are. If one lacks a file, the plan takes nothing (no step, no tip) and `problem` names the file and says to rewind
-  the table to its watermark. A table at its watermark or with none walks from its pointer, as built.
-- The versions come from the journal, the records the verifier's work list and the rewind's `lost` tail read, not
-  from the metadata log or the archive: the journal is written with the pointer in one transaction, so the DR
-  database holds every version up to its pointer, while a metadata log is trimmed and a rewind's file repeats the
-  watermark's log, which skips the versions it gave up. When a version cannot be found, nothing is taken and
-  `problem` says why: a version the journal does not hold (the versions must run one by one up to the pointer), or
-  the watermark's file missing from the store, "cannot be checked"; a version's metadata file missing from the store
-  is a missing file like any other ("storage does not hold the pointer's file ..." for the pointer's).
-- Tests, Java only, in `ReconcileFileCheckTest`: a whole stretch walks on and applies; a stretch missing a file
-  (a data file a later version deletes, a manifest list, a version's metadata file, the pointer's) takes nothing and
-  is reported; a pointer at its watermark, and no watermark, walk from the pointer as before; a journal gap or a
-  missing watermark file takes nothing. Its watermark-blind case is replaced; in `ReconcileWatermarkTest` only the
-  Javadoc and one display name change.
-- Bite `bites/D37/check-from-the-pointer` (the check skipped, so it starts at the pointer again): with it applied the
-  two stretch tests failed on assertions and no other catalog-core test did. The other D37 bites apply unchanged.
-- Docs: the runbook in `deploy/README.md` (step 5: the check from the watermark; rewind before walking stays the
-  order, no longer the only guard) and `docs/observability/dr-watermark.md`.
-
-Left: the heavy tests named above and the overnight `DrDrillTest` have not run. `DrRewindRouteTest`'s forward walk now
-stops in the new check, whose message for the pointer's own file keeps the words it asserts ("storage does not hold
-the pointer's file"). Question for Paul, not decided: a table rewound in step 4 of the runbook is reported by the walk,
-with nothing taken, until the verifier passes its rewind's version, since the versions it gave up lie between its
-watermark and its pointer and lack files (nothing builds on the rewind's file, so there is nothing to take for it).
-The runbook now says to run the verifier again before walking. Or the walk could judge the versions as the verifier
-does ("Accept it": a version adding nothing beyond the newest whole one is whole), and a rewound table would walk at
-once.
-
-**Paul, 2026-11-20, after the check from the watermark landed (D37, amended again):** "Judge like the verifier":
-the walk judges the versions between the watermark and the pointer as the verifier does, so a pointer version that
-adds nothing beyond the newest whole one (the version a rewind writes) counts as whole and the table walks at once,
-with no second verifier pass; the runbook drops that pass. Left for item 28, with item 100.
-
-**Built, 2026-11-20 (worktree-agent-a5f1bf763c08126f3): "Judge like the verifier", with item 100; open until the
-heavy and overnight tests pass.**
-- `Reconcile.plan`'s check from the watermark judges the journaled versions above it as `DrVerify` does, with the
-  same `AddedFiles.firstMissing` and `addsNothing`: a version is whole when the one before it is and it adds no
-  missing file, and after one that is not, only when it adds nothing to the newest whole version. The table is walked
-  only when the pointer's version is whole that way; otherwise `problem` names the first file missing since the newest
-  whole version. So a rewound table walks at once, its watermark at the rewind's version (item 100) or still below it.
-  `planRewind` no longer refuses a pointer that holds the watermark's metadata "until the verifier passes it": after
-  item 100 that pointer is the watermark, and "the pointer is at the DR watermark" answers it.
-- Tests, Java only, in `ReconcileFileCheckTest`: `aRewoundTableWalksAtOnce` (rewound through `planRewind` and
-  `rewind`, then walked to the next version, with the watermark at the rewind's version and at the old one) and
-  `theGivenUpVersionsNeverCount` (a version built on one missing a file never counts, whether it adds files or only
-  a property). The earlier stretch tests are unchanged.
-- Bite `bites/D37/walk-counts-given-up-versions` (a version after one not whole counts as whole).
-- The runbook (`deploy/README.md`, steps 4 and 5) and `docs/observability/dr-watermark.md` drop the second verifier
-  pass. `DrDrillTest` (overnight) checks the rewinds' watermarks at once instead of waiting for a verifier pass, and
-  no longer asserts that its lost tails stay under 100 versions.
-
-Left: the heavy tests named above and the overnight `DrDrillTest` have not run. `catalog-maintenance/README.md`
-(not this branch's) still says the drill's verifier "passes the rewound versions (backlog 92)" after the rewind.
-
-**Decided 2026-11-20 (D37, amended):** both DR alerts stay severity `page`. Paul: "Both page".
-
-Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach `DrSuite`: on MongoDB, five
-of its cases failed (`MongoStoreSuiteTest$Dr`):
-
-- "a watermark is kept, rises, never moves back, and never passes the pointer" (`DrSuite.java:79`): [one above the
-  pointer] expected `Refused[WATERMARK_AHEAD]` but was `Unchanged[]`.
-- "a view keeps a watermark; a dropped table, an object with no pointer or an unknown id is Missing"
-  (`DrSuite.java:133`): expected `Missing[OBJECT]` but was `Refused[WATERMARK_AHEAD]`.
-- "the tables and views behind are listed by id ..." (`DrSuite.java:161`): one id more than expected in the list.
-- "a journal page can start after any version ..." (`DrSuite.java:200`): expected empty but held a main journal record.
-- the rewind swap's watermark (`DrSuite.java:104`): expected 103 but was 104 (item 100's case).
-
-PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this module (item 122).
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
-
-2026-11-22: `DrSuite` was fixed on `worktree-heavy-fixes` (its versions now count the one creating an object commits;
-item 100 says how) and passed on all four stores in two full heavy builds. The third, clean in every module, also passed
-`DrRewindRouteTest`, `MetadataFilesTest`, `ManagementAuthorizationTest`, `MutatingRoutesAuditTest` and
-`DrReconcileRouteTest`. Left: item 92 and the overnight `DrDrillTest`.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -1787,6 +1554,7 @@ nuna-demo get pods`, or by the kind node container being up with the demo's name
 | [21](backlog/21.md) | A CA bundle per storage profile | done | 2026-11-20 |
 | [23](backlog/23.md) | Per-request SSE-KMS keys | done | 2026-11-20 |
 | [27](backlog/27.md) | Queryable audit tables (v1.x, D23) | done | 2026-11-20 |
+| [28](backlog/28.md) | DR replication-watermark verifier (v1.x) | done | 2026-11-26 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
 | [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |
