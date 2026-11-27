@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**29 open:** 9 S, 11 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
+**28 open:** 9 S, 10 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,7 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [303](backlog/303.md) | M | Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest) | the cause is not known yet: finding whether the archive writer is late or the reconcile's proof is wrong, then the fix | 2026-11-27 |
 | [304](backlog/304.md) | S | Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures | one test's assertion and its bite recorded again in one module | 2026-11-27 |
 | [305](backlog/305.md) | M | Bite console-goto-lookup-overdrawn does not bite: the search coming back late never overdraws the answer in the test | a browser test that must order the late search against the lookup's answer, plus the bite recorded again | 2026-11-27 |
 | [306](backlog/306.md) | S | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | the bite's Test: line and a check that it still bites | 2026-11-27 |
@@ -1305,25 +1304,6 @@ marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalanc
 than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
 5xx seen in work's Grafana.
 
-### 303. Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest)
-
-- Added: 2026-11-27 by overnight run 2026-11-27
-- Touches: catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java, and the archive writer or DR reconcile if the cause is there
-- Effort: M, the cause is not known yet: finding whether the archive writer is late or the reconcile's proof is wrong, then the fix
-
-In the nightly leg of the overnight run of 2026-11-27 (commit a7a929ac),
-`DrDrillTest#reconcileFromStorageRecoversEveryAcknowledgedCommit` failed at `DrDrillTest.java:218`: "the archive
-proves each acknowledged tip" was false after the test's 3-minute wait on `POST …/dr-reconcile`
-(`apply: false, accept-archived: true`). The last dry run reported 3 chains and 275 commit records in the archive, with
-table `dr.drill.tables.a` walked from version 22 by successor proofs; the full answer is in the test's message. The
-fix agent started for catalog-tests-load ended at once (the claude CLI's OAuth session had expired) and claimed
-nothing.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\nightly.log`,
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-27\nightly-results\catalog-tests-load\build\test-results\test\TEST-nuna.catalog.load.DrDrillTest.xml`.
-
-Done when the test passes in the overnight run's nightly leg, with the cause named.
-
 ### 304. Bite connections-reused-at-any-age judged SETUP: the failure it causes is a Docker call, read as fixtures
 
 - Added: 2026-11-27 by overnight run 2026-11-27
@@ -1817,5 +1797,6 @@ document only repeats it, it may point there instead.
 | [300](backlog/300.md) | Console: on a phone the Reading menu may run past the window and main may end in an ellipsis (from 299) | done | 2026-11-26 |
 | [301](backlog/301.md) | A documentation site: every console page and command, installation, configuration, API and operations, as static web pages | done | 2026-11-27 |
 | [302](backlog/302.md) | Heavy: SingleStore's dev container never becomes healthy, so ChangeFeedTest does not start | done | 2026-11-27 |
+| [303](backlog/303.md) | Nightly: the DR drill's archive does not prove every acknowledged tip within 3 minutes (DrDrillTest) | done | 2026-11-27 |
 | [307](backlog/307.md) | The console links to the documentation, served at /docs/ from the server | done | 2026-11-27 |
 | [308](backlog/308.md) | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | done | 2026-11-27 |

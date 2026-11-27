@@ -1,0 +1,16 @@
+Breaks: Twice maxRows is taken in an int, so a maxRows past 2^30 overflows to a negative bound and every offer is refused.
+Module: catalog-audit-tables
+Test: LogWriterTest#aMaxRowsPastHalfTheIntRangeStillTakesRecords
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+index a7a4f206..3a45f54d 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+@@ -132,7 +132,7 @@ final class LogWriter {
+      */
+     synchronized Taken offer(List<Logged> records) {
+         // In long: twice a maxRows past 2^30 overflows an int to a negative bound that refuses every offer (backlog 303).
+-        if (rows.size() >= 2L * maxRows) {
++        if (rows.size() >= 2 * maxRows) {
+             throw new Busy(rows.size());
+         }
+         Instant now = clock.instant();
