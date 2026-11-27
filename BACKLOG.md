@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 3 S, 8 M, 3 L, 4 XL.
+**17 open:** 2 S, 8 M, 3 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -29,7 +29,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
-| [318](backlog/318.md) | S | Brokerage world: fixes from the live check of items 151 to 155 and 308 | small fixes to what the first live run of the whole brokerage world shows, each with a test where one fits | 2026-11-27 |
 
 ## Open items in full
 
@@ -1321,24 +1320,6 @@ The documentation site was written from the code; these internal documents say o
 What done looks like: each corrected from the code. The public documentation is `docs/site/`; where an internal
 document only repeats it, it may point there instead.
 
-### 318. Brokerage world: fixes from the live check of items 151 to 155 and 308
-
-- Added: 2026-11-27 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo/demo.sh demo/singlestore/brokerage-feeds.sql demo-datagen/ bites/WORLD-318/
-- Effort: S, small fixes to what the first live run of the whole brokerage world shows, each with a test where one fits
-
-Items 151 to 155 and 308 landed on the fast build alone; Paul asked for one live check at the end (2026-11-26). The
-demo was rebuilt at e7582289 with the brokerage world deleted and started fresh, and these broke:
-
-1. `demo.sh up` printed "ana PUT /management/v1/catalogs/lakehouse/maintenance-policy answered 403", so maintenance
-   was never turned on in lakehouse's policy. Item 152's `lake_grants` moved demo-analysts' modify from the catalog to
-   its namespaces, so ana may no longer set the catalog's policy.
-2. `demo.sh ss` stopped at "ERROR 1064 ... near 'trigger TEXT'": item 152's `sanctions_screens` has a column named
-   `trigger`, a reserved word, and SingleStore makes the world's tables with unquoted names.
-
-What done looks like: `up` sets lakehouse's policy; `ss` and `gen` start the world; every further fault the live check
-finds is fixed here or put in an item of its own.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1639,4 +1620,5 @@ finds is fixed here or put in an item of its own.
 | [314](backlog/314.md) | Grafana dashboards and demo.sh messages name backlog items and D rows | done | 2026-11-27 |
 | [315](backlog/315.md) | Console: small faults the documentation writers found | done | 2026-11-27 |
 | [316](backlog/316.md) | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | done | 2026-11-27 |
+| [318](backlog/318.md) | Brokerage world: fixes from the live check of items 151 to 155 and 308 | done | 2026-11-27 |
 | [319](backlog/319.md) | Console: a link to Grafana's charts on the Service page, when a Grafana URL is configured | done | 2026-11-27 |

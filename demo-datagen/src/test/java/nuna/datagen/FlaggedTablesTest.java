@@ -61,6 +61,36 @@ class FlaggedTablesTest {
     }
 
     /**
+     * FLAGGED_MASKS names, for each flagged table, exactly its sensitive columns, which gary masks for demo-analysts:
+     * without rules a flagged table filters and masks nothing, so through Trino every reader saw the tax ids (item 318).
+     */
+    @Test
+    void demoShMasksEachFlaggedTablesSensitiveColumns() throws IOException {
+        Kit kit = Kit.load();
+        java.util.Map<String, Set<String>> want = new java.util.TreeMap<>();
+        for (Feed f : Feed.numbered()) {
+            Set<String> cols = new java.util.TreeSet<>(LakeSchemas.schema(f, kit).columns().stream()
+                .map(Types.NestedField::name).filter(SENSITIVE::contains).toList());
+            if (!cols.isEmpty()) {
+                want.put(f.table, cols);
+            }
+        }
+        for (Sources.Table t : Sources.Table.values()) {
+            Set<String> cols = new java.util.TreeSet<>(t.columnNames().stream().filter(SENSITIVE::contains).toList());
+            if (!cols.isEmpty()) {
+                Set<String> before = want.putIfAbsent(t.history().substring(t.history().lastIndexOf('.') + 1), cols);
+                assertThat(before == null || before.equals(cols)).as(t.history() + " masks as its namesake").isTrue();
+            }
+        }
+        java.util.Map<String, Set<String>> masks = new java.util.TreeMap<>();
+        for (String entry : words(Files.readString(DEMO.resolve("demo.sh")), "FLAGGED_MASKS")) {
+            String[] parts = entry.split(":");
+            masks.put(parts[0], new java.util.TreeSet<>(Arrays.asList(parts[1].split(","))));
+        }
+        assertThat(masks).isEqualTo(want);
+    }
+
+    /**
      * Every writer of a flagged table is a trusted engine, and no other client: Kafka Connect's sinks, the world's and
      * the CDC leg's (user cdc, connect.yaml); SingleStore's change feeds (user singlestore-feed, whose token their
      * pipeline carries, never the singlestore user's, which SingleStore's own reads use and which must stay refused);
