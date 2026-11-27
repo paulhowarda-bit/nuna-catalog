@@ -10,11 +10,13 @@ import nuna.catalog.store.StoreUnavailableException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /** Turns failures into Iceberg error responses. */
 @RestControllerAdvice
@@ -59,6 +61,23 @@ class ErrorResponses {
                 .header(HttpHeaders.RETRY_AFTER, StoreOutage.RETRY_AFTER_SECONDS)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(StoreOutage.body("Catalog store unavailable; nothing was applied: " + error.getMessage()));
+    }
+
+    /**
+     * A query parameter, path variable or header that is not of the type its route binds, such as {@code ?jobs=abc}
+     * for a number: 400 naming it. Spring's own answer for it is no {@code ErrorResponse}, so without this it fell to
+     * 500 (backlog 311).
+     */
+    @ExceptionHandler(TypeMismatchException.class)
+    ResponseEntity<String> mismatch(TypeMismatchException error) {
+        String name = error instanceof MethodArgumentTypeMismatchException argument ? argument.getName()
+                : error.getPropertyName();
+        Class<?> type = error.getRequiredType();
+        String wanted = type == null ? "of another type"
+                : type == Integer.class || type == int.class || type == Long.class || type == long.class
+                ? "a whole number" : "a " + type.getSimpleName();
+        return body(400, "BadRequestException", "Parameter " + name + " must be " + wanted + ", not '"
+                + error.getValue() + "'");
     }
 
     /** Spring's own request errors (unknown route, wrong method, bad parameter) keep their status. */

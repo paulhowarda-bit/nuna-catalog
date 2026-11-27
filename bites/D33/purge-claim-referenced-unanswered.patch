@@ -1,0 +1,17 @@
+Breaks: A purge claim on a table a ref still names has no answer of its own, so it fails as a 500.
+Module: catalog-server
+Test: HeldTablesTest#aDroppedTableATagNamesIsRefusedItsPurgeClaimNamingTheTag
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index 3881834b..672dd3cf 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -240,8 +240,6 @@ class LifecycleRoutes {
+             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_HOLDER ->
+                     throw claimedByAnother(id);
+             // A ref's cut still names it (D33): its files stay until it is taken out of every ref (backlog 309).
+-            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.REFERENCED ->
+-                    throw referenced(id, store.listRefPointers(object.id()));
+             default -> throw new IllegalStateException("claimPurge answered " + result);
+         };
+     }

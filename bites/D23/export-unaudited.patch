@@ -1,0 +1,17 @@
+Breaks: An export of a catalog's row and column rules leaves no audit record.
+Module: catalog-server
+Test: RowColumnReadRoutesTest#aGrantAdminExportsEveryRuleInTheCatalogWithItsExpressions
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+index 7aad5e17..b86c9526 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RowColumnReadRoutes.java
+@@ -191,8 +191,6 @@ class RowColumnReadRoutes {
+             }
+         }
+         // As the grants' export is (backlog 312): who took the catalog's rules, and how many.
+-        trail.record(new Export(new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG,
+-                catalog.id(), catalog.name(), List.of()), Export.ROW_COLUMN_RULES, out.size(), request.actor()));
+         return GovernanceRoutes.json(200, body);
+     }
+ 

@@ -239,6 +239,9 @@ class LifecycleRoutes {
                             + object.purgeAfter().orElseThrow());
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_HOLDER ->
                     throw claimedByAnother(id);
+            // A ref's cut still names it (D33): its files stay until it is taken out of every ref (backlog 309).
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.REFERENCED ->
+                    throw referenced(id, store.listRefPointers(object.id()));
             default -> throw new IllegalStateException("claimPurge answered " + result);
         };
     }
@@ -660,6 +663,13 @@ class LifecycleRoutes {
 
     private static CatalogError notDropped(String id) {
         return CatalogError.of(409, "NotDroppedException", id + " is not a dropped table or view");
+    }
+
+    private static CatalogError referenced(String id, List<nuna.catalog.store.RefPointers> naming) {
+        String refs = naming.stream().map(held -> "@" + held.ref().name().display()).sorted()
+                .collect(java.util.stream.Collectors.joining(", "));
+        return CatalogError.of(409, "PurgeReferencedException", id + " may not be purged while a branch or tag names it"
+                + (refs.isEmpty() ? "" : " (" + refs + ")") + "; take it out of them first");
     }
 
     static CatalogError claimedByAnother(String id) {

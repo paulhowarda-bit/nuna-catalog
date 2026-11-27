@@ -66,7 +66,8 @@ public final class SampleEvents {
                         List.of(TABLE), ACTOR),
                 new RowColumnRuleChange(RowColumnRuleChange.Action.SET, TABLE, "grp-equities-read",
                         "desk = 'EQ' AND region = \"région\"", Map.of("ssn", "'***'", "salary", "NULL"), ACTOR),
-                new RunEnd("nuna-catalog-7d9f8c6b54-x2k4q"));
+                new RunEnd("nuna-catalog-7d9f8c6b54-x2k4q"),
+                new Export(CATALOG, Export.GRANTS, 42, ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

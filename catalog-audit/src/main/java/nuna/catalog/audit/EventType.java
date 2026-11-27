@@ -43,7 +43,8 @@ public enum EventType {
     /** Version 2 adds {@code description}, the purpose a ref was made with (backlog 167). */
     REF("ref", 2, RefChange.class, "description"),
     ROW_COLUMN_RULE_CHANGE("row-column-rule", 1, RowColumnRuleChange.class),
-    RUN_END("run-end", 1, RunEnd.class);
+    RUN_END("run-end", 1, RunEnd.class),
+    EXPORT("export", 1, Export.class);
 
     private final String typeName;
     private final String name;

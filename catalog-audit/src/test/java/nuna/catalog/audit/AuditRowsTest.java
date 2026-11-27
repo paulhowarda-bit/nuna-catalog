@@ -34,7 +34,7 @@ class AuditRowsTest {
     private static final Set<EventType> ABOUT_THE_NAMESPACE = EnumSet.of(EventType.NAMESPACE_CHANGE,
             EventType.HOLD_CHANGE, EventType.LABEL_CHANGE);
     private static final Set<EventType> ABOUT_THE_CATALOG = EnumSet.of(EventType.GRANT_CHANGE, EventType.STORAGE_SETUP,
-            EventType.REF);
+            EventType.REF, EventType.EXPORT);
     private static final Set<EventType> ABOUT_NO_OBJECT = EnumSet.of(EventType.AUTH_FAILURE, EventType.ENGINE_CHANGE,
             EventType.RUN_END);
 

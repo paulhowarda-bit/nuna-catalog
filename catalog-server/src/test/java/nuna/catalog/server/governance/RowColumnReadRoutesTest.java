@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.UUID;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Denial;
+import nuna.catalog.audit.Export;
 import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.core.CatalogError;
@@ -328,6 +329,13 @@ class RowColumnReadRoutesTest {
         assertThat(risk.has("row-filter")).isFalse();
         assertThat(risk.get("column-masks").get("account").asString()).isEqualTo("NULL");
         assertThat(denials()).isEmpty();
+        // The console says the export is audited: who took the rules, and how many (backlog 312).
+        assertThat(exports()).singleElement().satisfies(export -> {
+            assertThat(export.what()).isEqualTo(Export.ROW_COLUMN_RULES);
+            assertThat(export.returned()).isEqualTo(2);
+            assertThat(export.catalog().catalog()).isEqualTo("gate");
+            assertThat(export.actor().principal()).isEqualTo("gina");
+        });
     }
 
     @Test
@@ -346,6 +354,11 @@ class RowColumnReadRoutesTest {
         assertThat(exported.get(0).has("column-masks")).isFalse();
         assertThat(body.toString()).doesNotContain(FILTER, MASK, "NULL");
         assertThat(denials()).isEmpty();
+        assertThat(exports()).singleElement().satisfies(export -> assertThat(export.returned()).isEqualTo(2));
+    }
+
+    private List<Export> exports() {
+        return audit.stream().map(CatalogEvent::data).filter(Export.class::isInstance).map(Export.class::cast).toList();
     }
 
     @Test

@@ -123,6 +123,23 @@ class HeldTablesTest {
     }
 
     @Test
+    void aDroppedTableATagNamesIsRefusedItsPurgeClaimNamingTheTag() {
+        String ns = api.namespace();
+        api.table(ns, "t");
+        String id = api.id(ns, "tables", "t");
+        String tag = "keep_" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
+        clock.advance(Duration.ofDays(31));
+
+        // A ref's cut keeps the table's files (D33): its purge is refused, as a 409 naming the ref, not a 500
+        // (backlog 309).
+        HttpResponse<String> refused = claim(id);
+        expectError(refused, 409, "PurgeReferencedException");
+        assertThat(refused.body()).contains("@" + tag);
+    }
+
+    @Test
     void aHoldAfterTheClaimDoesNotStopThePurge() {
         String ns = api.namespace();
         api.table(ns, "t");

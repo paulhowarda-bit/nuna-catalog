@@ -112,7 +112,8 @@ final class OpaAnswers {
     }
 
     private Answer answer(JsonNode input, Named table) {
-        String warehouse = catalogs.get(table.catalog().toLowerCase(Locale.ROOT));
+        // An ask naming no catalog names none nuna serves: answered as any other catalog's (backlog 310).
+        String warehouse = table.catalog() == null ? null : catalogs.get(table.catalog().toLowerCase(Locale.ROOT));
         if (warehouse == null) {
             return Answer.NONE;
         }

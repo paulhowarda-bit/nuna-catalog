@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**25 open:** 7 S, 9 M, 3 L, 4 XL, and 2 not estimated yet (`Effort: ?`).
+**21 open:** 4 S, 9 M, 3 L, 4 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,10 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [309](backlog/309.md) | S | Purging a table a ref still names answers 500, not a refusal | one missing case in one route and its test | 2026-11-27 |
-| [310](backlog/310.md) | S | OPA's row-filter and column-mask answers fail when the request names no Trino catalog | a null check at one boundary and a test | 2026-11-27 |
-| [311](backlog/311.md) | S | GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400 | a parameter's parsing and a test | 2026-11-27 |
-| [312](backlog/312.md) | ? | The console says a grants export is audited, but the export writes no audit record |  | 2026-11-27 |
 | [313](backlog/313.md) | M | Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240) | some dozen messages across four modules, and the tests that quote them | 2026-11-27 |
 | [314](backlog/314.md) | S | Grafana dashboards and demo.sh messages name backlog items and D rows | text only | 2026-11-27 |
 | [315](backlog/315.md) | S | Console: small faults the documentation writers found | five small changes in the console, Atelier's to settle where they touch design | 2026-11-27 |
@@ -1301,70 +1297,6 @@ marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalanc
 than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
 5xx seen in work's Grafana.
 
-### 309. Purging a table a ref still names answers 500, not a refusal
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/test/
-- Effort: S, one missing case in one route and its test
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-`CatalogObjectStore.claimPurge` answers `Refused(REFERENCED)` while a ref's cut names the object (its Javadoc,
-`catalog-store-api/src/main/java/nuna/catalog/store/CatalogObjectStore.java:109`), but
-`LifecycleRoutes.claimPurge` (`catalog-server/.../governance/LifecycleRoutes.java:232-242`) has cases for HELD,
-FROZEN, NOT_DUE and NOT_HOLDER only, so REFERENCED falls to `default -> throw new IllegalStateException(...)`: very
-likely a 500 to the maintenance worker. Read from the code, not reproduced. `RefRoutes` and `NamespaceRoutes`
-already answer REFERENCED as a refusal.
-
-What done looks like: claimPurge answers REFERENCED with a 409 that names the ref, audited as the other refusals
-are, and a test (on every store) claims the purge of a table a tag names and gets it.
-
-### 310. OPA's row-filter and column-mask answers fail when the request names no Trino catalog
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java, catalog-server/src/test/
-- Effort: S, a null check at one boundary and a test
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-`OpaAnswers.answer` (`catalog-server/.../security/OpaAnswers.java:115`) calls
-`table.catalog().toLowerCase(Locale.ROOT)` on the `catalogName` read from Trino's body (line 78), with no check that
-it is there. A body without it throws NullPointerException: very likely a 500 to Trino rather than "no filter".
-Read from the code, not reproduced. `/opa/v1` takes no token, so this is reachable by any caller.
-
-What done looks like: a missing or blank catalog, schema or table name answers as for an unknown catalog (no
-filter, no mask) or as a 400, whichever OPA's contract asks for, with a test for each.
-
-### 311. GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java, catalog-server/src/test/
-- Effort: S, a parameter's parsing and a test
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-`MaintenanceRoutes` binds `jobs` (and `days`) as `Integer` (`catalog-server/.../governance/MaintenanceRoutes.java:412`).
-A docs writer found `?jobs=abc` answers 500: the type mismatch is not turned into the catalog's 400 error shape.
-Seen by the writer; check whether other routes with numeric parameters do the same.
-
-What done looks like: a malformed number answers 400 BadRequestException naming the parameter, here and on any other
-route that binds a number, with a test.
-
-### 312. The console says a grants export is audited, but the export writes no audit record
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: catalog-server/src/main/resources/nuna/ui/governance.js, or catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java and RowColumnReadRoutes.java
-- Effort: S to M: either the console's words or an audit record for each export
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-The export dialog says "The export is audited." (`catalog-server/src/main/resources/nuna/ui/governance.js:270`),
-but `GrantRoutes.export` and `RowColumnReadRoutes` write no audit record when grants or rules are exported. The
-console promises what the server does not do.
-
-What done looks like: catalog-security decides whether an export must be audited. If so, each export writes a
-record (who, which catalog, how many grants) with a test; if not, the console's sentence goes.
-
 ### 313. Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240)
 
 - Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
@@ -1747,3 +1679,7 @@ document only repeats it, it may point there instead.
 | [306](backlog/306.md) | Bite console-readiness-grant-for-anyone-with-names names a test method renamed in b6c84ae9 | done | 2026-11-27 |
 | [307](backlog/307.md) | The console links to the documentation, served at /docs/ from the server | done | 2026-11-27 |
 | [308](backlog/308.md) | Brokerage world: trust the demo's writers and flag tax ids, birth dates, addresses and bank account numbers (D20) | done | 2026-11-27 |
+| [309](backlog/309.md) | Purging a table a ref still names answers 500, not a refusal | done | 2026-11-27 |
+| [310](backlog/310.md) | OPA's row-filter and column-mask answers fail when the request names no Trino catalog | done | 2026-11-27 |
+| [311](backlog/311.md) | GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400 | done | 2026-11-27 |
+| [312](backlog/312.md) | The console says a grants export is audited, but the export writes no audit record | done | 2026-11-27 |

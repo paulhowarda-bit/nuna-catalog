@@ -1,0 +1,17 @@
+Breaks: An OPA ask that names no catalog throws instead of getting no filter.
+Module: catalog-server
+Test: OpaAnswersTest#anAskNamingNoCatalogGetsNoneAndOneNamingNoSchemaOrTableInAServedCatalogGetsNoRows
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+index 992c2c0a..04c36151 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+@@ -113,7 +113,7 @@ final class OpaAnswers {
+ 
+     private Answer answer(JsonNode input, Named table) {
+         // An ask naming no catalog names none nuna serves: answered as any other catalog's (backlog 310).
+-        String warehouse = table.catalog() == null ? null : catalogs.get(table.catalog().toLowerCase(Locale.ROOT));
++        String warehouse = catalogs.get(table.catalog().toLowerCase(Locale.ROOT));
+         if (warehouse == null) {
+             return Answer.NONE;
+         }

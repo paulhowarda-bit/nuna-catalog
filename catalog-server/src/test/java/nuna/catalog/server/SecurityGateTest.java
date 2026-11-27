@@ -726,6 +726,10 @@ class SecurityGateTest {
         assertThat(JsonPath.<List<String>>read(export.body(),
                 "$.grants[?(@.group == 'analysts')].securable.namespace[0]")).contains("sales", "finance");
         assertDenied(send(ANN, "GET", GRANTS + "/export", null), "exportGrants", "no_privilege");
+        // The console says the export is audited: who took the grants, and how many (backlog 312).
+        assertThat(log.await("\"type\":\"nuna.catalog.export\"", "\"what\":\"grants\""))
+                .contains("\"principal\":\"gina\"", "\"returned\":" + JsonPath.<List<String>>read(export.body(),
+                        "$.grants[*]").size());
         log.await(3, "\"type\":\"nuna.catalog.grant\"");
     }
 
