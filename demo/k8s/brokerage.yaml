@@ -54,11 +54,16 @@ spec:
             - name: SINGLESTORE_PASSWORD
               valueFrom: {secretKeyRef: {name: singlestore-root, key: password}}
             - {name: BROKERAGE_ROUTE, value: "${BROKERAGE_ROUTE}"}
-            - {name: BROKERAGE_ACCOUNTS, value: "1000"}
-            - {name: BROKERAGE_CATCH_UP_DAYS, value: "3"}
+            # The world's scale, fixed when it begins (demo.sh: NUNA_DEMO_ACCOUNTS, NUNA_DEMO_SECURITIES,
+            # NUNA_DEMO_CATCH_UP_DAYS; item 154).
+            - {name: BROKERAGE_ACCOUNTS, value: "${BROKERAGE_ACCOUNTS}"}
+            - {name: BROKERAGE_SECURITIES, value: "${BROKERAGE_SECURITIES}"}
+            - {name: BROKERAGE_CATCH_UP_DAYS, value: "${BROKERAGE_CATCH_UP_DAYS}"}
             - {name: BROKERAGE_SEED, value: "20261122"}
             - {name: BROKERAGE_COMMIT_INTERVAL_MS, value: "15000"}
           securityContext: {allowPrivilegeEscalation: false}
           resources:
-            requests: {memory: 256Mi}
-            limits: {memory: 384Mi}
+            # 256 MB of up to 384 MB at up to 2,000 accounts, 64 MB more of the limit for each 1,000 above (demo.sh
+            # world_memory; item 154).
+            requests: {memory: ${BROKERAGE_MEMORY_REQUEST}Mi}
+            limits: {memory: ${BROKERAGE_MEMORY_LIMIT}Mi}

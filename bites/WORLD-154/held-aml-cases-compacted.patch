@@ -1,0 +1,15 @@
+Breaks: no policy of its own stops compaction and manifest rewrites on the held aml_cases, so lakehouse's policy rewrites it
+Module: demo-datagen
+Test: MaintenancePoliciesTest#nothingReachesTheHeldAmlCasesButItsOwnPolicyWhichStopsEveryJobThatWritesIt
+diff --git a/demo/demo.sh b/demo/demo.sh
+index 21b8217b..2917f384 100644
+--- a/demo/demo.sh
++++ b/demo/demo.sh
+@@ -1091,7 +1091,6 @@ maintenance_policy() {
+ # and a held table's files and snapshots are left as the hold found them. demo-datagen's MaintenancePoliciesTest holds
+ # this list.
+ MAINTENANCE_POLICIES='
+-table brokerage.compliance.aml_cases {"compaction.enabled": "false", "manifest-rewrite.enabled": "false"}
+ namespace brokerage.markets {"snapshot-expiry.max-snapshot-age": "PT1H", "snapshot-expiry.min-snapshots-to-keep": "1", "compaction.min-input-files": "2", "manifest-rewrite.min-manifests": "10"}
+ namespace brokerage.digital {"snapshot-expiry.max-snapshot-age": "P7D", "snapshot-expiry.min-snapshots-to-keep": "1", "compaction.min-input-files": "2", "manifest-rewrite.min-manifests": "10"}
+ '

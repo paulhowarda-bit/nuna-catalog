@@ -171,18 +171,64 @@ public final class Main {
         if (route.kafka()) {
             KafkaTopics.create(bootstrap, CONTROL_TOPIC, OWNERS_CONTROL_TOPIC);
         }
-        MarketCalendar calendar = new MarketCalendar();
         LocalDate today = LocalDate.now(World.NEW_YORK);
-        LocalDate start = today;
-        for (int i = Integer.parseInt(env("BROKERAGE_CATCH_UP_DAYS", "3")); i > 0; i--) {
-            start = calendar.previous(start);
-        }
-        World.Settings settings = World.Settings.of(Long.parseLong(env("BROKERAGE_SEED", "20261122")), start,
-            Integer.parseInt(env("BROKERAGE_ACCOUNTS", "1000")));
+        World.Settings settings = settings(Main::envOrNull, today);
         try (IcebergLake lake = lake()) {
             lake.bootstrap(Kit.load(), settings, today, route.kafka() ? KafkaTopics.endOffsets(bootstrap) : Map.of());
-            System.out.println("the world: " + lake.settings() + ", live from " + lake.pacedFrom());
+            World.Settings fixed = lake.settings();
+            System.out.println("the world: " + fixed + ", live from " + lake.pacedFrom());
+            if (fixed.accounts() != settings.accounts() || fixed.securities() != settings.securities()) {
+                System.out.println("WARN the world was fixed at " + fixed.accounts() + " accounts and "
+                    + fixed.securities() + " securities when it began, not the " + settings.accounts() + " and "
+                    + settings.securities() + " asked for now: its scale holds until demo/demo.sh wipe starts a new one");
+            }
         }
+    }
+
+    /** The scale a new world may be given (item 154): the generator's memory and the demo's sizing are for these. */
+    static final int MIN_ACCOUNTS = 200, MAX_ACCOUNTS = 20_000, MIN_SECURITIES = 50, MAX_SECURITIES = 1_000,
+        MAX_CATCH_UP_DAYS = 30;
+
+    /**
+     * The settings a new world is given (item 154): the seed, its brokerage accounts, its securities, and its first day,
+     * that many business days before today ({@code BROKERAGE_SEED}, {@code BROKERAGE_ACCOUNTS},
+     * {@code BROKERAGE_SECURITIES}, {@code BROKERAGE_CATCH_UP_DAYS}; 20261122, 1,000, 300 and 3 when unset), which
+     * demo.sh sets from NUNA_DEMO_ACCOUNTS, NUNA_DEMO_SECURITIES and NUNA_DEMO_CATCH_UP_DAYS. The bootstrap fixes them
+     * once, in the {@code brokerage} namespace's properties; a later one leaves them be.
+     *
+     * @throws IllegalArgumentException for a scale outside the bounds above
+     */
+    static World.Settings settings(java.util.function.Function<String, String> env, LocalDate today) {
+        int accounts = bounded(env, "BROKERAGE_ACCOUNTS", 1000, MIN_ACCOUNTS, MAX_ACCOUNTS);
+        int securities = bounded(env, "BROKERAGE_SECURITIES", 300, MIN_SECURITIES, MAX_SECURITIES);
+        int days = bounded(env, "BROKERAGE_CATCH_UP_DAYS", 3, 1, MAX_CATCH_UP_DAYS);
+        String seed = env.apply("BROKERAGE_SEED");
+        MarketCalendar calendar = new MarketCalendar();
+        LocalDate start = today;
+        for (int i = days; i > 0; i--) {
+            start = calendar.previous(start);
+        }
+        return new World.Settings(seed == null || seed.isBlank() ? 20261122 : Long.parseLong(seed.trim()), start,
+            accounts, securities);
+    }
+
+    private static int bounded(java.util.function.Function<String, String> env, String name, int fallback, int min,
+                               int max) {
+        String v = env.apply(name);
+        int n;
+        try {
+            n = v == null || v.isBlank() ? fallback : Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(name + " is a whole number from " + min + " to " + max + ", not " + v);
+        }
+        if (n < min || n > max) {
+            throw new IllegalArgumentException(name + " is from " + min + " to " + max + ", not " + n);
+        }
+        return n;
+    }
+
+    private static String envOrNull(String name) {
+        return System.getenv(name);
     }
 
     static void run() throws Exception {

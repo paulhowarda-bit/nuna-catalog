@@ -42,7 +42,8 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
         Namespace.of("brokerage", "kafka"), Namespace.of("brokerage", "money_movement"),
         Namespace.of("brokerage", "compliance"), Namespace.of("brokerage", "margin"),
         Namespace.of("brokerage", "tax"), Namespace.of("brokerage", "client_reporting"),
-        Namespace.of("brokerage", "regulatory"), Namespace.of("brokerage", "asset_servicing"), Finance.NAMESPACE);
+        Namespace.of("brokerage", "regulatory"), Namespace.of("brokerage", "asset_servicing"), Finance.NAMESPACE,
+        Namespace.of("brokerage", "digital"));
     static final Namespace LEDGER = Namespace.of("brokerage", "ledger");
 
     /**

@@ -104,8 +104,8 @@ demo/demo.sh up
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
   768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus the audit
   table writer's 384 MB, of up to 512 MB, and the maintenance worker's 192 MB, of up to 512 MB (6.6 GB in all),
-  plus Kafka Connect's 512 MB, of up to 1 GB, and the brokerage world's generator's 256 MB, of up to 384 MB
-  (7.3 GB in all), plus one job at a time: the lake writer 768 MB, the brokerage world's bootstrap 384 MB, or an
+  plus Kafka Connect's 512 MB, of up to 1 GB, and the brokerage world's generator's 256 MB, of up to 384 MB, at
+  up to 2,000 accounts (more above: The brokerage world) (7.3 GB in all), plus one job at a time: the lake writer 768 MB, the brokerage world's bootstrap 384 MB, or an
   engine up to 2 GB (Spark). The cluster's node has about 7.6 GB, which leaves about 200 MB beside Kafka
   Connect and the generator: too little for the lake writer, Spark, or a catalog server rolling to a new image (its
   new pod starts before the old one stops). So `up`, `rate` and `engines` stop both while they run and start them
@@ -406,20 +406,26 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   on. Then `gen` sets their governance as `stella` (below), starts Kafka Connect and registers the sink (with
   `kafka` on) or the change feeds of the world's SingleStore tables (with it off), and starts the generator,
   Deployment `brokerage`, last (`demo/demo.sh brokerage logs` follows it). Its settings are environment variables in `k8s/brokerage.yaml` and `k8s/brokerage-bootstrap.yaml`:
-  `BROKERAGE_ACCOUNTS=1000`, `BROKERAGE_CATCH_UP_DAYS=3`, `BROKERAGE_SEED=20261122`.
+  `BROKERAGE_SEED=20261122`, and the scale, which `demo.sh` fills in (item 154): `NUNA_DEMO_ACCOUNTS` (default
+  1000, from 200 to 20000), `NUNA_DEMO_SECURITIES` (300, from 50 to 1000) and `NUNA_DEMO_CATCH_UP_DAYS` (3, from 1
+  to 30), set in the shell that runs `gen`. The bootstrap fixes them when the world begins, so they count only for
+  the first `gen` on a new lake (or after `wipe`); a later one keeps the world's own, and its log says so with a
+  `WARN`. The generator's memory follows `NUNA_DEMO_ACCOUNTS`: 256 MB of up to 384 MB to 2,000 accounts, and 64 MB
+  more of the limit for each 1,000 above, so keep it as it was when the world began.
 - The real clock: the world's events arrive at their own time of day in New York, as a live firm's would. The
   three catch-up days and today's earlier hours go at once when the generator starts; then each event waits for its
   time. A trading day's events fall between 07:00 and 17:00, so the world is quiet overnight, over weekends and on
   market holidays (the log says `quiet until <time>`). Every minute the generator also asks Kafka Connect whether
   the sink's task has failed, as it does when the catalog restarts, and restarts it if so.
-- Kafka: the generator writes plain JSON to 34 topics, and Kafka Connect's Iceberg sink `brokerage-lake`
+- Kafka: the generator writes plain JSON to 49 topics, and Kafka Connect's Iceberg sink `brokerage-lake`
   (`demo/brokerage/connector.json`, as user `cdc`) routes each record to the table its `lake_table` field names,
   committing every 15 seconds. The tables must exist: the sink neither makes nor changes them.
 
   | Kafka topic | Iceberg table in `lakehouse` |
   |---|---|
   | `brokerage.reference.calendar`, `.securities` | `brokerage.reference.calendar`, `.securities` |
-  | `brokerage.markets.bars-5m`, `.prices-eod` | `brokerage.markets.bars_5m`, `.prices_eod` |
+  | `brokerage.markets.bars-5m`, `.prices-eod`, `.quotes` | `brokerage.markets.bars_5m`, `.prices_eod`, `.quotes` |
+  | `brokerage.digital.sessions`, `.click-events` | `brokerage.digital.sessions`, `.click_events` |
   | `brokerage.party.accounts`, `.parties`, `.account-roles`, `.cip-checks`, `.suitability-profiles`, `.trusted-contacts` | `brokerage.party.accounts`, `.parties`, `.account_roles`, `.cip_checks`, `.suitability_profiles`, `.trusted_contacts` |
   | `brokerage.party.beneficial-owners`, through a sink of its own, `brokerage-lake-owners` (`demo/brokerage/owners-connector.json`) | `brokerage.party.beneficial_owners` |
   | `brokerage.money-movement.payments`, `.ach-returns`, `.acats-transfers` | `brokerage.money_movement.payments`, `.ach_returns`, `.acats_transfers` |
@@ -495,12 +501,26 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   `cat_vs_orders`. Each is empty on a consistent world; the seeded bust shows in `statements_vs_ledger` as the
   restated account's unsettled purchases and position, and at the tag `statements_vs_ledger` is empty. Ties 5 and 6
   appear once the CDC leg has run.
+- The streams (item 154, `world/Quotes.java`, `world/Digital.java`): through the session, each security's best bid
+  and offer as it changes (`brokerage.markets.quotes`: the popular names every minute, the tail about one minute in
+  five, about 37,000 a business day at 300 securities), and the digital channels' sessions and click events
+  (`brokerage.digital.sessions`, `.click_events`: about 0.35 sessions a business day per account, active traders
+  far more than dormant accounts, one in ten a visitor who never logs in, about 15 events each, between 07:00 and
+  17:00). Each event goes out at its time; a session's row goes out as it ends. With Kafka off they go through
+  SingleStore's tables `quotes`, `sessions` and `click_events` into `brokerage.singlestore`, as every Kafka feed does.
+  If they land on a world begun before them, the generator sends them from the world's first day as it catches up.
+  ```sql
+  SELECT channel, count(*), avg(events) FROM lakehouse."brokerage.digital".sessions GROUP BY channel;
+  SELECT symbol, count(*) FROM lakehouse."brokerage.markets".quotes GROUP BY symbol ORDER BY 2 DESC LIMIT 10;
+  ```
 - Governance, once per lake: `brokerage.reference`'s tables are `public`, `brokerage.markets`' `internal`,
   `brokerage.party.accounts` `restricted` and `brokerage.ledger`'s tables and views `confidential`; namespaces
   `brokerage.party` and `brokerage.ledger` are regulated, marked after their tables are classified, and
   `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. On every `gen`, as item 151
   added them: `brokerage.clearing` and `brokerage.recon` are `confidential`, `brokerage.kafka` `internal`, and
-  `brokerage.clearing` and `brokerage.kafka` have owners. On every `gen`, as item 153 added them:
+  `brokerage.clearing` and `brokerage.kafka` have owners. On every `gen`, as item 154 added them:
+  `brokerage.markets.quotes` is `internal`, and `brokerage.digital` `internal`, owned by `digital-channels`. On every
+  `gen`, as item 153 added them:
   `brokerage.margin`, `.tax`, `.client_reporting` and `.regulatory` are `confidential`, `brokerage.asset_servicing`
   `internal`, and `brokerage.finance` `confidential` and regulated, each with an owner. The grants on all of
   `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino. On every `gen`, as item 152
@@ -595,6 +615,14 @@ nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`,
 - The brokerage world's Kafka Connect sink and SingleStore's change feeds commit every 15 seconds, so their
   tables gather small files and snapshots all day: they are the queue. `brokerage.trading.orders` carries equality
   deletes, as does `markets.equities.eu.xetra.orders` from before item 151, which go first.
+- The brokerage world's policies (item 154; `demo.sh`'s `MAINTENANCE_POLICIES`, set on every `gen`): the streams'
+  namespaces keep their snapshots short and are compacted sooner. `brokerage.markets` keeps snapshots an hour and
+  its newest alone beyond that; `brokerage.digital` keeps 7 days (the design's); both need compaction at 2 small files
+  a partition and a manifest rewrite at 10 manifests, against `lakehouse`'s 5 and 100, so the quotes and click events
+  head the Health page's neediest tables after a day of the generator. `brokerage.compliance.aml_cases`, under a
+  legal hold, has its own policy turning compaction and manifest rewrites off (set as `presenter`, the one person who
+  may modify there): the hold already stops its expiry and orphan scans, and so the worker never writes it.
+  The streams' copies under `brokerage.singlestore`, made only while Kafka is off, keep `lakehouse`'s policy.
 - What it leaves alone: branches and tags keep their snapshots and files (the catalog's `dev` and `sample`, and
   `xetra.trades`' own `eod-2026-11-09` and `surveillance-review`); the legal hold on `xetra.trades` and the DR freeze
   on `reference.countries` stop its expiry and orphan scans there, as the catalog's work list leaves them out.

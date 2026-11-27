@@ -82,7 +82,13 @@ public enum Feed {
     // Regulatory: the CAT events of every order, route and fill, and the weekly 15c3-3 reserve computation.
     CAT_EVENTS(Path.KAFKA, "brokerage.regulatory.cat-events", "brokerage.regulatory", "cat_events"),
     RESERVE_COMPUTATION(Path.KAFKA, "brokerage.regulatory.reserve-computation", "brokerage.regulatory",
-        "reserve_computation");
+        "reserve_computation"),
+    // The streams (item 154): the market's quotes through the session, and the digital channels' sessions and click
+    // events. They commit with the sink every 15 seconds all day, so they are the tables maintenance (D30) works on
+    // most: demo.sh gives their namespaces policies of their own (MAINTENANCE_POLICIES).
+    QUOTES(Path.KAFKA, "brokerage.markets.quotes", "brokerage.markets", "quotes"),
+    SESSIONS(Path.KAFKA, "brokerage.digital.sessions", "brokerage.digital", "sessions"),
+    CLICK_EVENTS(Path.KAFKA, "brokerage.digital.click-events", "brokerage.digital", "click_events");
 
     public enum Path { KAFKA, SINGLESTORE }
 
@@ -138,6 +144,17 @@ public enum Feed {
             return COMPLIANCE_COPIES + "." + table;
         }
         return (path == Path.KAFKA ? SINGLESTORE_COPIES : KAFKA_COPIES) + "." + table;
+    }
+
+    /**
+     * The streams (item 154): the feeds sent all through the session, a record every few seconds, rather than at a day's
+     * events or its end. bars_5m is one too, from world 1.
+     */
+    public boolean streaming() {
+        return switch (this) {
+            case BARS_5M, QUOTES, SESSIONS, CLICK_EVENTS -> true;
+            default -> false;
+        };
     }
 
     /** Whether the feed carries the world's days (and is tagged at each end of day), not reference data sent once. */

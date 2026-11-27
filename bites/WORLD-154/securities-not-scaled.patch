@@ -1,0 +1,16 @@
+Breaks: the bootstrap ignores BROKERAGE_SECURITIES: every world has 300 securities
+Module: demo-datagen
+Test: ScaleTest#theEnvironmentSetsTheScaleWithinItsBounds
+diff --git a/demo-datagen/src/main/java/nuna/datagen/Main.java b/demo-datagen/src/main/java/nuna/datagen/Main.java
+index 9d620e75..80d76770 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/Main.java
++++ b/demo-datagen/src/main/java/nuna/datagen/Main.java
+@@ -200,7 +200,7 @@ public final class Main {
+      */
+     static World.Settings settings(java.util.function.Function<String, String> env, LocalDate today) {
+         int accounts = bounded(env, "BROKERAGE_ACCOUNTS", 1000, MIN_ACCOUNTS, MAX_ACCOUNTS);
+-        int securities = bounded(env, "BROKERAGE_SECURITIES", 300, MIN_SECURITIES, MAX_SECURITIES);
++        int securities = 300;
+         int days = bounded(env, "BROKERAGE_CATCH_UP_DAYS", 3, 1, MAX_CATCH_UP_DAYS);
+         String seed = env.apply("BROKERAGE_SEED");
+         MarketCalendar calendar = new MarketCalendar();
