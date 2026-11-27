@@ -1,0 +1,16 @@
+Breaks: a payment's amount is not the amount the ledger booked for it (tie 5)
+Module: demo-datagen
+Test: BackOfficeTest#everyPaymentIsTheLedgersWithItsIdTemplateAndAmount
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java b/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java
+index 2ab141a3..2a35a359 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/BackOffice.java
+@@ -712,7 +712,7 @@ final class BackOffice {
+         row.put("method", p.method);
+         row.put("direction", p.direction);
+         row.put("status", status);
+-        row.put("amount", p.amount);
++        row.put("amount", p.amount.add(BigDecimal.ONE));
+         row.put("financial_transaction_id", ft);
+         row.put("template_id", template);
+         row.put("expected_settlement_date", p.expected);

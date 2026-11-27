@@ -1,0 +1,16 @@
+Breaks: the back office load writes every row again, changed or not, so each cdc records a change for every row
+Module: demo-datagen
+Test: SourcesTest#theBackOfficeLoadWritesEveryRowOnceThenOnlyWhatChanged
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+index f9fb16c9..f652a6d4 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/Sources.java
+@@ -302,7 +302,7 @@ public final class Sources implements AutoCloseable {
+                      "DELETE FROM " + t.qualified() + " WHERE " + t.key() + " = ?")) {
+                 for (List<Object> row : book.rows.get(t).values()) {
+                     List<String> values = row.stream().map(Sources::normal).toList();
+-                    if (values.equals(held.remove(values.get(key)))) {
++                    if (values.equals(held.remove(values.get(key))) && written < 0) {
+                         continue;
+                     }
+                     for (int i = 0; i < row.size(); i++) {

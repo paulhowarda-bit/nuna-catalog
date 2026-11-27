@@ -1564,7 +1564,7 @@ brokerage_clearing_governance() {
 # restricted, both regulated, each table classified first, as a regulated namespace closes an unclassified table to
 # its writers; the current-state views take their namespace's classification. aml_cases is under a legal hold (D24),
 # placed once. Tax ids, birth dates, addresses and bank account numbers are not flagged (D20): a flagged table opens
-# its files only to trusted engines, and the sinks that write these tables are not one (a backlog item asks Paul).
+# its files only to trusted engines, and the sinks that write these tables are not one (item 152 asks Paul).
 brokerage_backoffice_governance() {
   local m=/management/v1/catalogs/$CATALOG ns table
   classify() {
