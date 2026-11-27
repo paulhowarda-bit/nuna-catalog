@@ -43,10 +43,24 @@ small copy icon beside it. None of the three is a secret.
 
 ### Part 2: the role the tests sign into
 
-1. In the search box, type `IAM` and click **IAM**. In the left menu click **Roles**, then **Create role** (top right).
-2. **Trusted entity type**: choose **Custom trust policy**. A text box appears holding a short policy.
-3. Click in that box, select everything (Ctrl+A), delete it, and paste the policy below. Then replace
-   `PASTE-TRUST-ANCHOR-ARN-HERE` with the trust anchor ARN from part 1, keeping the quotation marks around it.
+Making the role takes three screens; the console shows them down its left side as **Step 1 Select trusted
+entity**, **Step 2 Add permissions** and **Step 3 Name, review, and create**. Its permissions are added afterwards,
+on the role's own page, in two more screens.
+
+**Open the role form**
+
+1. Open https://us-east-1.console.aws.amazon.com/iam/home#/roles (or: type `IAM` in the search box at the top of the
+   console and click **IAM**, then click **Roles** in the left menu, under **Access management**).
+2. The page lists the account's roles. Click the orange **Create role** button, top right of the list.
+
+**Screen 1: Select trusted entity**
+
+3. Under **Trusted entity type** are five cards: **AWS service**, **AWS account**, **Web identity**,
+   **SAML 2.0 federation** and **Custom trust policy**. Click **Custom trust policy** (the last card).
+4. Below the cards a box titled **Custom trust policy** appears, already holding a short policy, with a panel on its
+   right titled **Edit statement**. Ignore that panel.
+5. Click inside the policy box, press Ctrl+A to select all of it, and press Delete, so the box is empty.
+6. Paste this policy:
 
    ```json
    {
@@ -65,18 +79,45 @@ small copy icon beside it. None of the three is a secret.
    }
    ```
 
-   This lets in only a certificate signed by your CA whose name is `nuna-tests`.
-   If the box shows a red error, the usual cause is a missing quotation mark around the ARN.
-4. Click **Next**. The **Add permissions** page lists AWS's own policies: tick none of them, and click **Next**.
-5. **Role name**: `nuna-test-runner`. **Description**: `Tests that run against AWS, signed in by certificate`.
-6. Scroll down and click **Create role**.
-7. A green banner says the role was made. Click **View role** in the banner (or find `nuna-test-runner` in the
-   list and click it).
-8. On the role's page, copy its **ARN** (`arn:aws:iam::...:role/nuna-test-runner`) into your note as **role ARN**.
-9. Still on the role's page, open the **Permissions** tab. Click **Add permissions** (on the right), then
-   **Create inline policy**.
-10. At the top of the policy editor, click **JSON** (beside **Visual**). Select everything in the box, delete it, and
-    paste this:
+7. In the box, double-click `PASTE-TRUST-ANCHOR-ARN-HERE` (it may select only part of it; drag across it until all of
+   it is selected, leaving the two quotation marks around it), and paste the trust anchor ARN from part 1 over it.
+   The line should then read `"aws:SourceArn": "arn:aws:rolesanywhere:us-east-1:...:trust-anchor/..."`.
+8. Below the box the console checks the policy. A red message means something is off, most often a missing
+   quotation mark around the ARN; yellow warnings can be left. The policy lets in only a certificate signed by your
+   CA whose name is `nuna-tests`.
+9. Click **Next** (bottom right).
+
+**Screen 2: Add permissions**
+
+10. This screen lists AWS's own policies, with tick boxes. Tick none of them: the role's permissions are added on its
+    own page in a moment.
+11. Click **Next** (bottom right).
+
+**Screen 3: Name, review, and create**
+
+12. **Role name**: `nuna-test-runner`.
+13. **Description**: replace what is there with `Tests that run against AWS, signed in by certificate`.
+14. Below are three panels to check, not change: **Step 1: Select trusted entities** shows the policy you pasted
+    (with your ARN in it), **Step 2: Add permissions** says no policies, and **Step 3: Add tags** is empty.
+15. Click **Create role** (bottom right).
+
+**The role's page: copy its ARN**
+
+16. You are back on the list of roles, with a green banner at the top: "Role nuna-test-runner created". Click
+    **View role** in the banner. (If there is no banner, type `nuna-test-runner` in the search box above the list and
+    click the role's name.)
+17. The role's page opens with a **Summary** panel. Copy its **ARN** (`arn:aws:iam::...:role/nuna-test-runner`, with a
+    copy icon beside it) into your note as **role ARN**.
+
+**Add its permissions: screen 1, Specify permissions**
+
+18. Below the summary are tabs: **Permissions**, **Trust relationships**, **Tags**, and others. Stay on
+    **Permissions** (it opens first).
+19. On the right of the **Permissions policies** panel, click **Add permissions**. A short menu opens: click
+    **Create inline policy**.
+20. The **Specify permissions** screen opens. Its **Policy editor** has two buttons at its top right, **Visual** and
+    **JSON**. Click **JSON**.
+21. Click inside the editor, press Ctrl+A, press Delete, and paste this:
 
     ```json
     {
@@ -113,7 +154,14 @@ small copy icon beside it. None of the three is a secret.
     }
     ```
 
-11. Click **Next**. **Policy name**: `nuna-test-runner-permissions`. Click **Create policy**.
+    Nothing in it needs changing. Click **Next** (bottom right).
+
+**Add its permissions: screen 2, Review and create**
+
+22. **Policy name**: `nuna-test-runner-permissions`.
+23. The **Permissions defined in this policy** panel lists S3, IAM and STS. Click **Create policy** (bottom right).
+24. You are back on the role's page. Under **Permissions policies** it now lists `nuna-test-runner-permissions`,
+    type **Customer inline**. The role is done.
 
 ### Part 3: the Roles Anywhere profile (joins the certificate to the role)
 
