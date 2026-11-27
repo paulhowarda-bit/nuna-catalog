@@ -468,6 +468,27 @@ What reaches beyond the machine (checked 2026-11-13):
   sign-in proxy, Silo, PostgreSQL, Kafka, the key server, the lake writer, Trino and the CDC leg. `demo.sh engines` builds the
   engine images, which need the mirrors in section 2.
 
+### Sizing the brokerage world
+
+The brokerage world (`demo.sh gen`; `demo/README.md`, "The brokerage world") takes its scale from three variables
+in the shell that runs the first `gen` on a new lake (or the first after `wipe`); the world keeps them from then on:
+
+- `NUNA_DEMO_ACCOUNTS`, brokerage accounts, default 1000, from 200 to 20000. The books, the orders and the digital
+  sessions grow with it. At the defaults a business day is about 110,000 rows, of which the 23,400 bars and 37,400
+  quotes depend on the securities alone.
+- `NUNA_DEMO_SECURITIES`, default 300, from 50 to 1000: bars (78 a security a day) and quotes (about 125 a
+  security a day) grow with it.
+- `NUNA_DEMO_CATCH_UP_DAYS`, the business days played before the first day (default 3, from 1 to 30). They go to
+  the lake as fast as the sink takes them, so 30 days at the default scale is about 3.3 million rows before the world
+  is live.
+
+The generator's memory follows `NUNA_DEMO_ACCOUNTS`: 256 MB of up to 384 MB to 2,000 accounts, the limit 64 MB more
+for each 1,000 above (896 MB at 10,000). Measured at home, six days held 37 MB of heap at 1,000 accounts and 173 MB at
+10,000; the books grow with the days, so watch `kubectl top pod -l app=brokerage` over the first week. Size it to the
+cluster: on a machine like home's (7.5 GB for Podman, the demo using 7.3 GB with `gen` and `ss` on), keep the
+default; on a larger cluster 5,000 to 10,000 accounts and 500 securities show the maintenance pages a busier estate.
+Keep the variable set as it was when the world began: a lower value shrinks the generator's limit, not the world.
+
 ### HTTPS with work's certificate
 
 Every page of the demo is HTTPS through one front door, nginx (`demo/k8s/ports.yaml`), with the certificate in

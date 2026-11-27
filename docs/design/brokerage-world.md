@@ -74,7 +74,7 @@ none comes from a published source.
 |---|---|---|---|---|---|
 | Onboarding and KYC | party (name, birth date, tax id and type, address, employment, control-person and PEP flags), account (type, IRA subtype, status), roles, suitability profile, beneficial owners, trusted contact, agreements | 31 CFR 1023.220, 1010.230; SEA 17a-3(a)(17), (a)(35); FINRA 4512 | 1 or 2 new accounts a day | PostgreSQL, `party` | 1, 3 |
 | Security master | security (internal id, CUSIP, ISIN, ticker, type, issuer, marginable and house rate, easy or hard to borrow, threshold flag), symbology history | CUSIP and ISIN check digits | daily, about 300 securities | Java writer, `reference` | 1 |
-| Market data | closing prices, bars, NBBO at each order event | Rules 605, 606; 10b-10 | daily; streams in live mode | Java writer, Kafka, `markets` | 1, 5 |
+| Market data | closing prices, five-minute bars, live quotes (best bid and offer through the session) | Rules 605, 606; 10b-10 | daily; bars and quotes stream (about 37,000 quotes a day at 300 securities) | Kafka, `markets` | 1, 5 |
 | Orders and routing | order (client order id, side incl. sell short, type, limit and stop, time in force, received and entered, solicited, locate id, channel), order events, routes | 17a-3(a)(6); FIX 11, 37, 38, 40, 44, 54, 59; CAT; Rule 606 | 200 to 600 orders a day | SingleStore, `trading` | 2 |
 | Executions | exec id, last quantity and price, cumulative and leaves, venue, time; busts | FIX ExecutionReport; kit templates 41, 44, 61, 64 | 1.2 to 2 fills an order | SingleStore, then the ledger | 2 |
 | Best execution | quality per order (NBBO at receipt, improvement, speed, fill rate), reviews | FINRA 5310 | daily, quarterly review | `trading` | 4 |
@@ -97,7 +97,7 @@ none comes from a published source.
 | Surveillance | alerts by model (wash trades, spoofing, front-running), cases | FINRA 5270 | T+1 | `compliance` | 3 |
 | Complaints | complaint, disposition | 17a-3(a)(18); FINRA 4530 | a few a month | PostgreSQL, `compliance` | 3 |
 | General Ledger | GL accounts, journal entries, trial balance, reconciliations | 17a-3(a)(2), (a)(11) | daily, closed monthly | Oracle, `finance` | 4 |
-| Digital channels | sessions, click events | none directly | 200 to 500 sessions a day | Kafka, `digital` | 5 |
+| Digital channels | sessions (web, iOS, Android; one in ten a visitor who never logs in), click events | none directly | about 350 sessions and 5,000 events a day | Kafka, `digital` | 5 |
 
 Left out: advisory and rebalancing, options exercise and assignment, associated persons, escheatment, firm risk limits
 beyond margin. Books and records are not modelled as data: under D24 no Iceberg table is a required record.
@@ -122,7 +122,7 @@ Under `lakehouse.brokerage`, beside the existing samples.
 | Namespace | Tables | Governance |
 |---|---|---|
 | `reference` | securities, identifiers, calendar, venues, corporate_actions, fee_schedules | public; one table under a DR freeze |
-| `markets` | prices_eod, bars_5m, quotes | internal; short snapshot retention, compaction |
+| `markets` | prices_eod, bars_5m, quotes | internal; snapshots kept an hour, the newest alone beyond it; compacted at 2 small files a partition, manifests rewritten at 10 (item 154) |
 | `party` | parties, accounts, account_roles, cip_checks, suitability_profiles, beneficial_owners, trusted_contacts; `history` | restricted, regulated; parties and beneficial_owners, which hold tax id, birth date and address, flagged (D20, item 308), their writers registered as trusted engines |
 | `trading` | orders, order_events, routes, executions, best_ex_reviews | internal |
 | `kafka` | order_events, routes, executions, as they went through Kafka while SingleStore was off (D50) | internal |
@@ -137,7 +137,7 @@ Under `lakehouse.brokerage`, beside the existing samples.
 | `client_reporting` | confirms, statements | confidential; a month-end tag |
 | `regulatory` | cat_events, rule606_routing, reserve_computation, net_capital | confidential |
 | `finance` | gl_journal, gl_balances, bank_accounts, bank_payments; phase 4 makes the first two and bank_payments as views over the CDC leg's Oracle histories, without the counterparty's bank details, and no bank_accounts | confidential, regulated |
-| `digital` | sessions, events | internal; 7-day snapshot retention, frequent compaction |
+| `digital` | sessions, click_events (`events` in this plan; a name no engine reserves, item 154) | internal; 7-day snapshot retention; compacted at 2 small files a partition, manifests rewritten at 10 |
 | `recon` | views only, one per tie | internal |
 
 ## What the catalog gets to show
@@ -159,7 +159,9 @@ Under `lakehouse.brokerage`, beside the existing samples.
   account bucket at larger scale.
 - Row-level changes: equality deletes from the change feed, v3 deletion vectors for busts and cancel-corrects, CDC
   histories with current-state views.
-- Maintenance (D30) and the health dashboard (D38): streaming tables commit every few seconds and need it.
+- Maintenance (D30) and the health dashboard (D38): streaming tables commit every few seconds and need it. Item 154
+  gives `markets` and `digital` policies of their own (`demo.sh`'s `MAINTENANCE_POLICIES`), and the held
+  `compliance.aml_cases` one that stops compaction and manifest rewrites, which its hold's guardrail does not.
 - Views in more than one dialect: the derived balances, current state over each history, the reconciliations.
 
 ## It ties out
@@ -222,10 +224,14 @@ a sanctions match that raise alerts.
   since the world began, a table's rows, or, for the way that is off, its lake table's records), so it sends nothing
   twice across a change of route; demo.sh drains a way into the lake (`Main drain`) before turning it off. The
   end-of-day tags go on every table that changed that day, whichever way it went.
-- **Scale.** Default 1,000 accounts. A business day is about 1,800 financial transactions, 15,700 journal lines, 16,400
-  balance rows, 23,400 bars, 300 closing prices and 430 orders (1,300 order changes), about 58,000 rows, so a demo
-  left running for a working day holds about 50 business days and 3 million rows. A month at that scale (the fast
-  build's test) is 40,000 financial transactions and 346,000 journal lines.
+- **Scale.** Default 1,000 accounts and 300 securities. A business day is about 1,800 financial transactions, 15,700
+  journal lines, 16,400 balance rows, 23,400 bars, 37,400 quotes, 300 closing prices, 430 orders (1,300 order
+  changes), 370 sessions and 5,200 click events: about 110,000 rows in all (measured on six days, 2026-11-27). A
+  month at that scale (the fast build's test) is 40,000 financial transactions and 346,000 journal lines. The scale
+  is set when a world begins (item 154): `demo.sh` reads `NUNA_DEMO_ACCOUNTS` (200 to 20,000),
+  `NUNA_DEMO_SECURITIES` (50 to 1,000) and `NUNA_DEMO_CATCH_UP_DAYS` (1 to 30), and the bootstrap fixes them in the
+  `brokerage` namespace's properties; a later bootstrap keeps the world's own and warns. Sessions and the books grow
+  with the accounts, bars and quotes with the securities.
 - **Java, in a Gradle module `demo-datagen`** (a choice made here, Paul may overrule). The kit's engine is ported; the
   44 booking schemes (v14's 22, item 155's 22) and the chart are data the port reads, exported from the kit, so a new
   kit version changes data and only touches code where it adds a calculation. The port must reproduce
@@ -235,7 +241,8 @@ a sanctions match that raise alerts.
 
 ## Constraints
 
-- Docker's 7.5 GB: the generator runs at 256 MB (384 MB limit) and Kafka Connect, now in the base stack, at 512 MB
+- Docker's 7.5 GB: the generator runs at 256 MB (384 MB limit) up to 2,000 accounts, its limit 64 MB more for each
+  1,000 above (`demo.sh`'s `world_memory`; six days held 37 MB of heap at 1,000 accounts, 173 MB at 10,000) and Kafka Connect, now in the base stack, at 512 MB
   (1 GB limit); the change feed's pipeline reserves 384 MB inside SingleStore's pod. The CDC leg pauses the generator
   (scales it to 0) while it runs, and resumes it at `cdc stop`.
 - The demo is shared (Atelier works against it): each phase lands for the overnight rebuild.
