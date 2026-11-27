@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**26 open:** 5 S, 9 M, 7 L, 5 XL.
+**25 open:** 4 S, 9 M, 7 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,7 +33,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
-| [259](backlog/259.md) | S | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails | 2026-11-24 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [278](backlog/278.md) | M | A transaction on a branch holds a table it leaves unchanged and has not committed to on the branch (item 105's Left) | a hold that can say "no pointer here" on four stores, used by a transaction on a branch for a table it only checks, with a fast engine test and a suite case on four stores; the suite case waits for the overnight heavy build | 2026-11-25 |
 | [296](backlog/296.md) | S | Console browser tests: the guard against the nuna-demo stack sees no demo since it moved to kind | one check in one test helper: count the demo's pods where kind runs them, checked with the demo up and down | 2026-11-26 |
@@ -1584,32 +1583,6 @@ were written and compiled, not run here. Open until the overnight run passes the
   run) now covers the note's words, the status line, Up to keeping the start, the button and `from=any`, the Record
   tab's link and a link's other time. Bite recorded, not run: `bites/UI/console-ref-start-dropped-with-up-to`.
 
-### 259. Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete?
-
-- Added: 2026-11-24 by local_64c69a92-4cf7-41a8-a51a-5e734f10b32d
-- Touches: catalog-objectstore/src/test/java/nuna/catalog/objectstore/DeletePolicyAwsTest.java, deploy/README.md, status/
-- Effort: S, one test class run with an AWS CLI profile, and a fix to the test or to the README's AWS rule if it fails
-
-## What is missing
-
-Item 256 makes the store the only limit on where the maintenance worker deletes, and `deploy/README.md` ("Delete
-rights") tells operators to give the worker role no S3 policy of its own in the bucket's account, since the delete
-policy's bucket-policy allow is enough there. catalog-security did not check that claim (backlog 256, "Not checked by
-catalog-security"). Item 256 wrote the test, `DeletePolicyAwsTest#theBucketPolicyAloneLetsTheWorkerDelete`: a role the
-test makes with a trust policy only, the catalog's bucket policy for it, then list and delete beneath the prefix, and
-refusals outside it and in a second bucket. It has never run: the machine it was written on has no AWS profile, and the
-overnight run has no AWS leg.
-
-## Done when
-
-- `./gradlew :catalog-objectstore:test --tests 'nuna.catalog.objectstore.DeletePolicyAwsTest' -Pheavy -Ps3=aws
-  -Pnuna.aws.profile=<profile>` passes, both tests, and the run leaves no `nuna-test-bare-worker-*` role behind (the
-  test prints one it had to keep).
-- If the role is refused beneath the prefix, the README's AWS rule changes to what works (the role's own policy
-  limited to the generated prefixes) and the test with it; if it is let in outside the prefix, the delete policy is
-  wrong and that is a new item.
-- The run is recorded in `status/`.
-
 ### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR
 
 - Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
@@ -2041,6 +2014,7 @@ from 361 to 1,440 px with long names, as the console does.
 | [256](backlog/256.md) | Worker: read its storage prefixes from the catalog at each scan, keeping one identity per store in its settings (a change to D30) | done | 2026-11-24 |
 | [257](backlog/257.md) | Atelier's wording review of the row and column rules in the console | done | 2026-11-24 |
 | [258](backlog/258.md) | Grants: refuse write on a view, which gives only select there yet counts as a data duty | done | 2026-11-25 |
+| [259](backlog/259.md) | Run DeletePolicyAwsTest on AWS: does the bucket policy alone let a worker role with no S3 policy of its own list and delete? | done | 2026-11-26 |
 | [260](backlog/260.md) | Console: the Grants page lists the catalog's groups with their duties when no group is named | done | 2026-11-25 |
 | [261](backlog/261.md) | Alerts: availability SLOs beside the latency SLOs, and absence alerts, so a catalog answering 500 or gone silent pages someone | done | 2026-11-25 |
 | [262](backlog/262.md) | Audit archive: records written during a Kafka outage never reach it, and each chain's head is anchored by the archiver itself (Paul decides what D23 promises) | done | 2026-11-25 |
