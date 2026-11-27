@@ -3,7 +3,8 @@
 # up runs it after the catalog and Kafka are up, waits for it and deletes it; then it sets the tables' governance,
 # registers Kafka Connect's sink brokerage-lake and starts the generator (brokerage.yaml), whose environment this
 # repeats. It makes the topics only while BROKERAGE_ROUTE includes Kafka. demo.sh runs the same Job, renamed, with
-# args drain kafka or drain singlestore before it turns a way off (brokerage_job, backlog 238).
+# args drain kafka or drain singlestore before it turns a way off (brokerage_job, backlog 238), and custody as the CDC
+# leg starts, which loads the clearing books into its CockroachDB (item 151).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -36,6 +37,11 @@ spec:
             - {name: BROKERAGE_CATCH_UP_DAYS, value: "3"}
             - {name: BROKERAGE_SEED, value: "20261122"}
             - {name: BROKERAGE_COMMIT_INTERVAL_MS, value: "15000"}
+            # custody: the CDC leg's CockroachDB, as its login clearing (demo/cdc/cockroach.sql).
+            - {name: COCKROACH_URL, value: "jdbc:postgresql://cockroach:26257/custody?sslmode=disable"}
+            - {name: COCKROACH_USER, value: clearing}
+            - name: COCKROACH_PASSWORD
+              valueFrom: {secretKeyRef: {name: demo-secrets, key: clearing, optional: true}}
           securityContext: {allowPrivilegeEscalation: false}
           resources:
             limits: {memory: 384Mi}

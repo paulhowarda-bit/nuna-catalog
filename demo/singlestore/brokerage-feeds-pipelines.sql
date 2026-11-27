@@ -9,7 +9,7 @@ USE brokerage;
 CREATE OR REPLACE PIPELINE brokerage_world_to_lake AS LOAD DATA CONNECTOR 'ChangeFeedConnector'
 CONFIG '{"singlestore.url": "jdbc:mariadb://localhost:3306/brokerage", "singlestore.user": "root",
          "singlestore.database": "brokerage", "singlestore.append-only": "true",
-         "singlestore.tables": "calendar,securities,chart_of_accounts,booking_schemes,accounts,bars_5m,prices_eod,financial_transactions,journal_lines,posting_rejections,balances_eod",
+         "singlestore.tables": "calendar,securities,chart_of_accounts,booking_schemes,accounts,bars_5m,prices_eod,financial_transactions,journal_lines,posting_rejections,balances_eod,cns_obligations,settlements,fails,stock_record,locates",
          "iceberg.catalog.uri": "http://nuna-catalog:8181", "iceberg.catalog.warehouse": "lakehouse",
          "iceberg.catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
          "iceberg.namespace": "brokerage.singlestore", "commit.interval.ms": "15000"}'

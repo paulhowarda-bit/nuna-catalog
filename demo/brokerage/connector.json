@@ -1,7 +1,7 @@
 {
   "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
   "tasks.max": "1",
-  "topics": "brokerage.reference.calendar,brokerage.reference.securities,brokerage.ledger.chart-of-accounts,brokerage.ledger.booking-schemes,brokerage.party.accounts,brokerage.markets.bars-5m,brokerage.markets.prices-eod,brokerage.ledger.financial-transactions,brokerage.ledger.journal-lines,brokerage.ledger.posting-rejections,brokerage.ledger.balances-eod,brokerage.trading.order-events",
+  "topics": "brokerage.reference.calendar,brokerage.reference.securities,brokerage.ledger.chart-of-accounts,brokerage.ledger.booking-schemes,brokerage.party.accounts,brokerage.markets.bars-5m,brokerage.markets.prices-eod,brokerage.ledger.financial-transactions,brokerage.ledger.journal-lines,brokerage.ledger.posting-rejections,brokerage.ledger.balances-eod,brokerage.oms.order-events,brokerage.oms.routes,brokerage.oms.executions,brokerage.clearing.cns-obligations,brokerage.clearing.settlements,brokerage.clearing.fails,brokerage.clearing.stock-record,brokerage.clearing.locates",
   "key.converter": "org.apache.kafka.connect.storage.StringConverter",
   "value.converter": "org.apache.kafka.connect.json.JsonConverter",
   "value.converter.schemas.enable": "false",

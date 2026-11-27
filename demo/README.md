@@ -347,7 +347,8 @@ Accounts that run the demo rather than people in it:
 | Oracle `SYS`, `SYSTEM` | `~/.nuna-demo/secrets/oracle` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
 | Oracle `c##dbzuser` | `~/.nuna-demo/secrets/debezium` | Debezium's LogMiner user |
 | CockroachDB `root` | none: the node's client certificate | the CDC leg's CockroachDB; `demo/demo.sh cockroach` |
-| CockroachDB `debezium` | `~/.nuna-demo/secrets/debezium` | Debezium's login: `SELECT` and `CHANGEFEED` on `positions.holdings` |
+| CockroachDB `debezium` | `~/.nuna-demo/secrets/debezium` | Debezium's login: `SELECT` and `CHANGEFEED` on the `clearing` tables |
+| CockroachDB `clearing` | `~/.nuna-demo/secrets/clearing` | the clearing books' loader (`demo-datagen`'s `Main custody`, run by `cdc`): reads and writes the `clearing` tables |
 
 Tokens are valid for 7 days, and `up` mints new ones only when they are about to expire. Print them again
 (re-minted if they are about to expire; SingleStore's running pipelines are then replaced and Trino,
@@ -385,7 +386,9 @@ vended credentials, as any engine would):
 - The catalog's branch `dev`, with the next day's trades and rates committed on it, and its tag `sample`, made by
   `ana` through the API (Branches and tags of the catalog, below).
 
-Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the copy of `ops.orders`.
+Written by SingleStore's change feeds: the brokerage world's orders and order management system (below). Before item
+151 a toy `ops.orders` was copied to `markets.equities.eu.xetra.orders`; the toy is gone, and its copy stays as it
+last was.
 
 Written live by the brokerage world (below): everything under `brokerage`.
 
@@ -406,7 +409,7 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   time. A trading day's events fall between 07:00 and 17:00, so the world is quiet overnight, over weekends and on
   market holidays (the log says `quiet until <time>`). Every minute the generator also asks Kafka Connect whether
   the sink's task has failed, as it does when the catalog restarts, and restarts it if so.
-- Kafka: the generator writes plain JSON to eleven topics, and Kafka Connect's Iceberg sink `brokerage-lake`
+- Kafka: the generator writes plain JSON to nineteen topics, and Kafka Connect's Iceberg sink `brokerage-lake`
   (`demo/brokerage/connector.json`, as user `cdc`) routes each record to the table its `lake_table` field names,
   committing every 15 seconds. The tables must exist: the sink neither makes nor changes them.
 
@@ -416,32 +419,61 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   | `brokerage.markets.bars-5m`, `.prices-eod` | `brokerage.markets.bars_5m`, `.prices_eod` |
   | `brokerage.party.accounts` | `brokerage.party.accounts` |
   | `brokerage.ledger.chart-of-accounts`, `.booking-schemes`, `.financial-transactions`, `.journal-lines`, `.posting-rejections`, `.balances-eod` | `brokerage.ledger.chart_of_accounts`, `.booking_schemes`, `.financial_transactions`, `.journal_lines`, `.posting_rejections`, `.balances_eod` |
+  | `brokerage.clearing.cns-obligations`, `.settlements`, `.fails`, `.stock-record`, `.locates` | `brokerage.clearing.cns_obligations`, `.settlements`, `.fails`, `.stock_record`, `.locates` |
+  | `brokerage.oms.order-events`, `.routes`, `.executions`, only while SingleStore is off | `brokerage.kafka.order_events`, `.routes`, `.executions` |
 
 - SingleStore: the generator writes the world's orders to `brokerage.orders` (`demo/singlestore/brokerage.sql`),
   and the change feed `brokerage.brokerage_orders_to_lake` copies each change into `brokerage.trading.orders`,
-  committing every 15 seconds, with its receipts in `brokerage.lake_commits`, as `ops.orders_to_lake` does.
+  committing every 15 seconds, with its receipts in `brokerage.lake_commits`. It writes the order management
+  system's rows (item 151) to `brokerage.order_events`, `.routes` and `.executions`
+  (`demo/singlestore/brokerage-feeds.sql`): every acceptance, route, fill and expiry of every order as an event, a
+  route per order and venue, and an execution per fill, with the ledger fill's own fill id, price and quantity.
+  The change feed `brokerage.brokerage_oms_to_lake` copies the three, append-only, into
+  `brokerage.trading.order_events`, `.routes` and `.executions`, in one pipeline.
+- Clearing (item 151): the firm clears its own trades through NSCC's CNS, so each day's fills net per security
+  into one obligation that settles at 08:00 the next business day (`brokerage.clearing.cns_obligations`,
+  `.settlements`); every short sale is accepted under a locate (`.locates`, joined to the acceptance by
+  `locate_id`); and each day's end writes the stock record, every position by owner (each account, the firm) and
+  by location (DTC, stock borrowed, CNS pending, failed to deliver), which balance (`.stock_record`). One break is
+  seeded: on the world's third business day or later, the first net delivery holding a customer short sale fails
+  for the short sale's shares (`.fails`), ages a day, and is closed out at 09:30 on the next settlement day under
+  Reg SHO 204(a) by a purchase for the firm's own account, delivered when that settles. The identifiers are
+  synthetic.
+- Reconciliation (item 151): three views in `brokerage.recon`, in Trino's dialect, each empty when the books agree:
+  `stock_record_vs_ledger` (the stock record's customer positions against the ledger's share and short positions
+  and the open lots), `executions_vs_fills` (each execution against its ledger fill) and `cns_vs_fills` (CNS
+  against the net of the customers' fills, per security and trade date). Each reads both ways' tables and only the
+  days before today. The seeded fail shows as one row of `cns_vs_fills`, on its close-out's trade date: the shares
+  the firm bought and what it paid.
+  ```sql
+  SELECT * FROM lakehouse."brokerage.recon".cns_vs_fills;
+  SELECT * FROM lakehouse."brokerage.clearing".fails ORDER BY fail_event_id;
+  ```
 - Governance, once per lake: `brokerage.reference`'s tables are `public`, `brokerage.markets`' `internal`,
   `brokerage.party.accounts` `restricted` and `brokerage.ledger`'s tables and views `confidential`; namespaces
   `brokerage.party` and `brokerage.ledger` are regulated, marked after their tables are classified, and
-  `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. The grants on all of
+  `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. On every `gen`, as item 151
+  added them: `brokerage.clearing` and `brokerage.recon` are `confidential`, `brokerage.kafka` `internal`, and
+  `brokerage.clearing` and `brokerage.kafka` have owners. The grants on all of
   `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino.
 - Routes (D50, amended 2026-11-24; backlog 238): the generator writes through the ways the switches give it, and
   takes the other way when one goes off.
 
-  | `ss` | `kafka` | The orders | Every other feed |
-  |---|---|---|---|
-  | on | on | SingleStore, to `brokerage.trading.orders` | Kafka, to its table above |
-  | off | on | topic `brokerage.trading.order-events`, through the sink to `brokerage.trading.order_events` | Kafka |
-  | on | off | SingleStore | a SingleStore table of its own in database `brokerage` (`demo/singlestore/brokerage-feeds.sql`), keyed by `seq`, whose change feed copies it to `brokerage.singlestore.<table>`; the eleven feeds run in one pipeline, `brokerage_world_to_lake` |
+  | `ss` | `kafka` | The orders | The order management system | Every other feed |
+  |---|---|---|---|---|
+  | on | on | SingleStore, to `brokerage.trading.orders` | SingleStore, to `brokerage.trading.<table>` | Kafka, to its table above |
+  | off | on | nowhere: the order events carry every state | topics `brokerage.oms.*`, through the sink to `brokerage.kafka.<table>` | Kafka |
+  | on | off | SingleStore | SingleStore | a SingleStore table of its own in database `brokerage` (`demo/singlestore/brokerage-feeds.sql`), keyed by `seq`, whose change feed copies it to `brokerage.singlestore.<table>`; the sixteen feeds run in one pipeline, `brokerage_world_to_lake` |
 
   The tables are made from `demo-datagen` (`Main sql demo/singlestore`; a test checks the committed files match).
   Before a way goes off, demo.sh stops the generator and runs the bootstrap job again as `drain kafka` or
   `drain singlestore`, which waits (up to three minutes) until what went that way is all in the lake; if it is not,
-  the way stays on. The generator then starts on its new route and counts what each way carried, so a restart
-  still sends nothing twice. The eleven change feeds share one pipeline (`singlestore.tables` lists them), so one
+  the way stays on; SingleStore going off always drains, as the order management system's tables are its. The
+  generator then starts on its new route and counts what each way carried, so a restart still sends nothing twice.
+  The sixteen change feeds share one pipeline (`singlestore.tables` lists them), so one
   Java extractor in SingleStore's memory: a pipeline each would reserve 384 MB apiece, 4.2 GB against SingleStore's
   2,764 MB. They run only while Kafka is off. `brokerage.singlestore` is `restricted` and regulated, as it holds
-  copies of the party and ledger tables.
+  copies of the party, ledger and clearing tables.
 - `gen stop` stops the generator, waits 20 seconds for the sink's last commit, then stops Kafka Connect, Kafka
   and kafbat unless the CDC leg runs. Kafka's topics stay on its volume, so the next `gen` carries on from them:
   the generator replays the world without sending what it sent before, and catches up on the days it missed.
@@ -494,9 +526,9 @@ nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`,
   scan, and starts the next Job as the last ends. Each table is assessed and compacted once a night at most. The
   worker keeps the night's assessments in memory, so to assess every table again now, start it again:
   `kubectl -n nuna-demo rollout restart deployment/nuna-maintenance`.
-- The brokerage world's Kafka Connect sink and SingleStore's change feeds commit every 15 and 5 seconds, so their
-  tables gather small files and snapshots all day: they are the queue. `markets.equities.eu.xetra.orders` and
-  `brokerage.trading.orders` carry equality deletes, which go first.
+- The brokerage world's Kafka Connect sink and SingleStore's change feeds commit every 15 seconds, so their
+  tables gather small files and snapshots all day: they are the queue. `brokerage.trading.orders` carries equality
+  deletes, as does `markets.equities.eu.xetra.orders` from before item 151, which go first.
 - What it leaves alone: branches and tags keep their snapshots and files (the catalog's `dev` and `sample`, and
   `xetra.trades`' own `eod-2026-11-09` and `surveillance-review`); the legal hold on `xetra.trades` and the DR freeze
   on `reference.countries` stop its expiry and orphan scans there, as the catalog's work list leaves them out.
@@ -530,45 +562,49 @@ nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`,
 demo/demo.sh sql
 ```
 
-Or Studio on <https://localhost:8183>, as one of the people above, through Keycloak. Three databases, and a
-fourth once the engines have run:
+Or Studio on <https://localhost:8183>, as one of the people above, through Keycloak. Two databases, and a
+third once the engines have run:
 
-- `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
   view `xetra_daily`.
 - `brokerage`: the brokerage world's orders, `brokerage.orders`, which its generator writes and the change feed
-  `brokerage.brokerage_orders_to_lake` copies into Iceberg (`brokerage.trading.orders`) as they change.
+  `brokerage.brokerage_orders_to_lake` copies into Iceberg (`brokerage.trading.orders`) as they change; its order
+  management system's `order_events`, `routes` and `executions`, which `brokerage.brokerage_oms_to_lake` copies
+  into `brokerage.trading`; and, while Kafka is off, the world's other feeds (above).
 - `nuna_m8`: the engine matrix's SingleStore check, Spark's shared tables loaded from catalog `engines`.
 
 ### SingleStore to Iceberg: the change feed
 
-The pipeline `ops.orders_to_lake` is a connector pipeline running `singlestore-change-feed` (no Kafka). It
-reads `OBSERVE` on `ops.orders` and commits to `markets.equities.eu.xetra.orders` every 5 seconds while
+The pipeline `brokerage.brokerage_orders_to_lake` is a connector pipeline running `singlestore-change-feed` (no
+Kafka). It reads `OBSERVE` on `brokerage.orders` and commits to `brokerage.trading.orders` every 15 seconds while
 there are changes: new rows as data files, and equality deletes on the primary key for updated and deleted
 rows. Each commit records SingleStore's offsets in the Iceberg snapshot, so the feed resumes from Iceberg
-after any failure, with nothing copied twice or skipped. Each commit's receipt lands in `ops.lake_commits`.
+after any failure, with nothing copied twice or skipped. Each commit's receipt lands in `brokerage.lake_commits`,
+as do those of `brokerage.brokerage_oms_to_lake`, which copies the order management system's three tables in one
+pipeline (`singlestore.tables`), append-only. Before item 151 a toy `ops.orders` showed the feed; the brokerage
+world's orders change all trading day.
 
 ```sql
-UPDATE ops.orders SET status = 'FILLED', updated_at = NOW(6) WHERE order_id = 1005;
--- a few seconds later
-SELECT kind, rows_written, keys_deleted, committed_at FROM ops.lake_commits ORDER BY committed_at;
+SELECT source_table, kind, rows_written, keys_deleted, committed_at FROM brokerage.lake_commits
+ORDER BY committed_at DESC LIMIT 10;
 ```
 
-Then open the `orders` table in the console: each receipt is a snapshot there.
+Then open `brokerage.trading.orders` in the console: each receipt is a snapshot there.
 
 - If SingleStore no longer holds its log from where the copy ended (the feed was stopped across several
   `SNAPSHOT DATABASE`s), the feed takes a new snapshot of the table and replaces the copy. The commit is
-  `resnapshot`, and `gap_after` (in `ops.lake_commits` and in the Iceberg snapshot summary) holds the offsets
+  `resnapshot`, and `gap_after` (in `brokerage.lake_commits` and in the Iceberg snapshot summary) holds the offsets
   it could not continue from.
-- No pipeline may load `markets.equities.eu.xetra.orders`: its rows would come back into SingleStore. The
+- No pipeline may load a change feed's copy, such as `brokerage.trading.orders`: its rows would come back into
+  SingleStore. The
   feed checks every minute and stops with an error naming the pipeline if one does.
-- `ALTER` and `DROP` on `ops.orders` wait while the feed runs (`OBSERVE` holds the table). Stop the pipeline
+- `ALTER` and `DROP` on `brokerage.orders` wait while the feed runs (`OBSERVE` holds the table). Stop the pipeline
   first; a column added at the end is added to the Iceberg copy when the feed starts again.
 - If the feed fails (the loop guard, a table change it cannot follow), the pipeline stops in `Error`.
-  `START PIPELINE ops.orders_to_lake` resumes it from the offsets in Iceberg.
+  `START PIPELINE brokerage.brokerage_orders_to_lake` resumes it from the offsets in Iceberg.
 - If SingleStore fails to write a batch of receipts (it ran out of memory, say), the commits are already in
   Iceberg. SingleStore starts the feed again from the last receipt it stored, and the feed sends the later
-  ones again, read from the snapshots, so `ops.lake_commits` still lists every commit.
+  ones again, read from the snapshots, so `brokerage.lake_commits` still lists every commit.
 - A table that is only ever inserted into may have a primary key that holds more than its shard key, which the
   feed otherwise refuses (D35 rule (1)): set `"singlestore.append-only": "true"` in the pipeline's CONFIG. The
   first `UPDATE` or `DELETE` on it then stops the pipeline in `Error` before that transaction reaches Iceberg, and
@@ -590,9 +626,10 @@ SingleStore reserves each pipeline extractor's Java heap from its own memory, an
 pooled. An Iceberg pipeline's data workers default to 500 MB each, so two loads and a feed are enough to stop
 all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 (`pipelines_iceberg_data_workers_heap_size`). Each change feed's extractor gets 384 MB
-(`pipelines_cdc_java_heap_size`), so the brokerage world's feed, beside `ops.orders_to_lake`, reserves another
-384 MB, and `brokerage_world_to_lake`, while Kafka is off, a third: it runs the eleven feeds of the Kafka-off route
-in one extractor for that reason (backlog 238).
+(`pipelines_cdc_java_heap_size`), so the brokerage world's two running feeds, the orders' and the order management
+system's (which took the place of the toy `ops.orders_to_lake`, item 151), reserve 768 MB, and
+`brokerage_world_to_lake`, while Kafka is off, a third 384 MB: it runs the sixteen feeds of the Kafka-off route in
+one extractor for that reason (backlog 238).
 
 ## Trino and CloudBeaver
 
@@ -803,8 +840,13 @@ worker and the brokerage world's generator to make room for it:
 - `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
 - `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
   in PDB `FREEPDB1` (`demo/cdc/oracle.sql`, run as the database starts; it restarts the database once).
-- `cockroach`: CockroachDB 25.4.20 (the version the tests use), one node, table `positions.holdings` in
-  database `custody` (`demo/cdc/cockroach.sql`, run as the node first starts). The node runs secure, so
+- `cockroach`: CockroachDB 25.4.20 (the version the tests use), one node, database `custody` with the brokerage
+  world's clearing books in schema `clearing` (`demo/cdc/cockroach.sql`, run as the node first starts; item 151):
+  `stock_record` (the last end of day's), `cns_obligations` and `locates` (the last five days'), and `fails`
+  (each fail's latest state). Each `cdc` loads them as they stand after the world's last end of day, as login
+  `clearing`, writing only what changed (`demo-datagen`'s `Main custody`, the brokerage world's job), so each
+  change is one row of its history. A leg begun before item 151, whose CockroachDB held a toy
+  `positions.holdings`, starts anew once. The node runs secure, so
   passwords are checked, but accepts SQL without TLS. A single development node needs no licence key and is
   not throttled, and its diagnostics reporting is off.
 - On `connect`, the stack's Kafka Connect 4.2.2 (distributed mode, in every `up`), six connectors
@@ -816,14 +858,15 @@ worker and the brokerage world's generator to make room for it:
 |---|---|---|
 | `settlement.instructions` | `backoffice.settlement.instructions` | `history.postgres.settlement.instructions` |
 | `TREASURY.PAYMENTS` | `oracle.TREASURY.PAYMENTS` | `history.oracle.treasury.payments` |
-| `positions.holdings` | `cockroach.positions.holdings` | `history.cockroach.positions.holdings` |
+| `clearing.stock_record`, `.cns_obligations`, `.fails`, `.locates` | `cockroach.clearing.stock_record` and so on | `history.cockroach.clearing.stock_record` and so on |
 
 Each table is a history: one row per change, appended, never updated. The sink's `DebeziumTransform` adds a
 struct column `_cdc`: `op` (`I`, `U` or `D`), `ts` (when Debezium read the change), `offset` (its Kafka
 offset), `source` and `target` (the source table and the Iceberg table) and `key`. A deleted row is written
-as it was before the delete. `cdc` waits for each snapshot (4 rows in each table), then updates, deletes and
-inserts in each database and waits for those changes: 8 rows in the PostgreSQL history, 7 in Oracle's and 7
-in CockroachDB's.
+as it was before the delete. `cdc` waits for each snapshot (4 rows in PostgreSQL's and Oracle's tables, and as
+many as the clearing books loaded in CockroachDB's), then updates, deletes and inserts in PostgreSQL and Oracle
+and waits for those changes: 8 rows in the PostgreSQL history and 7 in Oracle's. CockroachDB's change with the
+world: each later `cdc` loads the days since.
 
 Make more changes and watch them arrive within about 10 seconds (the sinks commit every 5 seconds): kafbat
 shows Debezium's change events in the topics above, and the console shows each sink commit as a snapshot of
@@ -842,13 +885,13 @@ The people have accounts in all three databases, with their Keycloak passwords:
 
 | | PostgreSQL `backoffice` | Oracle `FREEPDB1` | CockroachDB `custody` |
 |---|---|---|---|
-| `ana` | reads and writes every table; creates in the database and its schemas; alters and drops `settlement` and its table (a member of their owner, `settlement_owner`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` | every privilege on schema `positions` and its table; creates schemas in the database |
+| `ana` | reads and writes every table; creates in the database and its schemas; alters and drops `settlement` and its table (a member of their owner, `settlement_owner`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` | every privilege on schema `clearing` and its tables; creates schemas in the database |
 | `gary` | superuser | DBA | `admin` |
-| `stella`, `oscar` | read every table (`pg_read_all_data`) | `SELECT ANY TABLE` | `SELECT` on `positions.holdings` and on every table `ana` creates |
+| `stella`, `oscar` | read every table (`pg_read_all_data`) | `SELECT ANY TABLE` | `SELECT` on the `clearing` tables and on every table `ana` creates |
 | everyone | metadata: statistics, settings and activity (`pg_monitor`) | metadata: the data dictionary and `V$` views (`SELECT_CATALOG_ROLE`) | |
 
 `backoffice` (owner of the database, Debezium's login), `treasury` (owner of `PAYMENTS`), `c##dbzuser`
-(Debezium's LogMiner user), and CockroachDB's `debezium` and `root` run the leg. In PostgreSQL and
+(Debezium's LogMiner user), and CockroachDB's `debezium`, `clearing` and `root` run the leg. In PostgreSQL and
 CockroachDB a table `ana` creates is hers: besides her, only `gary` can alter or drop it.
 
 CloudBeaver (<https://localhost:8185>) queries the three databases while the leg runs, through each person's
@@ -861,7 +904,7 @@ PostgreSQL driver, whose protocol CockroachDB speaks.
 ```sql
 SELECT * FROM settlement.instructions ORDER BY instruction_id;   -- backoffice
 SELECT * FROM treasury.payments ORDER BY payment_id;             -- treasury
-SELECT * FROM positions.holdings ORDER BY holding_id;            -- custody
+SELECT * FROM clearing.fails ORDER BY fail_id;                   -- custody
 ```
 
 Outside the leg these connections fail to connect: their hosts are gone.
@@ -874,7 +917,7 @@ SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.post
 ORDER BY "_cdc"."offset";
 SELECT "_cdc".op, "_cdc".ts, payment_id, status FROM lakehouse."history.oracle.treasury".payments
 ORDER BY "_cdc"."offset";
-SELECT "_cdc".op, "_cdc".ts, holding_id, status FROM lakehouse."history.cockroach.positions".holdings
+SELECT "_cdc".op, "_cdc".ts, fail_id, status FROM lakehouse."history.cockroach.clearing".fails
 ORDER BY "_cdc"."offset";
 ```
 
