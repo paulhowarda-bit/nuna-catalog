@@ -1,0 +1,16 @@
+Breaks: a customer's position is not rescaled on the stock record when a split rescales it in the ledger
+Module: demo-datagen
+Test: ClearingTest#theStockRecordTiesToTheLedgersPositionsAndLotsAndItsOwnersToItsLocations
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+index dbbe5e36..f69bb85b 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+@@ -147,7 +147,7 @@ final class Clearing {
+     /** A customer's position after the ledger rescaled it for a split and paid any fraction as cash in lieu. */
+     void resized(long account, Security s, BigDecimal position) {
+         BigDecimal now = customers.getOrDefault(s.id(), new TreeMap<>()).getOrDefault(account, BigDecimal.ZERO);
+-        move(account, s, position.subtract(now));
++        move(account, s, BigDecimal.ZERO);
+     }
+ 
+     private void move(long account, Security s, BigDecimal quantity) {

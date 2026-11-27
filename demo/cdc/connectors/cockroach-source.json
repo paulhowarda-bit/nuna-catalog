@@ -8,8 +8,8 @@
   "database.dbname": "custody",
   "database.sslmode": "disable",
   "topic.prefix": "cockroach",
-  "schema.include.list": "positions",
-  "table.include.list": "positions.holdings",
+  "schema.include.list": "clearing",
+  "table.include.list": "clearing.stock_record,clearing.cns_obligations,clearing.fails,clearing.locates",
   "cockroachdb.changefeed.sink.type": "sinkless",
   "cockroachdb.changefeed.include.diff": "true",
   "tombstones.on.delete": "false"

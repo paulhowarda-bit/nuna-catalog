@@ -74,6 +74,8 @@ public final class World {
     private final Rng rng2;
     private final Market market;
     private final List<Account> accounts = new ArrayList<>();
+    private final Oms oms = new Oms(this::emit);
+    private final Clearing clearing;
     private Sink sink;
     private LocalDate day;
     private boolean started;
@@ -150,6 +152,7 @@ public final class World {
         this.rng = new Rng(settings.seed());
         this.rng2 = new Rng(settings.seed() * 31 + 155);
         this.market = new Market(rng, settings.securities());
+        this.clearing = new Clearing(this::emit, calendar, market, true);
         String[] personas = {"dormant", "buy_and_hold", "active_trader", "short_seller"};
         double[] weights = {0.30, 0.42, 0.23, 0.05};
         for (int i = 0; i < settings.accounts(); i++) {
@@ -194,6 +197,17 @@ public final class World {
         return unexpectedRejections;
     }
 
+    /** The world without its seeded fail to deliver (item 151): a clean world, for tests. Before the first day. */
+    public World withoutSeededFail() {
+        clearing.withoutBreak();
+        return this;
+    }
+
+    /** Whether the seeded fail to deliver has happened yet. */
+    public boolean clearingBreakSeeded() {
+        return clearing.breakSeeded();
+    }
+
     private Instant at(LocalTime t) {
         return day.atTime(t).atZone(NEW_YORK).toInstant();
     }
@@ -219,6 +233,9 @@ public final class World {
             }
         }
         settleDue();
+        int played = businessDays;
+        schedule(at(LocalTime.of(8, 0)), () -> clearing.settle(current, day, played));
+        schedule(at(LocalTime.of(9, 30)), () -> clearing.closeOuts(current, day));
         for (Account a : accounts) {
             planDay(a);
         }
@@ -703,6 +720,11 @@ public final class World {
         o.acceptance = t.id();
         openOrders.put(o.id, o);
         upsertOrder(o);
+        oms.accepted(current, state(o));
+        if (o.locate != null) {
+            clearing.locate(current, day, o.locate, o.account.id(), o.security, o.quantity, o.ref,
+                at(LocalTime.of(16, 0)), borrowRate(o.security));
+        }
         // A short or cover fills in full nine times in ten, the rest cancelled at the close (templates 80 and 81, drawn
         // from the second source); a buy or sell may stay part-filled to the close.
         boolean full = o.side.equals("sell_short") || o.side.equals("buy_to_cover") ? rng2.chance(0.9) : rng.chance(0.85);
@@ -789,6 +811,8 @@ public final class World {
             settlements.computeIfAbsent(calendar.settlement(day), k -> new ArrayList<>()).add(o);
         }
         upsertOrder(o);
+        oms.executed(current, state(o), venue, q, p, fillId, t.id(), calendar.settlement(day));
+        clearing.trade(a.id(), s, o.side, q, value);
     }
 
     /**
@@ -907,6 +931,7 @@ public final class World {
                 o.status = o.filled == 0 ? "expired" : "partially_filled_expired";
                 openOrders.remove(o.id);
                 upsertOrder(o);
+                oms.expired(now, state(o));
             }
         }
     }
@@ -964,6 +989,7 @@ public final class World {
                 emit(now, Feed.BALANCES_EOD, row);
             }
         }
+        clearing.endOfDay(now, day);
     }
 
     private void bars(LocalTime start) {
@@ -1004,6 +1030,11 @@ public final class World {
         row.put("accepted_at", o.acceptedAt);
         row.put("updated_at", current);
         emit(current, Feed.ORDERS, row);
+    }
+
+    private Oms.OrderState state(Order o) {
+        return new Oms.OrderState(o.id, o.ref, o.account.id(), o.security, o.side, o.type, o.limitPrice, o.quantity,
+            o.filled, o.value, o.status, o.locate, o.tradeDate);
     }
 
     // ---------------------------------------------------------------- the demo kit's events (templates 70 to 91, item 155)
@@ -1221,6 +1252,7 @@ public final class World {
             FinancialTransaction t = ft(83, a, "acats", Map.of(6, s.id(), 8, total, 11, control, 12, contra, 13, type,
                 18, lots));
             if (book(current, t, false)) {
+                clearing.transfer(a.id(), s, BigDecimal.valueOf(total));
                 List<Long> held = longLots.computeIfAbsent(a.id(), k -> new TreeMap<>())
                     .computeIfAbsent(s.id(), k -> new ArrayList<>());
                 for (int k = 0; k < lots.size(); k++) {
@@ -1278,8 +1310,10 @@ public final class World {
                     quantity = quantity.add(free);
                 }
             }
-            book(current, ft(84, a, "acats", Map.of(6, sec, 8, quantity, 11, control, 12, contra, 13, type, 18, named)),
-                false);
+            if (book(current, ft(84, a, "acats", Map.of(6, sec, 8, quantity, 11, control, 12, contra, 13, type,
+                18, named)), false)) {
+                clearing.transfer(a.id(), market.byIndex((int) (sec - 100001)), quantity.negate());
+            }
         }
         if (full) {
             BigDecimal cash = withdrawable(a);
@@ -1408,6 +1442,7 @@ public final class World {
     private void applySplit(Split split) {
         pendingSplits.remove(split.security().id());
         market.split(split.security(), split.ratioNew(), split.ratioOld());
+        clearing.split(split.security(), split.ratioNew(), split.ratioOld());
         long sec = split.security().id();
         for (Account a : accounts) {
             BigDecimal held = engine.normalBalance(a.id(), 3002, sec);
@@ -1428,6 +1463,8 @@ public final class World {
             if (fraction.signum() > 0) {
                 cashInLieu(a, split, t.id(), fraction);
             }
+            clearing.resized(a.id(), split.security(),
+                engine.normalBalance(a.id(), 3002, sec).subtract(engine.normalBalance(a.id(), 3102, sec)));
         }
     }
 

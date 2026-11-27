@@ -1,0 +1,16 @@
+Breaks: a CNS obligation's net shares leave out the day's sells
+Module: demo-datagen
+Test: ClearingTest#onACleanWorldCnsIsTheNetOfTheCustomersFills
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+index dbbe5e36..ae20521e 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Clearing.java
+@@ -265,7 +265,7 @@ final class Clearing {
+         for (Map.Entry<Long, Street> e : today.entrySet()) {
+             Security s = security(e.getKey());
+             Street st = e.getValue();
+-            long net = st.buyQuantity - st.sellQuantity;
++            long net = st.buyQuantity;
+             BigDecimal netAmount = st.sellAmount.subtract(st.buyAmount);
+             Obligation ob = new Obligation("CNS-" + settlement.format(BASIC) + "-" + s.id(), s, day, settlement, net,
+                 netAmount, st.shortQuantity);

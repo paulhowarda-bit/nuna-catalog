@@ -93,8 +93,8 @@ class PublisherTest {
         }
     }
 
-    private static Publisher both(Topics topics, Orders orders, Lake lake, Map<Feed, Long> viaKafka) {
-        return new Publisher(Route.BOTH, topics, orders, new Rows(), lake, at -> {}, viaKafka, Map.of());
+    private static Publisher both(Topics topics, Orders orders, Rows rows, Lake lake, Map<Feed, Long> viaKafka) {
+        return new Publisher(Route.BOTH, topics, orders, rows, lake, at -> {}, viaKafka, rows.counts());
     }
 
     private static void play(Publisher p, int days) {
@@ -108,8 +108,9 @@ class PublisherTest {
     void aRestartCarriesEachTopicOnFromItsLastRecordAndRewritesNoOrderBackwards() {
         Topics whole = new Topics();
         Orders wholeOrders = new Orders();
+        Rows wholeRows = new Rows();
         Lake wholeLake = new Lake();
-        play(both(whole, wholeOrders, wholeLake, Map.of()), DAYS);
+        play(both(whole, wholeOrders, wholeRows, wholeLake, Map.of()), DAYS);
 
         // The first run stops partway through the third day, and the last records it sent to the journal-lines topic
         // were never acknowledged, so the topic does not hold them.
@@ -117,8 +118,9 @@ class PublisherTest {
         Topics topics = new Topics();
         topics.crashAfter = total * 5 / 8;
         Orders orders = new Orders();
+        Rows rows = new Rows();
         Lake lake = new Lake();
-        assertThatThrownBy(() -> play(both(topics, orders, lake, Map.of()), DAYS))
+        assertThatThrownBy(() -> play(both(topics, orders, rows, lake, Map.of()), DAYS))
             .isInstanceOf(Crash.class);
         List<String> lines = topics.records.get(Feed.JOURNAL_LINES);
         lines.subList(lines.size() - 3, lines.size()).clear();
@@ -126,12 +128,14 @@ class PublisherTest {
         int taggedBefore = lake.tagged.size();
 
         topics.crashAfter = Long.MAX_VALUE;
-        Publisher resumed = both(topics, orders, lake, topics.endOffsets());
+        Publisher resumed = both(topics, orders, rows, lake, topics.endOffsets());
         assertThat(resumed.caughtUp()).isFalse();
         play(resumed, DAYS);
 
         assertThat(resumed.caughtUp()).isTrue();
         assertThat(topics.records).isEqualTo(whole.records);
+        // The order management system's feeds carried on in SingleStore from their last row, each row written once.
+        assertThat(rows.rows).isEqualTo(wholeRows.rows).containsKeys(Feed.ORDER_EVENTS, Feed.ROUTES, Feed.EXECUTIONS);
         assertThat(orders.rows).isEqualTo(wholeOrders.rows);
         // The days the first run finished are not tagged again; the rest are, with the totals of an unbroken run.
         assertThat(lake.tagged).isEqualTo(wholeLake.tagged);
@@ -142,11 +146,13 @@ class PublisherTest {
     void aRunTagsEachDayTheTablesThatChangedThatDay() {
         Topics topics = new Topics();
         Lake lake = new Lake();
-        play(both(topics, new Orders(), lake, Map.of()), 2);
+        play(both(topics, new Orders(), new Rows(), lake, Map.of()), 2);
         List<Map<String, Long>> days = new ArrayList<>(lake.tagged.values());
-        // Reference data goes out on the first day only; orders are SingleStore's and its change feed's, never tagged.
+        // Reference data goes out on the first day only; the orders are SingleStore's and its change feed's, never
+        // tagged, but their events, routes and executions are numbered, so tagged, in brokerage.trading.
         assertThat(days.get(0)).containsKeys(table(Feed.CALENDAR), table(Feed.SECURITIES), table(Feed.ACCOUNTS),
-            table(Feed.JOURNAL_LINES)).doesNotContainKeys("brokerage.trading.orders", "brokerage.trading.order_events");
+            table(Feed.JOURNAL_LINES), "brokerage.trading.order_events", "brokerage.trading.executions",
+            table(Feed.STOCK_RECORD), table(Feed.CNS_OBLIGATIONS)).doesNotContainKeys("brokerage.trading.orders");
         assertThat(days.get(1)).doesNotContainKeys(table(Feed.CALENDAR), table(Feed.SECURITIES), table(Feed.ACCOUNTS))
             .containsKeys(table(Feed.JOURNAL_LINES), table(Feed.BALANCES_EOD), table(Feed.BARS_5M));
         assertThat(days.get(1).get(table(Feed.JOURNAL_LINES)))
@@ -157,63 +163,70 @@ class PublisherTest {
         return f.lakeTable(Feed.Path.KAFKA);
     }
 
-    /** The records an unbroken run on route both sends, by feed; and its orders. */
-    private static Topics unbroken(Orders orders) {
+    /** The records an unbroken run on route both sends, by feed, each feed's SingleStore rows, and its orders. */
+    private static Topics unbroken(Orders orders, Rows rows) {
         Topics whole = new Topics();
-        play(both(whole, orders, new Lake(), Map.of()), DAYS);
+        play(both(whole, orders, rows, new Lake(), Map.of()), DAYS);
         return whole;
     }
 
+    /** A feed's records as an unbroken run on route both sends them: through its topic, or into its SingleStore table. */
+    private static List<String> expected(Feed f, Topics whole, Rows wholeRows) {
+        return f.path == Feed.Path.KAFKA ? whole.records.get(f) : new ArrayList<>(wholeRows.rows.get(f).values());
+    }
+
     @Test
-    void withSingleStoreOffTheOrdersGoToTheirTopicAndTheirOwnTable() {
+    void withSingleStoreOffTheOrderManagementSystemsFeedsGoToTheirTopicsAndTheOrdersNowhere() {
         Orders wholeOrders = new Orders();
-        Topics whole = unbroken(wholeOrders);
+        Rows wholeRows = new Rows();
+        Topics whole = unbroken(wholeOrders, wholeRows);
         Topics topics = new Topics();
         Lake lake = new Lake();
         play(new Publisher(Route.KAFKA, topics, null, null, lake, at -> {}, Map.of(), Map.of()), DAYS);
 
-        List<String> events = topics.records.get(Feed.ORDERS);
+        assertThat(topics.records).doesNotContainKey(Feed.ORDERS);
+        for (Feed f : Feed.numbered()) {
+            assertThat(topics.records.get(f)).as(f.name()).isEqualTo(expected(f, whole, wholeRows));
+        }
+        List<String> events = topics.records.get(Feed.ORDER_EVENTS);
         assertThat(events).hasSizeGreaterThan(wholeOrders.rows.size())
-            .allSatisfy(e -> assertThat(e).endsWith("\"lake_table\":\"brokerage.trading.order_events\"}"));
-        topics.records.remove(Feed.ORDERS);
-        assertThat(topics.records).isEqualTo(whole.records);
-        assertThat(lake.tagged.values()).allSatisfy(day -> assertThat(day).containsKey("brokerage.trading.order_events"));
-        long last = lake.tagged.values().stream().reduce((a, b) -> b).orElseThrow().get("brokerage.trading.order_events");
+            .allSatisfy(e -> assertThat(e).endsWith("\"lake_table\":\"brokerage.kafka.order_events\"}"));
+        long last = lake.tagged.values().stream().reduce((a, b) -> b).orElseThrow().get("brokerage.kafka.order_events");
         assertThat(last).isEqualTo(events.size());
+        assertThat(lake.tagged.values()).allSatisfy(day -> assertThat(day).doesNotContainKey("brokerage.trading.orders"));
     }
 
     @Test
     void withKafkaOffEachFeedGoesToItsSingleStoreTableNumberedAndTheRouteCanChangeBetweenRuns() {
         Orders wholeOrders = new Orders();
-        Topics whole = unbroken(wholeOrders);
+        Rows wholeRows = new Rows();
+        Topics whole = unbroken(wholeOrders, wholeRows);
         long total = whole.records.values().stream().mapToLong(List::size).sum();
 
         // Through both until partway through the second day; then Kafka is switched off, its records drained into the
-        // lake (so the lake counts them), and the world resumes through SingleStore alone.
+        // lake (so the lake counts them), and the world resumes through SingleStore alone. SingleStore's tables keep
+        // their rows throughout.
         Topics topics = new Topics();
         topics.crashAfter = total * 3 / 8;
         Orders orders = new Orders();
-        Lake lake = new Lake();
-        assertThatThrownBy(() -> play(both(topics, orders, lake, Map.of()), DAYS)).isInstanceOf(Crash.class);
         Rows rows = new Rows();
+        Lake lake = new Lake();
+        assertThatThrownBy(() -> play(both(topics, orders, rows, lake, Map.of()), DAYS)).isInstanceOf(Crash.class);
         Map<Feed, Long> drained = topics.endOffsets();
         Publisher viaSingleStore = new Publisher(Route.SINGLESTORE, null, orders, rows, lake, at -> {}, drained,
-            Map.of());
+            rows.counts());
         play(viaSingleStore, 3);
         assertThat(viaSingleStore.caughtUp()).isTrue();
 
         // Then Kafka comes back, the SingleStore tables drain into their copies, and the world carries on through both.
-        Publisher back = new Publisher(Route.BOTH, topics, orders, new Rows(), lake, at -> {}, topics.endOffsets(),
+        Publisher back = new Publisher(Route.BOTH, topics, orders, rows, lake, at -> {}, topics.endOffsets(),
             rows.counts());
         topics.crashAfter = Long.MAX_VALUE;
         play(back, DAYS);
 
         // Each feed's records, the ones through Kafka followed by the ones through SingleStore in seq order and then
         // the ones through Kafka again, are an unbroken run's.
-        for (Feed f : whole.records.keySet()) {
-            if (f == Feed.ORDERS) {
-                continue;
-            }
+        for (Feed f : Feed.numbered()) {
             List<String> before = topics.records.getOrDefault(f, List.of());
             long first = drained.getOrDefault(f, 0L);
             List<String> joined = new ArrayList<>(before.subList(0, (int) first));
@@ -224,7 +237,7 @@ class PublisherTest {
             }
             joined.addAll(diverted.values());
             joined.addAll(before.subList((int) first, before.size()));
-            assertThat(joined).as(f.name()).isEqualTo(whole.records.get(f));
+            assertThat(joined).as(f.name()).isEqualTo(expected(f, whole, wholeRows));
         }
         assertThat(orders.rows).isEqualTo(wholeOrders.rows);
         // The days through SingleStore tagged the copies, with each copy's rows.

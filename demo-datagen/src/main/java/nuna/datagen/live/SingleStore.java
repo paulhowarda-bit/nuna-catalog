@@ -19,8 +19,9 @@ import nuna.datagen.world.Feed;
 /**
  * The world's tables in SingleStore's database {@code brokerage} (demo/singlestore/brokerage.sql and
  * brokerage-feeds.sql). Each order event replaces the order's row in {@code orders}, so the table holds every order's
- * latest state and its change feed carries each change into the lake. While Kafka is off, every other feed's rows are
- * inserted into its own table, numbered by {@code seq}, whose change feed copies them into the lake.
+ * latest state and its change feed carries each change into the lake. The order management system's other feeds
+ * (order events, routes, executions) are inserted into tables of their own, numbered by {@code seq}, and so, while
+ * Kafka is off, is every other feed; a change feed copies each table into the lake.
  *
  * <p>Times are written as UTC; DATETIME has no zone. On the real clock nothing is written overnight or over a weekend,
  * longer than the server keeps an idle connection, so a write that fails opens a new connection and is tried once more.

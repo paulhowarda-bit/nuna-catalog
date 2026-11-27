@@ -1,0 +1,12 @@
+{"name": "locates", "schema": {"type": "struct", "fields": [
+  {"id": 1, "name": "locate_id", "required": true, "type": "string"},
+  {"id": 2, "name": "brokerage_account", "required": true, "type": "long"},
+  {"id": 3, "name": "security_id", "required": true, "type": "long"},
+  {"id": 4, "name": "symbol", "required": true, "type": "string"},
+  {"id": 5, "name": "quantity", "required": true, "type": "long"},
+  {"id": 6, "name": "source", "required": true, "type": "string"},
+  {"id": 7, "name": "easy_to_borrow", "required": true, "type": "boolean"},
+  {"id": 8, "name": "borrow_rate", "required": true, "type": "decimal(38, 6)"},
+  {"id": 9, "name": "order_ref", "required": true, "type": "string"},
+  {"id": 10, "name": "business_date", "required": true, "type": "date"},
+  {"id": 11, "name": "updated_at", "required": true, "type": "timestamptz"}]}}

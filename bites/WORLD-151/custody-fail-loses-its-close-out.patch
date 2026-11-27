@@ -1,0 +1,16 @@
+Breaks: custody's fail drops its close-out's price and amount when it is delivered
+Module: demo-datagen
+Test: CustodyTest#theBooksHoldTheLastDaysStockRecordFiveDaysOfObligationsAndLocatesAndEachFailsLatestState
+diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Custody.java b/demo-datagen/src/main/java/nuna/datagen/live/Custody.java
+index eb09a144..3bb0e206 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/live/Custody.java
++++ b/demo-datagen/src/main/java/nuna/datagen/live/Custody.java
+@@ -169,7 +169,7 @@ public final class Custody implements AutoCloseable {
+                     f.put("status", r.get("event_type"));
+                     f.put("close_out_date", LocalDate.ofInstant((Instant) r.get("close_out_deadline"), World.NEW_YORK));
+                     List<Object> before = rows.get(Table.FAILS).get((String) r.get("fail_id"));
+-                    if (before != null && r.get("close_out_price") == null) {
++                    if (before == null && r.get("close_out_price") == null) {
+                         // The close-out's price and amount stay with the fail once it is delivered.
+                         f.put("close_out_price", before.get(10));
+                         f.put("close_out_amount", before.get(11));

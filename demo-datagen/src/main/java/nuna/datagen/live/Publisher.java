@@ -14,15 +14,17 @@ import nuna.datagen.world.Sink;
 
 /**
  * Sends the world's events the way its route takes each feed ({@link Route}): through Kafka, to the feed's topic;
- * through SingleStore, the orders to {@code brokerage.orders} and every other feed to its own table, each row numbered
- * by its place in the feed. At each end of day it has the lake tag every table that changed that day.
+ * through SingleStore, each numbered feed to its own table, each row numbered by its place in the feed, and the orders
+ * upserted into {@code brokerage.orders}. At each end of day it has the lake tag every table that changed that day.
  *
  * <p>A restart resumes where the last run stopped, whichever way each record went. The world is replayed from its first
  * day, and each feed's first records are skipped: as many as went through Kafka (its topic's records, or the lake's
  * table when Kafka is off) plus as many as went through SingleStore (its table's rows, or its copy's when SingleStore is
- * off). A feed's records always go out in order, so those it has sent are always its first. Orders are skipped until
- * every feed has caught up: each order before the last record any feed holds was written before that record was sent.
- * Orders after it are written again, which an upsert makes harmless; through Kafka, they are appended again.
+ * off). A feed's records always go out in order, so those it has sent are always its first; a feed new to the world
+ * has sent none, and sends its records from the world's first day. Orders are skipped until every feed has caught up:
+ * each order before the last record any feed holds was written before that record was sent. Orders after it are
+ * written again, which an upsert makes harmless. With SingleStore off they go nowhere: their every change is an order
+ * event, which goes through Kafka.
  */
 public final class Publisher implements Sink {
 
@@ -78,8 +80,8 @@ public final class Publisher implements Sink {
      * @param topics         the Kafka side, or null on route {@code singlestore}
      * @param orders         SingleStore's orders, or null on route {@code kafka}
      * @param rows           SingleStore's other tables, or null on route {@code kafka}
-     * @param viaKafka       the records each feed sent through Kafka in earlier runs
-     * @param viaSingleStore the records each feed but the orders sent through SingleStore in earlier runs
+     * @param viaKafka       the records each numbered feed sent through Kafka in earlier runs
+     * @param viaSingleStore the records each numbered feed sent through SingleStore in earlier runs
      */
     public Publisher(Route route, Topics topics, Orders orders, Rows rows, Lake lake, Clock clock,
             Map<Feed, Long> viaKafka, Map<Feed, Long> viaSingleStore) {
@@ -89,12 +91,9 @@ public final class Publisher implements Sink {
         this.rows = rows;
         this.lake = lake;
         this.clock = clock;
-        for (Feed f : Feed.values()) {
+        for (Feed f : Feed.numbered()) {
             long kafka = viaKafka.getOrDefault(f, 0L);
             totals.put(f.lakeTable(Feed.Path.KAFKA), kafka);
-            if (f == Feed.ORDERS) {
-                continue;
-            }
             long singlestore = viaSingleStore.getOrDefault(f, 0L);
             totals.put(f.lakeTable(Feed.Path.SINGLESTORE), singlestore);
             if (kafka + singlestore > 0) {
@@ -118,44 +117,40 @@ public final class Publisher implements Sink {
     public void accept(Event e) {
         Feed feed = e.feed();
         Feed.Path via = route.pathOf(feed);
+        if (feed == Feed.ORDERS) {
+            if (behind > 0 || via != Feed.Path.SINGLESTORE) {
+                return;
+            }
+            pace(e);
+            // The change feed's copy holds each order once, at its latest state: not a count to tag by.
+            orders.upsert(e.row());
+            sent++;
+            return;
+        }
         String table = feed.lakeTable(via);
-        if (feed != Feed.ORDERS) {
-            long n = seen.merge(feed, 1L, Long::sum);
-            Long before = alreadySent.get(feed);
-            if (before != null && n <= before) {
-                // Sent by an earlier run, one way or the other: whichever of its tables holds records changed today.
-                for (Feed.Path p : Feed.Path.values()) {
-                    if (totals.get(feed.lakeTable(p)) > 0) {
-                        changedToday.add(feed.lakeTable(p));
-                    }
+        long n = seen.merge(feed, 1L, Long::sum);
+        Long before = alreadySent.get(feed);
+        if (before != null && n <= before) {
+            // Sent by an earlier run, one way or the other: whichever of its tables holds records changed today.
+            for (Feed.Path p : Feed.Path.values()) {
+                if (totals.get(feed.lakeTable(p)) > 0) {
+                    changedToday.add(feed.lakeTable(p));
                 }
-                if (n == before) {
-                    behind--;
-                }
-                return;
             }
-            pace(e);
-            if (via == Feed.Path.KAFKA) {
-                if (feed == Feed.FINANCIAL_TRANSACTIONS && !locateId && e.row().get(LakeSchemas.LOCATE_ID) != null) {
-                    lake.ensureLocateId();
-                    locateId = true;
-                }
-                topics.send(e);
-            } else {
-                rows.insert(feed, n, e.row());
+            if (n == before) {
+                behind--;
             }
-        } else {
-            if (behind > 0) {
-                return;
-            }
-            pace(e);
-            if (via == Feed.Path.SINGLESTORE) {
-                // The change feed's copy holds each order once, at its latest state: not a count to tag by.
-                orders.upsert(e.row());
-                sent++;
-                return;
+            return;
+        }
+        pace(e);
+        if (via == Feed.Path.KAFKA) {
+            if (feed == Feed.FINANCIAL_TRANSACTIONS && !locateId && e.row().get(LakeSchemas.LOCATE_ID) != null) {
+                lake.ensureLocateId();
+                locateId = true;
             }
             topics.send(e);
+        } else {
+            rows.insert(feed, n, e.row());
         }
         totals.merge(table, 1L, Long::sum);
         changedToday.add(table);

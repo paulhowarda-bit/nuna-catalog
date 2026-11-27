@@ -8,8 +8,9 @@
 #               (demo/cdc/backoffice.sql, Secret backoffice-initdb)
 #   oracle      Oracle Database Free, PDB FREEPDB1, table TREASURY.PAYMENTS, archive log mode
 #               (demo/cdc/oracle.sql, Secret oracle-startdb)
-#   cockroach   CockroachDB, one node, database custody, table positions.holdings, captured through a
-#               changefeed (demo/cdc/cockroach.sql, Secret cockroach-initdb)
+#   cockroach   CockroachDB, one node, database custody, the brokerage world's clearing books in schema clearing
+#               (item 151), loaded at each cdc by demo-datagen's Main custody and captured through a changefeed
+#               (demo/cdc/cockroach.sql, Secret cockroach-initdb)
 #
 # Memory: 1.75 GiB of requests in all, more than the cluster's 8 GB node has free beside the rest of the demo, so
 # demo.sh cdc stops Trino, the audit table writer and the brokerage world's generator while the leg runs.

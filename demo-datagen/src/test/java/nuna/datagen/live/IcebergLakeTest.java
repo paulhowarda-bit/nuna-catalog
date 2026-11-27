@@ -58,12 +58,16 @@ class IcebergLakeTest {
 
     @Test
     void theBootstrapMakesEveryTableAndViewOnceAndFixesTheWorld() {
-        for (Feed f : Feed.values()) {
+        for (Feed f : Feed.numbered()) {
             assertThat(catalog.tableExists(IcebergLake.id(f.lakeTable(Feed.Path.KAFKA)))).as(f.name()).isTrue();
         }
-        // The orders' own table, for when SingleStore is off; SingleStore's change feeds make their copies.
-        assertThat(table(Feed.ORDERS).name()).endsWith("brokerage.trading.order_events");
+        // The order management system's tables for when SingleStore is off, under brokerage.kafka; SingleStore's change
+        // feeds make their own copies, the orders' and the order management system's in brokerage.trading.
+        assertThat(table(Feed.EXECUTIONS).name()).endsWith("brokerage.kafka.executions");
+        assertThat(table(Feed.STOCK_RECORD).name()).endsWith("brokerage.clearing.stock_record");
         assertThat(catalog.tableExists(IcebergLake.id("brokerage.trading.orders"))).isFalse();
+        assertThat(catalog.tableExists(IcebergLake.id("brokerage.trading.executions"))).isFalse();
+        assertThat(catalog.tableExists(IcebergLake.id("brokerage.trading.order_events"))).isFalse();
         assertThat(table(Feed.JOURNAL_LINES).spec().fields()).singleElement()
             .satisfies(p -> assertThat(p.transform().toString()).isEqualTo("day"));
         assertThat(table(Feed.FINANCIAL_TRANSACTIONS).schema().findField(LakeSchemas.LOCATE_ID)).isNull();
@@ -74,7 +78,7 @@ class IcebergLakeTest {
         assertThat(lake.settings()).isEqualTo(SETTINGS);
         assertThat(lake.pacedFrom()).isEqualTo(LocalDate.of(2026, 11, 22));
         assertThat(lake.startOffsets(Map.of())).containsEntry(Feed.JOURNAL_LINES, 40L)
-            .containsEntry(Feed.CALENDAR, 0L).containsEntry(Feed.ORDERS, 0L);
+            .containsEntry(Feed.CALENDAR, 0L).containsEntry(Feed.EXECUTIONS, 0L).doesNotContainKey(Feed.ORDERS);
 
         // A second bootstrap (demo.sh up on a running stack) changes nothing, the world's settings included.
         long snapshots = catalog.listTables(Namespace.of("brokerage", "ledger")).size();
@@ -93,7 +97,7 @@ class IcebergLakeTest {
         other.bootstrap(KIT, SETTINGS, LocalDate.of(2026, 11, 22), Map.of());
         assertThat(other.startOffsets(Map.of(Feed.JOURNAL_LINES, 900L))).containsEntry(Feed.JOURNAL_LINES, 900L);
         assertThat(other.startOffsets(Map.of(Feed.JOURNAL_LINES, 950L))).containsEntry(Feed.JOURNAL_LINES, 900L)
-            .containsEntry(Feed.ORDERS, 0L);
+            .containsEntry(Feed.CNS_OBLIGATIONS, 0L);
         assertThat(other.records("brokerage.ledger.journal_lines")).isZero();
         assertThat(other.records("brokerage.singlestore.journal_lines")).isZero();
     }
@@ -144,5 +148,42 @@ class IcebergLakeTest {
         lake.endOfDay(LocalDate.of(2026, 11, 18), Map.of(name(Feed.JOURNAL_LINES), 15L));
         assertThat(table(Feed.JOURNAL_LINES).snapshot("eod-2026-11-18").snapshotId())
             .isNotEqualTo(table(Feed.JOURNAL_LINES).currentSnapshot().snapshotId());
+    }
+
+    @Test
+    void theReconciliationViewsReadEachFeedsTablesThatExistAndAreRemadeWhenAnotherAppears() {
+        TableIdentifier id = TableIdentifier.of(Namespace.of("brokerage", "recon"), "executions_vs_fills");
+        String before = ((SQLViewRepresentation) catalog.loadView(id).sqlFor("trino")).sql();
+        assertThat(before).contains("FROM lakehouse.\"brokerage.kafka\".executions")
+            .doesNotContain("\"brokerage.trading\".executions");
+        for (String name : new String[] {"stock_record_vs_ledger", "executions_vs_fills", "cns_vs_fills"}) {
+            View v = catalog.loadView(TableIdentifier.of(Namespace.of("brokerage", "recon"), name));
+            assertThat(v.properties().get("comment")).as(name).startsWith("Tie ");
+        }
+        // The change feed makes brokerage.trading.executions as it first runs; the next run's views read it too.
+        catalog.buildTable(IcebergLake.id("brokerage.trading.executions"),
+            LakeSchemas.schema(Feed.EXECUTIONS, KIT)).create();
+        int versions = catalog.loadView(id).currentVersion().versionId();
+        lake.reconViews();
+        assertThat(((SQLViewRepresentation) catalog.loadView(id).sqlFor("trino")).sql())
+            .contains("FROM lakehouse.\"brokerage.kafka\".executions UNION ALL SELECT")
+            .contains("FROM lakehouse.\"brokerage.trading\".executions");
+        assertThat(catalog.loadView(id).currentVersion().versionId()).isGreaterThan(versions);
+        // Remade only when the tables change.
+        versions = catalog.loadView(id).currentVersion().versionId();
+        lake.reconViews();
+        assertThat(catalog.loadView(id).currentVersion().versionId()).isEqualTo(versions);
+    }
+
+    @Test
+    void theLastEndOfDayIsTheNewestTagOnEitherWaysTable() {
+        String kafka = Feed.BALANCES_EOD.lakeTable(Feed.Path.KAFKA);
+        String singlestore = Feed.BALANCES_EOD.lakeTable(Feed.Path.SINGLESTORE);
+        assertThat(lake.lastEndOfDay(java.util.List.of(kafka, singlestore))).isNull();
+        commit(Feed.BALANCES_EOD, 7);
+        lake.endOfDay(LocalDate.of(2026, 11, 18), Map.of(kafka, 7L));
+        commit(Feed.BALANCES_EOD, 3);
+        lake.endOfDay(LocalDate.of(2026, 11, 19), Map.of(kafka, 10L));
+        assertThat(lake.lastEndOfDay(java.util.List.of(kafka, singlestore))).isEqualTo(LocalDate.of(2026, 11, 19));
     }
 }

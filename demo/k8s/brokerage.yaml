@@ -4,13 +4,14 @@
 # transaction through the demo kit's posting engine, and sends the world's events to two places, from where the
 # demo's pipelines bring them into Iceberg:
 #   Kafka        topics brokerage.*, which Kafka Connect's sink brokerage-lake (demo/brokerage/connector.json)
-#                writes to the tables under brokerage.reference, .markets, .party and .ledger
+#                writes to the tables under brokerage.reference, .markets, .party, .ledger and .clearing
 #   SingleStore  table brokerage.orders, which the change feed brokerage_orders_to_lake (demo/singlestore/feeds.sql)
-#                copies to brokerage.trading.orders
+#                copies to brokerage.trading.orders, and the order management system's tables order_events, routes
+#                and executions, which brokerage_oms_to_lake copies to brokerage.trading (item 151)
 # BROKERAGE_ROUTE says which of the two are on (demo.sh's switches kafka and ss; D50, backlog 238). With SingleStore
-# off, the orders go through topic brokerage.trading.order-events to brokerage.trading.order_events; with Kafka off,
-# every other feed goes into a SingleStore table of its own (demo/singlestore/brokerage-feeds.sql), whose change feed
-# copies it to brokerage.singlestore.
+# off, the order management system's rows go through topics brokerage.oms.* to brokerage.kafka, and the orders
+# nowhere; with Kafka off, every other feed goes into a SingleStore table of its own
+# (demo/singlestore/brokerage-feeds.sql), whose change feed copies it to brokerage.singlestore.
 # demo.sh up starts it last, after its bootstrap Job (brokerage-bootstrap.yaml, whose environment this repeats),
 # the tables' governance and the sink. demo.sh cdc stops it (the leg needs its memory) and cdc stop starts it again;
 # up, rate and engines stop it while they need its room (pause_world).

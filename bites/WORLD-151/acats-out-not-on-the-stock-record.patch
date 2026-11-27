@@ -1,0 +1,15 @@
+Breaks: shares an ACATS transfer delivers out (template 84) stay on the stock record
+Module: demo-datagen
+Test: ClearingTest#theStockRecordTiesToTheLedgersPositionsAndLotsAndItsOwnersToItsLocations
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/World.java b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+index 556e1ee4..9569aa4c 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/World.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+@@ -1312,7 +1312,6 @@ public final class World {
+             }
+             if (book(current, ft(84, a, "acats", Map.of(6, sec, 8, quantity, 11, control, 12, contra, 13, type,
+                 18, named)), false)) {
+-                clearing.transfer(a.id(), market.byIndex((int) (sec - 100001)), quantity.negate());
+             }
+         }
+         if (full) {

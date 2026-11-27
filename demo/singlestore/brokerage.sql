@@ -30,8 +30,8 @@ CREATE TABLE IF NOT EXISTS brokerage.orders (
   PRIMARY KEY (order_id),
   SHARD KEY (order_id));
 
--- One row per Iceberg commit the change feed makes, as ops.lake_commits; gap_after is set when it had to take a new
--- snapshot.
+-- One row per Iceberg commit the brokerage world's change feeds make (feeds.sql, brokerage-feeds-pipelines.sql);
+-- gap_after is set when one had to take a new snapshot.
 CREATE TABLE IF NOT EXISTS brokerage.lake_commits (
   snapshot_id BIGINT NOT NULL,
   source_table VARCHAR(256) NOT NULL,

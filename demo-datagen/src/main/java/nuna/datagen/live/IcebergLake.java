@@ -27,15 +27,17 @@ import org.apache.iceberg.types.Types;
 
 /**
  * The world's side of the catalog: it makes the namespaces, tables and views the sink writes into, adds the locate_id
- * column when the world first sells short, and tags each table at the end of each day. It only ever changes metadata,
- * so it reads and writes no files (an in-memory FileIO stands in) and asks for no credentials.
+ * column when the world first sells short, tags each table at the end of each day, and keeps the reconciliation views
+ * ({@link Recon}) reading every lake table each feed has. It only ever changes metadata, so it reads and writes no files
+ * (an in-memory FileIO stands in) and asks for no credentials.
  */
 public final class IcebergLake implements Publisher.Lake, AutoCloseable {
 
     public static final Namespace ROOT = Namespace.of("brokerage");
     static final List<Namespace> NAMESPACES = List.of(ROOT, Namespace.of("brokerage", "reference"),
         Namespace.of("brokerage", "markets"), Namespace.of("brokerage", "party"), Namespace.of("brokerage", "ledger"),
-        Namespace.of("brokerage", "trading"));
+        Namespace.of("brokerage", "trading"), Namespace.of("brokerage", "clearing"), Recon.NAMESPACE,
+        Namespace.of("brokerage", "kafka"));
     static final Namespace LEDGER = Namespace.of("brokerage", "ledger");
 
     /**
@@ -107,7 +109,7 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
             System.out.println("fixed the world's settings on namespace " + ROOT);
         }
         // The tables the sink writes; SingleStore's change feeds make their own copies.
-        for (Feed f : Feed.values()) {
+        for (Feed f : Feed.numbered()) {
             TableIdentifier id = id(f.lakeTable(Feed.Path.KAFKA));
             if (!catalog.tableExists(id)) {
                 Schema schema = LakeSchemas.schema(f, kit);
@@ -121,6 +123,45 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
             + " (4201).", 4201);
         view("running_collected_balance", "Each brokerage account's running collected balance at each day's end: the"
             + " withdraw clock's net equity (5201).", 5201);
+        reconViews();
+    }
+
+    /**
+     * Makes or remakes the reconciliation views ({@link Recon}) over the lake tables that exist now: a change feed makes
+     * its copy only as it first runs, so a view made before reads the other way's table alone. Run at the bootstrap,
+     * as a run starts and at each day's end; a view already reading those tables is left as it is.
+     */
+    public void reconViews() {
+        for (Recon.View v : Recon.views(TRINO_CATALOG, t -> catalog.tableExists(id(t)))) {
+            TableIdentifier id = TableIdentifier.of(Recon.NAMESPACE, v.name());
+            boolean exists = views.viewExists(id);
+            if (exists && v.sql().equals(views.loadView(id).sqlFor("trino").sql())) {
+                continue;
+            }
+            views.buildView(id).withSchema(v.schema()).withDefaultCatalog(TRINO_CATALOG)
+                .withDefaultNamespace(Recon.NAMESPACE).withQuery("trino", v.sql()).withProperty("comment", v.comment())
+                .createOrReplace();
+            System.out.println((exists ? "remade view " : "created view ") + id);
+        }
+    }
+
+    /** The last business day whose end is tagged ({@code eod-<day>}) on any of the given lake tables, or null. */
+    public LocalDate lastEndOfDay(List<String> tables) {
+        LocalDate last = null;
+        for (String table : tables) {
+            if (!catalog.tableExists(id(table))) {
+                continue;
+            }
+            for (String ref : catalog.loadTable(id(table)).refs().keySet()) {
+                if (ref.startsWith("eod-")) {
+                    LocalDate day = LocalDate.parse(ref.substring(4));
+                    if (last == null || day.isAfter(last)) {
+                        last = day;
+                    }
+                }
+            }
+        }
+        return last;
     }
 
     private void view(String name, String comment, int definition) {
@@ -153,14 +194,14 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
 
     /**
      * The records each feed's topic held when the world began. A topic this world has not recorded (the world began
-     * while Kafka was off, or before the orders had a topic) has sent it nothing yet, so its records now, {@code ends},
+     * while Kafka was off, or before its feed was the world's) has sent it nothing yet, so its records now, {@code ends},
      * are recorded as its start.
      */
     public Map<Feed, Long> startOffsets(Map<Feed, Long> ends) {
         Map<String, String> p = rootProperties();
         Map<Feed, Long> offsets = new EnumMap<>(Feed.class);
         Map<String, String> missing = new LinkedHashMap<>();
-        for (Feed f : Feed.values()) {
+        for (Feed f : Feed.numbered()) {
             String recorded = p.get(OFFSET + f.topic);
             if (recorded == null) {
                 long now = ends.getOrDefault(f, 0L);
@@ -258,6 +299,11 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
         }
         System.out.println("end of " + day + ": tagged " + (totals.size() - waiting.size()) + " of " + totals.size()
             + " tables " + tag);
+        try {
+            reconViews();
+        } catch (RuntimeException e) {
+            System.out.println("WARN the reconciliation views were not remade: " + e);
+        }
     }
 
     /** A lake table's identifier from its dotted name: the last part is the table, the rest its namespace. */
