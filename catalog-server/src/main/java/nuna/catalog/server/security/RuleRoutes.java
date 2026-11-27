@@ -141,7 +141,8 @@ class RuleRoutes {
             case WriteResult.Unchanged unchanged -> ResponseEntity.noContent().build();
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_FLAGGED ->
                     throw CatalogError.of(409, "NotFlaggedException", "The table does not carry the row/column-policy"
-                            + " flag; a steward sets it first, so that only trusted engines read its files (D20)");
+                            // The rule behind this message: D20.
+                            + " flag; a steward sets it first, so that only trusted engines read its files");
             case WriteResult.Missing missing -> throw on.missing();
             case WriteResult.VersionMismatch stale -> throw stale(group, stale);
             default -> throw new IllegalStateException("putRule answered " + result);
@@ -235,7 +236,8 @@ class RuleRoutes {
     private static String group(JsonNode json) {
         JsonNode group = json.get("group");
         if (group == null || !group.isString() || group.asString().isBlank()) {
-            throw CatalogError.badRequest("A rule names the group it is for; rules never go to individuals (D19)");
+            // The rule behind this message: D19.
+            throw CatalogError.badRequest("A rule names the group it is for; rules never go to individuals");
         }
         return group.asString();
     }

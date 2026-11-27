@@ -1,5 +1,6 @@
 package nuna.catalog.server.rest;
 
+import nuna.catalog.audit.Actor;
 import nuna.catalog.audit.RefChange;
 import nuna.catalog.audit.Securable;
 import nuna.catalog.core.commit.CommitEngine;
@@ -78,6 +79,14 @@ class Engines implements Merge.Factory {
 
     CommitEngine forRequest(CatalogRecord catalog, List<String> path, RequestContext request) {
         return forRequest(catalog, audit.commits(catalog.name(), path, request.actor()));
+    }
+
+    /**
+     * For a commit the server makes itself, as the deployment's configuration ({@code actor}), whose audit events name
+     * the object by {@code path}: the audit table's added columns (D23, amended 2026-11-27).
+     */
+    CommitEngine forServer(CatalogRecord catalog, List<String> path, Actor actor) {
+        return forRequest(catalog, audit.commits(catalog.name(), path, actor));
     }
 
     /** For a transaction, whose audit events name each table by {@code path}. */

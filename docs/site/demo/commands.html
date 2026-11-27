@@ -95,7 +95,7 @@ Kafka Connect's connectors (the connector's state, then its tasks'):
 
       <h3 id="demo-sh-sql"><code>demo.sh sql</code></h3>
       <p>Opens a SingleStore prompt as <code>root</code>. When SingleStore is off it prints <code>SingleStore is off: demo/demo.sh ss first</code> and exits with status 1.</p>
-      <p class="gap">The prompt opens database <code>ops</code>, but the script drops <code>ops</code> when it sets up SingleStore's feeds, so the prompt may fail to start. Not tried while SingleStore was on; connect to <code>lake</code> or <code>brokerage</code> instead with <code>USE</code>.</p>
+      <p>The prompt opens database <code>brokerage</code>; <code>USE lake</code> moves to the other.</p>
 
       <h3 id="demo-sh-brokerage-logs"><code>demo.sh brokerage logs</code></h3>
       <p>Follows the generator's log, starting from its last 100 lines.</p>

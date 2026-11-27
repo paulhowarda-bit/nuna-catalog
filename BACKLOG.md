@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**21 open:** 4 S, 9 M, 3 L, 4 XL, and 1 not estimated yet (`Effort: ?`).
+**18 open:** 3 S, 8 M, 3 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -27,12 +27,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
-| [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [313](backlog/313.md) | M | Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240) | some dozen messages across four modules, and the tests that quote them | 2026-11-27 |
-| [314](backlog/314.md) | S | Grafana dashboards and demo.sh messages name backlog items and D rows | text only | 2026-11-27 |
-| [315](backlog/315.md) | S | Console: small faults the documentation writers found | five small changes in the console, Atelier's to settle where they touch design | 2026-11-27 |
-| [316](backlog/316.md) | ? | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | one investigation and one command | 2026-11-27 |
+| [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
+| [318](backlog/318.md) | S | Brokerage world: fixes from the live check of items 151 to 155 and 308 | small fixes to what the first live run of the whole brokerage world shows, each with a test where one fits | 2026-11-27 |
 
 ## Open items in full
 
@@ -1220,11 +1217,12 @@ were written and compiled, not run here. Open until the overnight run passes the
   run) now covers the note's words, the status line, Up to keeping the start, the button and `from=any`, the Record
   tab's link and a link's other time. Bite recorded, not run: `bites/UI/console-ref-start-dropped-with-up-to`.
 
-### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR
+### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work)
 
+- Decided: 2026-11-27, D54
 - Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
 - Touches: catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java catalog-server/src/main/java/nuna/catalog/server/metrics/MetricsWiring.java catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java catalog-server/src/test/ deploy/helm/nuna-catalog/values.yaml deploy/helm/nuna-maintenance/values.yaml docs/observability/README.md docs/observability/spans.md bites/
-- Effort: M, at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43
+- Effort: M, at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43
 
 **What is wrong.**
 
@@ -1297,73 +1295,9 @@ marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalanc
 than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
 5xx seen in work's Grafana.
 
-### 313. Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240)
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: catalog-server/src/main/java/, catalog-security/src/main/java/, catalog-audit-tables/src/main/java/, their tests
-- Effort: M, some dozen messages across four modules, and the tests that quote them
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-Messages that reach API clients carry internal decision and backlog tags, which mean nothing to a reader
-outside the project: `GrantRoutes.java:469`, `RuleRoutes.java:144` and `:238`, `TokenAuthenticator.java:153`,
-`RuleColumns.java:81`, `:96` and `:128`, `AuditTrail.java:85`, `FlagsAboveTables.java:90`, `CatalogStorage.java:239`,
-`StoreWiring.java:94`, `EventsReader.java:569` (a grep for a quoted string with `(D<n>` or `(backlog <n>`). The
-documentation quotes these messages up to the tag and then "…".
-
-What done looks like: no message a client or an operator reads names a D row, a backlog item or a milestone; the
-tags stay in comments. A test (or a check in the fast build) scans message strings for them.
-
-### 314. Grafana dashboards and demo.sh messages name backlog items and D rows
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: deploy/grafana/, demo/demo.sh
-- Effort: S, text only
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-Panel titles and descriptions in `deploy/grafana/dashboards/nuna-catalog.json` name "backlog 44, D43" (line 125),
-"build plan R7, M8" (131), "backlog 261" (408, 475, 542) and "D14" (996, 1204); check the alert rules in
-`deploy/grafana/rules/` too. `demo/demo.sh` says "backlog 281" in two messages the user reads (lines 2211 and 2214).
-An operator at work reads these with no access to the backlog.
-
-What done looks like: the words say what the tag stood for (a draft target, a shared credential epoch) and name no
-internal item; `AlertRulesTest` still passes.
-
-### 315. Console: small faults the documentation writers found
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: catalog-server/src/main/resources/nuna/ui/
-- Effort: S, five small changes in the console, Atelier's to settle where they touch design
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-- The Maintenance page's "Last night" time axis draws its labels over each other.
-- `health.js:428` maps a source `default` to "built-in", but the server sends `built-in` for built-in values, so
-  the mapping is dead and a real `default` would be misnamed.
-- The merge preview says "Needs create on … and write on each table." (`refs.js:1120`), but views and definition
-  changes need modify.
-- The console's favicon is still the old "F" mark.
-- `browse.js`'s header comment still names the old Governance and Grants tabs.
-
-What done looks like: each fixed, or Atelier says why it stays.
-
-### 316. Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: demo/
-- Effort: S to M, one investigation and one command
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-- In the running demo (commit a9c7ea81), `nuna_audit.audit.events` has no snapshot although the audit tables
-  pod is Running: the audit summary's snapshot id is null and Audit shows nothing. Find why the writer commits
-  nothing.
-- `demo/demo.sh sql` opens a SingleStore prompt in database `ops` (line 26), which the feed setup drops
-  (lines 1088-1090 and 1207). Not tested.
-
-What done looks like: the writer commits within its interval and Audit shows records; `demo.sh sql` opens a
-database that exists.
+**At work, 2026-11-27 (D54).** Paul: "can we mark it as for work. Not for here". The home part is built and the demo's
+tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
+forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
 ### 317. Internal documents disagree with the code
 
@@ -1386,6 +1320,24 @@ The documentation site was written from the code; these internal documents say o
 
 What done looks like: each corrected from the code. The public documentation is `docs/site/`; where an internal
 document only repeats it, it may point there instead.
+
+### 318. Brokerage world: fixes from the live check of items 151 to 155 and 308
+
+- Added: 2026-11-27 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo/demo.sh demo/singlestore/brokerage-feeds.sql demo-datagen/ bites/WORLD-318/
+- Effort: S, small fixes to what the first live run of the whole brokerage world shows, each with a test where one fits
+
+Items 151 to 155 and 308 landed on the fast build alone; Paul asked for one live check at the end (2026-11-26). The
+demo was rebuilt at e7582289 with the brokerage world deleted and started fresh, and these broke:
+
+1. `demo.sh up` printed "ana PUT /management/v1/catalogs/lakehouse/maintenance-policy answered 403", so maintenance
+   was never turned on in lakehouse's policy. Item 152's `lake_grants` moved demo-analysts' modify from the catalog to
+   its namespaces, so ana may no longer set the catalog's policy.
+2. `demo.sh ss` stopped at "ERROR 1064 ... near 'trigger TEXT'": item 152's `sanctions_screens` has a column named
+   `trigger`, a reserved word, and SingleStore makes the world's tables with unquoted names.
+
+What done looks like: `up` sets lakehouse's policy; `ss` and `gen` start the world; every further fault the live check
+finds is fixed here or put in an item of its own.
 
 ## Done and dropped
 
@@ -1683,3 +1635,7 @@ document only repeats it, it may point there instead.
 | [310](backlog/310.md) | OPA's row-filter and column-mask answers fail when the request names no Trino catalog | done | 2026-11-27 |
 | [311](backlog/311.md) | GET /management/v1/maintenance/nights with a non-numeric jobs or days answers 500, not 400 | done | 2026-11-27 |
 | [312](backlog/312.md) | The console says a grants export is audited, but the export writes no audit record | done | 2026-11-27 |
+| [313](backlog/313.md) | Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240) | done | 2026-11-27 |
+| [314](backlog/314.md) | Grafana dashboards and demo.sh messages name backlog items and D rows | done | 2026-11-27 |
+| [315](backlog/315.md) | Console: small faults the documentation writers found | done | 2026-11-27 |
+| [316](backlog/316.md) | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | done | 2026-11-27 |

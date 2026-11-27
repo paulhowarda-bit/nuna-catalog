@@ -2,7 +2,7 @@ Breaks: a current-state view keeps each key's first version, not its latest
 Module: demo-datagen
 Test: CurrentTest#eachViewHoldsEveryKeyOnceAtItsLatestVersion
 diff --git a/demo-datagen/src/main/java/nuna/datagen/live/Current.java b/demo-datagen/src/main/java/nuna/datagen/live/Current.java
-index c7036409..678a8d42 100644
+index 068aa102..7939a367 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/live/Current.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/live/Current.java
 @@ -56,7 +56,7 @@ final class Current {
@@ -13,4 +13,4 @@ index c7036409..678a8d42 100644
 +                + "\nFROM h JOIN (SELECT " + key + ", MIN(\"version\") AS latest FROM h GROUP BY " + key + ") l"
                  + " ON h." + key + " = l." + key + " AND h.\"version\" = l.latest";
              views.add(new View(Namespace.of(f.namespace.split("\\.")), f.table + "_current",
-                 "Each " + LakeSchemas.key(f) + "'s latest version in " + f.table + ", which keeps every version"
+                 "Each " + LakeSchemas.key(f) + "'s latest version in " + f.table + ", which keeps every version.",
