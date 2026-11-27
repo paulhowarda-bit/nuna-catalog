@@ -1,15 +1,15 @@
-Breaks: SingleStore's change feeds, which write flagged tables, left untrusted
+Breaks: SingleStore's change feeds' own client, which writes flagged tables, left untrusted
 Module: demo-datagen
 Test: FlaggedTablesTest#demoShTrustsEveryWriterOfAFlaggedTable
 diff --git a/demo/demo.sh b/demo/demo.sh
-index a869a636..922c4ca5 100644
+index cfc616df..011216b4 100644
 --- a/demo/demo.sh
 +++ b/demo/demo.sh
-@@ -796,7 +796,7 @@ SQL
- # world's sinks and the CDC leg's), SingleStore's (singlestore-demo: its change feeds) and the generator's
- # (brokerage-world-demo: it counts each table's rows and tags its ends of day), since FLAGGED_TABLES opens its files only
- # to trusted engines. Each acts as itself, with its own grants; none names an end user.
--TRUSTED_CLIENTS="trino-demo kafka-connect-demo singlestore-demo brokerage-world-demo"
+@@ -798,7 +798,7 @@ SQL
+ # other pipelines sign in as singlestore-demo, which stays untrusted, so its reads of flagged tables get 403) and the
+ # generator's (brokerage-world-demo: it counts each table's rows and tags its ends of day), since FLAGGED_TABLES opens
+ # its files only to trusted engines. Each acts as itself, with its own grants; none names an end user.
+-TRUSTED_CLIENTS="trino-demo kafka-connect-demo singlestore-feed-demo brokerage-world-demo"
 +TRUSTED_CLIENTS="trino-demo kafka-connect-demo brokerage-world-demo"
  trusted_engines() {
    local client
