@@ -3,6 +3,7 @@ package nuna.changefeed.engine;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.github.dockerjava.api.model.HealthCheck;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -61,7 +62,17 @@ class ChangeFeedTest {
                 .withEnv("ROOT_PASSWORD", ROOT_PASSWORD)
                 .withEnv("SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES", "1")
                 .withExposedPorts(3306)
-                .withCreateContainerCmdModifier(cmd -> cmd.getHostConfig().withMemory(3L << 30))
+                // The image's own health check, given here because the image is an OCI one: Docker read its
+                // HEALTHCHECK, Podman drops it from an OCI image's config, so under Podman the container had no
+                // health to report and the wait below ran out (backlog 302).
+                .withCreateContainerCmdModifier(cmd -> cmd.withHealthcheck(new HealthCheck()
+                                .withTest(List.of("CMD-SHELL", "/scripts/healthcheck.sh"))
+                                .withInterval(Duration.ofSeconds(5).toNanos())
+                                .withTimeout(Duration.ofSeconds(5).toNanos())
+                                .withStartPeriod(Duration.ofSeconds(90).toNanos())
+                                .withRetries(3))
+                        .getHostConfig()
+                        .withMemory(3L << 30))
                 .waitingFor(Wait.forHealthcheck().withStartupTimeout(Duration.ofMinutes(5)));
         singlestore.start();
         url = "jdbc:mariadb://" + singlestore.getHost() + ":" + singlestore.getMappedPort(3306) + "/";
@@ -301,6 +312,6 @@ class ChangeFeedTest {
     }
 
     private static Connection connect() throws SQLException {
-        return DriverManager.getConnection(url, "root", "it-root");
+        return DriverManager.getConnection(url, "root", ROOT_PASSWORD);
     }
 }
