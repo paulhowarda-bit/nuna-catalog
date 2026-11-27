@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleTest#devTokenLoginIsOffByDefaultAndConfigHoldsNoSecret
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java
-index 33807b98..0f33222b 100644
+index a0386180..feb73922 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java
-@@ -18,7 +18,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
-  *                      documentation link
+@@ -20,7 +20,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
+  *                      without it (the default) shows no link (backlog 319)
   */
  @ConfigurationProperties("nuna.ui")
 -public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc,
 +public record UiSettings(@DefaultValue("true") boolean devTokenLogin, Oidc oidc,
-                          @DefaultValue(UiSettings.OWN_DOCS) String docsUrl) {
+                          @DefaultValue(UiSettings.OWN_DOCS) String docsUrl, String grafanaUrl) {
  
      /** The documentation site this server serves (UiWiring). */
