@@ -1070,12 +1070,13 @@ stop_maintenance() {
   done
 }
 
-# Catalog lakehouse's maintenance policy (D30), as ana, who may modify it: every job on, snapshots expired once an
+# Catalog lakehouse's maintenance policy (D30), as presenter, who holds every privilege (since item 152 ana holds modify
+# only on namespaces, not on the catalog): every job on, snapshots expired once an
 # hour old (the least the catalog allows), keeping the newest 5 of each table; the other keys as built in. The
 # database is new at each up, so every up sets it. Branches, tags, holds and freezes keep what they keep.
 maintenance_policy() {
-  say "turning maintenance on in $CATALOG's policy (as ana)"
-  api ana PUT "/management/v1/catalogs/$CATALOG/maintenance-policy" '{"snapshot-expiry.enabled": "true",
+  say "turning maintenance on in $CATALOG's policy (as presenter)"
+  api presenter PUT "/management/v1/catalogs/$CATALOG/maintenance-policy" '{"snapshot-expiry.enabled": "true",
     "snapshot-expiry.max-snapshot-age": "PT1H", "snapshot-expiry.min-snapshots-to-keep": "5",
     "orphan-removal.enabled": "true", "compaction.enabled": "true", "manifest-rewrite.enabled": "true"}'
 }
