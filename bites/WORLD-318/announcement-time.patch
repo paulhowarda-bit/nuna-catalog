@@ -1,0 +1,15 @@
+Breaks: the time of what a day's planning announces, so the first day's split announcement has none and the live pacer throws
+Module: demo-datagen
+Test: WorldTest
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/World.java b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+index 5498dc63..578f025a 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/World.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+@@ -289,7 +289,6 @@ public final class World {
+         LocalDate d = day;
+         // What the day's planning emits (the splits and dividends announced) goes out at 07:00, before the first task:
+         // before this, current was null on the first day and the pacer threw, or yesterday's last time (item 318).
+-        current = at(LocalTime.of(7, 0));
+         if (!started) {
+             started = true;
+             reference();
