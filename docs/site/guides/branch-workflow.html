@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/branch-workflow">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Write, audit and publish with a branch · nuna docs</title>
+  <meta name="description" content="Make a catalog branch, write to it from an engine, check what changed, then merge it into main in one transaction or delete it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Write, audit and publish with a branch</h1>
+        <p class="lead">Make a catalog branch, write to it from an engine, check what changed, then merge it into main in one transaction or delete it.</p>
+        <p class="doc-meta">
+          <span class="badge for">For engine users and data stewards</span>
+          <span class="badge needs">Needs <code>create</code> on the catalog</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>A <a class="term" href="../reference/glossary.html#term-catalog-branch">catalog branch</a> is the whole catalog at one point, taking commits of its own. Engines write to it as a warehouse of its own, <code>trading@dev</code>, and main does not move. When the change is checked, a merge moves every table the branch changed onto main in one transaction, or none of them. This is write-audit-publish for a whole catalog; <a href="../concepts/branches-and-tags.html">Catalog branches and tags</a> explains how it works.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Making, renewing, merging and deleting a branch need <code>create</code> on the catalog. Listing branches, reading them and previewing a merge need any grant in the catalog.</li>
+        <li>Writing to the branch needs <code>write</code> on the table for a change of data, or <code>modify</code> for a change of schema, partitioning or properties. A grant of <code>write</code> or <code>modify</code> may name one branch, so that a group can commit there and nowhere else (<a href="grant-access.html">Grant and revoke access</a>).</li>
+        <li>The merge needs, on each table it moves, what a commit of the same change on main would need: <code>write</code> for data alone, <code>modify</code> for a change of definition. A view always needs <code>modify</code>.</li>
+        <li>The tables you will change exist on main. A branch takes commits to existing tables and views only; creating, dropping and renaming happen on main.</li>
+        <li>Your engine is set up to reach nuna (<a href="../clients/spark.html">Spark</a>, <a href="../clients/trino.html">Trino</a>, <a href="../clients/pyiceberg.html">PyIceberg</a>). For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="make-the-branch">Make the branch</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Select <b class="ui">Branches and tags</b> in the rail.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Make a branch or tag</b>.</p>
+              <p>The console offers the button only when your groups hold <code>create</code> on the catalog. Without it, the page says what making a branch needs.</p>
+            </li>
+            <li>
+              <p class="step-title">Choose <b class="ui">Branch</b>, enter its name, and leave <b class="ui">From</b> at <b class="ui">main, as it is now</b>.</p>
+              <p>Under <b class="ui">Purpose (optional)</b>, say why the branch exists in one line. Everyone who can see the catalog's branches and tags reads it, and the audit record keeps it.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Make it</b>.</p>
+              <p>The dialog shows the server's answer and links to the branch's page and to reading the catalog through it.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Make branch dev from main">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/refs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "dev", "kind": "branch", "from": "main", "description": "Restated fills for 2026-11-25"}'</code></pre>
+          </div>
+          <p>The server answers <code>201</code> with the branch. <code>from</code> is optional and defaults to main.</p>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "id": "6f1c2a9e-3b7d-4c52-9a10-2d8e4f6b7c31",
+  "name": "dev",
+  "kind": "branch",
+  "from": "main",
+  "created-at": "2026-11-26T09:12:40.118Z",
+  "created-by": "trading-etl",
+  "description": "Restated fills for 2026-11-25",
+  "expires-at": "2026-12-26T09:12:40.118Z",
+  "max-expires-at": "2027-05-25T09:12:40.118Z",
+  "expiring": false,
+  "cut-at": "2026-11-26T09:12:40.118Z"
+}</code></pre>
+          </div>
+        </section>
+      </div>
+      <p>A ref's name may not contain <code>@</code> or <code>/</code>, may not be <code>main</code>, and compares without case. A branch expires 30 days after it was made, last committed to or renewed, and never later than 180 days after it was made; these are the defaults of <code>nuna.refs.branch-idle-expiry</code> and <code>nuna.refs.branch-max-life</code>.</p>
+
+      <h2 id="write-to-the-branch">Write to the branch</h2>
+      <p>Point an engine catalog at the warehouse <code>trading@dev</code>. One engine catalog reads one ref, so keep a second catalog on <code>trading</code> to compare with main. Every write through it lands on the branch.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <div class="code" data-lang="properties" data-title="spark-defaults.conf: a catalog named dev on the branch">
+<pre><code>spark.sql.catalog.dev=org.apache.iceberg.spark.SparkCatalog
+spark.sql.catalog.dev.type=rest
+spark.sql.catalog.dev.uri=https://nuna.example/
+spark.sql.catalog.dev.warehouse=trading@dev
+spark.sql.catalog.dev.token=…
+spark.sql.catalog.dev.header.X-Iceberg-Access-Delegation=vended-credentials
+spark.sql.catalog.dev.io-impl=org.apache.iceberg.aws.s3.S3FileIO</code></pre>
+          </div>
+          <div class="code" data-lang="sql" data-title="Write on the branch">
+<pre><code>DELETE FROM dev.equities.fills WHERE trade_date = DATE '2026-11-25';
+INSERT INTO dev.equities.fills SELECT * FROM trading.equities.fills_restated;</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="trino" data-label="Trino">
+          <div class="code" data-lang="properties" data-title="etc/catalog/trading_dev.properties">
+<pre><code>connector.name=iceberg
+iceberg.catalog.type=rest
+iceberg.rest-catalog.uri=https://nuna.example
+iceberg.rest-catalog.warehouse=trading@dev
+iceberg.rest-catalog.security=OAUTH2
+iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
+iceberg.rest-catalog.vended-credentials-enabled=true
+iceberg.rest-catalog.nested-namespace-enabled=true</code></pre>
+          </div>
+          <div class="code" data-lang="sql" data-title="Write on the branch">
+<pre><code>DELETE FROM trading_dev.equities.fills WHERE trade_date = DATE '2026-11-25';</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+          <div class="code" data-lang="python" data-title="Append on the branch">
+<pre><code>from pyiceberg.catalog import load_catalog
+
+dev = load_catalog("dev", type="rest", uri="https://nuna.example", warehouse="trading@dev",
+                   token=token, **{"header.X-Iceberg-Access-Delegation": "vended-credentials"})
+fills = dev.load_table("equities.fills")
+fills.append(restated)  # a pyarrow Table</code></pre>
+          </div>
+        </section>
+      </div>
+      <p>On the branch, a table's metadata file is the branch's own, and its version on the branch starts at 1. Every rule of main applies to each commit (legal holds, the minimum snapshot age and the rest), except a DR freeze, which binds only the merge. Each commit that lands moves the branch's expiry ahead. A branch may change at most <code>nuna.refs.max-merge-tables</code> tables and views (default <code>100</code>), so that one transaction can merge them.</p>
+
+      <h2 id="check-what-changed">Check what changed</h2>
+      <p>Compare the branch with main from your engine: query the same table through both catalogs. The branch itself lists the tables it changed.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Open the branch from <b class="ui">Branches and tags</b>.</p>
+              <p>Its <b class="ui">Changes</b> tab lists each table and view the branch changed, with its commits on the branch and on main since the point.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Read</b> on the branch's line to browse the catalog through it.</p>
+              <p>The header's <b class="ui">Reading</b> control names the ref every catalog, namespace, table and view page reads, and switches back to main.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Read the branch and what it changed">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/refs/dev" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "id": "6f1c2a9e-3b7d-4c52-9a10-2d8e4f6b7c31",
+  "name": "dev",
+  "kind": "branch",
+  "from": "main",
+  "created-at": "2026-11-26T09:12:40.118Z",
+  "created-by": "trading-etl",
+  "description": "Restated fills for 2026-11-25",
+  "expires-at": "2026-12-26T09:31:02.540Z",
+  "max-expires-at": "2027-05-25T09:12:40.118Z",
+  "expiring": false,
+  "cut-at": "2026-11-26T09:12:40.118Z",
+  "changed": [
+    {"namespace": ["equities"], "name": "fills", "kind": "table", "cut-version": 4, "version": 2}
+  ],
+  "may": {"create": true}
+}</code></pre>
+          </div>
+          <p><code>cut-version</code> is main's version of the table at the point; <code>version</code> is its version on the branch. <code>created-by</code> is shown only to a caller holding <code>create</code> on the catalog.</p>
+        </section>
+      </div>
+
+      <h2 id="preview-the-merge">Preview the merge</h2>
+      <p>A preview, the merge's dry run, writes nothing. It says what the merge would answer now, which tables would move or conflict, and whether you hold what the merge needs.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>Open the branch's <b class="ui">Merge</b> tab. Under <b class="ui">Table by table</b> it draws each table's commits on the branch and on main since the point; under <b class="ui">In one transaction</b> it lists what the merge would do, with the button <b class="ui">Merge @dev into main</b>. The button is off while a table conflicts or your groups lack a right the merge needs, and the page says which.</p>
+          <figure class="shot pending" id="fig-branch-merge-tab"
+                  data-shot="guides-branch-merge-tab"
+                  data-shot-route="#c=lakehouse&amp;k=ref&amp;n=dev&amp;tab=merge"
+                  data-shot-user="ana"
+                  data-shot-width="1440"
+                  data-shot-state="Branch dev exists with its two changed tables, as demo.sh up makes it, and main has not changed those tables since.">
+            <figcaption>A branch's Merge tab: each table moves to main, and the merge button is on.</figcaption>
+          </figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Preview the merge of dev">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/refs/dev/merge?dry-run=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "dry-run": true,
+  "ref": {
+    "id": "6f1c2a9e-3b7d-4c52-9a10-2d8e4f6b7c31",
+    "name": "dev",
+    "kind": "branch",
+    "from": "main",
+    "created-at": "2026-11-26T09:12:40.118Z",
+    "created-by": "trading-etl",
+    "description": "Restated fills for 2026-11-25",
+    "expires-at": "2026-12-26T09:31:02.540Z",
+    "max-expires-at": "2027-05-25T09:12:40.118Z",
+    "expiring": false,
+    "cut-at": "2026-11-26T09:12:40.118Z"
+  },
+  "changed": 1,
+  "max-tables": 100,
+  "answer": {"code": 200},
+  "tables": [
+    {
+      "namespace": ["equities"],
+      "name": "fills",
+      "kind": "table",
+      "cut-version": 4,
+      "main-version": 4,
+      "branch-version": 2,
+      "moves": true,
+      "version": 5,
+      "rebased": false,
+      "main-commits": {"count": 0, "by": []},
+      "verdict": {"allowed": true},
+      "right": {"needs": "write", "allowed": true}
+    }
+  ],
+  "hidden": 0,
+  "may-merge": true
+}</code></pre>
+          </div>
+          <p><code>answer</code> is what the merge would answer now: <code>{"code": 200}</code>, or the error's <code>code</code>, <code>type</code> and <code>message</code>. A table that conflicts has <code>"moves": false</code> and a <code>conflict</code> saying why. <code>hidden</code> counts the tables you may not see, which are never named.</p>
+        </section>
+      </div>
+      <p>How each table is judged:</p>
+      <ul>
+        <li>If main has not moved since the point, main takes the branch's version.</li>
+        <li>If main moved only by its own maintenance (compaction and manifest rewrites, which add only <code>replace</code> snapshots, and snapshot expiry), the table still moves and is marked <code>rebased</code>.</li>
+        <li>If main changed the table in any other way (new data, a schema, partitioning, sort order, properties, an Iceberg ref made or moved), or dropped it, or replaced a view, the table conflicts.</li>
+      </ul>
+
+      <h2 id="merge-into-main">Merge into main</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">On the branch's <b class="ui">Merge</b> tab, select <b class="ui">Merge @dev into main</b>.</p>
+              <p>The dialog lists each table with its version on main now and after.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Merge into main</b>.</p>
+              <p>Focus starts on <b class="ui">Cancel</b>, so one press of <kbd>Enter</kbd> never merges. After the merge the page shows <b class="ui">What main has now</b>: each table's version before and after.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Merge dev into main">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/refs/dev/merge" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: merge-dev-2026-11-26"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "ref": {
+    "id": "6f1c2a9e-3b7d-4c52-9a10-2d8e4f6b7c31",
+    "name": "dev",
+    "kind": "branch",
+    "from": "main",
+    "created-at": "2026-11-26T09:12:40.118Z",
+    "created-by": "trading-etl",
+    "description": "Restated fills for 2026-11-25",
+    "expires-at": "2026-12-26T09:31:02.540Z",
+    "max-expires-at": "2027-05-25T09:12:40.118Z",
+    "expiring": false,
+    "cut-at": "2026-11-26T09:12:40.118Z"
+  },
+  "tables": [
+    {
+      "namespace": ["equities"],
+      "name": "fills",
+      "kind": "table",
+      "cut-version": 4,
+      "main-version": 4,
+      "branch-version": 2,
+      "moves": true,
+      "version": 5,
+      "rebased": false,
+      "metadata-location": "s3://…/metadata/00005-….metadata.json"
+    }
+  ]
+}</code></pre>
+          </div>
+          <p>The <code>Idempotency-Key</code> header is optional; with it, a retry after a lost answer gets the first answer again instead of a second merge.</p>
+        </section>
+      </div>
+      <p>The merge ends the branch: its name is free and <code>trading@dev</code> answers <code>404</code>. For each table, main writes its own copy of the branch's metadata at its next version. The audit trail gets one <code>nuna.catalog.ref</code> record for the merge and one <code>nuna.catalog.commit</code> record for each table on main.</p>
+
+      <h2 id="or-delete-the-branch">Or delete the branch</h2>
+      <p>If the change is not to reach main, delete the branch. Its changes are lost; main never took them.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>On the branch's page, select <b class="ui">Delete</b>, then <b class="ui">Delete @dev</b> in the dialog <b class="ui">Delete the branch @dev</b>.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Delete branch dev">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/refs/dev" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>The server answers <code>204</code>.</p>
+        </section>
+      </div>
+      <aside class="callout danger">
+        <p class="callout-title">Deleting a branch loses its unmerged changes</p>
+        <p>The name is free at once, and the branch's own table pointers go with it. Files that no other ref names are left to the maintenance worker's cleanup.</p>
+      </aside>
+
+      <p>A branch you neither merge nor delete expires. Renew it before then from its page (<b class="ui">Renew</b>) or with <code>POST /management/v1/catalogs/trading/refs/dev/renew</code>; a renewal moves the expiry ahead by <code>nuna.refs.branch-idle-expiry</code>, never past the branch's whole life.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">Main now holds the branch's change</p>
+        <p>Querying the table through the <code>trading</code> catalog returns what the branch held. The table's History tab on main shows the new version, and the catalog's audit feed shows the merge and one commit per table, each with the merge's request id.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>409</code> <code>RefMergeConflictException</code> <code>Branch dev conflicts with main in 1 of the 2 tables and views it changed, so nothing moved: equities.fills (cut version 4, main version 5, branch version 2): main committed snapshot … (append)</code></td><td>Main changed a table since the point by more than maintenance. Nothing moved; main's change and the branch's are both kept. The body also has a <code>conflicts</code> array.</td><td>Make a new branch from main and commit the change again there. Nothing rebases a branch onto main.</td></tr>
+            <tr><td><code>409</code> <code>RefLimitException</code> <code>Catalog trading holds 50 open branches, as many as nuna.refs.max-branches allows</code></td><td>The catalog holds as many open branches as allowed.</td><td>Merge or delete a branch, or ask an operator to raise <code>nuna.refs.max-branches</code>.</td></tr>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>Ref already exists: dev</code></td><td>A branch or tag has that name, in any case.</td><td>Choose another name. If the message adds that a branch past its expiry keeps its name, the maintenance worker frees it at its next scan.</td></tr>
+            <tr><td><code>400</code> <code>Invalid ref name: a ref's name holds no @ and no /: dev/1</code></td><td>The name contains <code>@</code> or <code>/</code>, or is <code>main</code>.</td><td>Choose another name.</td></tr>
+            <tr><td><code>400</code> <code>createTable is refused on branch dev of catalog trading: creates, drops, renames, registrations and namespace changes happen on main only</code></td><td>The engine tried to create, drop, rename or register through the branch.</td><td>Do it on main, then make the branch, or commit only to existing tables on it.</td></tr>
+            <tr><td><code>400</code> <code>Branch dev changes 100 tables and views already and may change at most 100 (nuna.refs.max-merge-tables), so that it can merge in one transaction; …</code></td><td>The commit would take the branch past the most tables one merge moves.</td><td>Merge the branch first, or commit the rest on another branch.</td></tr>
+            <tr><td><code>404</code> <code>NoSuchWarehouseException</code> <code>The given warehouse does not exist: trading@dev (catalog trading has no branch or tag dev)</code></td><td>The branch does not exist, or has expired, been merged or deleted.</td><td>Check the name in <b class="ui">Branches and tags</b>.</td></tr>
+            <tr><td><code>404</code> <code>Branch dev is gone: merged, deleted or past its expiry</code></td><td>The branch ended while the engine was committing to it.</td><td>Make a new branch.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming the privilege, such as <code>… holds no privilege that gives create for mergeRef</code></td><td>Your groups lack <code>create</code> on the catalog, or the right a table's change needs. The refusal is audited.</td><td>Ask a grant admin, or have someone who holds it merge.</td></tr>
+            <tr><td><code>409</code> <code>CommitFailedException</code> <code>Merge of branch dev lost to concurrent commits … times; its tables changed too often to merge them</code></td><td>Commits on main kept landing on the branch's tables during the merge.</td><td>Merge again when main is quieter.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>: what a branch keeps, how a merge decides, and limits.</li>
+          <li><a href="../console/branches-and-tags.html">The Branches and tags page</a>: every element of the console's refs pages.</li>
+          <li><a href="../api/refs.html#endpoints">Branches and tags API</a>: every ref endpoint and its fields.</li>
+          <li><a href="tag.html">Keep a point in time with a tag</a>: a read-only ref of the whole catalog.</li>
+          <li><a href="../configure/governance.html">Governance and refs settings</a>: <code>nuna.refs.*</code>.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java</code>, <code>catalog-store-api/src/main/java/nuna/catalog/store/Ref.java</code>, <code>catalog-server/src/main/resources/nuna/ui/refs.js</code>, <code>docs/refs.md</code>, <code>demo/k8s/trino.yaml</code> and <code>catalog-tests-engines/README.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The shapes of the ref listing and of one branch were read from the local demo with GET requests. Making, previewing, merging and deleting were not run: they write, and the demo is shared. The engine settings follow <code>docs/refs.md</code> and the demo's Trino catalog; the SQL is illustrative.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

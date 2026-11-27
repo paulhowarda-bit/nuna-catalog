@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="start/console-tour">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tour the console · nuna docs</title>
+  <meta name="description" content="Visit every page of the console once on the local demo: find a table, read its tabs, look at last night's maintenance, a legal hold, a grant, an audit record and the Service page.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="tutorial">
+      <header class="doc-head">
+        <h1>Tour the console</h1>
+        <p class="lead">Visit every page of the console once, on the local demo's catalog <code>lakehouse</code>, signed in as <code>presenter</code>: find a table, read its tabs, look at last night's maintenance, a legal hold, a grant, an audit record and the Service page. At the end you know where everything in the console lives. It takes about 20 minutes.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For everyone who will use the console</span></p>
+      </header>
+
+      <h2 id="what-you-need">What you need</h2>
+      <ul>
+        <li>The local demo running. <a href="quickstart.html">Run nuna on your laptop</a> starts it.</li>
+        <li>The console open at <code>https://localhost:8181/ui/</code>, with the demo's certificate trusted.</li>
+        <li>The password of <code>presenter</code>, from <code>~/.nuna-demo/people</code>. <code>presenter</code> belongs to every demo group, so every page and button appears.</li>
+      </ul>
+
+      <h2 id="sign-in-and-look-around">Sign in and look around</h2>
+      <ol class="steps">
+        <li><p class="step-title">Select <b class="ui">Sign in with localhost:8180</b>, and sign in as <code>presenter</code>.</p><p>Keycloak's page signs you in and sends you back. <a href="../console/sign-in.html">Signing in to the console</a> covers the other way in, the token box.</p></li>
+        <li><p class="step-title">Read the header.</p><p>From the left: the menu button, <b class="ui">nuna</b>, the <b class="ui">Catalog</b> picker showing <code>lakehouse</code>, the <b class="ui">Reading</b> chip, <b class="ui">Go to a path</b>, who you are with your groups and when your sign-in ends, the theme switch and <b class="ui">Sign out</b>.</p></li>
+        <li><p class="step-title">Read the Overview.</p><p>The console opens on <b class="ui">Overview</b>, since <code>presenter</code> reads data, the audit feed and operates the platform. The title says how many of the tables you may read are in shape. <b class="ui">Every table, one mark</b> draws one mark per table, and <b class="ui">Queued for tonight</b> lists what the worker will compact first.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">The rail lists eight pages</p><p>The rail shows <b class="ui">Overview</b>, <b class="ui">Catalog</b>, <b class="ui">Branches and tags</b>, <b class="ui">Maintenance</b>, <b class="ui">Governance</b>, <b class="ui">Grants</b>, <b class="ui">Audit</b> and <b class="ui">Service</b>. A person in fewer groups sees fewer: <a href="../console/index.html#who-sees-it">The console</a> says who sees which.</p></aside>
+
+      <h2 id="find-table">Find a table and read its tabs</h2>
+      <ol class="steps">
+        <li><p class="step-title">Press <kbd>/</kbd> and type <code>xetra trades</code>.</p><p><b class="ui">Go to a path</b> matches every word in any order across every catalog. Press <kbd>Enter</kbd> on <code>markets.equities.eu.xetra.trades</code>.</p></li>
+        <li><p class="step-title">Read the Overview tab.</p><p>The head marks the table <b class="ui">Held</b> and classified <code>internal</code>. The figures give its rows, data files, snapshots and schema changes; <b class="ui">Current state</b> names its current snapshot and metadata file.</p></li>
+        <li><p class="step-title">Select <b class="ui">Schema</b>.</p><p>The table's schemas are listed. Pick two to see the fields added between them. Its partition specs are below.</p></li>
+        <li><p class="step-title">Select <b class="ui">History</b>.</p><p><b class="ui">Commits</b> lists every commit, newest first, with who made it. Select a snapshot, then <b class="ui">Copy time-travel SQL</b> to copy a query that reads the table as it was then.</p></li>
+        <li><p class="step-title">Select <b class="ui">Maintenance</b>.</p><p><b class="ui">Assessment</b> gives the worker's last verdict and score, and <b class="ui">Policy for this table</b> shows each setting with where it was set.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">The table is under a legal hold</p><p>On the Overview tab, the <b class="ui">Governance</b> panel names the legal hold placed by <code>stella</code>.</p></aside>
+
+      <h2 id="look-at-hold-and-freeze">Look at a hold and a freeze</h2>
+      <ol class="steps">
+        <li><p class="step-title">On the same table, select <b class="ui">Access</b>.</p><p>The governance panel says <b class="ui">1 legal hold</b>: "Snapshots cannot be removed; it cannot be dropped or purged." <b class="ui">Legal holds</b> gives its reason, "Matter 2026-114: trade surveillance review", with <b class="ui">Release</b>. Do not release it.</p></li>
+        <li><p class="step-title">Select <b class="ui">Governance</b> in the rail.</p><p><b class="ui">Holds and freezes</b> lists the hold and a DR freeze on the namespace <code>reference</code>, placed by <code>oscar</code>. <b class="ui">Regulated areas</b> and <b class="ui">Flagged tables</b> follow; <code>markets.desks.positions</code> is flagged with two rules.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">One hold and one freeze stand</p><p>The Summary tab's <b class="ui">Legal holds</b> and <b class="ui">DR freezes</b> figures each count one.</p></aside>
+
+      <h2 id="read-through-branch">Read through a branch</h2>
+      <ol class="steps">
+        <li><p class="step-title">Select <b class="ui">Branches and tags</b> in the rail.</p><p>The demo has the branch <code>dev</code>, which changed two tables, and the tag <code>sample</code>.</p></li>
+        <li><p class="step-title">Select <b class="ui">Merge…</b> on <code>dev</code>.</p><p>The Merge tab runs a dry run and says whether <code>dev</code> could merge. Do not select <b class="ui">Merge @dev into main</b>: <a href="first-branch.html">Work on a catalog branch</a> does that.</p></li>
+        <li><p class="step-title">Open the <b class="ui">Reading</b> chip and choose <code>dev</code>.</p><p>A band says you are reading the branch. Open <code>markets.fx.rates</code>: its rows include the rates committed on <code>dev</code>. Select <b class="ui">Read main instead</b> to go back.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">The header says main again</p><p>The <b class="ui">Reading</b> chip no longer names <code>dev</code>.</p></aside>
+
+      <h2 id="maintenance">Look at last night's maintenance</h2>
+      <ol class="steps">
+        <li><p class="step-title">Select <b class="ui">Maintenance</b> in the rail.</p><p>The four figures cover the last 30 nights. <b class="ui">Tonight's queue</b> lists the tables queued, equality deletes first. <b class="ui">Last night</b> draws each job in its slot.</p></li>
+        <li><p class="step-title">Read <b class="ui">Policy for lakehouse</b>.</p><p>Each key shows its value and who set it. <b class="ui">Edit the catalog's policy</b> changes it; leave it as it is.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">No setup checklist appears</p><p>The demo's worker has everything it needs, so <b class="ui">What the worker needs to maintain lakehouse</b> is not shown. A new install shows it until all four steps are done.</p></aside>
+
+      <h2 id="make-grant">Make a grant</h2>
+      <ol class="steps">
+        <li><p class="step-title">Select <b class="ui">Grants</b> in the rail.</p><p><b class="ui">Groups</b> lists each group that holds a grant in <code>lakehouse</code>, with its duties.</p></li>
+        <li><p class="step-title">Select <b class="ui">Grant access</b>.</p></li>
+        <li><p class="step-title">Type the group <code>demo-readers</code>.</p><p>The catalog cannot list your directory's groups, so it takes a new name as typed.</p></li>
+        <li><p class="step-title">Choose <b class="ui">Read its data</b>, find the namespace <code>markets</code>, and read the line beneath.</p><p>It says what <code>demo-readers</code> will be able to do.</p></li>
+        <li><p class="step-title">Select <b class="ui">Grant</b>.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">The grant is made and recorded</p><p>The dialog says <b class="ui">Granted select on markets to demo-readers.</b> and "It is in the audit trail." To undo it, list the grants of <code>demo-readers</code> and select <b class="ui">Revoke</b>.</p></aside>
+
+      <h2 id="read-audit-record">Read an audit record</h2>
+      <aside class="callout demo"><p class="callout-title">The demo configures no audit archive</p><p>So the hash chain line reads "no archive is configured", and <b class="ui">Hash chain</b> says "No archive is configured on this server, so no chain is checked." On an install with an archive, <b class="ui">Check this record</b> shows the record's place in its server run's chain.</p></aside>
+      <ol class="steps">
+        <li><p class="step-title">Select <b class="ui">Audit</b> in the rail.</p><p>Records reach the audit tables about a minute after they happen.</p></li>
+        <li><p class="step-title">Choose the grants kind, and open your grant's record.</p><p>The record shows the full event, its request id, where it was read from and its hash chain line.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">Your grant is in the feed</p><p>The record names <code>presenter</code>, <code>demo-readers</code> and <code>select</code>. If the status line says nothing has been committed to the audit tables, wait a minute and select the kind again.</p></aside>
+
+      <h2 id="service">Look at the Service page</h2>
+      <ol class="steps">
+        <li><p class="step-title">Select <b class="ui">Service</b> in the rail.</p><p>The title says how many servers answered and whether every latency objective was met over the last day. Below are audit copying, credential vending, alerts, servers, the worker's scans and storage, DR replication and the store.</p></li>
+      </ol>
+      <aside class="callout check"><p class="callout-title">The catalog picker is gone</p><p>The Service page covers the whole deployment, so the header shows no catalog.</p></aside>
+
+      <h2 id="what-you-did">What you did</h2>
+      <p>You signed in through the demo's identity provider and visited every page in the rail. You found a table with Go to a path and read its Overview, Schema, History, Maintenance and Access tabs, including a legal hold. You read the catalog through a branch, looked at the maintenance queue and policy, granted <code>select</code> to a new group and found that grant's audit record. Next, <a href="first-branch.html">work on a catalog branch</a>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../console/index.html">The console</a>: the layout and who sees each page.</li>
+          <li><a href="../console/table.html">The table page</a>: every tab in full.</li>
+          <li><a href="../demo/sign-in.html">Demo users and sign-in</a>: sign in as <code>gary</code> or <code>ana</code> to see less.</li>
+          <li><a href="../guides/grant-access.html">Grant and revoke access</a>: granting in depth.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's modules in <code>catalog-server/src/main/resources/nuna/ui/</code>, <code>demo/demo.sh</code> (<code>seed</code>, <code>row_column_rules</code>, <code>refs</code>), <code>demo/LakeWriter.java</code> and <code>demo/README.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. The demo's catalogs, namespaces, holds, governance summary, refs, readiness and archive status were read from the running demo with GET requests as <code>presenter</code>. No grant was made for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/scaling">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scaling · nuna docs</title>
+  <meta name="description" content="How to size the catalog servers, the database and the maintenance worker, and what nuna&#x27;s load and resilience tests measured.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Scaling</h1>
+        <p class="lead">How to size the catalog servers, the database and the maintenance worker, and what nuna's load and resilience tests measured.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The catalog servers hold no state of their own beyond caches: every server reads and writes the same database, so you scale them by adding replicas. The database takes every commit, and the maintenance worker runs as one replica that starts compaction Jobs elsewhere in the cluster.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Metrics reaching your monitoring, so you can see where time goes (<a href="dashboards-alerts.html">Dashboards and alerts</a>).</li>
+      </ul>
+
+      <h2 id="catalog-servers">Catalog servers</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>The catalog chart's defaults</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th></tr></thead>
+          <tbody>
+            <tr><td><code>replicaCount</code></td><td>3</td></tr>
+            <tr><td><code>resources.requests</code></td><td><code>cpu: "1"</code>, <code>memory: 2Gi</code></td></tr>
+            <tr><td><code>resources.limits</code></td><td><code>memory: 2Gi</code></td></tr>
+            <tr><td><code>javaToolOptions</code></td><td><code>-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError</code>: the heap takes 75% of the memory limit.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><strong>Add replicas</strong> when every server is busy: <code>helm upgrade</code> with a higher <code>replicaCount</code>. The disruption budget keeps all but one serving during node drains.</li>
+        <li><strong>Raise the metadata cache</strong> when loads read metadata files from the object store: the dashboard's cache hit share falls. <a href="../configure/server.html#nuna-rest-metadata-cache-chars"><code>nuna.rest.metadata-cache-chars</code></a> is 268,435,456 characters by default and lives in the heap, so raise the memory limit with it.</li>
+        <li><strong>Each server caches its own credentials and metadata.</strong> Conditional loads (<code>304</code>) still work behind a balancer that does not pin clients to one server.</li>
+      </ul>
+
+      <h2 id="the-database">The database</h2>
+      <p>Every commit is one database transaction that moves the table's pointer, and every request reads grants and pointers. When commits slow, look at the database first: the <code>nuna.store</code> timer by <code>operation</code> shows which calls take the time.</p>
+      <ul>
+        <li>Commits to different tables do not wait on each other.</li>
+        <li>Commits to one table do: each must see the pointer the last one left. Writers that lose retry. Many writers on one hot table manage only a few commits a second between them; give each writer its own table, or batch commits, where you can.</li>
+        <li><code>/v1/transactions/commit</code> locks every pointer it changes, up to <a href="../configure/server.html#nuna-rest-max-transaction-tables"><code>nuna.rest.max-transaction-tables</code></a> tables.</li>
+      </ul>
+
+      <h2 id="the-maintenance-worker">The maintenance worker</h2>
+      <p>The worker runs one replica, replaced with the <code>Recreate</code> strategy. One scan covers every catalog. Its own work is light; compaction runs in Kubernetes Jobs in their own namespace.</p>
+      <ul>
+        <li><strong>More compaction at once:</strong> raise <a href="../configure/maintenance.html#nuna-maintenance-compaction-max-jobs"><code>nuna.maintenance.compaction.max-jobs</code></a> (2 by default), if the Jobs' namespace has room.</li>
+        <li><strong>Bigger Jobs:</strong> <code>compaction.memory</code> (<code>2Gi</code>) and <code>compaction.driver-memory</code> (<code>1g</code>).</li>
+        <li><strong>Scans that outgrow the interval:</strong> lengthen <code>scan-interval</code> (<a href="runbooks.html#nunascansslowerthaninterval"><code>NunaScansSlowerThanInterval</code></a>).</li>
+      </ul>
+
+      <h2 id="what-the-tests-measured">What the tests measured</h2>
+      <p>nuna's load and resilience tests run two servers on PostgreSQL with a synchronous standby:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Load and resilience results</caption>
+          <thead><tr><th scope="col">Test</th><th scope="col">Result</th></tr></thead>
+          <tbody>
+            <tr><td>8, 16 and 32 writers on one table, format versions 2 and 3</td><td>Every commit acknowledged exactly once. No 5xx, no deadlocks, nothing lost or doubled.</td></tr>
+            <tr><td>10,120 snapshots on one table</td><td>History whole; loads, <code>?snapshots=refs</code> and <code>304</code> work. Metadata is 3.1 MB (v2) and 3.5 MB (v3).</td></tr>
+            <tr><td>Kill the database primary mid-commit</td><td>The standby was promoted at 3 s and the first commit landed about 11 s after the kill. Only <code>503</code> with <code>Retry-After</code> during the outage, no <code>500</code>. Every acknowledged commit present exactly once.</td></tr>
+            <tr><td>Rolling upgrade from the previous release</td><td>The first new server migrated the schema under traffic. No 5xx; history and journal whole.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The latency objectives are load p99 under 50 ms, <code>304</code> p99 under 10 ms, commit p99 under 300 ms, and at least 500 commits a second.</p>
+      <p class="gap">Not documented yet: throughput and latency on production hardware. The only objective run so far shared one laptop between the clients, two servers, the database, Kafka and the object store, and shows relative behaviour only.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <ul>
+        <li><strong>Pods restart with an out-of-memory exit.</strong> Raise <code>resources.limits.memory</code>; the heap follows at 75%.</li>
+        <li><strong>Latency objectives burn.</strong> Follow the runbooks for <a href="runbooks.html#nunaloadsloburnfast"><code>NunaLoadSloBurnFast</code></a> and <a href="runbooks.html#nunacommitsloburnfast"><code>NunaCommitSloBurnFast</code></a>.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../configure/helm-values.html">Helm values</a>.</li>
+          <li><a href="metrics.html">Metrics</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-catalog/values.yaml</code>, <code>deploy/helm/nuna-maintenance/values.yaml</code> and its deployment template, <code>catalog-server/…/rest/RestSettings.java</code>, and the results the load tests in <code>catalog-tests-load/</code> recorded, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The load tests were not run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

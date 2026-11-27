@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/trino">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trino · nuna docs</title>
+  <meta name="description" content="Connect Trino's Iceberg connector to a nuna catalog so each query reaches nuna as the person who runs it, with row filters and column masks applied through Trino's OPA access control.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Trino</h1>
+        <p class="lead">Connect Trino's Iceberg connector to a nuna catalog so each query reaches nuna as the person who runs it, with row filters and column masks applied through Trino's OPA access control.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators and engine users</span> <span class="badge untested">Not tested by nuna</span></p>
+      </header>
+
+      <aside class="callout warning">
+        <p class="callout-title">No nuna test runs Trino</p>
+        <p>Trino is not part of the engine matrix. The settings below are the ones the local demo runs with Trino 484, and the demo shows them working, but no test checks them on each change.</p>
+      </aside>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Trino with its Iceberg connector. The demo runs <code>trinodb/trino:484</code>.</li>
+        <li>A token for Trino itself, from your identity provider, and Trino's client registered in nuna as a trusted engine by a platform operator (<a href="../api/engines.html">Engines</a>). Trino's token needs no grants: it reads each catalog's configuration and vouches for each query's user.</li>
+        <li>Each person who queries brings their own token (<a href="tokens.html">Get a token</a>).</li>
+      </ul>
+
+      <h2 id="how-a-query-reaches-nuna">How a query reaches nuna</h2>
+      <p>The person's client sends their token to Trino as the extra credential <code>token</code>. With <code>iceberg.rest-catalog.session=USER</code>, Trino sends that token to nuna in <code>Authorization</code>, and its own token in <code>X-Nuna-Engine-Authorization</code>. nuna then sees Trino acting for the person, checks the person's grants, and records both in the audit trail. Because Trino is a trusted engine, nuna gives it the files of tables that carry row filters or column masks, and Trino applies them.</p>
+      <figure class="diagram pending" id="fig-trino-query-path">
+        <p class="shot-todo">Diagram to draw: a person's client sends a query with its token to Trino; Trino calls nuna's Iceberg API with the person's token plus its own engine token, and nuna's OPA routes for filters and masks; Trino reads the files with vended credentials.</p>
+        <figcaption>How a Trino query reaches nuna as the person who runs it.</figcaption>
+      </figure>
+
+      <h2 id="configure-the-catalog">Configure the catalog</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Give Trino its token in an environment variable, <code>NUNA_TOKEN</code>, from your secret store.</p>
+        </li>
+        <li>
+          <p class="step-title">Write a catalog properties file, here <code>etc/catalog/trading.properties</code>.</p>
+          <div class="code" data-lang="properties" data-title="etc/catalog/trading.properties">
+<pre><code>connector.name=iceberg
+iceberg.catalog.type=rest
+iceberg.rest-catalog.uri=https://nuna.example
+iceberg.rest-catalog.warehouse=trading
+iceberg.rest-catalog.security=OAUTH2
+iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
+iceberg.rest-catalog.session=USER
+iceberg.rest-catalog.http-headers=X-Nuna-Engine-Authorization: Bearer ${ENV:NUNA_TOKEN}
+iceberg.rest-catalog.vended-credentials-enabled=true
+iceberg.rest-catalog.nested-namespace-enabled=true
+iceberg.rest-catalog.server-assigned-table-location-enabled=true
+fs.native-s3.enabled=true
+s3.endpoint=https://s3.example
+s3.region=us-east-1
+s3.path-style-access=true</code></pre>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption>The properties that matter for nuna</caption>
+              <thead><tr><th scope="col">Property</th><th scope="col">Why</th></tr></thead>
+              <tbody>
+                <tr><td><code>iceberg.rest-catalog.warehouse</code></td><td>The nuna catalog, or <code><var>catalog</var>@<var>ref</var></code> for a branch or tag: <code>trading@dev</code> reads branch <code>dev</code> and commits to it.</td></tr>
+                <tr><td><code>iceberg.rest-catalog.oauth2.token</code></td><td>Trino's own token, which it uses to read the catalog's configuration.</td></tr>
+                <tr><td><code>iceberg.rest-catalog.session=USER</code></td><td>Sends each query's user token to nuna instead of Trino's.</td></tr>
+                <tr><td><code>iceberg.rest-catalog.http-headers</code></td><td>Adds Trino's token in <code>X-Nuna-Engine-Authorization</code> to every request, so nuna knows a trusted engine is acting for the user.</td></tr>
+                <tr><td><code>iceberg.rest-catalog.vended-credentials-enabled</code></td><td>Uses the credentials nuna vends with each table; Trino needs no object store keys.</td></tr>
+                <tr><td><code>iceberg.rest-catalog.nested-namespace-enabled</code></td><td>Lists namespaces at every level.</td></tr>
+                <tr><td><code>iceberg.rest-catalog.server-assigned-table-location-enabled</code></td><td>Lets nuna choose new tables' locations, as it does for every table.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Turn on OPA access control, in <code>etc/access-control.properties</code>, so Trino asks nuna for row filters and column masks.</p>
+          <div class="code" data-lang="properties" data-title="etc/access-control.properties">
+<pre><code>access-control.name=opa
+opa.policy.uri=https://nuna.example/opa/v1/allow
+opa.policy.row-filters-uri=https://nuna.example/opa/v1/row-filters
+opa.policy.batch-column-masking-uri=https://nuna.example/opa/v1/column-masks
+opa.identity.extra-credentials-keys=token</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Map each Trino catalog to the warehouse it reads, in the server's setting <code>nuna.opa.catalogs</code>.</p>
+          <div class="code" data-lang="yaml" data-title="Server settings">
+<pre><code>nuna:
+  opa:
+    catalogs:
+      trading: trading
+      trading_dev: trading@dev</code></pre>
+          </div>
+          <p>A Trino catalog not named here gets no row filters or column masks from nuna. See <a href="../security/opa.html">Trino and OPA</a>.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">A query runs as you</p>
+        <p>Run <code>trino --user <var>you</var> --extra-credential "token=$TOKEN" --execute 'SHOW SCHEMAS FROM trading'</code>. The namespaces you may see are listed, and the catalog's audit trail shows you as the end user and Trino's client as the engine. The first query after Trino starts takes about ten seconds.</p>
+      </aside>
+
+      <h2 id="what-works">What works</h2>
+      <p>In the demo, people query tables through Trino, including through a branch catalog, and read flagged tables with their row filters and column masks applied. A client that reads a flagged table without Trino, Spark with the person's own token, say, gets <code>403</code> for its data.</p>
+      <p class="gap">Not documented yet: which Iceberg features Trino 484 handles against nuna. No test has run Trino's writes, row-level changes, schema evolution or views against nuna.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>Every query fails, and <code>trino --debug</code> shows nuna's answer that it does not issue tokens</td><td>The query carried no <code>token</code> extra credential, so Trino asked nuna to exchange one, and nuna issues none.</td><td>Send your token as the extra credential <code>token</code>.</td></tr>
+            <tr><td><code>Forbidden: client … is not a registered trusted engine, so it may not act for another user</code></td><td>Trino's client is not registered as a trusted engine.</td><td>A platform operator registers it (<a href="../api/engines.html">Engines</a>).</td></tr>
+            <tr><td><code>The given warehouse does not exist: trading@dev (…)</code></td><td>The branch the catalog names is merged, deleted or expired.</td><td>Make a new branch with that name, or point the catalog elsewhere. Trino reads a new branch of the same name at once.</td></tr>
+            <tr><td>A table with rules returns rows without its row filter or column masks</td><td>The Trino catalog is missing from <code>nuna.opa.catalogs</code>.</td><td>Add it, mapped to its warehouse.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The reason for a refusal is in the error's cause, which <code>trino --debug</code> prints.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/opa.html">Trino and OPA</a>: how nuna answers Trino's access checks.</li>
+          <li><a href="../guides/row-column-rules.html">Set row filters and column masks</a>: the rules Trino applies.</li>
+          <li><a href="../demo/trino-cloudbeaver.html">Trino and CloudBeaver in the demo</a>: Trino running with these settings.</li>
+          <li><a href="https://trino.io/docs/current/object-storage/metastores.html#iceberg-rest-catalog">Trino's Iceberg REST catalog properties</a>.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/k8s/trino.yaml</code>, <code>demo/demo.sh</code> (<code>TRINO_IMAGE</code>), <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26. <code>demo/README.md</code> (Trino and CloudBeaver) gave the first query's time and the refusal behaviour.</p>
+        <p>No Trino query was run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

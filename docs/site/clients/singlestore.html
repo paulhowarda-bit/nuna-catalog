@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/singlestore">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SingleStore · nuna docs</title>
+  <meta name="description" content="Load nuna tables into SingleStore with Iceberg pipelines, which read through the catalog with vended credentials, and copy a SingleStore table's changes into a nuna table with nuna's change feed connector.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>SingleStore</h1>
+        <p class="lead">Load nuna tables into SingleStore with Iceberg pipelines, which read through the catalog with vended credentials, and copy a SingleStore table's changes into a nuna table with nuna's change feed connector.</p>
+        <p class="doc-meta"><span class="badge for">For engine users</span> <span class="badge tested">Tested in the engine matrix</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>SingleStore with Iceberg pipelines turned on. The engine matrix tests SingleStore 10.9.0.</li>
+        <li>An access token for SingleStore's pipelines (<a href="tokens.html">Get a token</a>), whose groups hold <code>select</code> on the tables loaded.</li>
+        <li>Network access from SingleStore to the server and to the object store.</li>
+      </ul>
+
+      <h2 id="load-a-nuna-table-into-singlestore">Load a nuna table into SingleStore</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Turn on Iceberg pipelines, which are off by default.</p>
+          <div class="code" data-lang="sql">
+<pre><code>SET GLOBAL enable_iceberg_ingest = 1;</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Create the table to load into.</p>
+          <div class="code" data-lang="sql">
+<pre><code>CREATE TABLE fills (fill_id BIGINT, symbol TEXT, quantity BIGINT);</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Create a pipeline that reads the nuna table through the catalog.</p>
+          <div class="code" data-lang="sql">
+<pre><code>CREATE PIPELINE fills_pipe AS LOAD DATA S3 ''
+CONFIG '{"catalog_type": "REST", "catalog.uri": "https://nuna.example", "catalog.warehouse": "trading",
+         "table_id": "equities.fills", "catalog.token": "${NUNA_TOKEN}",
+         "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
+         "endpoint_url": "https://s3.example", "region": "us-east-1", "ingest_mode": "one_time"}'
+CREDENTIALS '{}'
+INTO TABLE fills (fill_id &lt;- fill_id, symbol &lt;- symbol, quantity &lt;- quantity)
+FORMAT ICEBERG;</code></pre>
+          </div>
+          <p><code>${NUNA_TOKEN}</code> stands for the token: put its value in the statement when you run it. <code>table_id</code> is the table's namespace and name joined by dots, every level included. <code>CREDENTIALS</code> stays empty: with <code>iceberg_vended_credentials</code>, SingleStore reads the files with the credentials nuna vends.</p>
+        </li>
+        <li>
+          <p class="step-title">Run the pipeline.</p>
+          <div class="code" data-lang="sql">
+<pre><code>START PIPELINE fills_pipe FOREGROUND;</code></pre>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The rows are in SingleStore</p>
+        <p><code>SELECT COUNT(*) FROM fills;</code> gives the nuna table's row count.</p>
+      </aside>
+      <p>The pipelines only read: SingleStore does not write to nuna tables this way.</p>
+
+      <h2 id="what-was-tested">What was tested</h2>
+      <p>The engine matrix runs SingleStore's pipelines against nuna every night code changes, with <code>"ingest_mode": "one_time"</code>. SingleStore 10.9.0 read Spark's tables of format versions 2 and 3, a v3 table with a deletion vector, tables changed by row-level delete, update and merge both copy-on-write and merge-on-read, a table whose schema evolved (read by its current column names), a table whose partitioning evolved, a compacted table, a table upgraded from v2 to v3, and PyIceberg's own v2 table. SingleStore's own documentation names format versions 1 and 2 only.</p>
+
+      <h2 id="copy-singlestore-changes-into-nuna">Copy SingleStore changes into nuna</h2>
+      <p>nuna's change feed connector runs inside a SingleStore pipeline and copies one table's changes, or several tables', into Iceberg tables through the catalog: <code>CREATE PIPELINE … AS LOAD DATA CONNECTOR 'ChangeFeedConnector' CONFIG '{…}' … INTO TABLE <var>receipts</var></code>. Where the copy resumes is kept in the Iceberg table, so after a failure it starts again from the offsets of the table's current snapshot.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The change feed connector's settings</caption>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>singlestore.url</code>, <code>singlestore.user</code>, <code>singlestore.password</code></td><td>Where the change feed is read. The connector runs on a leaf, so the URL names an aggregator. SingleStore merges <code>CONFIG</code> and <code>CREDENTIALS</code>, so the password can go in <code>CREDENTIALS</code>.</td></tr>
+            <tr><td><code>singlestore.database</code>, <code>singlestore.table</code></td><td>The table whose changes are sent. <code>singlestore.tables</code>, a list, copies each table into an Iceberg table of the same name.</td></tr>
+            <tr><td><code>iceberg.catalog.*</code></td><td>Iceberg's catalog properties, prefixed: <code>uri</code>, <code>warehouse</code>, <code>token</code>, <code>header.X-Iceberg-Access-Delegation</code>.</td></tr>
+            <tr><td><code>iceberg.namespace</code>, <code>iceberg.table</code></td><td>The table written; namespace levels separated by dots.</td></tr>
+            <tr><td><code>iceberg.format-version</code>, <code>iceberg.partition-by</code></td><td>Used only when the connector creates the table. Default format version 2, no partitioning.</td></tr>
+            <tr><td><code>commit.interval.ms</code></td><td>How long changes collect before a commit. Default <code>5000</code>.</td></tr>
+            <tr><td><code>singlestore.append-only</code></td><td><code>true</code> for a table only ever inserted into; the first update or delete then stops the feed. Default <code>false</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The connector's own tests run it against a real SingleStore 10.9.0 in the heavy build, writing to an in-memory Iceberg catalog rather than to nuna; the engine matrix does not run it.</p>
+      <p class="gap">Not documented yet: how to build the change feed connector and install it into a SingleStore cluster, and the receipts table's columns. The local demo builds it into its SingleStore image.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>Not authorized: the bearer token is missing or was not accepted</code></td><td>The token in <code>catalog.token</code> expired or was refused.</td><td>Replace the pipeline with a fresh token.</td></tr>
+            <tr><td><code>Table does not exist: …</code></td><td><code>table_id</code> is wrong, or the token's groups cannot see the table.</td><td>Check every namespace level in <code>table_id</code>, and the grants.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/engines.html">Engine compatibility</a>: what SingleStore read.</li>
+          <li><a href="../demo/singlestore.html">SingleStore in the demo</a>: both directions running.</li>
+          <li><a href="https://docs.singlestore.com/cloud/load-data/data-sources/iceberg-ingest/">SingleStore's Iceberg ingest</a>: every pipeline setting.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-tests-engines/k8s/singlestore/enable.sql</code>, <code>catalog-tests-engines/k8s/singlestore/ingest.sql</code>, <code>catalog-tests-engines/src/test/java/nuna/catalog/engines/EngineMatrixTest.java</code>, <code>singlestore-change-feed/src/main/java/nuna/changefeed/engine/FeedConfig.java</code>, <code>singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java</code> and <code>singlestore-change-feed/src/loader/java/nuna/changefeed/ChangeFeedConnector.java</code> and <code>singlestore-change-feed/src/test/java/nuna/changefeed/engine/ChangeFeedTest.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The pipeline is the engine matrix's, with this site's names. The matrix passed in the nightly run at commit <code>639b0da5</code> on 2026-11-25; SingleStore was not run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

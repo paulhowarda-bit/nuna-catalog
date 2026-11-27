@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/limits">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Limits · nuna docs</title>
+  <meta name="description" content="Every limit nuna enforces, its value, the setting that changes it and what happens when it is reached.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Limits</h1>
+        <p class="lead">Every limit nuna enforces, its value, the setting that changes it and what happens when it is reached.</p>
+      </header>
+
+      <p>Every limit the server and its two companion programs enforce, with the setting that changes it where there is one. A limit with no setting is fixed in the code. A page size that is over its maximum is cut to the maximum unless the row says the request is refused.</p>
+
+      <h2 id="iceberg-rest-api">Iceberg REST API</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Limits of the Iceberg REST API</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Setting</th><th scope="col">When it is reached</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Listing page size, default</th><td>100</td><td><a href="../configure/server.html#nuna-rest-default-page-size"><code>nuna.rest.default-page-size</code></a></td><td>Used when the client names none.</td></tr>
+            <tr><th scope="row">Listing page size, most</th><td>1000</td><td><a href="../configure/server.html#nuna-rest-max-page-size"><code>nuna.rest.max-page-size</code></a></td><td>A larger request gets this many.</td></tr>
+            <tr><th scope="row">Tables in one multi-table commit</th><td>100</td><td><a href="../configure/server.html#nuna-rest-max-transaction-tables"><code>nuna.rest.max-transaction-tables</code></a></td><td>400 <code>A transaction may change at most <var>N</var> tables; this one names <var>M</var></code>.</td></tr>
+            <tr><th scope="row">Idempotency-Key length</th><td>1 to 128 characters</td><td>none: fixed</td><td>400 <code>Invalid Idempotency-Key: must be 1 to 128 characters</code>. The same holds on the management API.</td></tr>
+            <tr><th scope="row">Vended credential lifetime</th><td>15 to 60 minutes, 30 by default</td><td><a href="../configure/storage.html#nuna-storage-credential-lifetime"><code>nuna.storage.credential-lifetime</code></a></td><td>The server refuses to start outside the range.</td></tr>
+            <tr><th scope="row">Credentials kept in memory</th><td>10000 callers</td><td><a href="../configure/storage.html#nuna-storage-credential-cache-entries"><code>nuna.storage.credential-cache-entries</code></a></td><td>Older entries are dropped from memory.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="branches-and-tags">Branches and tags</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Limits of branches and tags</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Setting</th><th scope="col">When it is reached</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Open branches per catalog</th><td>50</td><td><a href="../configure/governance.html#nuna-refs-max-branches"><code>nuna.refs.max-branches</code></a></td><td>409 <code>Catalog <var>c</var> holds <var>N</var> open branches, as many as nuna.refs.max-branches allows</code>.</td></tr>
+            <tr><th scope="row">Tags per catalog</th><td>1000</td><td><a href="../configure/governance.html#nuna-refs-max-tags"><code>nuna.refs.max-tags</code></a></td><td>409, naming <code>nuna.refs.max-tags</code>.</td></tr>
+            <tr><th scope="row">Tables and views one branch may change</th><td>100</td><td><a href="../configure/governance.html#nuna-refs-max-merge-tables"><code>nuna.refs.max-merge-tables</code></a></td><td>A commit past it is refused with 400; a merge of more with 409.</td></tr>
+            <tr><th scope="row">Branch life after its last commit or renewal</th><td>30 days</td><td><a href="../configure/governance.html#nuna-refs-branch-idle-expiry"><code>nuna.refs.branch-idle-expiry</code></a></td><td>The branch expires.</td></tr>
+            <tr><th scope="row">Branch life in all</th><td>180 days</td><td><a href="../configure/governance.html#nuna-refs-branch-max-life"><code>nuna.refs.branch-max-life</code></a></td><td>The branch expires; renewal cannot pass it.</td></tr>
+            <tr><th scope="row">Branch or tag name</th><td>1000 characters</td><td>none: fixed</td><td>400 <code>Field name is longer than 1000 characters</code>.</td></tr>
+            <tr><th scope="row">Branch or tag description</th><td>200 characters (code points), one line</td><td>none: fixed</td><td>400 <code>Field description is longer than 200 characters</code> and the count.</td></tr>
+            <tr><th scope="row">Refs one removal names</th><td>1 to 1000</td><td>none: fixed</td><td>400 <code>Field refs must be an array of 1 to 1000 ref names</code>.</td></tr>
+            <tr><th scope="row">Refs listing page</th><td>100 by default, 1000 at most</td><td>none: fixed</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="governance-audit-grants">Governance, audit and grants</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Limits of governance, audit and grants</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Setting</th><th scope="col">When it is reached</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Purges per minute, per server</th><td>10</td><td><a href="../configure/governance.html#nuna-governance-purges-per-minute"><code>nuna.governance.purges-per-minute</code></a></td><td>429 with <code>Retry-After: 60</code>.</td></tr>
+            <tr><th scope="row">Audit reads per minute, per caller and server</th><td>60</td><td><a href="../configure/governance.html#nuna-governance-audit-reads-per-minute"><code>nuna.governance.audit-reads-per-minute</code></a></td><td>429 with <code>Retry-After: 60</code>.</td></tr>
+            <tr><th scope="row">Audit records one read returns</th><td>50 by default, 1 to 200</td><td>none: fixed</td><td>400 <code>limit must be a whole number from 1 to 200</code>.</td></tr>
+            <tr><th scope="row">Audit topic offsets one read scans</th><td>20000</td><td>none: fixed</td><td>Older records of the object are not found in the topic; the audit tables hold them.</td></tr>
+            <tr><th scope="row">Governance attribute value, provenance and reason</th><td>1000 characters</td><td>none: fixed</td><td>400 <code>Field <var>field</var> is longer than 1000 characters</code>.</td></tr>
+            <tr><th scope="row">Row filter or column mask expression</th><td>4000 characters, no NUL</td><td>none: fixed</td><td>400 <code><var>what</var> is at most 4000 characters, with no NUL</code>.</td></tr>
+            <tr><th scope="row">Grant listing page</th><td>at most the REST maximum page size</td><td><a href="../configure/server.html#nuna-rest-max-page-size"><code>nuna.rest.max-page-size</code></a></td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="console-listings">Console listings and searches</h2>
+
+      <p>These listings examine a bounded number of rows per page. A page that finds fewer rows the caller may see ends early, with a token for the next page.</p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Limits of console listings</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Setting</th><th scope="col">When it is reached</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Name search</th><td>50 by default, 200 at most; 5000 objects examined</td><td>none: fixed</td><td></td></tr>
+            <tr><th scope="row">A namespace's tables and namespaces</th><td>100 by default, 200 at most; 1000 tables examined</td><td>none: fixed</td><td></td></tr>
+            <tr><th scope="row">Table health listing</th><td>50 by default, 200 at most; 2000 rows examined</td><td>none: fixed</td><td></td></tr>
+            <tr><th scope="row">Maintenance estate</th><td>200 by default, 500 at most; 2000 tables examined</td><td>none: fixed</td><td></td></tr>
+            <tr><th scope="row">Lifecycle log page</th><td>25 by default, 100 at most</td><td>none: fixed</td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="maintenance-and-dr">Maintenance and disaster recovery</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Limits of maintenance and disaster recovery</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Setting</th><th scope="col">When it is reached</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Nights of maintenance jobs kept</th><td>32</td><td>none: fixed</td><td>Recording a job deletes those of older nights. A request for more days is cut to 32; the default is 30.</td></tr>
+            <tr><th scope="row">Table health scans kept</th><td>50 besides the last that succeeded</td><td>none: fixed</td><td>Older scans are deleted.</td></tr>
+            <tr><th scope="row">Locations one pending-deletion record names, or ids one completion names</th><td>1 to 1000</td><td>none: fixed</td><td>400 <code>Field <var>field</var> must be an array of 1 to 1000 items</code>.</td></tr>
+            <tr><th scope="row">Versions one DR check lists per object</th><td>100</td><td>none: fixed</td><td>The oldest above the watermark first.</td></tr>
+            <tr><th scope="row">DR work list page</th><td>100 by default, 1000 at most</td><td>none: fixed</td><td></td></tr>
+            <tr><th scope="row">DR readout page</th><td>50 by default, 200 at most</td><td>none: fixed</td><td></td></tr>
+            <tr><th scope="row">Metadata location in the DR verifier report</th><td>4000 characters</td><td>none: fixed</td><td>400 <code>Field metadata-location is longer than 4000 characters</code>.</td></tr>
+            <tr><th scope="row">Purges per minute</th><td>10</td><td><a href="../configure/governance.html#nuna-governance-purges-per-minute"><code>nuna.governance.purges-per-minute</code></a></td><td>429.</td></tr>
+            <tr><th scope="row">Compaction Jobs at once</th><td>2</td><td><a href="../configure/maintenance.html#nuna-maintenance-compaction-max-jobs"><code>nuna.maintenance.compaction.max-jobs</code></a></td><td>The rest wait; the neediest tables go first.</td></tr>
+            <tr><th scope="row">Run on request</th><td>2 hours</td><td><a href="../configure/maintenance.html#nuna-maintenance-request-deadline"><code>nuna.maintenance.request-deadline</code></a></td><td>A requested compaction Job stops; a requested orphan scan stops and records nothing.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="health-page">Health page</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Limits of the health page</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Setting</th><th scope="col">When it is reached</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Answer read from each peer</th><td>1 MiB</td><td>none: fixed</td><td>The rest is not read.</td></tr>
+            <tr><th scope="row">Peer answer time</th><td>3 seconds</td><td><a href="../configure/server.html#nuna-health-peer-timeout"><code>nuna.health.peer-timeout</code></a></td><td>The peer counts as not answering.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="audit-tables-writer">Audit tables writer</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Limits of the audit tables writer</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">Setting</th><th scope="col">When it is reached</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Rows waiting for a commit</th><td>100000</td><td><a href="../configure/audit-tables.html#nuna-audit-tables-max-rows"><code>nuna.audit-tables.max-rows</code></a></td><td>A commit is made early.</td></tr>
+            <tr><th scope="row">Records waiting for an archive segment</th><td>100000</td><td><a href="../configure/audit-tables.html#nuna-audit-tables-archive-max-waiting"><code>nuna.audit-tables.archive.max-waiting</code></a></td><td>The receiver answers 503.</td></tr>
+            <tr><th scope="row">Records in one archive segment</th><td>10000</td><td><a href="../configure/audit-tables.html#nuna-audit-tables-archive-segment-events"><code>nuna.audit-tables.archive.segment-events</code></a></td><td>The segment is written.</td></tr>
+            <tr><th scope="row">Archive retention, least</th><td>2557 days</td><td><a href="../configure/audit-tables.html#nuna-audit-tables-archive-retention"><code>nuna.audit-tables.archive.retention</code></a></td><td>The writer refuses to start below it.</td></tr>
+            <tr><th scope="row">Receiver token</th><td>at least 32 characters</td><td><a href="../configure/audit-tables.html#nuna-audit-tables-otlp-token"><code>nuna.audit-tables.otlp.token</code></a></td><td>The writer refuses to start.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="errors.html">Error responses</a>: what each status means and what to do</li>
+          <li><a href="../configure/server.html">Server settings</a>: page sizes and transaction limits</li>
+          <li><a href="../configure/governance.html">Governance and refs settings</a>: rate limits and branch limits</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RecentAudit.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceNights.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/DrRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/health/Peers.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Idempotency.java</code> and <code>catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No limit was driven to its edge against a running server for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

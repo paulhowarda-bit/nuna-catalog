@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/locked-down">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install on a locked-down network · nuna docs</title>
+  <meta name="description" content="Build and install nuna where machines have no outbound access: mirror the Gradle distribution, the Maven repositories and the container images, and trust an internal certificate authority.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Install on a locked-down network</h1>
+        <p class="lead">Build and install nuna where machines have no outbound access: mirror the Gradle distribution, the Maven repositories and the container images, and trust an internal certificate authority.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <p>A normal build reaches three places on the internet: <code>services.gradle.org</code> for Gradle, Maven Central for every library and plugin, and Docker Hub for the base images. The Spark image also downloads jars from Maven Central while it builds. On a network without outbound access, point each at an internal mirror before you start.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>An internal Maven-format repository that mirrors Maven Central, or holds every artifact the build needs.</li>
+        <li>An internal container registry, and a Java 25 runtime image approved for it.</li>
+        <li>JDK 25 installed on the build machine: the build never downloads one.</li>
+        <li>The PEM certificates of the internal certificate authority that signs your database, object store and collector certificates.</li>
+      </ul>
+
+      <h2 id="mirror-build-tools">Mirror the build tools</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Point the Gradle wrapper at an internal copy of Gradle 9.9.1.</p>
+          <p>In <code>gradle/wrapper/gradle-wrapper.properties</code>, change <code>distributionUrl</code> to the internal copy of <code>gradle-9.9.1-bin.zip</code>, and keep <code>distributionSha256Sum</code>, so the wrapper still checks the file it downloads.</p>
+          <div class="code" data-lang="properties" data-title="gradle/wrapper/gradle-wrapper.properties">
+<pre><code>distributionUrl=https\://repo.example/gradle/gradle-9.9.1-bin.zip
+distributionSha256Sum=d8a18a7a841dd5df825d35a685fad6f2d7f12ac0c280e57b67c27b4a520ba228</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Replace both <code>mavenCentral()</code> lines in <code>settings.gradle.kts</code> with the internal repository.</p>
+          <p>One resolves plugins and the other libraries. Replace each with:</p>
+          <div class="code" data-lang="text" data-title="settings.gradle.kts">
+<pre><code>maven { url = uri("https://repo.example/maven") }</code></pre>
+          </div>
+          <p>Every library and plugin then resolves from it. A missing artifact fails the build and names itself; add it to the mirror and build again.</p>
+        </li>
+        <li>
+          <p class="step-title">Build the jars.</p>
+          <div class="code" data-lang="bash">
+<pre><code>./gradlew :catalog-server:bootJar :catalog-maintenance:bootJar :catalog-audit-tables:bootJar</code></pre>
+          </div>
+        </li>
+      </ol>
+
+      <h2 id="mirror-images">Mirror the images</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Build each Java image from your approved base image.</p>
+          <div class="code" data-lang="bash">
+<pre><code>docker build -f deploy/image/Dockerfile \
+  --build-arg BASE_IMAGE=registry.example/java-runtime:25 \
+  -t registry.example/nuna-catalog:0.1.0 catalog-server/build/libs</code></pre>
+          </div>
+          <p>Do the same for <code>maintenance.Dockerfile</code> and <code>audit-tables.Dockerfile</code> (<a href="images.html">Container images</a>). The base image needs <code>java</code> and <code>sleep</code> on the path.</p>
+        </li>
+        <li>
+          <p class="step-title">Mirror the Spark image's sources, if you want compaction.</p>
+          <p><code>catalog-tests-engines/images/spark/Dockerfile</code> starts from <code>apache/spark:4.1.4-scala2.13-java21-python3-ubuntu</code> and downloads <code>iceberg-spark-runtime-4.1_2.13-1.12.0.jar</code> and <code>iceberg-aws-bundle-1.12.0.jar</code> from Maven Central. Mirror the base image, and change the two <code>ADD</code> URLs to your Maven mirror in your copy of the Dockerfile.</p>
+        </li>
+        <li>
+          <p class="step-title">Push the images to the internal registry and name it in each chart's <code>image.repository</code>.</p>
+          <p>Set <code>imagePullSecrets</code> if the registry needs credentials.</p>
+        </li>
+      </ol>
+
+      <h2 id="mirror-test-images">Mirror the test images, to run the tests</h2>
+      <p>The tests start containers with Testcontainers. The table lists each image and where its name is set; most can be overridden on the command line, such as <code>-Ppostgres.image=registry.example/postgres:18.7</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Images the tests use</caption>
+          <thead><tr><th scope="col">Image</th><th scope="col">Set in <code>gradle.properties</code> as</th></tr></thead>
+          <tbody>
+            <tr><td><code>postgres:18.7</code></td><td><code>postgres.image</code></td></tr>
+            <tr><td><code>apache/kafka:4.2.2</code></td><td><code>kafka.image</code></td></tr>
+            <tr><td><code>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</code></td><td><code>silo.image</code></td></tr>
+            <tr><td><code>ghcr.io/shopify/toxiproxy:2.12.0</code></td><td><code>toxiproxy.image</code></td></tr>
+            <tr><td><code>cockroachdb/cockroach:v25.4.20</code></td><td><code>cockroachdb.image</code></td></tr>
+            <tr><td><code>gvenzl/oracle-free:23.26.3-slim-faststart</code></td><td><code>oracle.image</code></td></tr>
+            <tr><td><code>mongo:8.0.34</code></td><td><code>mongo.image</code></td></tr>
+            <tr><td><code>ghcr.io/clyso/ceph-test:v20.2.5</code></td><td><code>ceph.image</code></td></tr>
+            <tr><td><code>quay.io/keycloak/keycloak:26.8.2</code></td><td><code>keycloak.image</code></td></tr>
+            <tr><td><code>selenium/standalone-chrome:4.43.0-20260404</code></td><td><code>chrome.image</code></td></tr>
+            <tr><td><code>prom/prometheus:v3.16.0</code></td><td><code>prometheus.image</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Testcontainers can put an internal registry in front of every Docker Hub name (those without a registry) with <code>hub.image.name.prefix=registry.example/</code> in <code>~/.testcontainers.properties</code>. Testcontainers' own <code>testcontainers/ryuk</code> image needs mirroring too. Images from <code>ghcr.io</code> and <code>quay.io</code> need the overrides above.</p>
+      <p class="gap">Not documented yet: the full list of images that only the engine tests use, which are set in test classes rather than <code>gradle.properties</code>.</p>
+
+      <h2 id="trust-internal-certificate-authority">Trust an internal certificate authority</h2>
+      <p>The JVM's trust store is left alone. Each connection that can meet an internal CA takes the CA's certificates where it is set:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Where each program takes an internal CA</caption>
+          <thead><tr><th scope="col">Connection</th><th scope="col">Where the CA goes</th></tr></thead>
+          <tbody>
+            <tr><td>Server to PostgreSQL</td><td>A Secret named in <code>databaseTls.secretName</code>, and <code>sslrootcert</code> in the JDBC URL (<a href="postgresql.html#sign-in-by-client-certificate">Use PostgreSQL</a>).</td></tr>
+            <tr><td>Server and worker to an object store</td><td>A ConfigMap named in <code>storageCaConfigMap.name</code>, and the profile's or store's <code>ca-bundle</code> (<a href="object-storage.html#trust-private-certificate-authority">Set up object storage</a>). The worker hands it to its compaction Jobs.</td></tr>
+            <tr><td>Audit tables writer to the archive bucket</td><td>A ConfigMap named in <code>archiveCaConfigMap</code>, mounted at <code>/etc/nuna/archive-ca</code>.</td></tr>
+            <tr><td>Server and worker to the OpenTelemetry collector</td><td>A ConfigMap named in <code>telemetry.caConfigMap</code> (<a href="telemetry.html">Send telemetry</a>).</td></tr>
+            <tr><td>Engines to the object store</td><td>Each engine's own setup: vended credentials carry the endpoint, not the CA.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">Not documented yet: trusting an internal CA for the identity provider's JWKS URL and the worker's token endpoint. Neither chart has a setting for it, and those clients use the JVM's trust store.</p>
+
+      <h2 id="proxies">Proxies</h2>
+      <p class="gap">Not documented yet: running the server or the worker behind an outbound HTTP proxy. No setting names one and no test runs behind one. Keep the database, the object store, the identity provider and the collector reachable without a proxy.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">Nothing reaches the internet</p>
+        <p>The build finishes with the wrapper and repositories pointed at your mirrors, the images build from your registry, and the pods start with images pulled only from it.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>Gradle cannot resolve an artifact and names it.</td><td>The mirror lacks it.</td><td>Add it and build again.</td></tr>
+            <tr><td>The wrapper refuses the Gradle zip.</td><td>The mirror's copy is not the same file: the SHA-256 sum differs.</td><td>Mirror the exact <code>gradle-9.9.1-bin.zip</code>.</td></tr>
+            <tr><td>Gradle cannot find a Java 25 toolchain.</td><td>The build never downloads one.</td><td>Install JDK 25.</td></tr>
+            <tr><td>A test fails to pull an image.</td><td>The image is not mirrored, or its name is not overridden.</td><td>Mirror it and set the property, or the Testcontainers prefix.</td></tr>
+            <tr><td>A server or worker logs <code>PKIX path building failed</code>.</td><td>A connection meets a certificate its trust does not cover.</td><td>Give that connection the CA as the table above says.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="requirements.html">Requirements</a>: what must exist before you install.</li>
+          <li><a href="images.html">Container images</a>: building and pushing the images.</li>
+          <li><a href="../develop/index.html">Build nuna from source</a>: the build itself.</li>
+          <li><a href="../security/hardening.html">Hardening checklist</a>: what to check before production.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>gradle/wrapper/gradle-wrapper.properties</code>, <code>settings.gradle.kts</code>, <code>gradle.properties</code>, <code>build.gradle.kts</code>, the Dockerfiles in <code>deploy/image/</code> and <code>catalog-tests-engines/images/spark/</code>, the three charts' <code>values.yaml</code>, <code>deploy/README.md</code> and <code>docs/install-at-work.md</code> (sections 1 to 3), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run on a network without outbound access.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

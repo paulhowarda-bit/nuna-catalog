@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/audit-records">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit record format · nuna docs</title>
+  <meta name="description" content="Every field of an audit record: the CloudEvents envelope, the shared parts, each record type's data, and the columns of the audit table.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Audit record format</h1>
+        <p class="lead">Every field of an audit record: the CloudEvents envelope, the shared parts, each record type's data, and the columns of the audit table.</p>
+      </header>
+
+      <h2 id="envelope">Envelope</h2>
+      <p>Each audit record is a CloudEvents 1.0 event in JSON, with its fields in this order.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><td><code>specversion</code></td><td><code>"1.0"</code>.</td></tr>
+            <tr><td><code>id</code></td><td>The record's id, a UUID.</td></tr>
+            <tr><td><code>source</code></td><td>The deployment: <code>nuna.rest.audit-source</code>, default <code>urn:nuna:deployment:nuna-catalog</code>.</td></tr>
+            <tr><td><code>type</code></td><td><code>nuna.catalog.<var>name</var></code>, such as <code>nuna.catalog.grant</code>.</td></tr>
+            <tr><td><code>datacontenttype</code></td><td><code>"application/json"</code>.</td></tr>
+            <tr><td><code>dataschema</code></td><td><code>urn:nuna:catalog:event:<var>name</var>:<var>version</var></code>, such as <code>urn:nuna:catalog:event:grant:2</code>.</td></tr>
+            <tr><td><code>subject</code></td><td>The id of what the record is about, when it has one.</td></tr>
+            <tr><td><code>time</code></td><td>When it happened, an ISO-8601 instant.</td></tr>
+            <tr><td><code>partitionkey</code></td><td>The same as <code>subject</code>, so records about one thing stay in order in the topic.</td></tr>
+            <tr><td><code>nunarun</code>, <code>nunaseq</code></td><td>On records written to the log: the log run, a UUID, and the record's number in the run, as a string. Together they place the record in its hash chain.</td></tr>
+            <tr><td><code>data</code></td><td>The record type's fields, below.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="shared-parts">Shared parts</h2>
+      <p>Field names in <code>data</code> are in camel case, and enum values in upper case (<code>"GRANTED"</code>, <code>"TABLE"</code>).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Part</th><th scope="col">Fields</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>actor</code></th><td><code>principal</code> (who acted), <code>endUser</code> (the user a trusted engine acted for), <code>engine</code>, <code>requestId</code> (the <code>X-Request-ID</code> of the request).</td></tr>
+            <tr><th scope="row">securable</th><td><code>kind</code> (<code>CATALOG</code>, <code>NAMESPACE</code>, <code>TABLE</code> or <code>VIEW</code>), <code>id</code>, <code>catalog</code> (its name), <code>path</code> (namespace levels and name).</td></tr>
+            <tr><th scope="row">pointer state</th><td><code>metadataLocation</code>, <code>version</code>, <code>sha256</code> of the metadata file.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="record-types">Record types</h2>
+      <p>Each type, in the order the code defines them, with its current version and the fields of its <code>data</code>. Securables are named <code>object</code>, <code>securable</code>, <code>target</code> or <code>table</code> as each record has it.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">Version</th><th scope="col">Data fields</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.catalog.commit</code></td><td>1</td><td><code>commitId</code>, <code>object</code>, <code>branch</code>, <code>before</code> and <code>after</code> (pointer states), <code>updates</code> (the commit's updates, as a JSON array), <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.grant</code></td><td>2</td><td><code>action</code> (<code>GRANTED</code> or <code>REVOKED</code>), <code>securable</code>, <code>group</code>, <code>privilege</code>, <code>actor</code>, <code>branch</code>, <code>branchId</code>. A version 1 record has no <code>branch</code> or <code>branchId</code>; version 2 writes them as version 1 when both are null.</td></tr>
+            <tr><td><code>nuna.catalog.drop</code></td><td>1</td><td><code>object</code>, <code>purgeAfter</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.break-glass</code></td><td>1</td><td><code>securable</code>, <code>justification</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.read</code></td><td>1</td><td><code>object</code>, <code>branch</code>, <code>served</code> (pointer state), <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.denial</code></td><td>1</td><td><code>operation</code>, <code>securable</code> (may be null), <code>privilege</code> (may be null), <code>reason</code> (<code><var>code</var>: <var>message</var></code>), <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.auth-failure</code></td><td>1</td><td><code>issuer</code>, <code>claimedSubject</code>, <code>clientId</code>, <code>reason</code>, <code>requestId</code>, <code>remoteAddress</code>. No subject.</td></tr>
+            <tr><td><code>nuna.catalog.credential-issue</code></td><td>2</td><td><code>object</code>, <code>storageProfile</code>, <code>locationPrefix</code>, <code>access</code> (<code>READ</code>, <code>READ_WRITE</code> or <code>READ_WRITE_DELETE</code>), <code>sessionName</code>, <code>expiresAt</code>, <code>actor</code>, <code>writePrefix</code>.</td></tr>
+            <tr><td><code>nuna.catalog.namespace</code></td><td>1</td><td><code>action</code> (<code>CREATED</code>, <code>PROPERTIES_CHANGED</code> or <code>DROPPED</code>), <code>namespace</code>, <code>set</code>, <code>removed</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.rename</code></td><td>1</td><td><code>object</code>, <code>fromPath</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.engine</code></td><td>1</td><td><code>action</code> (<code>REGISTERED</code> or <code>REMOVED</code>), <code>issuer</code>, <code>clientId</code>, <code>endUserClaim</code>, <code>flags</code>, <code>actor</code>. No subject.</td></tr>
+            <tr><td><code>nuna.catalog.storage-setup</code></td><td>1</td><td><code>action</code> (<code>PROFILE_SET</code> or <code>CATALOG_CREATED</code>), <code>id</code>, <code>name</code>, <code>settings</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.governance</code></td><td>1</td><td><code>action</code> (<code>SET</code> or <code>REMOVED</code>), <code>target</code>, <code>attribute</code>, <code>value</code>, <code>provenance</code>, <code>actor</code>. A maintenance request is recorded with the attribute <code>maintenance-request</code>.</td></tr>
+            <tr><td><code>nuna.catalog.hold</code></td><td>1</td><td><code>action</code> (<code>PLACED</code> or <code>RELEASED</code>), <code>holdId</code>, <code>target</code>, <code>reason</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.undrop</code></td><td>1</td><td><code>object</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.purge</code></td><td>1</td><td><code>object</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.audit-read</code></td><td>1</td><td><code>target</code>, <code>returned</code> (records returned), <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.unregister</code></td><td>1</td><td><code>object</code>, <code>pointer</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.label</code></td><td>1</td><td><code>target</code>, <code>label</code>, <code>value</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.purge-claim</code></td><td>1</td><td><code>object</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.file-deletion</code></td><td>1</td><td><code>action</code> (<code>RECORDED</code> or <code>DELETED</code>), <code>object</code>, <code>files</code>, <code>notBefore</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.maintenance-exemption</code></td><td>1</td><td><code>object</code>, <code>operation</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.ref</code></td><td>2</td><td><code>action</code> (<code>CREATED</code>, <code>RENEWED</code>, <code>DELETED</code>, <code>MERGED</code>, <code>EXPIRING</code>, <code>EXPIRED</code> or <code>OBJECT_REMOVED</code>), <code>ref</code>, <code>name</code>, <code>kind</code> (<code>BRANCH</code> or <code>TAG</code>), <code>catalog</code>, <code>from</code>, <code>expiresAt</code>, <code>description</code> (version 2, on <code>CREATED</code> only), <code>tables</code>, <code>actor</code>. The subject is the ref's id.</td></tr>
+            <tr><td><code>nuna.catalog.row-column-rule</code></td><td>1</td><td><code>action</code> (<code>SET</code> or <code>REMOVED</code>), <code>table</code>, <code>group</code>, <code>rowFilter</code>, <code>columnMasks</code>, <code>actor</code>.</td></tr>
+            <tr><td><code>nuna.catalog.run-end</code></td><td>1</td><td><code>host</code>. Closes a log run.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="audit-table">Audit table</h2>
+      <p>The audit tables writer copies every record into an Iceberg table, by default <code>nuna_audit.audit.events</code>: format version 2, partitioned by <code>day(time)</code>. The columns, by field id:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Id</th><th scope="col">Column</th><th scope="col">Type</th><th scope="col">Holds</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td><code>event_id</code></td><td>string, required</td><td>The envelope's <code>id</code>.</td></tr>
+            <tr><td>2</td><td><code>time</code></td><td>timestamptz, required</td><td>The envelope's <code>time</code>.</td></tr>
+            <tr><td>3</td><td><code>type</code></td><td>string, required</td><td>The record type.</td></tr>
+            <tr><td>4</td><td><code>source</code></td><td>string, required</td><td>The envelope's <code>source</code>.</td></tr>
+            <tr><td>5</td><td><code>principal</code></td><td>string</td><td>The actor's principal. Empty for an auth failure.</td></tr>
+            <tr><td>6</td><td><code>end_user</code></td><td>string</td><td>The actor's end user.</td></tr>
+            <tr><td>7</td><td><code>engine</code></td><td>string</td><td>The actor's engine.</td></tr>
+            <tr><td>8</td><td><code>request_id</code></td><td>string</td><td>The request id.</td></tr>
+            <tr><td>9</td><td><code>catalog</code></td><td>string</td><td>The catalog's name.</td></tr>
+            <tr><td>10</td><td><code>object_kind</code></td><td>string</td><td>The object's kind. A ref record's object is its catalog; a <code>CATALOG_CREATED</code> storage-setup record's is the new catalog.</td></tr>
+            <tr><td>11</td><td><code>object_id</code></td><td>string</td><td>The object's id.</td></tr>
+            <tr><td>12</td><td><code>object_path</code></td><td>list of string</td><td>The object's path.</td></tr>
+            <tr><td>13</td><td><code>operation</code></td><td>string</td><td>A denial's or maintenance exemption's operation.</td></tr>
+            <tr><td>14</td><td><code>privilege</code></td><td>string</td><td>A denial's or grant's privilege.</td></tr>
+            <tr><td>15</td><td><code>reason</code></td><td>string</td><td>A denial's or hold's reason.</td></tr>
+            <tr><td>16</td><td><code>data</code></td><td>string, required</td><td>The whole record, as JSON.</td></tr>
+            <tr><td>17</td><td><code>topic_partition</code></td><td>int, required</td><td>The topic partition; <code>-1</code> for a row read from the log.</td></tr>
+            <tr><td>18</td><td><code>topic_offset</code></td><td>long, required</td><td>The offset in that partition.</td></tr>
+            <tr><td>20</td><td><code>log_run</code></td><td>string</td><td>The envelope's <code>nunarun</code>.</td></tr>
+            <tr><td>21</td><td><code>log_seq</code></td><td>long</td><td>The envelope's <code>nunaseq</code>.</td></tr>
+            <tr><td>22</td><td><code>branch</code></td><td>string</td><td>The branch or tag acted through.</td></tr>
+            <tr><td>23</td><td><code>subject_ids</code></td><td>list of string</td><td>The ids the record is about, which the feed's <code>subject</code> filter matches.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">Not documented yet: why field id 19 is unused. <code>EventsTable.java</code> skips it without saying.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../api/audit.html">Audit</a>: reading records through the API.</li>
+          <li><a href="../concepts/audit.html">The audit trail</a>: the outbox, the topic, the hash chain and the archive.</li>
+          <li><a href="../security/what-is-audited.html">What is audited</a>: which action leaves which record.</li>
+          <li><a href="../operate/audit-pipeline.html">Run the audit pipeline</a>: running the writer that fills the audit table.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-audit/src/main/java/nuna/catalog/audit/</code> (the record types, <code>EventType</code> and <code>EventCodec</code>), <code>catalog-audit-tables/</code> (<code>EventsTable.java</code> and <code>AuditRows.java</code>) and <code>catalog-audit-tables/README.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run: the demo's audit table was empty, so no record could be captured.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

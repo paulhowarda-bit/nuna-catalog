@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/oracle">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Use Oracle · nuna docs</title>
+  <meta name="description" content="Prepare an Oracle schema, a service with Transaction Guard and the grants the catalog server needs, connect to it, and pass the safety self-check the server runs before it starts.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Use Oracle</h1>
+        <p class="lead">Prepare an Oracle schema, a service with Transaction Guard and the grants the catalog server needs, connect to it, and pass the safety self-check the server runs before it starts.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators and database administrators</span>
+          <span class="badge tested">Tested nightly</span>
+        </p>
+      </header>
+
+      <p>Set <code>nuna.database.backend: oracle</code>. The server runs on a single instance, RAC or Exadata; nuna's tests run on Oracle Database Free 23.26.3. The server decides every lost commit answer itself, so it needs Transaction Guard and must never let the driver replay a transaction.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You can create users and services and grant system privileges, or you work with someone who can.</li>
+        <li>The primary has a Data Guard standby, synchronized in MAXIMUM AVAILABILITY or MAXIMUM PROTECTION.</li>
+      </ul>
+
+      <h2 id="prepare-database">Prepare the database</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create the server's user, able to create tables in its own schema.</p>
+          <div class="code" data-lang="sql">
+<pre><code>CREATE USER nuna_catalog IDENTIFIED BY "…";
+GRANT CREATE SESSION, RESOURCE TO nuna_catalog;
+ALTER USER nuna_catalog QUOTA UNLIMITED ON USERS;</code></pre>
+          </div>
+          <p>The first server of a release creates the schema's tables, indexes, a procedure, a view and a Scheduler job in the user's schema.</p>
+        </li>
+        <li>
+          <p class="step-title">Grant what the server needs beyond its own schema.</p>
+          <div class="code" data-lang="sql">
+<pre><code>GRANT EXECUTE ON SYS.DBMS_APP_CONT TO nuna_catalog;
+GRANT SELECT ON SYS.V_$DATABASE TO nuna_catalog;
+GRANT SELECT ON SYS.V_$SERVICES TO nuna_catalog;
+GRANT SELECT ON SYS.V_$PARAMETER TO nuna_catalog;
+GRANT CREATE JOB TO nuna_catalog;</code></pre>
+          </div>
+          <p><code>DBMS_APP_CONT</code> asks Transaction Guard for a lost commit's outcome. The three views feed the self-check. <code>CREATE JOB</code> lets the schema migration create the Scheduler job <code>JOURNAL_PARTITIONS_AHEAD</code>, which creates the journal's monthly partitions ahead of time, once a day.</p>
+          <p class="gap">Not documented yet: whether <code>RESOURCE</code> covers creating the schema's view on every Oracle version. The tests' user also comes from the container image's own setup, so no test shows the least set of privileges.</p>
+        </li>
+        <li>
+          <p class="step-title">Create a service for the catalog with <code>COMMIT_OUTCOME</code> on and no <code>FAILOVER_TYPE</code>.</p>
+          <div class="code" data-lang="sql">
+<pre><code>DECLARE
+  parameters DBMS_SERVICE.SVC_PARAMETER_ARRAY;
+BEGIN
+  parameters('COMMIT_OUTCOME') := 'true';
+  parameters('RETENTION_TIMEOUT') := 86400;
+  DBMS_SERVICE.CREATE_SERVICE('nuna_catalog', 'nuna_catalog', parameters);
+  DBMS_SERVICE.START_SERVICE('nuna_catalog');
+END;</code></pre>
+          </div>
+          <p>This is the form the tests use. <code>FAILOVER_TYPE</code> <code>TRANSACTION</code> or <code>AUTO</code> turns on Application Continuity, which can replay a transaction; the server refuses it.</p>
+        </li>
+        <li>
+          <p class="step-title">Keep <code>JOB_QUEUE_PROCESSES</code> above 0 and <code>COMMIT_WAIT</code> unset or <code>WAIT</code>.</p>
+        </li>
+      </ol>
+
+      <h2 id="connect-server">Connect the server</h2>
+      <p>The URL names the catalog's own service. Set the driver's read timeout, which bounds every wait on the database, in <code>config</code>: YAML keeps the key's case, and an environment variable would not.</p>
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  spring:
+    datasource:
+      url: jdbc:oracle:thin:@//oracle.example:1521/nuna_catalog
+      username: nuna_catalog
+      hikari:
+        data-source-properties:
+          oracle.jdbc.ReadTimeout: 60000
+  nuna:
+    database:
+      backend: oracle</code></pre>
+      </div>
+      <p>The read timeout is in milliseconds. The password goes in the server's Secret as <code>spring.datasource.password</code>. Sessions must sort with <code>NLS_SORT = BINARY</code>, which follows the JVM's locale; the image's English locale gives it.</p>
+      <p class="gap">Not documented yet: TLS to Oracle (TCPS and a wallet). Nothing in the chart or the tests sets it up.</p>
+
+      <h2 id="safety-self-check">The safety self-check</h2>
+      <p>Before it migrates the schema, each server checks these. Any finding stops it with <code>The catalog's database is unsafe, so the server does not start</code>, followed by each <code><var>code</var>: <var>detail</var></code>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Oracle findings</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Detail the server logs</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>ora.no-data-guard</code></td><td><code>protection level is <var>level</var> (mode <var>mode</var>); a Data Guard standby must be synchronized in MAXIMUM AVAILABILITY or MAXIMUM PROTECTION</code></td><td>Run a synchronized standby. The check reads the level, so a standby that fell behind shows here.</td></tr>
+            <tr><td><code>ora.no-transaction-guard</code></td><td><code>service <var>name</var> has COMMIT_OUTCOME <var>value</var>; the catalog service needs COMMIT_OUTCOME = TRUE for Transaction Guard</code></td><td>Set <code>COMMIT_OUTCOME</code> on the service the URL names.</td></tr>
+            <tr><td><code>ora.commit-replay</code></td><td><code>service <var>name</var> has FAILOVER_TYPE <var>value</var>; Application Continuity can replay a transaction whose outcome the store must decide itself</code></td><td>Remove <code>FAILOVER_TYPE</code> from the service.</td></tr>
+            <tr><td><code>ora.commit-nowait</code></td><td><code>…; COMMIT must wait until its redo is written (COMMIT_WAIT unset or WAIT)</code></td><td>Unset <code>COMMIT_WAIT</code> or set it to <code>WAIT</code>.</td></tr>
+            <tr><td><code>ora.linguistic-sort</code></td><td><code>NLS_SORT is <var>value</var>; names must sort and compare as bytes, so sessions need NLS_SORT = BINARY (the driver sets NLS_LANGUAGE from the JVM locale, and NLS_SORT follows it)</code></td><td>Run the server with an English locale, or set <code>NLS_SORT</code> to <code>BINARY</code> for the user's sessions.</td></tr>
+            <tr><td><code>ora.journal-job-down</code></td><td>Each cause with its fix, then <code>Until the job runs, each month's first commit creates its own journal partition, 0.5 to 2.6 s on Free, which can pass the pool's read timeout and fail that commit</code></td><td>Follow the fix it names (below).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The causes <code>ora.journal-job-down</code> names, each with its fix in the message:</p>
+      <ul>
+        <li><code>JOB_QUEUE_PROCESSES is 0, so no Scheduler job runs: set it above 0</code></li>
+        <li><code>the Scheduler job JOURNAL_PARTITIONS_AHEAD is missing: create it again as migration V5 (V5__journal_partitions_ahead.sql) does</code></li>
+        <li><code>JOURNAL_PARTITIONS_AHEAD is BROKEN, disabled by Oracle after failing too often: fix why its runs fail (USER_SCHEDULER_JOB_RUN_DETAILS), then DBMS_SCHEDULER.ENABLE('JOURNAL_PARTITIONS_AHEAD')</code></li>
+        <li><code>JOURNAL_PARTITIONS_AHEAD is <var>state</var> and will not run again: drop it and create it again as migration V5 (V5__journal_partitions_ahead.sql) does</code></li>
+        <li><code>JOURNAL_PARTITIONS_AHEAD is disabled: DBMS_SCHEDULER.ENABLE('JOURNAL_PARTITIONS_AHEAD')</code></li>
+        <li><code>JOURNAL_PARTITIONS_AHEAD's last 2 runs failed</code>, with the newest error, and the fix: <code>DBMS_SCHEDULER.RUN_JOB('JOURNAL_PARTITIONS_AHEAD', use_current_session =&gt; FALSE)</code> once the cause is fixed.</li>
+      </ul>
+      <p>The migration file is <code>catalog-store-oracle/src/main/resources/nuna/store/oracle/migration/V5__journal_partitions_ahead.sql</code> in the source. <code>nuna.database.allow-unsafe</code> names findings the server starts despite; leave it empty in production (<a href="../configure/database.html#nuna-database-allow-unsafe">Database settings</a>).</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The server reports Oracle</p>
+        <p>As a platform operator, <code>GET /management/v1/health/server?store=true</code> shows <code>"configured": "oracle"</code> and an empty <code>allowed</code> list (<a href="verify.html#read-health-routes">Check the install</a>).</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>self-check failed (the catalog role needs SELECT on V_$DATABASE, V_$SERVICES and V_$PARAMETER)</code></td><td>The user cannot read the views.</td><td>Grant the three <code>SELECT</code>s.</td></tr>
+            <tr><td><code>The catalog's database is unsafe, so the server does not start</code> with an <code>ora.</code> code</td><td>A setting from the table above.</td><td>Change it as the table says.</td></tr>
+            <tr><td><code>schema migration failed</code></td><td>The user cannot create an object of the schema, often the Scheduler job without <code>CREATE JOB</code>.</td><td>Read the cause logged with it and grant what it names.</td></tr>
+            <tr><td>A month's first commit times out.</td><td>The journal job is not running, so that commit creates the partition.</td><td>Fix <code>ora.journal-job-down</code>'s cause.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/databases.html">Choosing a database</a>: how Oracle compares.</li>
+          <li><a href="../concepts/commits.html">How a commit works</a>: why a lost answer must not be replayed.</li>
+          <li><a href="../configure/database.html">Database settings</a>: <code>nuna.database.*</code>.</li>
+          <li><a href="helm-catalog.html">Install the catalog server with Helm</a>: where these values go.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java</code>, <code>catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/JournalJob.java</code>, <code>catalog-store-oracle/src/test/java/nuna/catalog/store/oracle/OracleFree.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code>, <code>gradle.properties</code> and <code>deploy/README.md</code> (The database), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The grants and the service block are the ones <code>OracleFree.java</code> runs against Oracle Database Free in the tests. The <code>CREATE USER</code> statement was not run; it is standard Oracle SQL.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

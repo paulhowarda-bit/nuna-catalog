@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/rename-move">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rename or move a table or view · nuna docs</title>
+  <meta name="description" content="Give a table or view a new name, in its namespace or another, keeping its id, its own grants and its history.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Rename or move a table or view</h1>
+        <p class="lead">Give a table or view a new name, in its namespace or another, keeping its id, its own grants and its history.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data engineers</span>
+          <span class="badge needs">Needs <code>modify</code> on the object and <code>create</code> on the destination</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>A rename changes only the name and the namespace. The object keeps its id, so its own grants, its labels, its commit journal and its history go with it. Its files do not move: a table's location is set from its id when it is made, never from its namespace.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Your groups hold <code>modify</code> on the table or view, and <code>create</code> on the destination namespace (or the catalog).</li>
+        <li>The destination namespace exists. A rename never creates one.</li>
+        <li>You rename on main. A branch or tag refuses renames.</li>
+        <li>For the curl example, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="rename-it">Rename it</h2>
+      <p>The console has no rename control; rename from an engine or the Iceberg REST API.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Move equities.orders into equities.daily">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/tables/rename" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"source": {"namespace": ["equities"], "name": "orders"},
+       "destination": {"namespace": ["equities", "daily"], "name": "orders"}}'</code></pre>
+          </div>
+          <p>The server answers <code>204</code>. A view uses <code>POST /v1/trading/views/rename</code> with the same body. An <code>Idempotency-Key</code> header makes a retry safe.</p>
+        </section>
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <div class="code" data-lang="sql" data-title="Rename within the namespace">
+<pre><code>ALTER TABLE trading.equities.orders RENAME TO trading.equities.orders_v1;</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="trino" data-label="Trino">
+          <div class="code" data-lang="sql" data-title="Move to another namespace">
+<pre><code>ALTER TABLE trading."equities".orders RENAME TO trading."equities.daily".orders;</code></pre>
+          </div>
+        </section>
+      </div>
+      <p class="gap">The Spark and Trino statements are those engines' standard rename forms; no engine test in the repository runs a rename, so they are not confirmed against nuna.</p>
+
+      <h2 id="what-changes">What changes and what does not</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>A rename's effect</caption>
+          <thead><tr><th scope="col">Thing</th><th scope="col">After the rename</th></tr></thead>
+          <tbody>
+            <tr><td>Id, commit journal, snapshots, files</td><td>Unchanged.</td></tr>
+            <tr><td>Grants on the object itself</td><td>Go with it.</td></tr>
+            <tr><td>Grants inherited from a namespace</td><td>Those of the new namespace and its parents apply; the old namespace's no longer do.</td></tr>
+            <tr><td>Governance inherited from a namespace (a legal hold, a regulated mark)</td><td>That of the new namespace applies.</td></tr>
+            <tr><td>Catalog branches and tags made before</td><td>Still read the object under its old name.</td></tr>
+            <tr><td>Engines and jobs that use the old name</td><td>Get <code>404</code> until they use the new one.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <aside class="callout warning">
+        <p class="callout-title">Moving changes who can read</p>
+        <p>Before moving a table into another namespace, compare the two namespaces' grants on their <b class="ui">Access</b> tabs. Groups that read the table through the old namespace lose it; groups with grants on the new one gain it.</p>
+      </aside>
+
+      <p>Tell the owners of jobs that use the old name before you rename: nothing redirects them.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The object answers to its new name</p>
+        <p>The console shows it in its new namespace, and its <b class="ui">Audit</b> tab shows a record <b class="ui">renamed from</b> the old path. The audit trail holds a <code>nuna.catalog.rename</code> record.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>Cannot rename equities.orders to equities.daily.orders. Table already exists</code></td><td>A table or view in the destination has that name (the message says which kind).</td><td>Choose another name.</td></tr>
+            <tr><td><code>404</code> <code>NoSuchNamespaceException</code> <code>Namespace does not exist: equities.daily</code></td><td>The destination namespace does not exist.</td><td>Create it first.</td></tr>
+            <tr><td><code>404</code> <code>NoSuchTableException</code> <code>Table does not exist: equities.orders</code></td><td>The source does not exist, or your groups cannot see it.</td><td>Check the name and your grants.</td></tr>
+            <tr><td><code>403</code> <code>Table equities.orders is frozen for DR reconcile: …</code></td><td>The object, or the destination namespace (<code>Namespace … is frozen …</code>), is frozen.</td><td>Rename after the freeze is lifted.</td></tr>
+            <tr><td><code>400</code> <code>renameTable is refused on branch dev of catalog trading: creates, drops, renames, registrations and namespace changes happen on main only</code></td><td>The request went through a branch or tag.</td><td>Rename on main.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>modify</code> or <code>create</code></td><td>Your groups lack <code>modify</code> on the object or <code>create</code> on the destination.</td><td>Ask a grant admin (<a href="grant-access.html">Grant and revoke access</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/access.html">Access</a>: how grants inherit down namespaces.</li>
+          <li><a href="../api/iceberg-tables.html#endpoints">Iceberg tables API</a> and <a href="../api/iceberg-views.html#endpoints">Iceberg views API</a>: the rename endpoints.</li>
+          <li><a href="register-table.html">Register an existing table</a>: bring a table back in its own namespace, then move it.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ViewRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Http.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/TableFiles.java</code>, <code>catalog-server/src/main/resources/nuna/ui/panels.js</code> and <code>docs/refs.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was renamed on the local demo.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

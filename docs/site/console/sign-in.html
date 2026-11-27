@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/sign-in">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signing in to the console · nuna docs</title>
+  <meta name="description" content="Sign in to the console through your identity provider, or with a pasted token where the server allows it, sign out, and read what each sign-in error means.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Signing in to the console</h1>
+        <p class="lead">Sign in to the console through your identity provider, or by pasting a token where the server allows it for development, and sign out again. The console signs in like any other API caller: with a token the server checks on every request.</p>
+        <p class="doc-meta"><span class="badge for">For everyone who uses the console</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You need the console's address: the server's URL followed by <code>/ui/</code>, such as <code>https://nuna.example/ui/</code>.</li>
+        <li>An operator must have set up a way in. For an identity provider, that is <code>nuna.ui.oidc.issuer</code> and <code>nuna.ui.oidc.client-id</code>, with the issuer trusted by the server. The token box appears only with <code>nuna.ui.dev-token-login=true</code>, which is off unless set. <a href="../configure/server.html">Server settings</a> lists them.</li>
+        <li>You need an account at the identity provider, in groups that hold grants in nuna. Signing in works without any grant, but then the console shows no catalog.</li>
+      </ul>
+
+      <h2 id="what-the-sign-in-page-offers">What the sign-in page offers</h2>
+      <p>The page is titled <b class="ui">Sign in to nuna</b>. Before it draws, the console reads its settings from <code>GET /ui/config.json</code>, which needs no sign-in and holds nothing secret. What it offers depends on those settings:</p>
+      <ul>
+        <li>With an identity provider: "Your organisation's sign-in page opens, then brings you back here. Your sign-in lasts in this tab only." and the button <b class="ui">Sign in with <var>host</var></b>, where <var>host</var> is the identity provider's host.</li>
+        <li>With developer tokens: a box labelled <b class="ui">Bearer token</b>, the words "Paste a bearer token. For development only: this server allows signing in with one." and the button <b class="ui">Use this token</b>. When an identity provider is also set, a separator marked <b class="ui">development only</b> comes first.</li>
+        <li>With neither: "No sign-in is set up on this server. Ask whoever runs nuna to connect your organisation's sign-in."</li>
+      </ul>
+      <figure class="shot pending" id="fig-console-sign-in" data-shot="console-sign-in" data-shot-route="#p=overview&amp;c=lakehouse" data-shot-user="none" data-shot-width="1440" data-shot-state="Signed out; the demo offers both Sign in with localhost:8180 and the token box."><figcaption>The sign-in page with an identity provider and the developer token box.</figcaption></figure>
+
+      <h2 id="sign-in-through-identity-provider">Sign in through your identity provider</h2>
+      <ol class="steps">
+        <li><p class="step-title">Open the console's address.</p></li>
+        <li><p class="step-title">Select <b class="ui">Sign in with <var>host</var></b>.</p><p>The console shows <b class="ui">Going to <var>host</var>…</b> and sends you to the identity provider's sign-in page. It signs in as a public client with the authorization code flow and PKCE, so it holds no client secret.</p></li>
+        <li><p class="step-title">Sign in at the identity provider.</p><p>It sends you back to the console, by default to its own <code>/ui/</code> address (<code>nuna.ui.oidc.redirect-uri</code> can name another).</p></li>
+      </ol>
+      <p>The console keeps the token in this browser tab's session storage only: not in local storage and not in a cookie. Another tab, or this tab after it closes, signs in again. The console reads your name and groups from the token for display only; the server checks the token's signature on every request.</p>
+
+      <h2 id="sign-in-with-token">Sign in with a token</h2>
+      <p>Where the server allows it, you can paste a token instead.</p>
+      <ol class="steps">
+        <li><p class="step-title">Get a token for your user.</p><p><a href="../clients/tokens.html">Get a token</a> says how.</p></li>
+        <li><p class="step-title">Paste it into <b class="ui">Bearer token</b>.</p><p>A leading <code>Bearer </code> is removed. The token is "Kept in this tab only."</p></li>
+        <li><p class="step-title">Select <b class="ui">Use this token</b>.</p></li>
+      </ol>
+      <aside class="callout warning"><p class="callout-title">The token box is for development only</p><p>Leave <code>nuna.ui.dev-token-login</code> off on any server people rely on: it invites them to copy tokens by hand.</p></aside>
+
+      <h2 id="sign-out">Sign out</h2>
+      <ol class="steps">
+        <li><p class="step-title">Select <b class="ui">Sign out</b> in the header.</p><p>The console shows <b class="ui">Signing out…</b>, forgets the token, and asks the identity provider to end your session there too, through its end-session endpoint. You return to the sign-in page with <b class="ui">Signed out.</b></p></li>
+      </ol>
+      <p>If the identity provider cannot end its session, the console says so: "Signed out of nuna, but <var>host</var> did not end your session there (<var>reason</var>). Signing in again may not ask for a password." If it offers no way to: "Signed out of nuna. <var>host</var> offers no way to end your session there, so signing in again may not ask for a password."</p>
+
+      <aside class="callout check"><p class="callout-title">The header names you</p><p>Once signed in, the header shows your name, how many groups your token names and when the sign-in ends: <b class="ui"><var>name</var> · <var>N</var> groups · until <var>HH:MM</var></b>. When it ends, the console signs you out with "Your sign-in has expired. Sign in again."</p></aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Message</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>The console could not start: it could not load its settings.</td><td><code>GET /ui/config.json</code> did not answer within 15 s.</td><td>Select <b class="ui">Try again</b>; if it persists, check the server is reachable.</td></tr>
+            <tr><td>No sign-in is set up on this server.</td><td>Neither <code>nuna.ui.oidc</code> nor the token box is set.</td><td>An operator sets <code>nuna.ui.oidc.issuer</code> and <code>nuna.ui.oidc.client-id</code>.</td></tr>
+            <tr><td><var>host</var> is not answering: no reply in 15 s.</td><td>The identity provider's discovery document did not come back.</td><td>Check the identity provider is up and reachable from your browser, then <b class="ui">Start again</b>.</td></tr>
+            <tr><td><var>host</var> could not be reached: <var>reason</var>.</td><td>The browser could not connect to the identity provider.</td><td>Check the issuer URL and your network.</td></tr>
+            <tr><td>Your organisation's sign-in service did not answer as expected (<var>status</var>).</td><td>The discovery document answered with an error.</td><td>Check <code>nuna.ui.oidc.issuer</code>.</td></tr>
+            <tr><td>Your organisation's sign-in refused: <var>description</var>.</td><td>The identity provider sent back an error, such as an unknown client or redirect address.</td><td>Check the client id and that the client allows the console's address as a redirect and post-logout redirect.</td></tr>
+            <tr><td>This sign-in was not started in this tab, or has expired. Start again.</td><td>The answer came back to a tab that did not start the sign-in.</td><td>Sign in again from this tab.</td></tr>
+            <tr><td>Signing in did not finish: your organisation's sign-in answered <var>status</var> <var>error</var></td><td>Exchanging the code for a token failed.</td><td>Read the error; check the client is public and allows PKCE.</td></tr>
+            <tr><td>That is not a JWT (three base64url parts).</td><td>What was pasted is not a token.</td><td>Paste the whole token.</td></tr>
+            <tr><td>Your sign-in has expired or was not accepted. Sign in again.</td><td>The server answered 401 to a request: the token expired, or its issuer or audience is not one the server accepts.</td><td>Sign in again. If it recurs at once, the issuer must be in the server's trusted issuers (<a href="../install/identity-provider.html">Connect an identity provider</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="index.html">The console</a>: what you see once signed in.</li>
+          <li><a href="../install/identity-provider.html">Connect an identity provider</a>: issuers, audiences and the groups claim.</li>
+          <li><a href="../security/authentication.html">Authentication</a>: how the server checks a token.</li>
+          <li><a href="../demo/sign-in.html">Demo users and sign-in</a>: the demo's users.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>auth.js</code>, <code>app.js</code> and <code>index.html</code>, and from <code>UiRoutes.java</code> and <code>UiSettings.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No sign-in was run for this page; the console was not driven in a browser.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

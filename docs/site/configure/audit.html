@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/audit">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit settings · nuna docs</title>
+  <meta name="description" content="Set where the server sends its audit records and changes, and where it reads the audit tables and the archive.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Audit settings</h1>
+        <p class="lead">Set where the server sends its audit records and changes, and where it reads the audit tables and the archive.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>Every audit record the server makes is written to the log <code>nuna.audit</code>, and that log is the record of audit. Kafka is optional: with <code>nuna.audit.kafka-bootstrap-servers</code> set, records also go to the audit topic and changes to the change stream, best effort. The queryable audit tables and the Object Lock archive are written by the audit tables writer (<a href="audit-tables.html">Audit tables writer settings</a>); the settings here tell the server where to read them.</p>
+
+      <h2 id="the-audit-log">The audit log</h2>
+
+      <section class="setting">
+        <h3 id="logging-level-nuna-audit"><code>logging.level.nuna.audit</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>log level</dd>
+          <dt>Default</dt><dd><code>INFO</code> (set in the server's own <code>application.yaml</code>)</dd>
+          <dt>Allowed values</dt><dd><code>TRACE</code>, <code>DEBUG</code>, <code>INFO</code></dd>
+          <dt>Environment variable</dt><dd><code>LOGGING_LEVEL_NUNA_AUDIT</code></dd>
+          <dt>Helm</dt><dd><code>config.logging.level.nuna.audit</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The level of the log every audit record is written to. The server refuses to start when it is coarser than <code>INFO</code>: <code>logging.level.nuna.audit must be INFO or finer: every audit record is written to the log nuna.audit, and that log is the record of audit</code>.</p>
+        <p>Records are written in Elastic Common Schema JSON on the console, as every log of the server is (<code>logging.structured.format.console: ecs</code>). Collect the container's output and keep it as the audit record.</p>
+      </section>
+
+      <h2 id="kafka">Kafka</h2>
+
+      <section class="setting">
+        <h3 id="nuna-audit-kafka-bootstrap-servers"><code>nuna.audit.kafka-bootstrap-servers</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (<code>host:port</code> list)</dd>
+          <dt>Default</dt><dd>none: no audit topic or change stream</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_KAFKABOOTSTRAPSERVERS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.kafka-bootstrap-servers</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Kafka cluster for the audit topic and the change stream. Without it the server serves and vends as with it, writes audit records and changes to the log alone, and logs at start-up <code>nuna.audit.kafka-bootstrap-servers is not set: audit records go to the log nuna.audit only, with no audit topic or change stream</code>.</p>
+        <p>The server's Kafka clients connect in plain text: no setting gives them TLS or SASL.</p>
+        <p>When neither this nor <code>nuna.audit.tables.catalog</code> is set, a request for an object's audit records answers 503 <code>Neither the audit tables (nuna.audit.tables.catalog) nor the audit topic (nuna.audit.kafka-bootstrap-servers) is configured on this server</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-audit-topic"><code>nuna.audit.audit-topic</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>nuna.catalog.audit</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_AUDITTOPIC</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.audit-topic</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The topic every audit record goes to, best effort: the security team's feed, and the audit tables writer's source when it reads Kafka.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-change-topic"><code>nuna.audit.change-topic</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>nuna.catalog.changes</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_CHANGETOPIC</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.change-topic</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The CloudEvents change stream: changes to namespaces, tables and views, relayed from the database's outbox.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-delivery-timeout"><code>nuna.audit.delivery-timeout</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>5s</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_DELIVERYTIMEOUT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.delivery-timeout</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long a record sent as a request completes, or a relayed change, waits for Kafka to acknowledge it from every in-sync replica (<code>acks=all</code>).</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-request-timeout"><code>nuna.audit.request-timeout</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>2s</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_REQUESTTIMEOUT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.request-timeout</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Kafka's timeout for one request. Keep it below <code>delivery-timeout</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-probe-interval"><code>nuna.audit.probe-interval</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>10s</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_PROBEINTERVAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.probe-interval</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>After Kafka failed to take a record, how long every record skips Kafka and goes to the log alone before Kafka is tried again.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-relay-interval"><code>nuna.audit.relay-interval</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>250ms</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_RELAYINTERVAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.relay-interval</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How often the outbox relay looks for new changes to send to the change stream.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-relay-lease"><code>nuna.audit.relay-lease</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>30s</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_RELAYLEASE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.relay-lease</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The lease one server takes on a batch of outbox entries, so that two servers do not relay the same batch. Keep it longer than a batch takes.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-relay-batch"><code>nuna.audit.relay-batch</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>500</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_RELAYBATCH</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.relay-batch</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The most outbox entries one batch relays.</p>
+      </section>
+
+      <h2 id="the-archive">The archive</h2>
+
+      <p>The audit tables writer writes a hash-chained archive of the log to an Object Lock bucket. The server reads it, to check it every hour (the first check a minute after start-up) and for disaster recovery reconciliation, wherever <code>nuna.audit.archive.bucket</code> is set. It needs no Kafka.</p>
+
+      <section class="setting">
+        <h3 id="nuna-audit-archive-bucket"><code>nuna.audit.archive.bucket</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: the server reads no archive</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_ARCHIVE_BUCKET</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.archive.bucket</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Object Lock bucket the writer's <a href="audit-tables.html#nuna-audit-tables-archive-bucket"><code>nuna.audit-tables.archive.bucket</code></a> names. The bucket must have been created with Object Lock, or the server refuses to start with <code>archive bucket <var>bucket</var> has no Object Lock configuration</code> or <code>archive bucket <var>bucket</var> does not have Object Lock enabled</code>.</p>
+        <p>Without it, a request to check an archived record answers 503 <code>The audit archive is not configured on this server (nuna.audit.archive.bucket)</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-archive-profile"><code>nuna.audit.archive.profile</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a storage profile name)</dd>
+          <dt>Default</dt><dd>none (required with <code>bucket</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_ARCHIVE_PROFILE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.archive.profile</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The storage profile whose endpoint, region, credentials and CA bundle reach the bucket. A name that is not in <code>nuna.storage.profiles</code> stops the server with <code>nuna.audit.archive.profile must name a storage profile, not <var>value</var></code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-archive-prefix"><code>nuna.audit.archive.prefix</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>audit</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_ARCHIVE_PREFIX</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.archive.prefix</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The key prefix of every chain and checkpoint, as the writer has it. It may not be empty or end in <code>/</code>.</p>
+      </section>
+
+      <h2 id="the-audit-catalog">The audit catalog</h2>
+
+      <p>The queryable audit tables live in a catalog of their own. At start-up the server grants that catalog's readers <code>select</code> and the writer's group <code>create</code> and <code>write</code>, as the actor <code>nuna-configuration</code>, each grant checked as the grants API checks it. Unset, it grants nothing; a group left unset gets nothing. Grant admins may add more grants later.</p>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-catalog"><code>nuna.audit.tables.catalog</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a catalog name)</dd>
+          <dt>Default</dt><dd>none: the server reads no audit tables</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_TABLES_CATALOG</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.tables.catalog</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The audit catalog, such as <code>nuna_audit</code>. It must be declared in <a href="catalogs.html#nuna-storage-catalogs"><code>nuna.storage.catalogs</code></a>, or the server stops with <code>nuna.audit.tables.catalog names no catalog: <var>name</var>; declare it in nuna.storage.catalogs</code>.</p>
+        <p>The console's catalog-wide audit feed reads the table <code>events</code> in it, about a minute behind the topic. Without it, those reads answer 503 <code>The audit tables are not configured on this server (nuna.audit.tables.catalog)</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-namespace"><code>nuna.audit.tables.namespace</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>audit</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_TABLES_NAMESPACE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.tables.namespace</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The namespace of the table <code>events</code> in the audit catalog. Keep it equal to the writer's <a href="audit-tables.html#nuna-audit-tables-namespace"><code>nuna.audit-tables.namespace</code></a>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-readers"><code>nuna.audit.tables.readers</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a group name)</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_TABLES_READERS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.tables.readers</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The group granted <code>select</code> on the audit catalog. Its rows are not filtered, so the group sees every object and person in the deployment's records: keep it narrow.</p>
+        <p>Setting a group with no <code>catalog</code> stops the server with <code>nuna.audit.tables.readers and nuna.audit.tables.writers need nuna.audit.tables.catalog, the audit catalog they are granted on</code>. A grant the separation of duties forbids, such as one to a platform operators group, stops it with <code>nuna.audit.tables.readers: the server may not grant <var>group</var> select on catalog <var>catalog</var>: </code> and the reason.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-writers"><code>nuna.audit.tables.writers</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a group name)</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDIT_TABLES_WRITERS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit.tables.writers</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The audit tables writer's group, granted <code>create</code> and <code>write</code> on the audit catalog. Give it nothing elsewhere. The same refusals apply as for <code>readers</code>.</p>
+      </section>
+
+      <h2 id="example">Example</h2>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    audit:
+      kafka-bootstrap-servers: kafka.example:9092
+      archive:
+        bucket: nuna-audit-archive
+        profile: onprem
+      tables:
+        catalog: nuna_audit
+        readers: data-stewards
+        writers: nuna-audit-writers</code></pre>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/audit.html">Audit</a>: what is recorded and where each copy goes</li>
+          <li><a href="audit-tables.html">Audit tables writer settings</a>: the program that writes the tables and the archive</li>
+          <li><a href="../operate/audit-pipeline.html">Run the audit pipeline</a>: watching the topic, the tables and the archive</li>
+          <li><a href="../reference/audit-records.html">Audit record format</a>: the fields of each record</li>
+          <li><a href="../guides/verify-audit-chain.html">Verify the audit chain</a>: checking an archived record</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditRuntime.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/AuditCatalogSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/AuditCatalogGrants.java</code>, <code>catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java</code> and <code>catalog-server/src/main/resources/application.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the catalog chart.</p>
+        <p>No server was started with them for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/brokerage-world">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The brokerage world · nuna docs</title>
+  <meta name="description" content="The brokerage world is a simulated US broker-dealer whose generator writes live data into the demo's lake through Kafka and SingleStore, with views that reconcile its books.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>The brokerage world</h1>
+        <p class="lead">The brokerage world is a simulated US broker-dealer whose generator writes a firm's trading, ledger and clearing data into the demo's catalog <code>lakehouse</code> as it happens, through Kafka, SingleStore or both.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span></p>
+      </header>
+
+      <figure class="diagram" id="fig-brokerage-routes">
+        <svg viewBox="0 0 720 260" role="img" aria-labelledby="fig-brokerage-routes-t fig-brokerage-routes-d">
+          <title id="fig-brokerage-routes-t">How the brokerage world's data reaches the lake</title>
+          <desc id="fig-brokerage-routes-d">The generator sends most feeds to Kafka topics, which Kafka Connect's Iceberg sink writes into lakehouse tables. It writes the orders and the order management system's rows to SingleStore, whose change feeds copy them into lakehouse tables under brokerage.trading.</desc>
+          <rect class="d-node d-accent" x="10" y="105" width="130" height="50" rx="10"/>
+          <text class="d-label" x="75" y="135">Generator</text>
+          <rect class="d-node" x="200" y="30" width="150" height="50" rx="10"/>
+          <text class="d-label" x="275" y="52">Kafka</text>
+          <text class="d-note" x="275" y="70">19 topics</text>
+          <rect class="d-node" x="200" y="180" width="150" height="50" rx="10"/>
+          <text class="d-label" x="275" y="202">SingleStore</text>
+          <text class="d-note" x="275" y="220">database brokerage</text>
+          <rect class="d-node" x="400" y="30" width="150" height="50" rx="10"/>
+          <text class="d-label" x="475" y="52">Kafka Connect</text>
+          <text class="d-note" x="475" y="70">Iceberg sink</text>
+          <rect class="d-node" x="400" y="180" width="150" height="50" rx="10"/>
+          <text class="d-label" x="475" y="202">Change feeds</text>
+          <text class="d-note" x="475" y="220">pipelines</text>
+          <rect class="d-store" x="600" y="100" width="110" height="60" rx="6"/>
+          <text class="d-label" x="655" y="128">lakehouse</text>
+          <text class="d-note" x="655" y="146">brokerage.*</text>
+          <path class="d-edge" d="M140 120L200 60" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M140 140L200 200" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M350 55H400" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M350 205H400" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M550 55L600 115" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M550 205L600 145" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>With both <code>kafka</code> and <code>ss</code> on. When one is off, the generator sends its feeds the other way.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>A firm with 1,000 customer accounts (<code>BROKERAGE_ACCOUNTS=1000</code>) that books every financial transaction through a posting engine as journal lines, and clears its own trades through NSCC's Continuous Net Settlement (CNS). It runs while the switch <code>gen</code> is on, as Deployment <code>brokerage</code>. Its account numbers, securities and other identifiers are synthetic, and the same seed (<code>BROKERAGE_SEED=20261122</code>) produces the same world.</p>
+      <p>Its events keep the real clock of New York: a trading day's events fall between 07:00 and 17:00 there, so the world is quiet overnight, at weekends and on market holidays, and its log says <code>quiet until <var>time</var></code>. When the generator starts it writes three catch-up days (<code>BROKERAGE_CATCH_UP_DAYS=3</code>) and today's earlier hours at once, then sends each event at its time.</p>
+
+      <h2 id="what-it-writes">What it writes</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Namespace in <code>lakehouse</code></th><th scope="col">Tables</th><th scope="col">Classification</th></tr></thead>
+          <tbody>
+            <tr><td><code>brokerage.reference</code></td><td><code>calendar</code>, <code>securities</code></td><td>public</td></tr>
+            <tr><td><code>brokerage.markets</code></td><td><code>bars_5m</code>, <code>prices_eod</code></td><td>internal</td></tr>
+            <tr><td><code>brokerage.party</code></td><td><code>accounts</code></td><td>restricted; regulated namespace</td></tr>
+            <tr><td><code>brokerage.ledger</code></td><td><code>chart_of_accounts</code>, <code>booking_schemes</code>, <code>financial_transactions</code>, <code>journal_lines</code>, <code>posting_rejections</code>, <code>balances_eod</code></td><td>confidential; regulated namespace</td></tr>
+            <tr><td><code>brokerage.trading</code></td><td><code>orders</code>, <code>order_events</code>, <code>routes</code>, <code>executions</code>, from SingleStore</td><td>internal</td></tr>
+            <tr><td><code>brokerage.clearing</code></td><td><code>cns_obligations</code>, <code>settlements</code>, <code>fails</code>, <code>stock_record</code>, <code>locates</code></td><td>confidential</td></tr>
+            <tr><td><code>brokerage.kafka</code></td><td><code>order_events</code>, <code>routes</code>, <code>executions</code>, while SingleStore is off</td><td>internal</td></tr>
+            <tr><td><code>brokerage.singlestore</code></td><td>Copies of the Kafka feeds, while Kafka is off</td><td>restricted; regulated</td></tr>
+            <tr><td><code>brokerage.recon</code></td><td>Three reconciliation views</td><td>confidential</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The demo's grants on <code>lakehouse</code> cover these namespaces: <code>ana</code> and <code>stella</code> read them in the console and in Trino.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <p><code>demo/demo.sh gen</code> starts SingleStore if <code>ss</code> is on and Kafka if <code>kafka</code> is, then runs the job <code>brokerage-bootstrap</code>. As user <code>brokerage</code>, the job makes the world's namespaces, tables and views in <code>lakehouse</code>, and its Kafka topics while Kafka is on. <code>gen</code> then sets their governance as <code>stella</code>, starts Kafka Connect, registers the sink or the change feeds, and starts the generator last.</p>
+      <h3 id="through-kafka">Through Kafka</h3>
+      <p>The generator writes plain JSON to nineteen topics named <code>brokerage.<var>area</var>.<var>feed</var></code>, such as <code>brokerage.ledger.journal-lines</code>. Kafka Connect's Iceberg sink <code>brokerage-lake</code>, writing as user <code>cdc</code>, sends each record to the table its <code>lake_table</code> field names and commits every 15 seconds. The sink neither makes nor changes tables; the bootstrap job made them.</p>
+      <h3 id="through-singlestore">Through SingleStore</h3>
+      <p>The generator writes the orders to the SingleStore table <code>brokerage.orders</code>, and the order management system's rows to <code>brokerage.order_events</code>, <code>routes</code> and <code>executions</code>. Two change feeds copy them into <code>brokerage.trading</code> every 15 seconds (<a href="singlestore.html">SingleStore in the demo</a>).</p>
+      <h3 id="routes">Which way each feed goes</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col"><code>ss</code></th><th scope="col"><code>kafka</code></th><th scope="col">Orders</th><th scope="col">Order management system</th><th scope="col">Every other feed</th></tr></thead>
+          <tbody>
+            <tr><td>on</td><td>on</td><td>SingleStore, to <code>brokerage.trading.orders</code></td><td>SingleStore, to <code>brokerage.trading</code></td><td>Kafka, to its own namespace</td></tr>
+            <tr><td>off</td><td>on</td><td>Nowhere: the order events carry every state</td><td>Kafka topics <code>brokerage.oms.*</code>, to <code>brokerage.kafka</code></td><td>Kafka</td></tr>
+            <tr><td>on</td><td>off</td><td>SingleStore</td><td>SingleStore</td><td>A SingleStore table each, copied to <code>brokerage.singlestore</code> by one pipeline, <code>brokerage_world_to_lake</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Before a way goes off, the script stops the generator and waits up to three minutes until everything sent that way is in the lake; if it is not, that way stays on. The generator then starts on its new route without sending anything twice.</p>
+
+      <h2 id="clearing">Clearing and custody</h2>
+      <p>Each day's fills net per security into one CNS obligation that settles at 08:00 the next business day (<code>cns_obligations</code>, <code>settlements</code>). Every short sale is accepted under a locate (<code>locates</code>, joined to the order's acceptance by <code>locate_id</code>). At 17:00 each day the world writes the stock record: every position by owner and by location (DTC, stock borrowed, CNS pending, failed to deliver), which balances.</p>
+      <p>One break is seeded. On the world's third business day or later, the first net delivery that holds a customer short sale fails for that sale's shares (<code>fails</code>), ages a day, and is closed out at 09:30 on the next settlement day under Reg SHO Rule 204(a) by a purchase for the firm's own account.</p>
+      <p>The CDC leg loads the clearing tables into CockroachDB database <code>custody</code> as well (<a href="cdc.html">Change data capture in the demo</a>).</p>
+
+      <h2 id="reconciliation">Reconciliation views</h2>
+      <p>Three views in <code>brokerage.recon</code>, in Trino's dialect, are empty when the books agree. Each reads only the days before today.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">View</th><th scope="col">Compares</th></tr></thead>
+          <tbody>
+            <tr><td><code>stock_record_vs_ledger</code></td><td>The stock record's customer positions with the ledger's share and short positions and the open lots.</td></tr>
+            <tr><td><code>executions_vs_fills</code></td><td>Each execution with its ledger fill.</td></tr>
+            <tr><td><code>cns_vs_fills</code></td><td>CNS with the net of the customers' fills, per security and trade date.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The seeded fail shows as one row of <code>cns_vs_fills</code>, on its close-out's trade date: the shares the firm bought and what it paid. In Trino:</p>
+      <div class="code" data-lang="sql">
+<pre><code>SELECT * FROM lakehouse."brokerage.recon".cns_vs_fills;
+SELECT * FROM lakehouse."brokerage.clearing".fails ORDER BY fail_event_id;</code></pre>
+      </div>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>The generator asks for 256 MiB, Kafka Connect 512 MiB and the bootstrap job 384 MiB while it runs. <code>cdc</code> pauses the generator; <code>up</code>, <code>rate</code> and <code>engines</code> stop it and Kafka Connect while they run.</li>
+        <li><code>gen stop</code> stops the generator, waits 20 seconds for the sink's last commit, then stops Kafka Connect, Kafka and kafbat unless the CDC leg runs. Kafka's topics stay, so the next <code>gen</code> catches up on the days it missed without sending what it sent before.</li>
+        <li><code>wipe</code> deletes the topics with the lake, and the next <code>up</code> starts a new world. If Kafka alone lost its topics, the generator stops and says so.</li>
+      </ul>
+      <p class="gap">Not documented yet: the columns of each table. The schemas are in the module <code>demo-datagen</code> (<code>LakeSchemas</code>) and in <code>demo/singlestore/brokerage-feeds.sql</code>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="singlestore.html">SingleStore in the demo</a></li>
+          <li><a href="kafka-metrics.html">Kafka, metrics and traces in the demo</a>: the topics in kafbat.</li>
+          <li><a href="trino-cloudbeaver.html">Trino and CloudBeaver in the demo</a>: querying the tables.</li>
+          <li><a href="commands.html#demo-sh-gen">demo.sh gen</a></li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo-datagen</code> (<code>world/Feed.java</code>, <code>world/Clearing.java</code>, <code>live/Recon.java</code>, <code>live/Pacer.java</code>, <code>Main.java</code>), <code>demo/k8s/brokerage.yaml</code>, <code>demo/k8s/brokerage-bootstrap.yaml</code>, <code>demo/brokerage/connector.json</code>, <code>demo/singlestore/feeds.sql</code> and <code>demo/README.md</code> (The brokerage world), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The running demo was built from an earlier commit, without the clearing, Kafka-route and reconciliation namespaces, and <code>gen</code> was off; the namespaces <code>brokerage.reference</code>, <code>markets</code>, <code>party</code>, <code>ledger</code>, <code>trading</code> and <code>singlestore</code> were listed with a read-only call. The queries above were not run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

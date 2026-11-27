@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/release-notes">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Release notes · nuna docs</title>
+  <meta name="description" content="What version 0.1.0-SNAPSHOT holds, by the milestone that added it, oldest first.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Release notes</h1>
+        <p class="lead">What version 0.1.0-SNAPSHOT holds, by the milestone that added it, oldest first.</p>
+      </header>
+
+      <p>nuna has not had a release. Every module builds as version <code>0.1.0-SNAPSHOT</code>, with Apache Iceberg 1.12.0, Spring Boot 4.1.2 and Java 25.</p>
+
+      <h2 id="m0-bootstrap">M0: bootstrap</h2>
+      <ul>
+        <li>The module layout and pinned versions, and the server answering <code>/v1/config</code> on PostgreSQL with its list of endpoints.</li>
+      </ul>
+      <h2 id="m1-m2-stores">M1 and M2: the storage interface and the databases</h2>
+      <ul>
+        <li>One storage interface and a shared suite that every database passes: PostgreSQL, CockroachDB, Oracle and MongoDB.</li>
+        <li>Commits decided by a pointer compare-and-swap under row locks, and an unknown outcome resolved only after a durability barrier.</li>
+        <li>The start-up self-check of each database's durability settings.</li>
+      </ul>
+      <h2 id="m3-commits">M3: the commit engine</h2>
+      <ul>
+        <li>Every Iceberg update and requirement type, format versions 1 to 3, with new tables at version 3.</li>
+        <li>The commit loop with bounded retries, the server's commit rules, and idempotency keys.</li>
+      </ul>
+      <h2 id="m4-rest">M4: the Iceberg REST routes</h2>
+      <ul>
+        <li>Namespaces, tables (including staged create, register, rename and soft drop), views, credentials and metrics.</li>
+        <li>Conditional loads with ETags, and the Iceberg error shapes.</li>
+        <li>The Iceberg REST Compatibility Kit run against the server.</li>
+      </ul>
+      <h2 id="m5-security">M5: security</h2>
+      <ul>
+        <li>Tokens from several issuers, each with its own claim mapping; trusted engines that name an end user.</li>
+        <li>Grants to groups with inheritance down the tree, separation of duties, and no superuser.</li>
+        <li>Storage access to flagged tables only for trusted engines; unclassified tables under a regulated namespace closed.</li>
+      </ul>
+      <h2 id="m6-storage">M6: object storage and credential vending</h2>
+      <ul>
+        <li>Storage profiles, one per catalog, and table locations assigned by the server.</li>
+        <li>Metadata files checked by SHA-256, and STS credentials scoped to one table's prefix that cannot delete.</li>
+      </ul>
+      <h2 id="m7-governance-audit">M7: governance and audit</h2>
+      <ul>
+        <li>The outbox and relay, the Kafka copy, the change stream and the hash-chained archive.</li>
+        <li>Maintenance policy with inheritance and guardrails, retention classes, legal holds, DR freezes, soft drop with a 30-day restore window, and rate-limited purges.</li>
+      </ul>
+      <h2 id="m8-hardening">M8: hardening</h2>
+      <ul>
+        <li>Load, contention and resilience runs: up to 32 writers on one table, a table of over 10,000 snapshots, a primary killed mid-commit, a rolling upgrade, and a DR drill.</li>
+        <li>The engine matrix, now Spark, Kafka Connect, PyIceberg and SingleStore against the server deployed by its Helm chart.</li>
+        <li>Reconcile from storage for disaster recovery, and <code>503</code> with <code>Retry-After</code> when the database cannot be reached.</li>
+      </ul>
+      <h2 id="since-m8">Since M8</h2>
+      <ul>
+        <li>The web console at <code>/ui/</code>.</li>
+        <li>Catalog branches and tags, with merges.</li>
+        <li>The maintenance worker: expiry, manifest rewrites, compaction on need, orphan scans, pending deletions, purges, maintenance on request and the DR verifier.</li>
+        <li>The audit log as the record of audit, Kafka made optional, and the audit tables writer with the queryable audit table and the archive.</li>
+        <li>Row filters and column masks for flagged tables, and unregister.</li>
+        <li>Helm charts for the three programs, and the local demo on a kind cluster.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/architecture.html">How nuna fits together</a>: the parts these milestones built.</li>
+          <li><a href="../install/upgrade.html">Upgrade nuna</a>: moving between builds.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>build-plan.md</code> (Milestones, Status), <code>build.gradle.kts</code> and <code>settings.gradle.kts</code>, checked against commit <code>b3e8582f</code> on 2026-11-26. Each feature listed is present in the code at that commit.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

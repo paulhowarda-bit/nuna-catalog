@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/kafka-metrics">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kafka, metrics and traces in the demo · nuna docs</title>
+  <meta name="description" content="Look at the demo's Kafka topics and connectors in kafbat, and turn on the metrics stack to see nuna's dashboards, alert rules and traces in Grafana.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Kafka, metrics and traces in the demo</h1>
+        <p class="lead">Look at the demo's Kafka topics and connectors in kafbat, and turn on the metrics stack to see nuna's dashboards, alert rules and traces in Grafana.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For platform operators</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The demo is running (<a href="start-stop.html">Start, stop and reset the demo</a>).</li>
+        <li>Kafka runs only while the brokerage world (<code>gen</code>, with <code>kafka</code> on) or the CDC leg runs. Until then port 8182 answers <code>502</code>.</li>
+        <li>The metrics stack needs 1,472 MiB free on the cluster. It fits beside <code>gen</code> and <code>kafka</code>, or beside <code>ss</code>, but not beside all three.</li>
+      </ul>
+
+      <h2 id="kafka-in-kafbat">Kafka in kafbat</h2>
+      <p>kafbat on <code>https://localhost:8182</code> is Kafka's web page. People sign in through Keycloak. It shows:</p>
+      <ul>
+        <li>the brokerage world's <code>brokerage.*</code> topics and its sink's control topic <code>brokerage-lake-control</code>;</li>
+        <li>Kafka Connect's own <code>connect-*</code> topics;</li>
+        <li>while the CDC leg runs, Debezium's change topics, the sinks' control topics and Oracle's schema history;</li>
+        <li>once the engine matrix has run, its topic <code>m8-kafka-events</code> and its sink's control topic;</li>
+        <li>under Kafka Connect, cluster <code>connect</code>: each connector's status, tasks and config, with restart, pause and resume for <code>oscar</code>.</li>
+      </ul>
+      <p><code>oscar</code> administers kafbat and reads its audit log. <code>ana</code>, <code>gary</code> and <code>stella</code> administer topics, but only read the catalog's (<code>nuna.*</code>), Kafka Connect's, the brokerage world's and those starting with <code>_</code>.</p>
+
+      <h2 id="turn-on-metrics">Turn on metrics and traces</h2>
+      <ol class="steps">
+        <li><p class="step-title">Turn the switch on.</p>
+          <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh metrics</code></pre>
+          </div>
+          <p>It starts four pods and points the server's and the maintenance worker's <code>telemetry.endpoint</code> at the first, which rolls the server to a new pod.</p></li>
+        <li><p class="step-title">Open Grafana.</p>
+          <p>Go to <code>https://localhost:8188</code> and sign in through Keycloak. The home page is the catalog's dashboard.</p></li>
+        <li><p class="step-title">Follow a trace.</p>
+          <p>Select a chart's exemplar point to open the trace of that request in Tempo, or search traces in <b class="ui">Explore</b> with data source Tempo.</p></li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The dashboards have data</p>
+        <p>Once the server has served requests, every panel of <code>nuna catalog</code> has data except the failure panels, which stay empty until something fails. Loading a table that does not exist shows in <b class="ui">Failed loads</b>.</p>
+      </aside>
+
+      <h2 id="what-runs">What the switch runs</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Pod</th><th scope="col">What it does</th><th scope="col">Memory asked</th></tr></thead>
+          <tbody>
+            <tr><td>OpenTelemetry collector</td><td>Takes OTLP over HTTP from the server and the worker. Sends metrics to Prometheus and traces to Tempo, and drops logs.</td><td>64 MiB</td></tr>
+            <tr><td>Prometheus</td><td>Takes the metrics over OTLP and loads the alert rules in <code>deploy/grafana/rules</code>. Keeps 7 days.</td><td>256 MiB</td></tr>
+            <tr><td>Tempo</td><td>Keeps the traces for 2 days.</td><td>128 MiB</td></tr>
+            <tr><td>Grafana</td><td>The three dashboards in <code>deploy/grafana/dashboards</code>, in folder <code>nuna</code>, and Explore.</td><td>256 MiB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The dashboards are <code>nuna catalog</code>, <code>nuna maintenance worker</code> and <code>nuna client reports</code>. No Alertmanager runs, so alerts show on Grafana's Alerting page and in the series <code>ALERTS</code>, and notify no one.</p>
+      <p>While the switch is on the server and the worker record every trace, and the collector keeps every trace with an error, every trace slower than 300 ms and a tenth of the rest. A maintenance worker's scan is one trace, with the server's calls in it.</p>
+      <p>Prometheus takes OTLP with names translated by <code>UnderscoreEscapingWithSuffixes</code>, native histograms off, a 30-minute out-of-order window, and exemplars kept.</p>
+
+      <h2 id="who-may-do-what">Who may do what in Grafana</h2>
+      <p><code>oscar</code> and <code>presenter</code> administer Grafana; <code>ana</code>, <code>gary</code> and <code>stella</code> view. Grafana's own <code>admin</code> signs in at <code>https://localhost:8188/login?disableAutoLogin=true</code> with the password in <code>~/.nuna-demo/secrets/grafana-admin</code>.</p>
+
+      <h2 id="turn-off-metrics">Turn it off</h2>
+      <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh metrics stop</code></pre>
+      </div>
+      <p>The series, traces and Grafana's database stay on their volumes through <code>metrics stop</code> and <code>down</code>; <code>wipe</code> deletes them.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>metrics asks for … MiB of the cluster's memory, and only … MiB is free: turn a switch off first (demo/demo.sh ss stop frees 1.5 GB)</code></td><td>The cluster cannot fit the four pods and the server's new pod.</td><td>Turn a switch off, then run <code>demo/demo.sh metrics</code> again.</td></tr>
+            <tr><td><code>the demo is down: the metrics stack starts with demo/demo.sh up</code></td><td>The demo is not running; the switch is set.</td><td>Run <code>demo/demo.sh up</code>.</td></tr>
+            <tr><td>Port 8188 answers <code>502</code>.</td><td>The switch is off.</td><td>Run <code>demo/demo.sh metrics</code>.</td></tr>
+            <tr><td>Port 8182 answers <code>502</code>.</td><td>Kafka is not running.</td><td>Turn on <code>gen</code> with <code>kafka</code>, or start the CDC leg.</td></tr>
+            <tr><td>The demo answers slowly and the SLO burn-rate alerts fire.</td><td>Windows is short of memory and pages the Podman machine out, as with <code>gen</code>, <code>kafka</code> and <code>metrics</code> on together.</td><td>Turn a switch off.</td></tr>
+            <tr><td>Panels for audit publishing to Kafka and the audit archive stay empty.</td><td>The demo's server audits to its log, not to Kafka, and has no audit archive.</td><td>Nothing: those panels are for production.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="commands.html#demo-sh-metrics">demo.sh metrics</a></li>
+          <li><a href="cdc.html">Change data capture in the demo</a>: the connectors kafbat shows.</li>
+          <li><a href="brokerage-world.html">The brokerage world</a>: the topics it writes.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/k8s/metrics.yaml</code>, <code>demo/k8s/kafka.yaml</code>, <code>demo/demo.sh</code> (<code>metrics_start</code>, <code>room_for</code>, <code>telemetry_values</code>, <code>print_access</code>), <code>deploy/grafana/dashboards</code> and <code>demo/README.md</code> (Kafka, Metrics and traces), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The metrics switch and Kafka were off in the running demo; ports 8182 and 8188 answered <code>502</code>. Nothing else here was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

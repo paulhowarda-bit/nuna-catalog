@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/singlestore">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SingleStore in the demo · nuna docs</title>
+  <meta name="description" content="Watch SingleStore's change feed copy the brokerage world's orders into Iceberg through nuna, and an Iceberg pipeline load a table from nuna back into SingleStore.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>SingleStore in the demo</h1>
+        <p class="lead">Watch SingleStore's change feed copy the brokerage world's orders into an Iceberg table through nuna, and load an Iceberg table from nuna back into SingleStore.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For developers</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The demo is running (<a href="start-stop.html">Start, stop and reset the demo</a>).</li>
+        <li>SingleStore is on: <code>demo/demo.sh ss</code>. It needs 1,536 MiB free on the cluster; turn <code>metrics</code> off first if the script refuses.</li>
+        <li>For the change feed to have something to copy, the brokerage world is on too: <code>demo/demo.sh gen</code> (<a href="brokerage-world.html">The brokerage world</a>).</li>
+      </ul>
+
+      <h2 id="what-singlestore-holds">What SingleStore holds</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Database</th><th scope="col">What is in it</th></tr></thead>
+          <tbody>
+            <tr><td><code>lake</code></td><td>Tables loaded from Iceberg: <code>xetra_trades</code> and <code>countries</code> once, <code>fx_rates</code> continuously, and the view <code>xetra_daily</code>.</td></tr>
+            <tr><td><code>brokerage</code></td><td>The brokerage world's <code>orders</code>, <code>order_events</code>, <code>routes</code> and <code>executions</code>; the feeds' receipts in <code>lake_commits</code>; and, while Kafka is off, a table for each of the world's other feeds.</td></tr>
+            <tr><td><code>nuna_m8</code></td><td>Copies of Spark's tables from catalog <code>engines</code>, once <code>demo/demo.sh engines</code> has run.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>In SingleStore Studio, <code>gary</code>, <code>oscar</code> and <code>presenter</code> administer SingleStore, <code>ana</code> reads, writes, creates, alters and drops in every database, and <code>stella</code> reads every database.</p>
+
+      <h2 id="watch-the-change-feed">Watch the change feed into Iceberg</h2>
+      <p>The pipeline <code>brokerage.brokerage_orders_to_lake</code> reads the changes to <code>brokerage.orders</code> and commits them to the Iceberg table <code>brokerage.trading.orders</code> in <code>lakehouse</code> every 15 seconds while there are changes: new rows as data files, and equality deletes on the primary key for updated and deleted rows. The pipeline <code>brokerage.brokerage_oms_to_lake</code> copies <code>order_events</code>, <code>routes</code> and <code>executions</code> the same way, append-only. Both write through nuna as user <code>singlestore</code>, with credentials nuna vends.</p>
+      <ol class="steps">
+        <li><p class="step-title">Open SingleStore Studio.</p>
+          <p>Go to <code>https://localhost:8183</code>, type a person's username, such as <code>ana</code>, and select <b class="ui">Sign in with SAML</b>.</p></li>
+        <li><p class="step-title">Read the feed's receipts.</p>
+          <p>Each commit to Iceberg leaves a receipt in <code>brokerage.lake_commits</code>:</p>
+          <div class="code" data-lang="sql">
+<pre><code>SELECT source_table, kind, rows_written, keys_deleted, committed_at
+FROM brokerage.lake_commits
+ORDER BY committed_at DESC LIMIT 10;</code></pre>
+          </div></li>
+        <li><p class="step-title">Find the commits in the console.</p>
+          <p>Open the console at <code>https://localhost:8181/ui/</code>, go to <code>brokerage.trading.orders</code> in catalog <code>lakehouse</code> and select <b class="ui">History</b>. Each receipt is a snapshot there.</p></li>
+      </ol>
+      <figure class="shot pending" id="fig-demo-singlestore-orders-history" data-shot="demo-singlestore-orders-history" data-shot-route="#c=lakehouse&amp;k=table&amp;ns=brokerage%1Ftrading&amp;n=orders&amp;tab=history" data-shot-user="ana" data-shot-width="1440" data-shot-state="gen and ss on, after a trading day's orders">
+        <figcaption>The History tab of <code>brokerage.trading.orders</code>, one snapshot per change-feed commit.</figcaption>
+      </figure>
+      <p>Each commit stores SingleStore's offsets in the Iceberg snapshot, so a feed that stops resumes from Iceberg with nothing copied twice or skipped.</p>
+
+      <h2 id="load-from-iceberg">Load from Iceberg into SingleStore</h2>
+      <p>The pipeline <code>lake.fx_rates_feed</code> loads each append to the Iceberg table <code>markets.fx.rates</code> into <code>lake.fx_rates</code>. To add a rate:</p>
+      <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh rate</code></pre>
+      </div>
+      <p>The lake writer job appends a EURUSD rate through nuna. Kafka Connect and the generator stop while the job runs and start again after.</p>
+      <aside class="callout check">
+        <p class="callout-title">The rate reaches SingleStore within a few seconds</p>
+        <p>Run <code>SELECT * FROM lake.fx_rates ORDER BY as_of DESC LIMIT 5;</code> in Studio: the new rate is the first row. In the console, <code>markets.fx.rates</code> has a new snapshot.</p>
+      </aside>
+
+      <h2 id="rules-of-the-feed">Rules of the change feed</h2>
+      <ul>
+        <li>No pipeline may load a feed's copy, such as <code>brokerage.trading.orders</code>, back into SingleStore: its rows would come back. The feed checks every minute and stops with an error naming the pipeline if one does.</li>
+        <li><code>ALTER</code> and <code>DROP</code> on <code>brokerage.orders</code> wait while the feed runs. Stop the pipeline first; a column added at the end is added to the Iceberg copy when the feed starts again.</li>
+        <li>If SingleStore no longer holds its log from where the copy ended, the feed takes a new snapshot of the table and replaces the copy. That commit's kind is <code>resnapshot</code>, and <code>gap_after</code> holds the offsets it could not continue from.</li>
+        <li>An append-only feed stops at the first <code>UPDATE</code> or <code>DELETE</code>, before that transaction reaches Iceberg.</li>
+      </ul>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>ss</code> refuses: <code>… MiB of the cluster's memory, and only … MiB is free: demo/demo.sh metrics stop first</code></td><td>The cluster has less than 1,536 MiB free.</td><td>Turn <code>metrics</code> off, then run <code>demo/demo.sh ss</code> again.</td></tr>
+            <tr><td>The pipeline is in state <code>Error</code>.</td><td>The feed met a table change it cannot follow, or found a pipeline loading its copy.</td><td>Fix the cause, then <code>START PIPELINE brokerage.brokerage_orders_to_lake</code>. It resumes from the offsets in Iceberg.</td></tr>
+            <tr><td>Writes in SingleStore stop.</td><td>Pipeline extractors reserve SingleStore's memory: each change feed 384 MB (<code>pipelines_cdc_java_heap_size</code>), each Iceberg data worker 128 MB.</td><td>Stop a pipeline you do not need.</td></tr>
+            <tr><td><code>lake_commits</code> has no new rows.</td><td>The world is quiet outside New York's trading hours, or <code>gen</code> is off.</td><td>Check <code>demo/demo.sh brokerage logs</code> for <code>quiet until</code>.</td></tr>
+            <tr><td>Studio refuses <code>root</code>.</td><td>Studio takes no passwords.</td><td>Sign in as a person, or use <code>demo/demo.sh sql</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="brokerage-world.html">The brokerage world</a></li>
+          <li><a href="commands.html#demo-sh-ss">demo.sh ss</a> and <a href="commands.html#demo-sh-sql">demo.sh sql</a></li>
+          <li><a href="sign-in.html">Demo users and sign-in</a></li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/singlestore/seed.sql</code>, <code>feeds.sql</code>, <code>brokerage.sql</code>, <code>brokerage-feeds.sql</code>, <code>users.sql</code>, <code>demo/demo.sh</code> (<code>ss_on</code>, <code>rate</code>) and <code>demo/README.md</code> (SingleStore), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>SingleStore was off in the running demo, so nothing here was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

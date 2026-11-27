@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/iceberg-support">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iceberg support · nuna docs</title>
+  <meta name="description" content="Which Iceberg table format versions, REST catalog endpoints and access-delegation modes nuna serves, and which it does not.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Iceberg support</h1>
+        <p class="lead">Which Iceberg table format versions, REST catalog endpoints and access-delegation modes nuna serves, and which it does not.</p>
+      </header>
+
+      <h2 id="versions">Versions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What</th><th scope="col">Version</th></tr></thead>
+          <tbody>
+            <tr><td>The REST catalog standard served</td><td>Apache Iceberg 1.12.0's <code>rest-catalog-open-api.yaml</code></td></tr>
+            <tr><td>The Iceberg library the server uses</td><td><code>iceberg-core</code> 1.12.0</td></tr>
+            <tr><td>Table format versions accepted</td><td>Up to 3. A create or commit that asks for a higher one is refused: <code>Table format version <var>n</var> is not supported; the highest is 3</code>.</td></tr>
+            <tr><td>Format version of a new table</td><td>3, unless the request sets the <code>format-version</code> property.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The engine matrix tests format versions 2 and 3, and upgrading a table from 2 to 3 (<a href="engines.html">Engine compatibility</a>). Format version 1 is not tested.</p>
+
+      <h2 id="rest-endpoints">REST endpoints</h2>
+      <p>Every route of the standard, and whether nuna serves it. A served route is listed in <code>GET /v1/config</code>'s <code>endpoints</code> for the prefixes that allow it (<a href="../api/iceberg-config.html#the-prefix">The prefix</a>). A route not served answers <code>404</code> (<code>NotFoundException</code>).</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Iceberg REST routes</caption>
+          <thead><tr><th scope="col">Route</th><th scope="col">Served</th><th scope="col">Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /v1/config</code></td><td>Yes</td><td>Not listed in <code>endpoints</code>, as the standard says.</td></tr>
+            <tr><td><code>POST /v1/oauth/tokens</code></td><td>No</td><td>Answers <code>400</code> <code>unsupported_grant_type</code>: tokens come from your identity provider.</td></tr>
+            <tr><td><code>GET</code>, <code>POST /v1/{prefix}/namespaces</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>GET</code>, <code>HEAD</code>, <code>DELETE /v1/{prefix}/namespaces/{namespace}</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>POST /v1/{prefix}/namespaces/{namespace}/properties</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>GET</code>, <code>POST /v1/{prefix}/namespaces/{namespace}/tables</code></td><td>Yes</td><td>Stage-create is served; a location in the request is ignored.</td></tr>
+            <tr><td><code>GET</code>, <code>HEAD</code>, <code>POST</code>, <code>DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}</code></td><td>Yes</td><td>Drops are soft; <code>purgeRequested</code> is ignored.</td></tr>
+            <tr><td><code>POST /v1/{prefix}/tables/rename</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>POST /v1/{prefix}/namespaces/{namespace}/register</code></td><td>Yes</td><td><code>overwrite</code> onto an existing table is refused.</td></tr>
+            <tr><td><code>POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics</code></td><td>Yes</td><td>Passed to telemetry, never stored.</td></tr>
+            <tr><td><code>GET /v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>POST /v1/{prefix}/transactions/commit</code></td><td>Yes</td><td>At most 100 tables per transaction by default.</td></tr>
+            <tr><td><code>GET</code>, <code>POST /v1/{prefix}/namespaces/{namespace}/views</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>GET</code>, <code>HEAD</code>, <code>POST</code>, <code>DELETE /v1/{prefix}/namespaces/{namespace}/views/{view}</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>POST /v1/{prefix}/views/rename</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>POST /v1/{prefix}/namespaces/{namespace}/register-view</code></td><td>Yes</td><td></td></tr>
+            <tr><td><code>GET /v1/{prefix}/namespaces/{namespace}/functions</code>, <code>…/functions/{function}</code></td><td>No</td><td>Functions are not stored.</td></tr>
+            <tr><td><code>POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/plan</code>, <code>…/plan/{plan-id}</code>, <code>…/tasks</code></td><td>No</td><td>Server-side scan planning: engines plan their own scans.</td></tr>
+            <tr><td><code>POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/sign</code></td><td>No</td><td>Remote signing: nuna vends credentials instead.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="access-delegation">Access delegation</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col"><code>X-Iceberg-Access-Delegation</code></th><th scope="col">What nuna does</th></tr></thead>
+          <tbody>
+            <tr><td><code>vended-credentials</code></td><td>Answers short-lived S3 credentials for the table's location with each load and create, and refreshes them through the credentials route.</td></tr>
+            <tr><td><code>remote-signing</code></td><td>Not served: the answer carries vended credentials.</td></tr>
+            <tr><td><code>none</code>, alone</td><td>Answers no credentials. This value is newer than the 1.12.0 standard.</td></tr>
+            <tr><td>No header</td><td>Vends credentials, as for <code>vended-credentials</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="what-nuna-adds">What nuna adds to the standard</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Addition</th><th scope="col">Where it is described</th></tr></thead>
+          <tbody>
+            <tr><td>A <code><var>catalog</var>@<var>ref</var></code> prefix for branches and tags of a whole catalog</td><td><a href="../api/iceberg-config.html#the-prefix">The prefix</a></td></tr>
+            <tr><td><code>Idempotency-Key</code> on every write, with <code>idempotency-key-lifetime</code> in the configuration</td><td><a href="../api/index.html#idempotency-keys">Idempotency keys</a></td></tr>
+            <tr><td><code>ETag</code> and <code>If-None-Match</code> on table loads</td><td><a href="../api/iceberg-tables.html#table-etags">ETags</a></td></tr>
+            <tr><td><code>labels</code> on table and view loads, from governance attributes</td><td><a href="../api/iceberg-tables.html#load-table-result">Load table result</a></td></tr>
+            <tr><td>End-user headers for trusted engines</td><td><a href="../api/index.html#authentication">Authentication</a></td></tr>
+            <tr><td>Catalog-assigned locations, soft drops, and rules on commits</td><td><a href="../api/iceberg-tables.html#post-tables-table">Commit to a table</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="engines.html">Engine compatibility</a>: what each engine was tested doing.</li>
+          <li><a href="../api/index.html">API reference</a>: every endpoint.</li>
+          <li><a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml">The Iceberg REST catalog standard</a>, version 1.12.0.</li>
+          <li><a href="https://iceberg.apache.org/spec/">The Iceberg table spec</a>: format versions 1, 2 and 3.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/AdvertisedEndpoints.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/CredentialVending.java</code>, <code>spec/rest-catalog-open-api.yaml</code>, <code>spec/SOURCE.md</code> and <code>gradle.properties</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>A load with <code>X-Iceberg-Access-Delegation: none</code> and a request to an unserved route were made against the local demo.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

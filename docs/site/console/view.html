@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/view">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The view page · nuna docs</title>
+  <meta name="description" content="One view's definition, schema and versions, who may do what with it, how it is governed, and its audit trail.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The view page</h1>
+        <p class="lead">A view's page answers what the view says (its SQL, schema and every version), what your groups may do with it, how it is governed and what has happened to it.</p>
+      </header>
+
+      <figure class="shot pending" id="fig-console-view" data-shot="console-view" data-shot-route="#c=lakehouse&amp;k=view&amp;ns=markets%1Fequities%1Feu&amp;n=xetra_daily" data-shot-user="presenter" data-shot-width="1440" data-shot-state="View markets.equities.eu.xetra_daily, Overview tab, version 2 current."><figcaption>The Overview tab of a view with two versions.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>The page opens for anyone whose groups hold describe on the view or above. Overview and Versions load the view, which needs select. Access is open to all who see the view. Audit appears only to those who manage the catalog's grants. A grant admin, who holds manage-grants and no select, lands on Access.</p>
+
+      <h2 id="head">The head</h2>
+      <p>The head shows the view's path and <b class="ui">view</b>, with <b class="ui">Copy link</b>. The tabs are <b class="ui">Overview</b>, <b class="ui">Versions</b>, <b class="ui">Access</b> and <b class="ui">Audit</b>. A view has no settings, maintenance or export in the console.</p>
+
+      <h2 id="overview">Overview</h2>
+      <dl>
+        <dt><b class="ui">Definition</b></dt><dd>The current SQL, with its version and dialects, and <b class="ui">Copy the SQL</b>.</dd>
+        <dt><b class="ui">Schema</b></dt><dd>Each column's <b class="ui">Id</b>, <b class="ui">Column</b> and <b class="ui">Type</b>.</dd>
+        <dt><b class="ui">Current state</b></dt><dd><b class="ui">View UUID</b>, <b class="ui">Current version</b>, <b class="ui">Written by</b>, <b class="ui">Default namespace</b>, <b class="ui">Location</b>, <b class="ui">Metadata file</b> and <b class="ui">Properties</b>.</dd>
+      </dl>
+
+      <h2 id="versions">Versions</h2>
+      <p>Every version of the view, newest first, each as <b class="ui">Version <var>N</var></b> with its time, the engine that wrote it and its schema; the current one is marked <b class="ui">Current</b>.</p>
+
+      <h2 id="access">Access</h2>
+      <p>The same panels as <a href="table.html#access">the table page's Access tab</a>, without retention class, the row and column flag, and row filters and column masks. For a view:</p>
+      <ul>
+        <li>Its status says <b class="ui">No DR freeze</b> with "Its definition may be replaced." and, under a hold, "It cannot be dropped or purged."</li>
+        <li><b class="ui">What the catalog enforces</b> lists <b class="ui">Replacing the definition</b>: <b class="ui">Allowed · to groups holding modify</b>.</li>
+        <li><b class="ui">Place a hold</b>: "A legal hold stops this view being dropped or purged. Its definition can still be replaced. Only a steward can release it."</li>
+        <li>In Grant access, <b class="ui">Read and write rows</b> is not offered, and modify reads <b class="ui">Change it (definition, properties)</b>.</li>
+      </ul>
+
+      <h2 id="audit">Audit</h2>
+      <p>The view's audit trail, with the same filters and completeness panel as <a href="table.html#audit">the table page's Audit tab</a>.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Overview and Versions</td><td><code>GET /v1/{prefix}/namespaces/{ns}/views/{view}</code> (<a href="../api/iceberg-views.html#endpoints">Views</a>)</td></tr>
+            <tr><td>Governance, holds</td><td><code>GET /management/v1/catalogs/{catalog}/namespaces/{ns}/views/{view}/governance</code>, <code>…/holds</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Grants that reach it</td><td><code>GET /management/v1/catalogs/{catalog}/grants/effective?type=view</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>Audit</td><td><code>GET …/views/{view}/audit</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="table.html">The table page</a>: the Access and Audit tabs in full.</li>
+          <li><a href="../api/iceberg-views.html">Iceberg REST: views</a>: creating and replacing views.</li>
+          <li><a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>: what a view is here.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>table.js</code>, <code>panels.js</code>, <code>access.js</code> and <code>grant.js</code>, and from <code>rest/Guard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

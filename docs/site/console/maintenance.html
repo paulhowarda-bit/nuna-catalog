@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/maintenance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Maintenance page · nuna docs</title>
+  <meta name="description" content="Tonight's compaction queue, the last 30 nights, the catalog's maintenance policy, what the worker still needs, and compacting a table now.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Maintenance page</h1>
+        <p class="lead">The Maintenance page answers, for data owners and platform operators, which tables the maintenance worker will compact tonight and why, what the last 30 nights did, how the catalog's policy is set, and what the worker still needs before it can maintain the catalog.</p>
+      </header>
+
+      <figure class="shot pending" id="fig-console-maintenance" data-shot="console-maintenance" data-shot-route="#p=maintenance&amp;c=lakehouse" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Catalog lakehouse with at least one table queued and a reported night."><figcaption>The Maintenance page of a catalog.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>The rail shows <b class="ui">Maintenance</b> when your groups may read data in the catalog, and its badge counts the tables queued for tonight. Every list counts only the tables you may read; jobs on other tables are drawn without a name. Editing the policy needs modify on the catalog; <b class="ui">Compact a table now</b> needs modify somewhere in it. The setup checklist appears only to those who may read it (a grant held on the catalog itself, a grant admin or a platform operator). <b class="ui">Worker scans</b> is for platform operators.</p>
+
+      <h2 id="head">The head</h2>
+      <p>The title says how the catalog stands: the setup steps left, <b class="ui">Maintenance is off in <var>catalog</var>'s policy: nothing will be compacted or expired.</b>, <b class="ui"><var>N</var> tables queued for tonight.</b> or <b class="ui">Every table you may read in <var>catalog</var> is in shape.</b> "The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; each one's assessment is on its Maintenance tab." A pill gives <b class="ui">Assessed <var>HH:MM</var></b>.</p>
+      <p><b class="ui">Compact a table now</b> opens <b class="ui">Compact a table now</b>: "Choose a table in <var>catalog</var> that your groups may compact. Tonight's queue comes first." Pick from <b class="ui">Queued for tonight</b> or <b class="ui">Other tables you may compact</b>, or <b class="ui">Another table, by its path…</b> ("Its namespace's levels and its name, joined by dots."), then <b class="ui">Next</b> and <b class="ui">Compact now</b>. Frozen tables cannot be chosen. <a href="table.html#maintenance">The table page</a> describes the request.</p>
+
+      <h2 id="what-worker-needs">What the worker needs</h2>
+      <p>The panel <b class="ui">What the worker needs to maintain <var>catalog</var></b> appears until every step is done, with <b class="ui"><var>N</var> of 4 done</b> as of the worker's last scan:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Step</th><th scope="col">Who</th><th scope="col">Action in the console</th></tr></thead>
+          <tbody>
+            <tr><td><b class="ui">1. Write access</b></td><td>A grant admin</td><td><b class="ui">Grant write to <var>group</var></b>, or <b class="ui">Ask a grant admin.</b></td></tr>
+            <tr><td><b class="ui">2. Storage settings</b></td><td>A platform operator, in the worker's settings</td><td><b class="ui">What to add</b></td></tr>
+            <tr><td><b class="ui">3. Store permission</b></td><td>A platform operator, in the store</td><td><b class="ui">What to apply</b> or <b class="ui">Open Worker storage</b></td></tr>
+            <tr><td><b class="ui">4. Maintenance policy</b></td><td>Someone with modify on the catalog</td><td><b class="ui">Edit the catalog's policy</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Each step is <b class="ui">Done</b>, <b class="ui">Missing</b>, <b class="ui">Refused</b>, <b class="ui">Not known</b>, <b class="ui">Waits on step 2</b> or <b class="ui">No answer</b>. Others get <b class="ui">Copy a note for an operator</b>. With no report: "No maintenance worker has reported, so the catalog can't check this." "The catalog can't change the worker's settings or the store's policies: the worker's keys stay out of the catalog, and a catalog that could set store policies could undo the one that keeps delete from it."</p>
+
+      <h2 id="nights">The last 30 nights</h2>
+      <p>Four figures, each with a 30-night line: <b class="ui">Tables compacted, last night</b>, <b class="ui">Small files merged</b>, <b class="ui">Snapshots expired</b> and <b class="ui">Unreferenced files deleted</b>. They are the whole deployment's figures.</p>
+
+      <h2 id="tonights-queue">Tonight's queue</h2>
+      <p><b class="ui">Tonight's queue</b>, "equality deletes first, then the highest score", with <b class="ui">#</b>, <b class="ui">Table</b>, <b class="ui">Why</b>, <b class="ui">Score</b>, <b class="ui">Small files</b>, <b class="ui">Deletes / data</b> and <b class="ui">Last compaction</b>. Filter by <b class="ui">All</b>, <b class="ui">Equality deletes</b>, <b class="ui">Small files</b> or <b class="ui">Deletes</b>. Empty: <b class="ui">Nothing queued for tonight</b>, with why, and "Tables you may not read are not counted here."</p>
+
+      <h2 id="last-night">Last night</h2>
+      <p>The night's jobs, slot by slot, as on <a href="overview.html#last-night">the Overview</a>.</p>
+
+      <h2 id="policy">Policy</h2>
+      <p><b class="ui">Policy for <var>catalog</var></b> lists each key with its <b class="ui">Value</b> and <b class="ui">Set by</b>. "Needs modify on <var>catalog</var>. Namespaces and tables can set their own keys." <b class="ui">Edit the catalog's policy</b> opens a dialog: "Keys set here apply to every table in <var>catalog</var> that does not set its own. A guardrail, a hold or a freeze, still wins. Leave a key empty to use the built-in value." Select <b class="ui">Save the policy</b>. With every key empty the policy is removed (<b class="ui">Removed the policy of <var>catalog</var></b>). "The worker reads the policy at its next scan."</p>
+      <p>The keys are <b class="ui">Snapshot expiry</b>, <b class="ui">Keep snapshots for</b>, <b class="ui">Keep at least</b>, <b class="ui">Orphan removal</b>, <b class="ui">Remove orphans older than</b>, <b class="ui">Compaction</b>, <b class="ui">Target file size</b>, <b class="ui">Fewest input files</b>, <b class="ui">Delete-file share</b>, <b class="ui">Manifest rewrite</b> and <b class="ui">Fewest manifests</b>. <a href="../guides/maintenance-policy.html">Set a catalog's maintenance policy</a> gives each default.</p>
+
+      <h2 id="worker-scans">Worker scans</h2>
+      <p>For platform operators, the worker's recent scans, as on <a href="service.html#worker-scans">the Service page</a>.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Tonight's queue</td><td><code>GET /management/v1/maintenance/tables</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>The nights; Last night</td><td><code>GET /management/v1/maintenance/nights?days=30&amp;jobs=1</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>What the worker needs</td><td><code>GET /management/v1/catalogs/{catalog}/maintenance/readiness</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Policy; Save; Remove</td><td><code>GET</code>, <code>PUT</code>, <code>DELETE /management/v1/catalogs/{catalog}/maintenance-policy</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Compact a table now</td><td><code>POST …/namespaces/{ns}/tables/{table}/maintenance/requests</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Worker scans</td><td><code>GET /management/v1/maintenance/scans</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: scans, scores and the cleanup window.</li>
+          <li><a href="../guides/compact-now.html">Compact a table or scan for orphans now</a>: the request in full.</li>
+          <li><a href="../install/helm-maintenance.html">Install the maintenance worker</a>: the identity and storage it needs.</li>
+          <li><a href="../operate/maintenance-nights.html">Maintenance nights</a>: reading a night.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>maintenance.js</code>, <code>nights.js</code>, <code>queue.js</code>, <code>requests.js</code> and <code>health.js</code>, and from <code>ReadinessRoutes.java</code>, <code>GovernanceRoutes.java</code> and <code>HealthRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. The demo's readiness was read with a GET request: all four steps done.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

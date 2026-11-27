@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/table">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The table page · nuna docs</title>
+  <meta name="description" content="Everything about one table: its state, schemas, commits, who may do what with it, how it is governed, its maintenance, its audit trail and its settings.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The table page</h1>
+        <p class="lead">A table's page answers everything about one table: its current state, its schemas and partitioning, every commit, what each group may do with it, how it is governed, how it is maintained, its audit trail and its settings. Engine users, data stewards, grant admins and auditors each use different tabs.</p>
+      </header>
+
+      <figure class="shot pending" id="fig-console-table" data-shot="console-table" data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Fequities%1Feu%1Fxetra&amp;n=trades" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Table markets.equities.eu.xetra.trades on main, Overview tab, under its legal hold."><figcaption>The Overview tab of a table under a legal hold.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>The page opens for anyone whose groups hold describe on the table or above. Each tab is checked on its own:</p>
+      <ul>
+        <li>Overview, Schema and History load the table, which needs select. A refused load shows the server's refusal and "You may still open Access, Maintenance and Audit: each tab is checked on its own." A grant admin, who holds manage-grants and no select, lands on Access.</li>
+        <li>On a table flagged for row and column rules, only a trusted engine reads its files: "Its data is read through Trino, which applies each group's rule. The console shows no rows."</li>
+        <li>Maintenance needs select. <b class="ui">Compact now</b> and <b class="ui">Scan for orphans now</b> need modify.</li>
+        <li>Audit appears only to those who manage the catalog's grants; the server answers it only with manage-grants on the table.</li>
+        <li>Changing a setting needs modify. Governance changes need manage-tags.</li>
+      </ul>
+      <p>Every load of a table is audited. The console keeps a load for a minute before reading it again.</p>
+
+      <h2 id="head">The head</h2>
+      <p>The head shows the table's path and <b class="ui">iceberg v<var>N</var></b>, with marks for <b class="ui">Needs compaction</b> (which opens Maintenance), a waiting <b class="ui">Compaction requested</b> or <b class="ui">Orphan scan requested</b>, <b class="ui">Held</b>, <b class="ui">Frozen</b> and the classification. Its buttons are <b class="ui">Copy link</b>, <b class="ui">Settings</b> (the <a href="#settings">Settings drawer</a>), <b class="ui">Export metadata</b> and, for those who may modify the table, <b class="ui">Compact now</b>, never offered through a branch or tag. The tabs are <b class="ui">Overview</b>, <b class="ui">Schema</b>, <b class="ui">History</b>, <b class="ui">Access</b>, <b class="ui">Maintenance</b> and <b class="ui">Audit</b>.</p>
+      <p><b class="ui">Export metadata</b> opens <b class="ui">Export <var>name</var></b>: "The current metadata, every snapshot and snapshot ref, and the catalog's commit journal for this table, as one JSON file. The data files stay where they are; a restore registers it again from this file." Select <b class="ui">Download the file</b> or <b class="ui">Copy the JSON</b>. It needs select and is audited.</p>
+
+      <h2 id="overview">Overview</h2>
+      <p>Four figures: <b class="ui">Rows</b> with the size, <b class="ui">Data files</b> with the delete files, <b class="ui">Snapshots</b> with the table's own Iceberg refs, and <b class="ui">Schemas</b> with how many changes (<b class="ui">as created</b> when none).</p>
+      <dl>
+        <dt><b class="ui">Current state</b></dt><dd>The current snapshot (its id, operation, time, engine and who made it), or <b class="ui">none: the table has no data yet</b>; <b class="ui">Table UUID</b>; <b class="ui">Location</b>; <b class="ui">Metadata file</b>; <b class="ui">Schema, spec, order</b>; <b class="ui">Last sequence number</b>; <b class="ui">Next row id</b>; <b class="ui">Last updated</b>; and <b class="ui">Properties</b> with <b class="ui">Show all <var>N</var> properties</b>.</dd>
+        <dt><b class="ui">Maintenance</b></dt><dd><b class="ui">Not assessed yet</b>, <b class="ui">Needs compaction · score <var>N</var></b> with its place in tonight's queue, or <b class="ui">No compaction needed</b>; then the last compaction and its outcome, or <b class="ui">No compaction has run for this table.</b></dd>
+        <dt><b class="ui">Governance</b></dt><dd><b class="ui">Legal hold</b>, <b class="ui">DR freeze</b>, <b class="ui">Classification</b> and <b class="ui">Owner</b>.</dd>
+        <dt><b class="ui">Engine-level refs in this table's metadata</b></dt><dd>"Iceberg's own branches and tags, set by engines inside this table, not the catalog's." Each with its snapshot and how long it is kept.</dd>
+      </dl>
+
+      <h2 id="schema">Schema</h2>
+      <p><b class="ui">Schemas</b> lists the table's schemas, the current one first (the newest six of many). Pick two to compare: the diff panel shows each field's <b class="ui">Id</b>, <b class="ui">Field</b>, <b class="ui">Type</b>, <b class="ui">Required</b> and <b class="ui">Doc</b>, marked <b class="ui">added</b>, <b class="ui">removed</b> or <b class="ui">was <var>old name</var></b>. "Iceberg keeps no date for a schema. The commit that added one is on History, with who made it."</p>
+      <p>Each partition spec (<b class="ui">Spec <var>N</var></b>, the current one marked <b class="ui">Default</b>) lists its fields or says <b class="ui">unpartitioned</b>; each sort order (<b class="ui">Sort order <var>N</var></b>) its fields, or "Unsorted: files keep the order rows arrived in." "Old files keep the spec they were written with. Compaction writes the default spec, so older files move to spec <var>N</var> as the worker rewrites them."</p>
+
+      <h2 id="history">History</h2>
+      <dl>
+        <dt><b class="ui">Snapshots and Iceberg refs</b></dt><dd>A timeline of the snapshots and the table's own refs. With none: <b class="ui">No snapshot yet</b>, "No commit has written data to the table."</dd>
+        <dt><b class="ui">Commits</b></dt><dd>Every commit the catalog's journal keeps, newest first, 25 at a time (<b class="ui">Show the next 25</b>): <b class="ui">Version</b>, <b class="ui">Written</b>, <b class="ui">Change</b>, <b class="ui">Snapshot</b>, <b class="ui">Rows</b>, <b class="ui">By</b> and <b class="ui">Iceberg refs</b>. "The catalog keeps every commit, even after the table's own list drops its file." The change reads, for example, <b class="ui">created</b>, <b class="ui">registered</b>, <b class="ui">restored</b> or <b class="ui">Merged @<var>ref</var> (its version <var>N</var>)</b>.</dd>
+        <dt><b class="ui">Selected snapshot</b></dt><dd>The snapshot's summary, with <b class="ui">Show the whole summary</b> and <b class="ui">Copy time-travel SQL</b>, which copies <code>SELECT * FROM <var>catalog</var>.<var>path</var> FOR VERSION AS OF <var>id</var></code>.</dd>
+        <dt><b class="ui">Snapshot expiry</b></dt><dd><b class="ui">On</b> or <b class="ui">Off</b>, with <b class="ui">Keep snapshots for</b> and <b class="ui">Keep at least</b>. "A tagged snapshot stays as long as its tag keeps it."</dd>
+        <dt><b class="ui">Current file</b> and <b class="ui">Kept</b></dt><dd>The current metadata file, and how many earlier ones the table lists (<b class="ui">Earlier metadata files listed</b>, 100 by default). "A file that falls off the list is removed by the orphan scan."</dd>
+      </dl>
+
+      <h2 id="access">Access</h2>
+      <p>The <b class="ui">Access</b> tab shows, in order, <b class="ui">Grant access</b> (for those who manage grants), <b class="ui">What you may do</b>, <b class="ui">Your view of this table</b>, the governance panel, <b class="ui">Kept by branches and tags</b>, <b class="ui">Row filters and column masks</b> and the grants.</p>
+      <figure class="shot pending" id="fig-console-table-access" data-shot="console-table-access" data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Fdesks&amp;n=positions&amp;tab=access" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Table markets.desks.positions, flagged, with rules for demo-analysts and demo-stewards."><figcaption>The Access tab of a flagged table with two rules.</figcaption></figure>
+
+      <h3 id="what-you-may-do">What you may do</h3>
+      <p>What your groups' grants allow on the table, one line per level: <b class="ui">See it, but not read its data</b>, <b class="ui">Read its data</b>, <b class="ui">Read its data and write rows to it</b>, <b class="ui">Read and write its data, and change it: its schema, properties and maintenance</b>, <b class="ui">Set its labels and holds</b>, <b class="ui">Grant on it, and see who holds what</b>. With none: "Your groups hold no grant that reaches this table." "The catalog decides each request; this is what your grants allow."</p>
+      <p>On a flagged table, <b class="ui">Your view of this table</b> says "Read through Trino only." and then <b class="ui">You see every row.</b>, <b class="ui">Your rows are filtered.</b> or <b class="ui">You see no rows until the grant admin sets a rule for one of your groups.</b>, with the columns masked for you.</p>
+
+      <h3 id="governance-panel">Governance</h3>
+      <p>The status: <b class="ui">DR freeze in force</b> or <b class="ui">No DR freeze</b> ("Commits are allowed."), and <b class="ui"><var>N</var> legal holds</b> ("Snapshots cannot be removed; it cannot be dropped or purged.") or <b class="ui">No legal hold</b>. <b class="ui">What the catalog enforces</b> lists <b class="ui">Commits</b>, <b class="ui">Snapshot expiry</b> and <b class="ui">Drop and purge</b>, such as <b class="ui">Refused · under legal hold</b>. <b class="ui">Legal holds</b> lists every hold here or above, nearest first, with <b class="ui">Release</b>; <b class="ui">Attributes</b> lists <b class="ui">Classification</b>, <b class="ui">Owner</b>, <b class="ui">Retention class</b> and <b class="ui">Flagged for row and column rules</b>, each with its level, provenance and who set it.</p>
+      <p>Holders of manage-tags get these buttons. Each change is "recorded as set from the console, under your name, in the audit trail."</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Button</th><th scope="col">What it does</th><th scope="col">Undone by</th></tr></thead>
+          <tbody>
+            <tr><td><b class="ui">Set a classification</b>, <b class="ui">Change the classification</b></td><td>Sets <b class="ui">public</b>, <b class="ui">internal</b>, <b class="ui">confidential</b> or <b class="ui">restricted</b>. Engines receive it with every load. "A table in a regulated area stays closed until it has a classification of its own."</td><td>Changing it again</td></tr>
+            <tr><td><b class="ui">Set the owner</b>, <b class="ui">Change the owner</b></td><td>Names the person or team answerable for it.</td><td>Changing it again</td></tr>
+            <tr><td><b class="ui">Set a retention class</b>, <b class="ui">Change the retention class</b></td><td>"No commit and no maintenance job may remove a snapshot younger than its class's minimum age, whatever the maintenance policy asks." With none set up: "No retention classes are set up on this server yet. Ask a platform operator to add them."</td><td>Changing it again</td></tr>
+            <tr><td><b class="ui">Flag for row and column rules</b></td><td>"Once flagged, only a trusted engine reads or writes its files, and the console shows no rows. Until the grant admin sets rules, Trino shows every row to anyone who may select."</td><td><b class="ui">Remove the flag</b>, refused while rules stand: "Rules stand: the grant admin removes them first."</td></tr>
+            <tr><td><b class="ui">Place a hold</b></td><td>"A legal hold stops snapshot expiry, orphan removal, drops and purges on what it covers. Compaction still runs. Only a steward can release it." The reason is required.</td><td><b class="ui">Release</b>, then <b class="ui">Release the hold</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="kept-by-branches-and-tags">Kept by branches and tags</h3>
+      <p>Each catalog branch and tag that reads the table and keeps its files from cleanup, or "No branch or tag keeps this table." Holders of manage-tags get <b class="ui">Take out of branches and tags</b>: each ref chosen stops keeping it, and reads through it answer 404. "This cannot be undone: no branch or tag can take it back." It is not offered under a legal hold or a DR freeze.</p>
+
+      <h3 id="row-filters-and-column-masks">Row filters and column masks</h3>
+      <p>Shown to those who manage grants or tags. Not flagged: "Rules need the flag. A steward sets it, so only trusted engines read the files." Flagged with no rules: "Flagged. No rules yet: Trino shows every row to anyone who may select; other tools get no files." A grant admin sees each rule's <b class="ui">Group</b>, <b class="ui">Rows</b> (<b class="ui">Every row</b> or <b class="ui">Only rows where …</b>), <b class="ui">Masked columns</b> and <b class="ui">Set by, when</b>, with <b class="ui">Edit</b>, <b class="ui">Remove</b> and <b class="ui">Add a rule for a group</b>. A steward sees only how many rules and for which groups.</p>
+      <p>The rule dialog takes a group, <b class="ui">Every row</b> or <b class="ui">Only rows where</b> with an SQL condition, and <b class="ui">Masked columns</b> (NULL, <code>'***'</code> or <b class="ui">A custom expression</b>). Its button is <b class="ui">Save the rule</b>. Adding the first rule warns "Groups without a rule will see no rows." A grant admin cannot set the rule of a group they belong to: "Another grant admin sets this group's rule." If another grant admin saved first: "Another grant admin changed this rule since you opened it. Close this; the list shows theirs."</p>
+
+      <h3 id="grants-on-access-tab">Grants</h3>
+      <p>Those who manage grants see <b class="ui">Grants that reach this table</b>, from the catalog down, with <b class="ui">Granted on</b> (<b class="ui">here</b>, the catalog or a namespace) and <b class="ui">Revoke</b>, and <b class="ui">Who may</b>: <b class="ui">Read</b>, <b class="ui">Change data</b>, <b class="ui">Manage tags</b>, <b class="ui">Manage grants</b>. "The ladder is describe, select, write, modify: each gives the ones before it. Revoke takes a grant away where it was made." Everyone else sees <b class="ui">Your groups' grants</b>.</p>
+
+      <h2 id="maintenance">Maintenance</h2>
+      <dl>
+        <dt><b class="ui">Assessment</b></dt><dd><b class="ui">Needs compaction · score <var>N</var></b> with its reasons and its place in tonight's queue, or <b class="ui">No compaction needed</b> ("Under every threshold of its maintenance policy."), then <b class="ui">Score</b>, <b class="ui">Data files</b>, <b class="ui">Small files</b>, <b class="ui">Delete files</b>, <b class="ui">Position-delete files</b>, <b class="ui">Deletion vectors</b> and <b class="ui">Equality-delete files</b>. Unassessed: "The maintenance worker has not assessed this table yet."</dd>
+        <dt><b class="ui">Last compaction</b></dt><dd><b class="ui">Outcome</b>, <b class="ui">Started</b> and <b class="ui">Ended</b>.</dd>
+        <dt><b class="ui">Policy for this table</b></dt><dd>Each policy key with its value and where it was set: <b class="ui">built-in</b>, <b class="ui">guardrail</b>, <b class="ui">the catalog</b>, <b class="ui">a namespace above</b> or <b class="ui">this table</b>.</dd>
+      </dl>
+      <p><b class="ui">Compact now</b> and <b class="ui">Scan for orphans now</b> ask the worker to run a job at its next scan, "even outside the cleanup window." Each opens a dialog with the same button name. "Needs modify on the table. The catalog refuses it during a DR freeze, refuses an orphan scan while the table is on legal hold, and refuses a job the table's policy turns off." A request shows as waiting, then as started; a job's button is turned off while one of that job waits. <a href="../guides/compact-now.html">Compact a table or scan for orphans now</a> covers it in full.</p>
+
+      <h2 id="audit">Audit</h2>
+      <p>The table's <b class="ui">Audit trail</b>, newest first. Filter by <b class="ui">Kind</b> (<b class="ui">All</b>, <b class="ui">Grants</b>, <b class="ui">Row and column rules</b>, <b class="ui">Governance</b>, <b class="ui">Branches and tags</b>, <b class="ui">Commits</b>, <b class="ui">Other changes</b>, <b class="ui">Reads</b>, <b class="ui">Credentials</b>, <b class="ui">Refusals</b>, <b class="ui">Other</b>), <b class="ui">Who</b> and <b class="ui">How many</b> (the latest 25, 50, 100 or 200; 50 by default), then <b class="ui">Refresh</b>. "Reading the trail is itself audited." Each row has <b class="ui">Show record</b>.</p>
+      <p><b class="ui">How far back this goes</b> says whether the list is complete: "Yes: every record about it is shown, up to about a minute ago." or "No.", with a pointer to the SIEM for the full trail. The audit table's writer commits about once a minute, so the newest minute is not yet shown. With nothing found: "No audit record about this table in the scanned window."</p>
+
+      <h2 id="settings">The Settings drawer</h2>
+      <p><b class="ui">Settings</b> opens <b class="ui">Settings of <var>name</var></b>. <b class="ui">Esc</b> closes it. "A change here is a commit to the table: the same rules apply as to an engine's commit, and it is audited." Each setting shows its value marked <b class="ui">set</b> or its default marked <b class="ui">default</b>, with <b class="ui">Change</b> (button <b class="ui">Set it</b>) and <b class="ui">Reset</b> (button <b class="ui">Reset it</b>, which removes the property).</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The settings the console may change on a table</caption>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Property</th><th scope="col">Values</th><th scope="col">Default</th></tr></thead>
+          <tbody>
+            <tr><td>File format of new data</td><td><code>write.format.default</code></td><td>parquet, avro, orc</td><td>parquet</td></tr>
+            <tr><td>Parquet compression</td><td><code>write.parquet.compression-codec</code></td><td>zstd, snappy, gzip, uncompressed</td><td>zstd</td></tr>
+            <tr><td>Parquet compression level</td><td><code>write.parquet.compression-level</code></td><td>zstd 1 to 22, gzip 1 to 9</td><td>the codec's own</td></tr>
+            <tr><td>Target data file size</td><td><code>write.target-file-size-bytes</code></td><td>16 MB to 4 GB</td><td>512 MB (536,870,912 bytes)</td></tr>
+            <tr><td>How rows are spread before writing</td><td><code>write.distribution-mode</code></td><td>none, hash, range</td><td>the engine's choice</td></tr>
+            <tr><td>How deletes rewrite rows</td><td><code>write.delete.mode</code></td><td>copy-on-write, merge-on-read</td><td>copy-on-write</td></tr>
+            <tr><td>How updates rewrite rows</td><td><code>write.update.mode</code></td><td>copy-on-write, merge-on-read</td><td>copy-on-write</td></tr>
+            <tr><td>How merges rewrite rows</td><td><code>write.merge.mode</code></td><td>copy-on-write, merge-on-read</td><td>copy-on-write</td></tr>
+            <tr><td>Column statistics kept</td><td><code>write.metadata.metrics.default</code></td><td>none, counts, truncate(16), full</td><td>truncate(16)</td></tr>
+            <tr><td>Earlier metadata files listed</td><td><code>write.metadata.previous-versions-max</code></td><td>1 to 10,000</td><td>100</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>On a version 1 table the three write modes refuse merge-on-read: "Merge-on-read needs format version 2 or later, and this table is version 1." <b class="ui">Every property</b> lists every key on the table; keys the console does not change are "Set outside the console, by an engine or tool. Read-only here." "Snapshot expiry, compaction and orphan removal are set in the maintenance policy, not in properties." Through a tag, the settings are read-only.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Overview, Schema, History (the table's metadata)</td><td><code>GET /v1/{prefix}/namespaces/{ns}/tables/{table}?snapshots=all</code> (<a href="../api/iceberg-tables.html#endpoints">Tables</a>)</td></tr>
+            <tr><td>Change or Reset a setting</td><td><code>POST /v1/{prefix}/namespaces/{ns}/tables/{table}</code> (<a href="../api/iceberg-tables.html#endpoints">Tables</a>)</td></tr>
+            <tr><td>Commits</td><td><code>GET /management/v1/catalogs/{catalog}/objects/{id}/metadata-log</code> (<a href="../api/lifecycle.html#endpoints">Lifecycle</a>)</td></tr>
+            <tr><td>Export metadata</td><td><code>GET /management/v1/catalogs/{catalog}/objects/{id}/export</code> (<a href="../api/lifecycle.html#endpoints">Lifecycle</a>)</td></tr>
+            <tr><td>Governance and its changes</td><td><code>GET …/tables/{table}/governance</code>, <code>PUT</code> and <code>DELETE …/attributes/{attribute}</code>, <code>POST …/holds</code>, <code>DELETE …/holds/{id}</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Kept by branches and tags; take out</td><td><code>GET …/objects/{id}/refs</code>, <code>POST …/objects/{id}/refs/remove</code> (<a href="../api/refs.html#endpoints">Branches and tags</a>)</td></tr>
+            <tr><td>Row filters and column masks</td><td><code>GET</code> and <code>POST …/row-column-rules</code>, <code>POST …/row-column-rules/remove</code>, <code>GET …/tables/{table}/row-column-rules/mine</code> (<a href="../api/row-column-rules.html#endpoints">Row and column rules</a>)</td></tr>
+            <tr><td>Grants that reach it; revoke</td><td><code>GET …/grants/effective</code>, <code>POST …/grants/revoke</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>Assessment and last compaction</td><td><code>GET …/tables/{table}/health</code> (<a href="../api/health.html#endpoints">Health</a>)</td></tr>
+            <tr><td>Policy for this table</td><td><code>GET …/tables/{table}/maintenance-policy</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Compact now; Scan for orphans now</td><td><code>POST …/tables/{table}/maintenance/requests</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Audit</td><td><code>GET …/tables/{table}/audit?limit=</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The management paths start <code>/management/v1/catalogs/{catalog}/namespaces/{ns}</code>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/table-settings.html">Change a table's settings</a>: the Settings drawer and the same properties from an engine.</li>
+          <li><a href="../guides/row-column-rules.html">Add a row filter or column mask</a>: flag, add rules, check.</li>
+          <li><a href="../guides/time-travel.html">Read an earlier version of a table</a>: using the History tab.</li>
+          <li><a href="../concepts/governance.html">Governance</a>: classifications, holds and freezes.</li>
+          <li><a href="../reference/table-properties.html">Table properties</a>: every property nuna reads, sets or refuses.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>table.js</code>, <code>access.js</code>, <code>panels.js</code>, <code>rules.js</code>, <code>settings.js</code>, <code>kept.js</code>, <code>requests.js</code> and <code>health.js</code>, and from <code>GovernanceRoutes.java</code>, <code>AuditReadRoutes.java</code>, <code>HealthRoutes.java</code>, <code>MaintenanceRequests.java</code> and <code>rest/Guard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. The table's audit and governance were read from the running demo with GET requests.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

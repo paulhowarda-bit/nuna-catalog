@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/iceberg-tables">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iceberg REST: tables · nuna docs</title>
+  <meta name="description" content="List, create, load, commit to, drop, rename, register and unregister tables, get their storage credentials and report metrics, under /v1/{prefix}/namespaces/{namespace}/tables.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Iceberg REST: tables</h1>
+        <p class="lead">List, create, load, commit to, drop, rename, register and unregister tables, get their storage credentials and report metrics, under <code>/v1/{prefix}/namespaces/{namespace}/tables</code>.</p>
+      </header>
+
+      <p>These are the standard's table endpoints. This page gives what nuna adds or does differently: who may call each, the storage credentials it vends, its ETags, the rules it puts on commits, and its refusals. Engines call these routes for you; read this page to understand what an engine sees. The examples use curl with <code>NUNA</code> and <code>TOKEN</code> set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</p>
+      <ul>
+        <li>Tables and views share one set of names in a namespace, matched without regard to case.</li>
+        <li>The catalog assigns every table's location, under the catalog's storage profile. A location in a request is ignored.</li>
+        <li>Every write takes an <code>Idempotency-Key</code> (<a href="index.html#idempotency-keys">Idempotency keys</a>) and is audited.</li>
+        <li>Through a branch, commits change only the branch; creates, drops, renames and registrations happen on main only. Through a tag, only reads are served (<a href="iceberg-config.html#the-prefix">The prefix</a>).</li>
+      </ul>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Table endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-tables"><code>/v1/{prefix}/namespaces/{namespace}/tables</code></a></td><td>Lists the tables in a namespace.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-tables"><code>/v1/{prefix}/namespaces/{namespace}/tables</code></a></td><td>Creates a table.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Loads a table, with storage credentials.</td></tr>
+            <tr><td><code>HEAD</code></td><td><a href="#head-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Says whether a table exists.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Commits changes to a table.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-tables-table"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></a></td><td>Drops a table, which can be restored until it is purged.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-tables-rename"><code>/v1/{prefix}/tables/rename</code></a></td><td>Renames or moves a table.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-register"><code>/v1/{prefix}/namespaces/{namespace}/register</code></a></td><td>Registers a table from a metadata file.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-tables-table-unregister"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister</code></a></td><td>Removes a table from the catalog, leaving its files.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-tables-table-metrics"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics</code></a></td><td>Takes an engine's scan or commit report.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-tables-table-credentials"><code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials</code></a></td><td>Gets fresh storage credentials.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="read-tables">Read tables</h2>
+
+      <section class="endpoint">
+        <h3 id="get-tables"><span class="method" data-method="GET">GET</span> <code>/v1/{prefix}/namespaces/{namespace}/tables</code></h3>
+        <p>Lists the tables in a namespace, sorted by name. Through a branch or tag, it lists the tables that ref holds. Paging works as <a href="index.html#paging">Paging</a> describes.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the namespace</span></p>
+        <h4 id="get-tables-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>Empty for the first page; then the last answer's <code>next-page-token</code>.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Tables per page, with <code>pageToken</code> only. Default <code>100</code>, at most <code>1000</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-tables-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"identifiers": [{"namespace": […], "name": "…"}, …], "next-page-token": <var>token or null</var>}</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>namespace</var></code> (<code>NoSuchNamespaceException</code>), also when you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-tables-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces/equities/tables" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "identifiers": [
+    {"namespace": ["equities"], "name": "fills"},
+    {"namespace": ["equities"], "name": "orders"}
+  ],
+  "next-page-token": null
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-tables-table"><span class="method" data-method="GET">GET</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></h3>
+        <p>Loads a table's metadata and, unless asked not to, short-lived storage credentials for its files. Through a branch or tag, the metadata is that ref's version of the table. Each load is recorded as a read.</p>
+        <p>The credentials reach only the table's own location. A caller who may write to the table gets credentials that read and write; anyone else gets read-only ones. No credentials the catalog vends can delete objects: deletion is the maintenance worker's. A caller writing through a branch gets credentials and write paths for the branch's own folder, <code><var>table location</var>/branches/<var>ref id</var>/data</code> and <code>…/metadata</code>. See <a href="../security/credential-vending.html">Credential vending</a>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the table</span> <span class="badge audited">Audited</span></p>
+        <h4 id="get-tables-table-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>snapshots</code></td><td>query</td><td>string</td><td>No</td><td><code>all</code> (the default) or <code>refs</code>, for only the snapshots a branch or tag of the table names. Anything else answers <code>400</code>, <code>Invalid snapshot mode: <var>value</var></code>.</td></tr>
+              <tr><td><code>referenced-by</code></td><td>query</td><td>string</td><td>No</td><td>The view the table is read through. It changes only the ETag.</td></tr>
+              <tr><td><code>X-Iceberg-Access-Delegation</code></td><td>header</td><td>string</td><td>No</td><td><code>vended-credentials</code> asks for credentials. <code>none</code> alone asks for none: the answer then has no <code>config</code> credentials and no <code>storage-credentials</code>. Without the header, credentials are vended.</td></tr>
+              <tr><td><code>If-None-Match</code></td><td>header</td><td>string</td><td>No</td><td>An ETag from an earlier load, a list of them, or <code>*</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-tables-table-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#load-table-result">load table result</a>, with an <code>ETag</code> header.</td></tr>
+              <tr><td><code>304</code></td><td><code>If-None-Match</code> names the current ETag: nothing changed. No body; the <code>ETag</code> header is repeated.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid snapshot mode: <var>value</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the table but not select; or the table is regulated and has no classification yet (<code>table <var>table</var> is in a regulated area and has no classification; it is closed until it is classified</code>); or it carries a row/column policy and you are not a trusted engine (<code>table <var>table</var> has a row/column policy; only a trusted engine that enforces it gets storage access</code>); or its location is outside the storage profile.</td></tr>
+              <tr><td><code>404</code></td><td><code>Table does not exist: <var>namespace</var>.<var>table</var></code> (<code>NoSuchTableException</code>), also when you hold nothing on it.</td></tr>
+              <tr><td><code>503</code></td><td><code>Storage credentials cannot be issued now; retry later</code> (<code>ServiceUnavailableException</code>): the object store's token service failed.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-tables-table-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -i "$NUNA/v1/trading/namespaces/equities/tables/fills" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Iceberg-Access-Delegation: vended-credentials"</code></pre>
+        </div>
+        <div class="code" data-lang="text" data-kind="output" data-title="Response, metadata cut and secrets replaced">
+<pre><code>HTTP/1.1 200
+Content-Type: application/json
+ETag: "5f0c2a9d3e71b84c06a1d2f9e8b7c435"
+X-Request-ID: 3b1f7c0e9a2d4e6f8a0b1c2d3e4f5a6b
+
+{
+  "metadata-location": "s3://trading-lake/tables/6f1c…/metadata/00007-….metadata.json",
+  "metadata": {"format-version": 3, "location": "s3://trading-lake/tables/6f1c…", …},
+  "config": {
+    "s3.access-key-id": "…",
+    "s3.secret-access-key": "…",
+    "s3.session-token": "…",
+    "s3.session-token-expires-at-ms": "1795684512000",
+    "client.region": "us-east-1",
+    "s3.endpoint": "https://s3.example",
+    "s3.path-style-access": "true",
+    "client.refresh-credentials-endpoint": "v1/trading/namespaces/equities/tables/fills/credentials",
+    "client.refresh-credentials-enabled": "true"
+  },
+  "storage-credentials": [
+    {"prefix": "s3://trading-lake/tables/6f1c…", "config": {"s3.access-key-id": "…", "s3.secret-access-key": "…", "s3.session-token": "…", "s3.session-token-expires-at-ms": "1795684512000"}}
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="head-tables-table"><span class="method" data-method="HEAD">HEAD</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></h3>
+        <p>Says whether a table exists, with no body. A table you hold nothing on answers as missing.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the table</span></p>
+        <h4 id="head-tables-table-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>It exists.</td></tr>
+              <tr><td><code>404</code></td><td>It does not exist, or you may not see it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-tables-table-credentials"><span class="method" data-method="GET">GET</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials</code></h3>
+        <p>Answers fresh storage credentials for a table, the same as a load would, without the metadata. Engines call it through <code>client.refresh-credentials-endpoint</code> before their credentials expire.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the table</span></p>
+        <h4 id="get-tables-table-credentials-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"storage-credentials": [{"prefix": "…", "config": {…}}]}</code>.</td></tr>
+              <tr><td><code>403</code>, <code>404</code>, <code>503</code></td><td>As for <a href="#get-tables-table">loading the table</a>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <h2 id="create-and-change-tables">Create and change tables</h2>
+
+      <section class="endpoint">
+        <h3 id="post-tables"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/tables</code></h3>
+        <p>Creates a table. The catalog assigns its location, <code><var>table root</var>/<var>uuid</var></code> under the catalog's storage profile, whatever the request says. The format version defaults to 3, the highest supported. With <code>"stage-create": true</code>, the answer is the new table's metadata and credentials, and the table exists only once a commit to it creates it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-tables-body">Body</h4>
+        <p>The standard's create-table request: <code>name</code> and <code>schema</code> are required; <code>partition-spec</code>, <code>write-order</code>, <code>stage-create</code> and <code>properties</code> are optional, and <code>location</code> is ignored. The property <code>format-version</code> picks the format version.</p>
+        <h4 id="post-tables-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#load-table-result">load table result</a> of the new table.</td></tr>
+              <tr><td><code>400</code></td><td>The request is not valid; the prefix names a branch or tag; or <code>Table format version <var>n</var> is not supported; the highest is 3</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the namespace but not create.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>namespace</var></code>.</td></tr>
+              <tr><td><code>409</code></td><td><code>Table already exists: <var>namespace</var>.<var>table</var></code>, or <code>View with same name already exists: …</code> when a view has the name (<code>AlreadyExistsException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-tables-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces/equities/tables" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-fills-1" \
+  -d '{
+    "name": "fills",
+    "schema": {"type": "struct", "schema-id": 0, "fields": [
+      {"id": 1, "name": "fill_id", "type": "long", "required": true},
+      {"id": 2, "name": "symbol", "type": "string", "required": true},
+      {"id": 3, "name": "quantity", "type": "long", "required": true},
+      {"id": 4, "name": "filled_at", "type": "timestamptz", "required": true}
+    ]}
+  }'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-tables-table"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></h3>
+        <p>Commits a change to a table: the standard's requirements, which must all hold, and updates, which are applied in one step. A commit to a table that does not exist on main creates it, which is how a staged create finishes. Through a branch, it changes the branch's version of a table the branch holds.</p>
+        <p>The privilege needed depends on the updates. A commit made only of <code>add-snapshot</code>, <code>remove-snapshots</code>, <code>set-snapshot-ref</code>, <code>remove-snapshot-ref</code>, <code>set-statistics</code>, <code>remove-statistics</code>, <code>set-partition-statistics</code> and <code>remove-partition-statistics</code> needs write: that is a data change. Anything else, such as a schema, partition spec or property change, needs modify.</p>
+        <p>If another commit lands first and the requirements still hold, the server applies the change again on top, up to four attempts within two seconds. See <a href="../concepts/commits.html">Commits</a>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>write</code> or <code>modify</code> on the table</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-tables-table-body">Body</h4>
+        <p>The standard's commit-table request: <code>requirements</code> and <code>updates</code>. nuna refuses these updates:</p>
+        <ul>
+          <li>A <code>set-location</code> to anywhere but the assigned location: <code>Location is assigned by the catalog: <var>assigned</var>, not <var>asked</var></code>.</li>
+          <li>Setting <code>write.data.path</code>, <code>write.metadata.path</code>, <code>write.object-storage.path</code> or <code>write.folder-storage.path</code> outside the table's location: <code>Property <var>name</var> must lie within the table location …</code>.</li>
+          <li>Changing <code>encryption.key-id</code>: <code>Property encryption.key-id is fixed when the table is created</code>.</li>
+          <li>A snapshot stamped further ahead of the catalog's clock than the allowed skew: <code>Snapshot <var>id</var> is stamped <var>time</var>, more than <var>skew</var> ahead of the catalog clock</code>.</li>
+          <li>Removing snapshots of a table under a legal hold, or snapshots younger than the deployment's minimum snapshot age (<code>nuna.governance.minimum-snapshot-age</code>, or the table's retention class).</li>
+        </ul>
+        <h4 id="post-tables-table-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>Committed: the <a href="#load-table-result">load table result</a> after the commit.</td></tr>
+              <tr><td><code>400</code></td><td>The request is not valid, the prefix names a tag, or one of the refused updates above.</td></tr>
+              <tr><td><code>403</code></td><td>You lack the privilege the updates need; <code>Table <var>table</var> is under legal hold: its snapshots cannot be removed</code>; <code>Snapshot <var>id</var> of <var>table</var> is younger than <var>age</var>, the deployment's minimum snapshot age: it cannot be removed yet</code>; <code>Writes to <var>table</var> are frozen for DR reconcile: <var>reason</var></code>; or <code>engine <var>client</var> named no end user, and writes to regulated areas must name one</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Table does not exist: …</code>; through a branch, also for a table the branch does not hold.</td></tr>
+              <tr><td><code>409</code></td><td>A requirement failed (<code>CommitFailedException</code>), or <code>Commit lost to concurrent commits <var>n</var> times; the table changed too often to apply it</code>. Load the table again and redo the change.</td></tr>
+              <tr><td><code>500</code></td><td><code>Commit <var>…</var> may or may not have been applied: …</code> (<code>CommitStateUnknownException</code>). Load the table to see, or repeat with the same <code>Idempotency-Key</code>.</td></tr>
+              <tr><td><code>503</code></td><td><code>Catalog store unavailable; nothing was applied: …</code>, with <code>Retry-After: 2</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-tables-table"><span class="method" data-method="DELETE">DELETE</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></h3>
+        <p>Drops a table. Every drop is soft: <code>purgeRequested</code> is ignored, the files stay, and the table can be restored until it is purged, <code>nuna.rest.drop-retention</code> (default 30 days) after the drop. See <a href="../guides/drop-restore-purge.html">Drop, restore and purge</a>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the table</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-tables-table-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>purgeRequested</code></td><td>query</td><td>boolean</td><td>No</td><td>Ignored.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-tables-table-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>Dropped.</td></tr>
+              <tr><td><code>400</code></td><td>The prefix names a branch or tag.</td></tr>
+              <tr><td><code>403</code></td><td>You lack modify; <code>Table <var>table</var> is under a legal hold and cannot be dropped</code>; or the table is frozen for DR reconcile.</td></tr>
+              <tr><td><code>404</code></td><td><code>Table does not exist: …</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-tables-rename"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/tables/rename</code></h3>
+        <p>Renames a table, or moves it to another namespace of the same catalog. Its files do not move.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the table and <code>create</code> on the target namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-tables-rename-body">Body</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>source</code></td><td>body</td><td>object</td><td>Yes</td><td><code>{"namespace": […], "name": "…"}</code>, the table now.</td></tr>
+              <tr><td><code>destination</code></td><td>body</td><td>object</td><td>Yes</td><td>The same form, the table after.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-tables-rename-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>Renamed.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid rename: source and destination are required</code>, or the prefix names a branch or tag.</td></tr>
+              <tr><td><code>404</code></td><td>The table or the target namespace does not exist.</td></tr>
+              <tr><td><code>409</code></td><td><code>Cannot rename <var>source</var> to <var>destination</var>. Table already exists</code>, or <code>… View already exists</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-tables-rename-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/tables/rename" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"source": {"namespace": ["equities"], "name": "orders"}, "destination": {"namespace": ["equities", "daily"], "name": "orders"}}'</code></pre>
+        </div>
+      </section>
+
+      <h2 id="register-and-unregister">Register and unregister</h2>
+
+      <section class="endpoint">
+        <h3 id="post-register"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/register</code></h3>
+        <p>Registers a table whose metadata file already exists, inside the catalog's storage profile. Registering the file a dropped or unregistered table left behind brings that table back, in the namespace it left. See <a href="../guides/register-table.html">Register an existing table</a>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-register-body">Body</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>name</code></td><td>body</td><td>string</td><td>Yes</td><td>The table's name.</td></tr>
+              <tr><td><code>metadata-location</code></td><td>body</td><td>string</td><td>Yes</td><td>The metadata file.</td></tr>
+              <tr><td><code>overwrite</code></td><td>body</td><td>boolean</td><td>No</td><td>Must not be true when the name is taken: overwrite is refused.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-register-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#load-table-result">load table result</a>.</td></tr>
+              <tr><td><code>400</code></td><td>The file is outside the storage profile, or was written by a branch; or <code>Registering over an existing table (overwrite) is not supported: …. Commit to the table, or drop or unregister it first; a register would skip the commit rules and the table's journal</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The namespace or the metadata file does not exist.</td></tr>
+              <tr><td><code>409</code></td><td>The name is taken, or another table or view holds the file's table UUID (<code>AlreadyExistsException</code>); or the dropped table's restore window has closed (<code>UndropWindowClosedException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-tables-table-unregister"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister</code></h3>
+        <p>Removes a table from the catalog and leaves its files where they are. The answer gives the last metadata file, so the table can be registered again.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the table</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-tables-table-unregister-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"metadata-location": "…", "metadata": {…}}</code>.</td></tr>
+              <tr><td><code>400</code></td><td>The prefix names a branch or tag.</td></tr>
+              <tr><td><code>403</code></td><td>You lack modify; <code>table <var>table</var> is in a regulated area and cannot be unregistered; a steward removes the regulated flag first</code>; or <code>table <var>table</var> has a row/column policy and cannot be unregistered; a steward removes the flag first</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Table does not exist: …</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <h2 id="metrics-reports">Metrics reports</h2>
+
+      <section class="endpoint">
+        <h3 id="post-tables-table-metrics"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics</code></h3>
+        <p>Takes the scan and commit reports engines send after reading or writing. The server passes them to its telemetry and stores none.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the table</span></p>
+        <h4 id="post-tables-table-metrics-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>Taken.</td></tr>
+              <tr><td><code>404</code></td><td><code>Table does not exist: …</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+      <h3 id="load-table-result">Load table result</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>metadata-location</code></td><td>string</td><td>The table's current metadata file.</td></tr>
+            <tr><td><code>metadata</code></td><td>object</td><td>The table metadata, as the Iceberg table spec defines it.</td></tr>
+            <tr><td><code>config</code></td><td>object</td><td>Client settings for the table's files: the credentials, their expiry in <code>s3.session-token-expires-at-ms</code>, <code>client.region</code>, <code>s3.endpoint</code> (not for AWS), <code>s3.path-style-access</code>, <code>s3.sse.type</code> and <code>s3.sse.key</code> when the storage profile writes with a KMS key, and <code>client.refresh-credentials-endpoint</code> with <code>client.refresh-credentials-enabled</code>. Through a branch, also <code>write.data.path</code> and <code>write.metadata.path</code>. Missing when no credentials were asked for. After a create, commit or registration, which has already been applied, credentials that cannot be issued are left out rather than failing the request; the client then asks the credentials route.</td></tr>
+            <tr><td><code>storage-credentials</code></td><td>array</td><td>One entry: <code>prefix</code>, the table's location, and <code>config</code>, the four credential keys.</td></tr>
+            <tr><td><code>labels</code></td><td>object</td><td>Only when set: <code>{"object-labels": {"classification", "owner", "retention-class"}}</code>, from the table's governance attributes.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="table-etags">ETags</h3>
+      <p>A load's <code>ETag</code> changes when the metadata file, the snapshot mode, <code>referenced-by</code>, the credentials, the labels or the ref change. When the credentials it would carry expire within <code>nuna.rest.credential-refresh-margin</code> (default 5 minutes), the answer has no ETag, so the next load gets fresh ones. Credentials last <code>nuna.storage.credential-lifetime</code>, 30 minutes by default.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/credential-vending.html">Credential vending</a>: what the credentials allow and how long they last.</li>
+          <li><a href="../concepts/commits.html">Commits</a>: how commits are judged and retried.</li>
+          <li><a href="iceberg-transactions.html">Iceberg REST: transactions</a>: commits to several tables at once.</li>
+          <li><a href="lifecycle.html">Lifecycle</a>: restoring and purging dropped tables.</li>
+          <li><a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml">The Iceberg REST catalog standard</a>: the table endpoints' full definition.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/CredentialVending.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/BranchPlaces.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitSettings.java</code> and <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The listing, a load with <code>X-Iceberg-Access-Delegation: none</code>, its <code>ETag</code> and a <code>304</code> were captured from the local demo with read-only requests. The vended credentials in the example are replaced by <code>…</code>; writes were not run against the demo.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/disaster-recovery">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Disaster recovery · nuna docs</title>
+  <meta name="description" content="Disaster recovery brings every table back, in a second region, to a version whose every file that region's object store holds, using the DR watermark the worker keeps.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Disaster recovery</h1>
+        <p class="lead">Disaster recovery brings every table back, in a second region, to a version whose every file that region's object store holds, using the DR watermark the worker keeps.</p>
+      </header>
+
+      <figure class="diagram pending" id="fig-dr">
+        <p class="shot-todo">Diagram to draw: the primary region's database and object store each replicate to the DR region on their own; in DR the database names table versions 40 to 44 but the DR store holds files only up to 42, the watermark; the rewind moves the pointer back to 42 and the walk forward takes any later version whose files have arrived.</p>
+        <figcaption>The database and the object store replicate separately, so DR can name files it does not have.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>The database and the object store each replicate to the DR region asynchronously, and neither waits for the other. After the primary region is lost, the DR database can name metadata or data files the DR store never received, and the DR store can hold files of commits the DR database never saw. nuna does not replicate either; it gives you the means to bring them back into agreement.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="watermark">The DR watermark and the verifier</h3>
+      <p>While the primary region runs, the maintenance worker's verifier checks the DR store every minute by default (<code>nuna.maintenance.dr.verify-interval</code>) and records, for each table and view, the <a class="term" href="../reference/glossary.html#term-dr-watermark">DR watermark</a>: the newest version whose every file the DR store holds, data files included. A view's version counts when its metadata file is there. The watermark is kept in the catalog database, so it reaches DR with the database, and it never moves back. The verifier is off until you name each store's DR replica under <code>nuna.maintenance.dr.replicas</code>, with read-only keys; it only lists and reads.</p>
+      <p><code>GET /management/v1/dr/watermarks</code> lists the tables behind and their lag, and the alert <code>NunaDrLagging</code> fires when a commit has not been whole in DR for 15 minutes.</p>
+
+      <h3 id="recovering">Recovering in the DR region</h3>
+      <p>With the DR database promoted and the servers started in DR, a platform operator:</p>
+      <ol>
+        <li>Freezes every catalog, <code>PUT /management/v1/catalogs/<var>catalog</var>/dr-freeze</code>, so nothing writes or cleans up.</li>
+        <li>Starts the worker in DR, its replicas naming the DR store itself, and waits for one verifier pass.</li>
+        <li>Reads the plan, <code>POST …/dr-reconcile</code> with <code>{"rewind": true}</code>: each table above its watermark and the commits it would lose.</li>
+        <li>Rewinds, with <code>{"rewind": true, "apply": true}</code>: each table moves back to its watermark in one journaled commit.</li>
+        <li>Walks forward, with <code>{"apply": true}</code>: each table moves along later metadata files whose every file the DR store holds.</li>
+        <li>Checks the refs the same answer lists, whose files the DR store lacks, and deletes or keeps them.</li>
+        <li>Thaws, <code>DELETE /management/v1/catalogs/<var>catalog</var>/dr-freeze</code>.</li>
+      </ol>
+      <p><a href="../operate/backup-dr.html">Back up and recover</a> gives each step in full.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>After the rewind and walk, every table's pointer names a version whose files the DR store holds, so it reads whole.</li>
+        <li>The plan names every commit a rewind gives up, with its time and principal, for the owners to reconcile.</li>
+        <li>Nothing writes or deletes while the freeze stands.</li>
+        <li>Commits that the DR store never received are lost: nuna cannot recreate data it does not have.</li>
+        <li>Refs are reported, not rewound.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>The console's <a href="../console/service.html">Service page</a>, whose DR replication panel shows the DR store against each watermark.</li>
+        <li><a href="../api/dr.html#endpoints">Disaster recovery API</a> and <a href="../guides/freeze.html">Freeze and unfreeze for disaster recovery</a>.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>The verifier checks at most 100 versions of a table in one pass.</li>
+        <li>The DR store must hold the same buckets and paths as the primary, on another endpoint.</li>
+        <li>A register is refused under a freeze, so tables DR never knew are registered after the thaw.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../operate/backup-dr.html">Back up and recover</a>: the runbook.</li>
+          <li><a href="governance.html">Governance</a>: what a DR freeze blocks.</li>
+          <li><a href="maintenance.html">Maintenance</a>: the worker that runs the verifier.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/README.md</code> (Recovering in the DR region) and <code>docs/observability/dr-watermark.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run. <code>DrRoutes.java</code> was not read line by line.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/architecture">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How nuna fits together · nuna docs</title>
+  <meta name="description" content="nuna is an Iceberg REST catalog: a server that engines call to find, create and commit tables, with three programs of its own and four services it relies on.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>How nuna fits together</h1>
+        <p class="lead">nuna is an Iceberg REST catalog: a server that engines call to find, create and commit tables, with three programs of its own and four services it relies on.</p>
+      </header>
+
+      <figure class="diagram" id="fig-architecture">
+        <svg viewBox="0 0 720 340" role="img" aria-labelledby="fig-architecture-t fig-architecture-d">
+          <title id="fig-architecture-t">How nuna fits together</title>
+          <desc id="fig-architecture-d">Engines and the console call the server. The server keeps each table's pointer in its database and writes metadata files to the object store. Engines read and write data files in the object store directly, with credentials the server vends. The maintenance worker calls the server like an engine. The server's audit records go to the audit tables writer.</desc>
+          <rect class="d-node" x="20" y="40" width="150" height="52" rx="10"/>
+          <text class="d-label" x="95" y="71">Engines</text>
+          <rect class="d-node" x="20" y="150" width="150" height="52" rx="10"/>
+          <text class="d-label" x="95" y="181">The console</text>
+          <rect class="d-node d-accent" x="285" y="150" width="150" height="52" rx="10"/>
+          <text class="d-label" x="360" y="181">The server</text>
+          <rect class="d-node d-store" x="550" y="40" width="150" height="52" rx="10"/>
+          <text class="d-label" x="625" y="71">Object store</text>
+          <rect class="d-node d-store" x="550" y="150" width="150" height="52" rx="10"/>
+          <text class="d-label" x="625" y="181">Database</text>
+          <rect class="d-node" x="285" y="270" width="150" height="52" rx="10"/>
+          <text class="d-label" x="360" y="301">Maintenance worker</text>
+          <rect class="d-node" x="550" y="270" width="150" height="52" rx="10"/>
+          <text class="d-label" x="625" y="301">Audit tables writer</text>
+          <path class="d-edge" d="M170 60H550" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="360" y="52">data files, with vended credentials</text>
+          <path class="d-edge" d="M170 82L285 160" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="210" y="130">Iceberg REST</text>
+          <path class="d-edge" d="M170 176H285" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="228" y="168">HTTPS</text>
+          <path class="d-edge" d="M435 160L550 84" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="520" y="130">metadata files</text>
+          <path class="d-edge" d="M435 182H550" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="492" y="174">pointers</text>
+          <path class="d-edge" d="M360 270V202" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="390" y="240">REST</text>
+          <path class="d-edge-dash" d="M435 196L550 284" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="520" y="232">audit records</text>
+        </svg>
+        <figcaption>The server never holds table data. It holds each table's pointer, and the database decides every commit.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>nuna keeps track of where each Apache Iceberg table's current state lives, and decides which change to a table wins. Engines such as Spark, Trino and PyIceberg speak the <a href="https://iceberg.apache.org/rest-catalog-spec/">Iceberg REST catalog protocol</a> to it. The tables' data stays in your object store; nuna stores a small <a class="term" href="../reference/glossary.html#term-pointer">pointer</a> for each table in a database.</p>
+      <p>A deployment has three programs of its own, each with its own container image and Helm chart:</p>
+      <ul>
+        <li>The server answers engines, the console and the maintenance worker. Its chart runs 3 replicas by default.</li>
+        <li>The <a class="term" href="../reference/glossary.html#term-maintenance-worker">maintenance worker</a> scans tables and runs expiry, compaction, orphan scans and purges. Its chart runs 1 replica.</li>
+        <li>The <a class="term" href="../reference/glossary.html#term-audit-tables-writer">audit tables writer</a> turns the audit trail into Iceberg tables you can query and into an archive that cannot be changed. Its chart runs 1 replica.</li>
+      </ul>
+      <p>It relies on four services that run elsewhere: a database (PostgreSQL, CockroachDB, Oracle or MongoDB), an S3-compatible object store, an OpenID Connect identity provider, and, if you want them, Kafka and an OpenTelemetry collector.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+
+      <h3 id="server">The server</h3>
+      <p>The server serves the Iceberg REST routes under <code>/v1/</code>, nuna's own management routes under <code>/management/v1/</code>, and the console under <code>/ui/</code>, all on port 8181. Every request but the console's static files carries a bearer token from a configured identity provider. The server checks the caller's grants, does the work, and writes an <a class="term" href="../reference/glossary.html#term-audit-record">audit record</a>.</p>
+      <p>Servers share nothing but the database. Each keeps its own caches of parsed metadata and of vended credentials, so any server can answer any request, and you add replicas to carry more load. The chart spreads the replicas over zones, keeps a pod disruption budget, and pauses 5 s before a pod stops so that in-flight requests finish.</p>
+
+      <h3 id="database">The database</h3>
+      <p>The database holds every catalog's namespaces, the record of each table and view, each table's pointer to its current <a class="term" href="../reference/glossary.html#term-metadata-file">metadata file</a>, the commit journal, grants, governance, refs and the outbox of audit records waiting to be written. A commit is one database transaction that moves a pointer only if nobody moved it first, so the database is where every commit is decided. <a href="commits.html">How a commit works</a> explains this, and <a href="databases.html">Choosing a database</a> compares the four databases.</p>
+
+      <h3 id="object-store">The object store</h3>
+      <p>Each catalog is bound to one <a class="term" href="../reference/glossary.html#term-storage-profile">storage profile</a>: an object store endpoint, a table root and the prefixes tables may live under. The server writes each new metadata file itself. Engines read and write data files directly, with <a class="term" href="../reference/glossary.html#term-vended-credentials">vended credentials</a> scoped to one table's prefix that last 30 minutes by default. No vended credential can delete. Only the maintenance worker deletes, with a storage identity of its own. <a href="storage.html">Storage profiles and credential vending</a> explains this.</p>
+
+      <h3 id="identity-provider">The identity provider</h3>
+      <p>Engines, people and the maintenance worker each get a token from your identity provider. The server validates it against the issuer's published keys, and maps the token's claims to a <a class="term" href="../reference/glossary.html#term-principal">principal</a> and its <a class="term" href="../reference/glossary.html#term-group">groups</a>. Grants are made to groups. The server never issues tokens; <code>/v1/oauth/tokens</code> answers with an error that names the identity provider. <a href="access.html">Identity and access</a> explains grants.</p>
+
+      <h3 id="maintenance-worker">The maintenance worker</h3>
+      <p>The worker is an Iceberg REST client of the server. It signs in as a <a class="term" href="../reference/glossary.html#term-maintenance-principal">maintenance principal</a>, asks the server every 10 minutes for the work to do, and commits its changes through the server like any engine. Compaction runs as a Kubernetes Job that the worker starts. The worker's chart runs one replica and replaces it on upgrade, so two workers never run at once. <a href="maintenance.html">Maintenance</a> explains what it does.</p>
+
+      <h3 id="audit-pipeline">The audit pipeline</h3>
+      <p>Every audit record is one line of the server's log <code>nuna.audit</code>, written to standard output and, where a logs endpoint is set, over OTLP. Where Kafka is configured, each record also goes to the topic <code>nuna.catalog.audit</code>, and object changes to the change stream <code>nuna.catalog.changes</code>. The audit tables writer takes the records from Kafka or from the OTLP logs, writes them to the Iceberg table <code>nuna_audit.audit.events</code> through the server, and, when it takes them over OTLP, writes the hash-chained archive. <a href="audit.html">The audit trail</a> explains this.</p>
+
+      <h3 id="console">The console</h3>
+      <p>The <a class="term" href="../reference/glossary.html#term-console">console</a> is a set of web pages the server serves at <code>/ui/</code>. People sign in through the identity provider with the authorization code flow and PKCE. The console calls the same routes an engine calls, with the person's token, so it shows exactly what the server allows that person, and every refusal as the server gave it. <a href="../console/index.html">The console</a> describes each page.</p>
+
+      <h3 id="engines">Engines</h3>
+      <p>Any engine with an Iceberg REST catalog client can use nuna. Spark, Kafka Connect's Iceberg sink, PyIceberg and SingleStore run against it in nuna's own tests, and Trino runs in the local demo. An engine sets the catalog's name as its warehouse, sends a token, and receives vended credentials with each table it loads. <a href="../clients/index.html">Command line and clients</a> shows each engine's settings.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>The server never holds table data. Data files travel between engines and the object store; only metadata files pass through the server.</li>
+        <li>Every commit is decided by one database transaction. Two servers that receive commits to one table at once cannot both win.</li>
+        <li>Engines never receive the server's own storage keys, and no engine can delete a file.</li>
+        <li>The server does not replicate the database or the object store. Each replicates on its own, and <a href="disaster-recovery.html">Disaster recovery</a> explains how nuna recovers when they disagree.</li>
+        <li>The server does not run queries. Row filters and column masks are enforced by the engines that you trust to enforce them, as <a href="row-column-rules.html">Row filters and column masks</a> explains.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>The three Helm charts, <code>nuna-catalog</code>, <code>nuna-maintenance</code> and <code>nuna-audit-tables</code>, which <a href="../install/index.html">Install</a> covers.</li>
+        <li>The console's <a href="../console/service.html">Service page</a>, which shows which servers answered, the latency objectives, the database as the server finds it, and the worker's scans.</li>
+        <li>The local demo, which runs every part on one laptop in a kind cluster: <a href="../demo/index.html">The local demo</a>.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>The worker and the audit tables writer each run as one replica. They are not on the path of any engine's request, so a restart delays maintenance or the audit tables, not commits.</li>
+        <li>Servers must reach one database. A deployment across regions uses the database's own replication, and a second region recovers as <a href="disaster-recovery.html">Disaster recovery</a> describes.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="commits.html">How a commit works</a>: how the database decides one winner.</li>
+          <li><a href="storage.html">Storage profiles and credential vending</a>: what an engine receives and what it never does.</li>
+          <li><a href="../install/requirements.html">Requirements</a>: what each part needs before you install.</li>
+          <li><a href="../start/quickstart.html">Run nuna on your laptop</a>: every part running in the local demo.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/README.md</code>, <code>deploy/helm/nuna-catalog/values.yaml</code>, <code>deploy/helm/nuna-catalog/templates/deployment.yaml</code>, <code>deploy/helm/nuna-maintenance/templates/deployment.yaml</code>, <code>deploy/helm/nuna-audit-tables/templates/deployment.yaml</code>, <code>docs/observability/audit-log.md</code>, <code>catalog-maintenance/README.md</code>, <code>catalog-audit-tables/README.md</code>, <code>catalog-tests-engines/README.md</code> and <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

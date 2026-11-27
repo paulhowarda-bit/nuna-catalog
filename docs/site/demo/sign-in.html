@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/sign-in">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo users and sign-in · nuna docs</title>
+  <meta name="description" content="The demo's people and groups, what each may do in the catalogs, how they sign in to the console and the other pages, and the tokens the demo mints.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Demo users and sign-in</h1>
+        <p class="lead">The demo has five people who sign in through Keycloak, and accounts with tokens only, for the services that run the demo. This page lists each, its groups and privileges, and how each page of the demo signs them in.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For developers</span></p>
+      </header>
+
+      <h2 id="people">People</h2>
+      <p>Each person signs in to Keycloak, realm <code>nuna</code> on port 8180, with a password <code>demo/demo.sh up</code> made on this machine. The passwords are in <code>~/.nuna-demo/people</code>; the same password signs each person in to the CDC leg's databases.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Groups</th><th scope="col">May do</th></tr></thead>
+          <tbody>
+            <tr><td><code>ana</code></td><td>Data user</td><td><code>demo-analysts</code></td><td>Create and modify in catalogs <code>lakehouse</code> and <code>engines</code>, which includes reading and writing rows.</td></tr>
+            <tr><td><code>gary</code></td><td>Grant admin</td><td><code>demo-grant-admins</code>, <code>demo-auditors</code></td><td>Manage grants, with no access to data; read the audit table <code>nuna_audit.audit.events</code> on the console's Audit page.</td></tr>
+            <tr><td><code>stella</code></td><td>Tag steward</td><td><code>demo-stewards</code></td><td>Manage tags and read in <code>lakehouse</code>; read in <code>engines</code>.</td></tr>
+            <tr><td><code>oscar</code></td><td>Platform operator</td><td><code>demo-operators</code></td><td>Operate the platform: catalogs, engines, health. Reads Keycloak's users, groups, sessions and events, and administers kafbat, Studio and CloudBeaver.</td></tr>
+            <tr><td><code>presenter</code></td><td>Everything, for showing the demo</td><td>All five groups above, and <code>demo-presenters</code></td><td>Every privilege in every catalog, grants and rules for their own groups too; administrator of Silo, Keycloak, CloudBeaver and Studio.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="callout note">
+        <p class="callout-title">Privileges include the weaker ones</p>
+        <p>Modify includes write, and write includes select. The demo grants each group on the catalog, so a privilege covers every namespace and table in it.</p>
+      </aside>
+
+      <h2 id="groups">Groups and their grants</h2>
+      <p><code>up</code> writes the catalog grants into the server's database on every start. The roles grant admin and platform operator come from the server's settings (<code>grant-admin-groups</code>, <code>platform-operator-groups</code>), and the server grants the audit table's readers and writers itself at startup. <code>demo-quants</code>' grants are made by <code>gary</code> through the management API, on a new lake.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Group</th><th scope="col">Grants</th></tr></thead>
+          <tbody>
+            <tr><td><code>demo-analysts</code></td><td>create, modify on <code>lakehouse</code> and <code>engines</code></td></tr>
+            <tr><td><code>demo-grant-admins</code></td><td>grant admin</td></tr>
+            <tr><td><code>demo-auditors</code></td><td>select on <code>nuna_audit</code></td></tr>
+            <tr><td><code>demo-stewards</code></td><td>manage-tags, select on <code>lakehouse</code>; select on <code>engines</code></td></tr>
+            <tr><td><code>demo-operators</code></td><td>platform operator</td></tr>
+            <tr><td><code>demo-presenters</code></td><td>create, modify, manage-tags on <code>lakehouse</code>, <code>engines</code> and <code>nuna_audit</code></td></tr>
+            <tr><td><code>demo-quants</code></td><td>describe on namespace <code>markets</code>; select on <code>xetra.trades</code>; no person is in it</td></tr>
+            <tr><td><code>demo-loaders</code></td><td>create, modify on <code>lakehouse</code></td></tr>
+            <tr><td><code>engine-clients</code></td><td>create, modify on <code>engines</code></td></tr>
+            <tr><td><code>demo-audit-writers</code></td><td>create, write on <code>nuna_audit</code></td></tr>
+            <tr><td><code>demo-maintenance</code></td><td>write on <code>lakehouse</code></td></tr>
+            <tr><td><code>demo-engines</code></td><td>none: Trino reads and writes as the person who signs in to it</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="signing-in">Signing in to each page</h2>
+      <p>A person signs in once, through Keycloak, and the console, kafbat, CloudBeaver, SingleStore Studio and Grafana ask no password after that. To change user, select <b class="ui">Sign out</b> in the console or <b class="ui">Logout</b> in CloudBeaver, which end Keycloak's session too, or use a private window.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Page</th><th scope="col">Address</th><th scope="col">How it signs in</th></tr></thead>
+          <tbody>
+            <tr><td>The console</td><td><code>https://localhost:8181/ui/</code></td><td>Select <b class="ui">Sign in with localhost:8180</b> and sign in to Keycloak. In the demo the sign-in page also takes a token: paste one under <b class="ui">Paste a bearer token.</b> and select <b class="ui">Use this token</b>.</td></tr>
+            <tr><td>CloudBeaver</td><td><code>https://localhost:8185</code></td><td>Keycloak. Each person's connections sign in as them: to nuna through Trino with their own token, and to the CDC leg's databases.</td></tr>
+            <tr><td>kafbat</td><td><code>https://localhost:8182</code></td><td>Keycloak. <code>oscar</code> administers it and reads its audit log; <code>ana</code>, <code>gary</code> and <code>stella</code> administer topics but only read the catalog's (<code>nuna.*</code>), Kafka Connect's, the brokerage world's and those starting with <code>_</code>.</td></tr>
+            <tr><td>SingleStore Studio</td><td><code>https://localhost:8183</code></td><td>Type the username only, then select <b class="ui">Sign in with SAML</b>. Studio takes no passwords, so <code>root</code> cannot sign in there.</td></tr>
+            <tr><td>Grafana</td><td><code>https://localhost:8188</code></td><td>Keycloak. <code>oscar</code> and <code>presenter</code> administer it; everyone else views. Its local <code>admin</code> signs in at <code>/login?disableAutoLogin=true</code>.</td></tr>
+            <tr><td>Silo's console</td><td><code>https://localhost:8184</code></td><td>Select <b class="ui">Keycloak</b>. <code>ana</code> browses and downloads the warehouse bucket's files, read-only; <code>oscar</code> sees the server's health, metrics, logs and traces, no data; <code>presenter</code> is Silo's administrator.</td></tr>
+            <tr><td>Keycloak</td><td><code>https://localhost:8180/admin/nuna/console/</code></td><td><code>oscar</code> reads realm <code>nuna</code>'s users, groups, sessions and events. <code>/admin</code> changes the realm, as user <code>admin</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Keycloak keeps users and sessions in memory and imports realm <code>nuna</code> from <code>demo/k8s/keycloak-realm.json</code> each time its pod starts, so a change made in its admin console lasts only until the pod restarts. Its access tokens last 3,600 seconds and a sign-in session at most 36,000 seconds.</p>
+
+      <h2 id="tokens">Tokens</h2>
+      <p><code>up</code> and <code>demo/demo.sh token</code> mint a token for each person and each service account, signed with the demo's own key, issuer <code>https://idp.demo/nuna</code>, valid for 7 days. They mint again when the tokens expire within an hour. The tokens are in <code>~/.nuna-demo/tokens/<var>user</var>.jwt</code>, and the time they expire in <code>~/.nuna-demo/tokens/expires.txt</code>.</p>
+      <div class="code" data-lang="bash">
+<pre><code>export TOKEN=$(cat ~/.nuna-demo/tokens/ana.jwt)
+curl -s --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $TOKEN" "https://localhost:8181/v1/config?warehouse=lakehouse"</code></pre>
+      </div>
+      <aside class="callout warning">
+        <p class="callout-title">These tokens work only in the demo</p>
+        <p>The server trusts the demo's signing key because the demo configures it to. A token minted this way means nothing to a server set up with your own identity provider.</p>
+      </aside>
+
+      <h2 id="service-accounts">Accounts that run the demo</h2>
+      <p>These have tokens but no password, and sign in to no page.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Account</th><th scope="col">Group</th><th scope="col">What uses it</th></tr></thead>
+          <tbody>
+            <tr><td><code>singlestore</code></td><td><code>demo-loaders</code></td><td>SingleStore's change feeds into Iceberg and its pipelines out of it.</td></tr>
+            <tr><td><code>lake</code></td><td><code>demo-loaders</code></td><td>The lake writer Job that writes the sample tables, and <code>demo.sh rate</code>.</td></tr>
+            <tr><td><code>brokerage</code></td><td><code>demo-loaders</code></td><td>The brokerage world's generator.</td></tr>
+            <tr><td><code>cdc</code></td><td><code>demo-loaders</code></td><td>Kafka Connect's Iceberg sink.</td></tr>
+            <tr><td><code>engine-matrix</code></td><td><code>engine-clients</code></td><td><code>demo.sh engines</code>.</td></tr>
+            <tr><td><code>trino</code></td><td><code>demo-engines</code></td><td>Trino, registered as a trusted engine, client <code>trino-demo</code>.</td></tr>
+            <tr><td><code>service-account-nuna-audit-tables</code></td><td><code>demo-audit-writers</code></td><td>The audit tables writer, which writes <code>nuna_audit.audit.events</code>.</td></tr>
+            <tr><td><code>service-account-nuna-maintenance</code></td><td><code>demo-maintenance</code></td><td>The maintenance worker, a maintenance principal of the catalog.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="secrets">Where the passwords are</h2>
+      <p><code>up</code> makes every password once per machine, in <code>~/.nuna-demo/secrets</code>, and keeps them through <code>down</code> and <code>wipe</code>:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">File</th><th scope="col">Signs in</th></tr></thead>
+          <tbody>
+            <tr><td><code>keycloak-admin</code></td><td>Keycloak's <code>admin</code>, at <code>/admin</code></td></tr>
+            <tr><td><code>grafana-admin</code></td><td>Grafana's <code>admin</code></td></tr>
+            <tr><td><code>silo-root</code></td><td>Silo's root, access key <code>nunatest</code>, which sees every bucket</td></tr>
+            <tr><td><code>singlestore-root</code></td><td>SingleStore's <code>root</code>, used by <code>demo.sh sql</code></td></tr>
+            <tr><td><code>connect</code></td><td>Kafka Connect's REST API as user <code>operator</code>; <code>connect.curlrc</code> holds it for <code>curl -K</code></td></tr>
+            <tr><td><code>backoffice</code>, <code>treasury</code>, <code>debezium</code>, <code>oracle</code></td><td>The CDC leg's database users</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../clients/tokens.html">Get a token</a>: tokens from your own identity provider.</li>
+          <li><a href="../start/console-tour.html">A tour of the console</a>: what each person sees.</li>
+          <li><a href="commands.html#demo-sh-token">demo.sh token</a>: mint the tokens again.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/demo.sh</code> (<code>print_access</code>, the grants in <code>up</code>, <code>token</code>), <code>demo/Mint.java</code>, <code>demo/k8s/keycloak.yaml</code>, <code>demo/k8s/keycloak-realm.json</code> and <code>demo/README.md</code> (Sign in), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The token example was run against the running demo as <code>ana</code> and answered <code>200</code>. The other pages' sign-in was not tried in a browser.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

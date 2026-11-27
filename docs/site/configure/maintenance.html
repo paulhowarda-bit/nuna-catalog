@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/maintenance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maintenance worker settings · nuna docs</title>
+  <meta name="description" content="Point the maintenance worker at the catalog and its stores, set its nightly window, and turn on compaction and the disaster recovery verifier.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Maintenance worker settings</h1>
+        <p class="lead">Point the maintenance worker at the catalog and its stores, set its nightly window, and turn on compaction and the disaster recovery verifier.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The maintenance worker is its own program, <code>nuna-maintenance</code>, installed by its own chart. It signs in to the catalog as a maintenance principal (the catalog's <a href="security.html#nuna-security-maintenance-principals"><code>nuna.security.maintenance-principals</code></a>), reads the catalog's maintenance work list, and reaches storage with its own identity, the only one a profile's delete policy lets delete. Every setting here is read once, at start-up.</p>
+
+      <h2 id="catalog-and-schedule">The catalog and the schedule</h2>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-catalog-uri"><code>nuna.maintenance.catalog-uri</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_CATALOGURI</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.catalog-uri</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The catalog's base URI, such as <code>http://nuna-catalog:8181/</code>. Without it the worker stops with <code>nuna.maintenance.catalog-uri names no catalog</code>, and the chart refuses to render.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-scan-interval"><code>nuna.maintenance.scan-interval</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>PT10M</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_SCANINTERVAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.scan-interval</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How often the worker reads the work list and does what is due. It must be positive: <code>nuna.maintenance.scan-interval must be positive</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-cleanup-window-start"><code>nuna.maintenance.cleanup-window.start</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>local time</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_CLEANUPWINDOW_START</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.cleanup-window.start</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>When the nightly cleanup window opens, local time in <code>zone</code>, such as <code>"01:00"</code>. Compaction and orphan scans start only inside the window, and a compaction Job runs no later than its end. Without the window the worker stops with <code>nuna.maintenance.cleanup-window: set start, end and zone, the nightly window in which compaction and orphan scans run</code>; without one of its three fields, with a message naming the field.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-cleanup-window-end"><code>nuna.maintenance.cleanup-window.end</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>local time</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_CLEANUPWINDOW_END</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.cleanup-window.end</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>When the window closes. An end before the start crosses midnight (<code>22:00</code> to <code>04:00</code> opens on one date and closes on the next); an end equal to the start makes the window the whole day.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-cleanup-window-zone"><code>nuna.maintenance.cleanup-window.zone</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>time zone name</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_CLEANUPWINDOW_ZONE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.cleanup-window.zone</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The window's time zone by name, such as <code>Europe/London</code>, so the window follows the zone's daylight-saving changes. A start or end the clocks skip falls as late as the skip; one the clocks repeat is the first time the clock reads it, so the window never opens or closes twice in one night.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-orphan-interval"><code>nuna.maintenance.orphan-interval</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>P1D</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_ORPHANINTERVAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.orphan-interval</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The least time between two orphan scans of one table, rounded up to whole nights: a scan lists the table's whole prefix.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-page-size"><code>nuna.maintenance.page-size</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>100</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_PAGESIZE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.page-size</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Work list items per page.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-request-deadline"><code>nuna.maintenance.request-deadline</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>PT2H</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_REQUESTDEADLINE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.request-deadline</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long work run on request may run: a requested compaction Job's deadline, and how long a requested orphan scan lists before it stops, recording nothing. It must be positive.</p>
+      </section>
+
+      <h2 id="nuna-maintenance-token">The token</h2>
+
+      <p>The worker gets its bearer token one of two ways: from a file, read again whenever it changes, or by the OAuth 2 client-credentials grant against the identity provider's token endpoint. Set exactly one of <code>file</code> and <code>endpoint</code>: <code>nuna.maintenance.token: set exactly one of file and endpoint</code>. Without any token setting the worker stops with <code>nuna.maintenance.token: set file, or endpoint, client-id and client-secret</code>.</p>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-token-file"><code>nuna.maintenance.token.file</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>path</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_TOKEN_FILE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.token.file</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A file holding the token, such as a mounted Secret something else keeps fresh. Compaction cannot use it: a compaction Job renews its own token, so the worker refuses to start with compaction on and a token file (<code>nuna.maintenance.compaction needs the client-credentials grant</code>).</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-token-endpoint"><code>nuna.maintenance.token.endpoint</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_TOKEN_ENDPOINT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.token.endpoint</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The identity provider's token endpoint, such as <code>https://idp.example/realms/data/protocol/openid-connect/token</code>. It needs <code>client-id</code> and <code>client-secret</code>: <code>nuna.maintenance.token: the client-credentials grant needs client-id and client-secret</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-token-client-id"><code>nuna.maintenance.token.client-id</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_TOKEN_CLIENTID</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.token.client-id</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The worker's client id at the identity provider.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-token-client-secret"><code>nuna.maintenance.token.client-secret</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_TOKEN_CLIENTSECRET</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key <code>nuna.maintenance.token.client-secret</code> in the config tree Secret of the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The client's secret. Keep it in the chart's Secret, never in <code>config</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-token-scope"><code>nuna.maintenance.token.scope</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_TOKEN_SCOPE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.token.scope</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A scope to ask for. Required when compaction runs, since the Job's Iceberg client always asks for one (<code>catalog</code> when none is set): <code>nuna.maintenance.token.scope must be set when compaction runs</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-token-audience"><code>nuna.maintenance.token.audience</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (the chart sets <code>nuna-catalog</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_TOKEN_AUDIENCE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.token.audience</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>An audience to ask for, if the identity provider needs one. The catalog checks <code>aud</code> against its issuer's <code>audiences</code>.</p>
+      </section>
+
+      <h2 id="nuna-maintenance-storage">Storage</h2>
+
+      <p>The worker's own identity on each store, keyed by a name of the deployment's choosing. Where on each store it lists and deletes, the catalog's storage profiles say at each scan: the worker serves a profile with the store whose kind and endpoint are the profile's. Everything else about the store comes from here alone. With no store the worker stops with <code>nuna.maintenance.storage names no store: the worker lists and deletes table files with its own storage identity</code>.</p>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-storage-name-kind"><code>nuna.maintenance.storage.<var>name</var>.kind</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>enumeration</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Allowed values</dt><dd><code>s3</code>, <code>minio</code>, <code>ceph</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_STORAGE_<var>NAME</var>_KIND</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.storage.<var>name</var>.kind</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The store's kind as the catalog's profiles name it. MinIO and Ceph buckets are addressed by path.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-storage-name-endpoint"><code>nuna.maintenance.storage.<var>name</var>.endpoint</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_STORAGE_<var>NAME</var>_ENDPOINT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.storage.<var>name</var>.endpoint</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The store's S3 endpoint exactly as the catalog's storage profile writes it, the regional endpoint on AWS S3: the worker finds a profile's store by it.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-storage-name-region"><code>nuna.maintenance.storage.<var>name</var>.region</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>us-east-1</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_STORAGE_<var>NAME</var>_REGION</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.storage.<var>name</var>.region</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The store's region.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-storage-name-access-key-id"><code>nuna.maintenance.storage.<var>name</var>.access-key-id</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: the AWS SDK's default chain</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_STORAGE_<var>NAME</var>_ACCESSKEYID</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>With <code>secret-access-key</code>, the worker's own static keys; set both or neither (<code>a nuna.maintenance.storage store needs both keys or neither</code>). Without them, the AWS SDK's default chain, such as web identity. This identity is the profile's <a href="storage.html#nuna-storage-profiles-name-maintenance-principal"><code>maintenance-principal</code></a>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-storage-name-secret-access-key"><code>nuna.maintenance.storage.<var>name</var>.secret-access-key</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_STORAGE_<var>NAME</var>_SECRETACCESSKEY</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The secret half of the static keys. Keep it in the chart's Secret.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-storage-name-ca-bundle"><code>nuna.maintenance.storage.<var>name</var>.ca-bundle</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>path (a PEM file)</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_STORAGE_<var>NAME</var>_CABUNDLE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.storage.<var>name</var>.ca-bundle</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>CA certificates for a store whose certificate a private CA signed. Every S3 client the worker opens to this endpoint trusts them beside the JVM's CAs, including those reading with credentials the catalog vends it. It needs an <code>endpoint</code>, and two stores on one endpoint may not name different bundles (<code>nuna.maintenance.storage.<var>name</var>.ca-bundle: another store names <var>file</var> for the endpoint <var>endpoint</var></code>). In the chart, mount it with <code>storageCaConfigMap.name</code>.</p>
+      </section>
+
+      <h2 id="nuna-maintenance-compaction">Compaction</h2>
+
+      <p>In the cleanup window the worker runs one Kubernetes Job per table that needs compacting, each running Spark's <code>rewrite_data_files</code> signed in as the worker and stopped at the window's end. Compaction is off unless <code>image</code> is set.</p>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-image"><code>nuna.maintenance.compaction.image</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: compaction is off</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_IMAGE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.image</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Spark image the Jobs run.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-image-pull-policy"><code>nuna.maintenance.compaction.image-pull-policy</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>IfNotPresent</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_IMAGEPULLPOLICY</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.image-pull-policy</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The image's pull policy.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-namespace"><code>nuna.maintenance.compaction.namespace</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required when compaction runs)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_NAMESPACE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.namespace</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the Jobs run: a namespace for the Jobs alone, never the catalog's or the worker's, since a pod may run as any service account and mount any Secret of its namespace. The worker refuses to start without it, and the chart refuses to render one equal to the release's namespace.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-job-service-account"><code>nuna.maintenance.compaction.job-service-account</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>the namespace's <code>default</code> (the chart sets <code>nuna-compaction</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_JOBSERVICEACCOUNT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.job-service-account</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The service account the Jobs' pods run as, one with no rights.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-api-server"><code>nuna.maintenance.compaction.api-server</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd><code>https://kubernetes.default.svc</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_APISERVER</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.api-server</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Kubernetes API server.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-service-account"><code>nuna.maintenance.compaction.service-account</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>path</dd>
+          <dt>Default</dt><dd><code>/var/run/secrets/kubernetes.io/serviceaccount</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_SERVICEACCOUNT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.service-account</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The folder holding the worker's service account token, CA and namespace.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-catalog-uri"><code>nuna.maintenance.compaction.catalog-uri</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>the worker's <code>catalog-uri</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_CATALOGURI</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.catalog-uri</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The catalog as the Jobs' pods reach it.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-memory"><code>nuna.maintenance.compaction.memory</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a Kubernetes quantity)</dd>
+          <dt>Default</dt><dd><code>2Gi</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_MEMORY</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.memory</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Job container's memory limit.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-memory-request"><code>nuna.maintenance.compaction.memory-request</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a Kubernetes quantity)</dd>
+          <dt>Default</dt><dd>the value of <code>memory</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_MEMORYREQUEST</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.memory-request</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The memory the Job container asks the node for. Lower, a Job schedules beside pods that leave less than its limit, and is the first pod the node stops when its memory runs short.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-driver-memory"><code>nuna.maintenance.compaction.driver-memory</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>1g</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_DRIVERMEMORY</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.driver-memory</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Spark's driver memory, within the limit.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-max-jobs"><code>nuna.maintenance.compaction.max-jobs</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>2</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_MAXJOBS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.max-jobs</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How many Jobs run at once; the neediest tables go first. At least 1.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-run-as-user"><code>nuna.maintenance.compaction.run-as-user</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>185</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_RUNASUSER</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.run-as-user</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Spark image's user id.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-compaction-spark-conf"><code>nuna.maintenance.compaction.spark-conf</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of string to string</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_COMPACTION_SPARKCONF</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.compaction.spark-conf</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>More Spark settings for every Job.</p>
+      </section>
+
+      <h2 id="nuna-maintenance-dr">Disaster recovery verifier</h2>
+
+      <p>The verifier checks each table's and view's newer versions in the DR store, a read-only replica of a store: the same buckets and paths on another endpoint, as site replication keeps them. It is off unless a replica is named, and the worker then logs <code>No DR replica named (nuna.maintenance.dr.replicas): the DR verifier is off</code>.</p>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-dr-verify-interval"><code>nuna.maintenance.dr.verify-interval</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>PT1M</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_DR_VERIFYINTERVAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.dr.verify-interval</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How often the verifier reads the catalog's DR work list. It must be positive.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-dr-replicas-name-endpoint"><code>nuna.maintenance.dr.replicas.<var>name</var>.endpoint</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_DR_REPLICAS_<var>NAME</var>_ENDPOINT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.dr.replicas.<var>name</var>.endpoint</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The replica's S3 endpoint, keyed by the store's name in <code>nuna.maintenance.storage</code>. A name that is not a store stops the worker with <code>nuna.maintenance.dr.replicas.<var>name</var> names no store</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-dr-replicas-name-region"><code>nuna.maintenance.dr.replicas.<var>name</var>.region</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>us-east-1</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_DR_REPLICAS_<var>NAME</var>_REGION</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.dr.replicas.<var>name</var>.region</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The replica's region.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-dr-replicas-name-access-key-id"><code>nuna.maintenance.dr.replicas.<var>name</var>.access-key-id</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: the AWS SDK's default chain</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_DR_REPLICAS_<var>NAME</var>_ACCESSKEYID</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Keys that may only read the replica; set both or neither.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-dr-replicas-name-secret-access-key"><code>nuna.maintenance.dr.replicas.<var>name</var>.secret-access-key</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_DR_REPLICAS_<var>NAME</var>_SECRETACCESSKEY</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The secret half of the keys.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-maintenance-dr-replicas-name-ca-bundle"><code>nuna.maintenance.dr.replicas.<var>name</var>.ca-bundle</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>path (a PEM file)</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_MAINTENANCE_DR_REPLICAS_<var>NAME</var>_CABUNDLE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.maintenance.dr.replicas.<var>name</var>.ca-bundle</code> in the <code>nuna-maintenance</code> chart</dd>
+          <dt>Read by</dt><dd>the maintenance worker</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>CA certificates the replica's endpoint is trusted with, as for a store.</p>
+      </section>
+
+      <h2 id="example">Example</h2>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    maintenance:
+      catalog-uri: http://nuna-catalog.nuna.svc:8181/
+      cleanup-window:
+        start: "01:00"
+        end: "05:00"
+        zone: Europe/London
+      token:
+        endpoint: https://idp.example/realms/data/protocol/openid-connect/token
+        client-id: nuna-maintenance
+        scope: catalog
+      storage:
+        onprem:
+          kind: ceph
+          endpoint: https://s3.example
+          ca-bundle: /etc/nuna/storage-ca/ca.crt
+      compaction:
+        image: registry.example/nuna-spark:3.5
+        namespace: nuna-compaction
+secrets:
+  existingSecret: nuna-maintenance-secrets
+storageCaConfigMap:
+  name: storage-ca</code></pre>
+      </div>
+
+      <p>The Secret holds the client secret and the store keys under their setting names, such as <code>nuna.maintenance.token.client-secret</code> and <code>nuna.maintenance.storage.onprem.secret-access-key</code>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: what the worker does each night and why</li>
+          <li><a href="../install/helm-maintenance.html">Install the maintenance worker</a>: the chart, step by step</li>
+          <li><a href="helm-values.html#nuna-maintenance">Helm chart values</a>: every value of the worker's chart</li>
+          <li><a href="governance.html#nuna-governance-maintenance-defaults">Governance and refs settings</a>: the default maintenance policy</li>
+          <li><a href="../operate/maintenance-nights.html">Maintenance nights</a>: reading what each night did</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/CleanupWindow.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/DrStores.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/WorkerApplication.java</code>, <code>catalog-maintenance/src/main/resources/application.yaml</code> and <code>deploy/helm/nuna-maintenance/</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the maintenance chart.</p>
+        <p>No worker was started with them for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

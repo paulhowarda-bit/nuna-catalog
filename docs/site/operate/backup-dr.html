@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/backup-dr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Back up and recover · nuna docs</title>
+  <meta name="description" content="What nuna keeps and where, how the DR verifier tracks what the DR region holds whole, and how to bring each table back to such a version after losing the primary region.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Back up and recover</h1>
+        <p class="lead">What nuna keeps and where, how the DR verifier tracks what the DR region holds whole, and how to bring each table back to such a version after losing the primary region.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span> <span class="badge audited">Audited</span></p>
+      </header>
+
+      <p>nuna keeps its state in two places: the catalog database, which holds every catalog, namespace, pointer, grant, journal entry and DR watermark, and the object store, which holds the tables' metadata and data files. Both replicate to the DR region with their own tools, asynchronously, and neither waits for the other. After losing the primary region, the DR database may name files the DR store never got, or the DR store may hold commits the DR database never saw. The steps below bring each table back to a version the DR region holds whole.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The catalog database and the object store each replicate to a DR region.</li>
+        <li>You are a platform operator: every step on this page is a platform operator's.</li>
+      </ul>
+      <p class="gap">Not documented yet: a backup procedure for the catalog database and the object store beyond their replication. nuna has no backup command of its own; use the database's and the store's tools, and keep the two consistent.</p>
+
+      <h2 id="run-the-dr-verifier">Run the DR verifier</h2>
+      <p>Before any disaster, run the maintenance worker's DR verifier in the primary region. For each store the worker uses, name its DR replica: the same buckets and paths on the DR region's endpoint, with keys that may only read there.</p>
+      <div class="code" data-lang="yaml">
+<pre><code>config:
+  nuna:
+    maintenance:
+      dr:
+        verify-interval: PT1M
+        replicas:
+          onprem:
+            endpoint: https://rgw-dr.example.internal:7480
+            region: us-east-1
+            access-key-id: nuna-dr-reader
+            ca-bundle: /etc/nuna/storage-ca/onprem-dr.crt
+secrets:
+  values:
+    nuna.maintenance.dr.replicas.onprem.secret-access-key: …</code></pre>
+      </div>
+      <p>The replica's name, here <code>onprem</code>, is the name of the worker's store under <code>nuna.maintenance.storage</code>. On AWS S3 leave out <code>endpoint</code>; with no keys the AWS SDK's default chain is used. Settings: <a href="../configure/maintenance.html#nuna-maintenance-dr">nuna.maintenance.dr</a>.</p>
+      <p>Every <code>verify-interval</code> the verifier reads the catalog's DR work list, checks each table's and view's newer versions in the DR store, and reports each one's <strong>DR watermark</strong>: the newest version whose every file, data included, the DR store holds. The watermarks live in the catalog database, so they reach the DR region with it.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p class="gap">Not documented yet: whether the console shows the DR watermarks or lag.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>List the tables behind their watermark and their lag (<a href="../clients/curl.html">curl</a>, <a href="../api/dr.html#endpoints">reference</a>):</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/dr/watermarks" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+        </section>
+      </div>
+      <p><a href="runbooks.html#nunadrlagging"><code>NunaDrLagging</code></a> pages when a commit has not been whole in the DR store for 15 minutes, and <a href="runbooks.html#nunadrverifiernotpassing"><code>NunaDrVerifierNotPassing</code></a> when no pass has finished for 15 minutes. The verifier's meters are on <a href="metrics.html#dr-verifier-meters">Metrics</a>.</p>
+
+      <h2 id="recover-in-the-dr-region">Recover in the DR region</h2>
+      <p>Promote the DR database, and start the catalog servers on it and on the DR store. Then, for each catalog:</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Freeze the catalog.</p>
+          <p>Before anything writes or cleans up (<a href="../guides/freeze.html">Freeze and unfreeze for disaster recovery</a>):</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"reason": "DR recovery"}'</code></pre>
+          </div>
+          <p>Commits, creates, drops, renames, undrops and purges are refused, and the maintenance worker's scans pass the frozen tables by.</p>
+        </li>
+        <li>
+          <p class="step-title">Verify.</p>
+          <p>Start the maintenance worker in the DR region with its replicas naming the DR store itself, and wait for one DR pass to end after the start: <code>nuna.maintenance.dr.pass.last.success</code> moves, and the worker logs <code>DR pass done</code>. The pass moves each watermark as far as the DR store allows, frozen tables included.</p>
+        </li>
+        <li>
+          <p class="step-title">Read the plan.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/dr-reconcile" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"rewind": true}'</code></pre>
+          </div>
+          <p>The answer lists, under <code>tables</code> and <code>views</code>, each one above its watermark, the watermark it would move back to, and its <code>lost</code> commits (version, commit id, time, principal): the commits the DR region does not hold whole. Hand the lost commits to the tables' owners. One with <code>"watermark": null</code> has no version known whole in DR; it is not moved, and its owner decides.</p>
+        </li>
+        <li>
+          <p class="step-title">Rewind.</p>
+          <p>Send the same with <code>{"rewind": true, "apply": true}</code>. Each frozen table and view above its watermark moves back to it in one journaled commit. One that did not move says why in <code>apply-problem</code>; if a pointer moved since the plan, read the plan again.</p>
+        </li>
+        <li>
+          <p class="step-title">Walk forward.</p>
+          <p>Right after the rewind, send <code>{}</code> to see what the walk would do, then <code>{"apply": true}</code>. Each table moves along its metadata files, one step at a time, only while the DR store holds every file a step adds, and stops before the first that lacks one; its <code>problem</code> names the file. Table locations no catalog holds are listed under <code>unknown-locations</code>.</p>
+          <aside class="callout warning">
+            <p class="callout-title">Rewind before you walk</p>
+            <p>Until the verifier's next pass, walked versions are above the watermark, and a rewind after the walk would give them up.</p>
+          </aside>
+        </li>
+        <li>
+          <p class="step-title">Check the branches and tags.</p>
+          <p>The same answer lists under <code>refs</code> every branch and tag that names a metadata file the DR store lacks, with the objects concerned under <code>missing</code>. Nothing rewinds or walks a ref. Delete each listed ref with <code>DELETE /management/v1/catalogs/{catalog}/refs/{ref}</code>, which the freeze does not refuse, or keep it for the primary region's return. A ref with a <code>problem</code> was not fully checked: send the request again.</p>
+        </li>
+        <li>
+          <p class="step-title">Lift the freeze.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/dr-freeze" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>Then register any unknown locations by name, if you want them: a register is refused under a freeze.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">Check it worked</p>
+        <p><code>GET /management/v1/dr/watermarks</code> lists no table behind once the verifier has passed again, and engines can load and commit to the catalog's tables.</p>
+      </aside>
+      <p>The rewind's commits reach the audit trail like any other commit.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <ul>
+        <li><strong>A step answers <code>403</code>.</strong> Every step needs a platform operator.</li>
+        <li><strong>A table did not move in the rewind.</strong> Read its <code>apply-problem</code>, and run the plan again if its pointer moved.</li>
+        <li><strong>The walk takes nothing for a table.</strong> Its <code>problem</code> names the first missing file. If it says to rewind, the table is still above its watermark: rewind it, then walk.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/freeze.html">Freeze and unfreeze for disaster recovery</a>.</li>
+          <li><a href="../api/dr.html#endpoints">DR API</a>.</li>
+          <li><a href="runbooks.html#nunadrlagging"><code>NunaDrLagging</code></a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/README.md</code> (Recovering in the DR region), <code>deploy/helm/nuna-maintenance/values.yaml</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/DrVerifier.java</code>, <code>catalog-server/…/governance/ReconcileRoutes.java</code> and <code>docs/observability/dr-watermark.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The steps were not run for this page. An automated drill runs the freeze, reconcile and thaw, and with the DR store behind runs the verifier in both regions, the rewind and the walk.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

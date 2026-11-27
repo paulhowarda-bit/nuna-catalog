@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/postgresql">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Use PostgreSQL · nuna docs</title>
+  <meta name="description" content="Prepare a PostgreSQL database and role for the catalog server, connect to it over TLS with a password or a client certificate, and pass the safety self-check the server runs before it starts.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Use PostgreSQL</h1>
+        <p class="lead">Prepare a PostgreSQL database and role for the catalog server, connect to it over TLS with a password or a client certificate, and pass the safety self-check the server runs before it starts.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators and database administrators</span>
+          <span class="badge tested">Tested nightly</span>
+        </p>
+      </header>
+
+      <p>PostgreSQL is the default backend (<code>nuna.database.backend: postgresql</code>). nuna's tests run on PostgreSQL 18.7. The server keeps every catalog's state in one database, decides each commit there, and creates and migrates its own schema.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You can create roles and databases on the PostgreSQL cluster, and change its <code>pg_hba.conf</code> and settings, or you work with someone who can.</li>
+        <li>The cluster has a synchronous standby. Without one the server refuses to start (<a href="#safety-self-check">The safety self-check</a>).</li>
+        <li>You know the database's point-in-time-recovery window, for <code>nuna.governance.pitr-window</code>.</li>
+      </ul>
+
+      <h2 id="create-role-and-database">Create the role and the database</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create the catalog server's role, a member of <code>pg_monitor</code>.</p>
+          <div class="code" data-lang="sql">
+<pre><code>CREATE ROLE nuna_catalog LOGIN IN ROLE pg_monitor;</code></pre>
+          </div>
+          <p><code>pg_monitor</code> lets the role see <code>pg_stat_replication</code>, which the self-check reads to count the standbys streaming in sync. Without it the role sees none, and the server refuses to start with <code>pg.no-sync-standby</code>. To sign in by password, give the role one; to sign in by client certificate, leave it without (<a href="#sign-in-by-client-certificate">below</a>).</p>
+        </li>
+        <li>
+          <p class="step-title">Create the database, owned by the role.</p>
+          <div class="code" data-lang="sql">
+<pre><code>CREATE DATABASE catalog OWNER nuna_catalog;</code></pre>
+          </div>
+          <p>The first server of a release creates the schema's tables, a sequence, a function and a view in the role's current schema, and later releases migrate it. Owning the database gives the role the right to create them in <code>public</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Set the role's timeouts to 0.</p>
+          <div class="code" data-lang="sql">
+<pre><code>ALTER ROLE nuna_catalog SET statement_timeout = 0;
+ALTER ROLE nuna_catalog SET idle_in_transaction_session_timeout = 0;</code></pre>
+          </div>
+          <p>The self-check reads both as the server's sessions see them, however they were set: a timeout can cancel a <code>COMMIT</code>'s wait for the standby. The server bounds its own waits.</p>
+        </li>
+      </ol>
+
+      <h2 id="connect-server">Connect the server</h2>
+      <p>Set the JDBC URL and the role in the chart's <code>config</code>, and the password in the Secret as <code>spring.datasource.password</code>:</p>
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://db.example:5432/catalog?sslmode=verify-full
+      username: nuna_catalog
+  nuna:
+    database:
+      backend: postgresql</code></pre>
+      </div>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-catalog-secrets \
+  --from-literal=spring.datasource.password=…</code></pre>
+      </div>
+      <p><code>sslmode=verify-full</code> encrypts the connection and checks that the database's certificate names the URL's host. If a private certificate authority signed it, add its certificates as <code>sslrootcert</code>, as the next section does.</p>
+
+      <h2 id="sign-in-by-client-certificate">Sign in by a client certificate</h2>
+      <p>The server can sign in by a client certificate instead of a password, so the role has no password to keep or leak.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Have the certificate authority the database trusts for client certificates issue one to the server.</p>
+          <p>That is the CA in the database's <code>ssl_ca_file</code>. The certificate's common name is the role, <code>nuna_catalog</code>, with extended key usage <code>clientAuth</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Let the role in by its certificate alone.</p>
+          <p>Add a line to <code>pg_hba.conf</code> ahead of any password rule for the role, with the cluster's addresses, and reload the configuration:</p>
+          <div class="code" data-lang="text" data-title="pg_hba.conf">
+<pre><code>hostssl catalog nuna_catalog 10.0.0.0/8 cert</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Take the role's password away.</p>
+          <div class="code" data-lang="sql">
+<pre><code>ALTER ROLE nuna_catalog PASSWORD NULL;</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Convert the private key to unencrypted PKCS #8 DER.</p>
+          <div class="code" data-lang="bash">
+<pre><code>openssl pkcs8 -topk8 -inform PEM -outform DER -nocrypt -in client.key -out client.pk8</code></pre>
+          </div>
+          <p>From a <code>.pfx</code> file, take the certificate and key out first with <code>openssl pkcs12 -in catalog.pfx -nokeys -out client.crt</code> and <code>openssl pkcs12 -in catalog.pfx -nocerts -nodes -out client.key</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Put the three files in a Secret of their own.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-catalog-db-tls \
+  --from-file=ca.crt=db-ca.pem \
+  --from-file=client.crt=client.crt \
+  --from-file=client.pk8=client.pk8</code></pre>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption>The Secret's keys</caption>
+              <thead><tr><th scope="col">Key</th><th scope="col">What it is</th></tr></thead>
+              <tbody>
+                <tr><td><code>ca.crt</code></td><td>The certificates of the CA that issued the database's certificate, to its root (PEM). The driver checks the database against them.</td></tr>
+                <tr><td><code>client.crt</code></td><td>The server's certificate, then any intermediate certificates (PEM).</td></tr>
+                <tr><td><code>client.pk8</code></td><td>Its private key, unencrypted, as PKCS #8 DER.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Delete <code>client.key</code> and other copies of the key once the Secret holds it.</p>
+        </li>
+        <li>
+          <p class="step-title">Name the Secret in the chart and the files in the URL.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://db.example:5432/catalog?sslmode=verify-full&amp;sslrootcert=/etc/nuna/db-tls/ca.crt&amp;sslcert=/etc/nuna/db-tls/client.crt&amp;sslkey=/etc/nuna/db-tls/client.pk8
+      username: nuna_catalog
+databaseTls:
+  secretName: nuna-catalog-db-tls</code></pre>
+          </div>
+          <p>The chart mounts the Secret at <code>databaseTls.mountPath</code> (<code>/etc/nuna/db-tls</code>), apart from the config tree, with mode <code>0440</code> (<code>databaseTls.mode</code>): the JDBC driver refuses a key file that others can read. Leave <code>spring.datasource.password</code> out of the server's Secret.</p>
+        </li>
+      </ol>
+      <aside class="callout warning">
+        <p class="callout-title">An expired certificate stops new connections</p>
+        <p>Renew the certificate before it ends: replace the Secret, then run <code>kubectl -n nuna rollout restart deployment/nuna-catalog</code>.</p>
+      </aside>
+      <p>To check from the database side, as an administrator:</p>
+      <div class="code" data-lang="sql">
+<pre><code>SELECT ssl, version, client_dn
+FROM pg_stat_ssl JOIN pg_stat_activity USING (pid)
+WHERE usename = 'nuna_catalog';</code></pre>
+      </div>
+      <p>Every connection shows <code>ssl</code> true and the server's common name, and a connection as the role without the certificate is refused.</p>
+
+      <h2 id="safety-self-check">The safety self-check</h2>
+      <p>Before it migrates the schema, each server checks the database's safety settings. Any finding stops the server before it changes anything in the database, with an error that starts <code>The catalog's database is unsafe, so the server does not start</code> and names each finding as <code><var>code</var>: <var>detail</var></code>, separated by semicolons. A self-check that cannot run stops it too.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>PostgreSQL findings</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Detail the server logs</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>pg.sync-commit-off</code></td><td><code>synchronous_commit is <var>value</var>; it must be on or remote_apply</code></td><td>Set <code>synchronous_commit</code> to <code>on</code> or <code>remote_apply</code>.</td></tr>
+            <tr><td><code>pg.no-sync-standby</code></td><td><code>synchronous_standby_names is '<var>names</var>' and <var>n</var> standbys stream in sync or quorum state (the catalog role needs pg_monitor to see them)</code></td><td>Set <code>synchronous_standby_names</code> and run a standby that streams in <code>sync</code> or <code>quorum</code> state. Make the role a member of <code>pg_monitor</code>.</td></tr>
+            <tr><td><code>pg.fsync-off</code></td><td><code>fsync is <var>value</var> and full_page_writes is <var>value</var>; both must be on</code></td><td>Turn both on.</td></tr>
+            <tr><td><code>pg.commit-cancel-timeout</code></td><td><code>statement_timeout is <var>value</var> and idle_in_transaction_session_timeout is <var>value</var>; a timeout can cancel a COMMIT's wait for the standby, so both must be 0</code></td><td>Set both to 0 for the role, as above.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>nuna.database.allow-unsafe</code> lists findings, by code, that the server starts despite, logging each as <code>The catalog's database is unsafe, allowed by nuna.database.allow-unsafe: <var>code</var>: <var>detail</var></code>. It is empty by default. Only a test or demo database on one node sets it, as the local kind install does with <code>[pg.no-sync-standby]</code>. Leave it empty in production. A platform operator sees the findings allowed in <code>GET /management/v1/health/server?store=true</code> (<a href="verify.html#read-health-routes">Check the install</a>).</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The server reports PostgreSQL and no allowed findings</p>
+        <p>As a platform operator, <code>GET /management/v1/health/server?store=true</code> shows <code>"configured": "postgresql"</code>, <code>"backend": "PostgreSQL"</code>, the database's version, and an empty <code>allowed</code> list under <code>self-check</code>.</p>
+      </aside>
+
+      <h2 id="how-server-uses-database">How the server uses the database</h2>
+      <ul>
+        <li>The schema is migrated with Flyway, on the first server of a release to start. Servers that start at the same moment wait for its lock for up to 5 minutes, and a schema step may run for up to 30 minutes.</li>
+        <li>The server keeps the journal of commits in monthly partitions and creates them ahead of time.</li>
+        <li>The connection pool must never replay a statement on its own: the server decides what a lost answer to a <code>COMMIT</code> means.</li>
+      </ul>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>The catalog's database is unsafe, so the server does not start</code> with <code>pg.no-sync-standby</code></td><td>No standby streams in sync, or the role cannot see it.</td><td>Check <code>synchronous_standby_names</code> and <code>pg_stat_replication</code>, and grant <code>pg_monitor</code>.</td></tr>
+            <tr><td>The same error with another code</td><td>A setting from the table above.</td><td>Change it as the table says.</td></tr>
+            <tr><td><code>self-check failed</code></td><td>The role could not run the self-check's query.</td><td>Read the cause logged with it; check the role can connect and read the settings.</td></tr>
+            <tr><td><code>schema migration failed</code></td><td>The role cannot create the schema's objects.</td><td>Make the role the database's owner, or grant it <code>CREATE</code> on the schema.</td></tr>
+            <tr><td><code>connection requires a valid client certificate</code></td><td>A certificate sign-in without the files, or with files the database does not accept.</td><td>Check <code>databaseTls.secretName</code>, the URL's <code>sslcert</code> and <code>sslkey</code>, and that the CA is the database's <code>ssl_ca_file</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../configure/database.html">Database settings</a>: <code>nuna.database.*</code> and the <code>spring.datasource.*</code> keys.</li>
+          <li><a href="../concepts/databases.html">Choosing a database</a>: how the four databases compare.</li>
+          <li><a href="../concepts/commits.html">How a commit works</a>: why the server needs a synchronous standby.</li>
+          <li><a href="helm-catalog.html">Install the catalog server with Helm</a>: where these values go.</li>
+          <li><a href="../operate/backup-dr.html">Back up and recover</a>: the PITR window and restores.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/SelfChecks.java</code>, <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java</code>, <code>catalog-store-sql/src/test/java/nuna/catalog/store/sql/ReplicatedPostgres.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java</code>, <code>deploy/README.md</code> (The database), <code>deploy/helm/nuna-catalog/</code> and <code>demo/k8s/catalog-values.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The health output fields were read from the running demo. The SQL and openssl commands were not run for this page; <code>CREATE ROLE … LOGIN IN ROLE pg_monitor</code> is the form the replicated test fixture uses, and the <code>CREATE DATABASE</code> and <code>ALTER ROLE … SET</code> statements are standard PostgreSQL. The <code>pg_hba.conf</code> address range is an example.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

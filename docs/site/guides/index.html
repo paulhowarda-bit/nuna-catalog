@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guides · nuna docs</title>
+  <meta name="description" content="One task per guide, each from the console and the command line: data, access, governance, maintenance and audit.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>Guides</h1>
+        <p class="lead">One task per guide, each from the console and the command line: data, access, governance, maintenance and audit.</p>
+      </header>
+
+      <h2 id="data">Data</h2>
+      <ul class="cards">
+        <li>
+          <a href="create-catalog.html">
+            <span class="card-title">Create a catalog</span>
+            <span class="card-text">Declare a catalog with its storage profile, roll the servers and grant its first groups access.</span>
+          </a>
+        </li>
+        <li>
+          <a href="branch-workflow.html">
+            <span class="card-title">Write, audit and publish with a branch</span>
+            <span class="card-text">Write to a catalog branch, check what changed, then merge it into main in one transaction or delete it.</span>
+          </a>
+        </li>
+        <li>
+          <a href="tag.html">
+            <span class="card-title">Keep a point in time with a tag</span>
+            <span class="card-text">Make a read-only tag of the whole catalog, read through it, and remove it.</span>
+          </a>
+        </li>
+        <li>
+          <a href="time-travel.html">
+            <span class="card-title">Read an earlier version of a table</span>
+            <span class="card-text">Read a snapshot, a time or a table ref from each engine, and find it on the History tab.</span>
+          </a>
+        </li>
+        <li>
+          <a href="register-table.html">
+            <span class="card-title">Register an existing table</span>
+            <span class="card-text">Bring a table's existing metadata file under nuna.</span>
+          </a>
+        </li>
+        <li>
+          <a href="rename-move.html">
+            <span class="card-title">Rename or move a table or view</span>
+            <span class="card-text">Rename within a namespace or move to another, and what changes with it.</span>
+          </a>
+        </li>
+        <li>
+          <a href="table-settings.html">
+            <span class="card-title">Change a table's settings</span>
+            <span class="card-text">Set a table's properties from the console's Settings drawer or from an engine.</span>
+          </a>
+        </li>
+        <li>
+          <a href="multi-table-commit.html">
+            <span class="card-title">Commit to several tables at once</span>
+            <span class="card-text">Commit changes to several tables in one transaction that lands whole or not at all.</span>
+          </a>
+        </li>
+      </ul>
+
+      <h2 id="access">Access</h2>
+      <ul class="cards">
+        <li>
+          <a href="grant-access.html">
+            <span class="card-title">Grant and revoke access</span>
+            <span class="card-text">Give a group a privilege on a catalog, namespace, table or view, and take it back.</span>
+          </a>
+        </li>
+        <li>
+          <a href="row-column-rules.html">
+            <span class="card-title">Add a row filter or column mask</span>
+            <span class="card-text">Flag a table, add a rule per group, and check what a reader sees.</span>
+          </a>
+        </li>
+      </ul>
+
+      <h2 id="governance">Governance</h2>
+      <ul class="cards">
+        <li>
+          <a href="hold.html">
+            <span class="card-title">Place and lift a legal hold</span>
+            <span class="card-text">Stop anything being removed from a table, namespace or catalog, and release it.</span>
+          </a>
+        </li>
+        <li>
+          <a href="freeze.html">
+            <span class="card-title">Freeze and unfreeze for disaster recovery</span>
+            <span class="card-text">Freeze writes to a table or catalog while a reconcile runs.</span>
+          </a>
+        </li>
+        <li>
+          <a href="drop-restore-purge.html">
+            <span class="card-title">Drop, restore and purge a table</span>
+            <span class="card-text">Drop a table, restore it inside the window, or purge it for good.</span>
+          </a>
+        </li>
+      </ul>
+
+      <h2 id="maintenance">Maintenance</h2>
+      <ul class="cards">
+        <li>
+          <a href="compact-now.html">
+            <span class="card-title">Compact a table or scan for orphans now</span>
+            <span class="card-text">Ask the maintenance worker for one job on one table at its next scan.</span>
+          </a>
+        </li>
+        <li>
+          <a href="maintenance-policy.html">
+            <span class="card-title">Set a catalog's maintenance policy</span>
+            <span class="card-text">Choose what the worker does on its own: snapshot expiry, orphan removal, compaction and manifest rewrite.</span>
+          </a>
+        </li>
+      </ul>
+
+      <h2 id="audit">Audit</h2>
+      <ul class="cards">
+        <li>
+          <a href="query-audit.html">
+            <span class="card-title">Query the audit trail</span>
+            <span class="card-text">Find who did what and when, from the console, the audit feed or SQL on the audit table.</span>
+          </a>
+        </li>
+        <li>
+          <a href="verify-audit-chain.html">
+            <span class="card-title">Verify the audit chain</span>
+            <span class="card-text">Check that a record holds its place in the hash chain and was archived unchanged.</span>
+          </a>
+        </li>
+      </ul>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/grants">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grants · nuna docs</title>
+  <meta name="description" content="Grant a group a privilege on a catalog, namespace, table or view, take it back, and read who holds what, under /management/v1/catalogs/{catalog}/grants.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Grants</h1>
+        <p class="lead">Grant a group a privilege on a catalog, namespace, table or view, take it back, and read who holds what, under <code>/management/v1/catalogs/{catalog}/grants</code>.</p>
+      </header>
+
+      <p>A grant always goes to a group, never to one person. A privilege granted on a catalog or namespace reaches everything beneath it (see <a href="../concepts/access.html">Identity and access</a>). The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows. Errors take the form the <a href="index.html">API reference</a> describes.</p>
+      <p>Every route here answers a caller who holds nothing in the catalog with <code>404</code> <code>NoSuchWarehouseException</code>, <code>The given warehouse does not exist: <var>catalog</var></code>, and audits the refusal. A refusal on a namespace, table or view the caller holds nothing on is answered with that object's not-found error, also audited.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Grant endpoints, under <code>/management/v1/catalogs/{catalog}</code></caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST</code></td><td><a href="#post-grants"><code>/grants</code></a></td><td>Grants a privilege to a group.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-grants-revoke"><code>/grants/revoke</code></a></td><td>Revokes a grant.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-grants-preview"><code>/grants/preview</code></a></td><td>Says what a grant would do, writing nothing.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-grants"><code>/grants</code></a></td><td>Lists the grants of your groups, or of named groups.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-grants-on"><code>/grants/on</code></a></td><td>Lists the grants on one object.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-grants-effective"><code>/grants/effective</code></a></td><td>Lists every grant that reaches one object, from the catalog down.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-grants-groups"><code>/grants/groups</code></a></td><td>Lists the groups that hold grants in the catalog, with their duties.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-grants-export"><code>/grants/export</code></a></td><td>Exports every grant in the catalog.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-grants-check"><code>/grants/check</code></a></td><td>Checks whether you hold privileges on objects.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="granting-and-revoking">Granting and revoking</h2>
+      <p>The grant, revoke and preview routes take the same body. A grant is refused in this order: a privilege that means nothing on the object or on a branch (<code>400</code>), a grant to a group you belong to (<code>403</code>), and a grant that would give the group two duties that must stay separate (<code>403</code>). See <a href="../security/authorization.html">Authorization</a> for the duties.</p>
+
+      <section class="endpoint">
+        <h3 id="post-grants"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/grants</code></h3>
+        <p>Grants one privilege on one object to one group. A grant the group already holds is answered the same way and changes nothing. Without <code>branch</code>, the grant holds through every ref, <code>main</code> included. With <code>branch</code>, it holds through that catalog branch only, and only <code>write</code> and <code>modify</code> may be granted that way: reads, listings and every change other than a commit ask through <code>main</code>.</p>
+        <p>The check that keeps duties apart runs inside the database's write of the grant, so two grants made at the same time cannot together break it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the object or above it</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-grants-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>securable</code></td><td>body</td><td>object</td><td>Yes</td><td>The object: <code>type</code> (<code>catalog</code>, <code>namespace</code>, <code>table</code> or <code>view</code>), <code>namespace</code> (its levels, as an array) and <code>name</code> (for a table or view).</td></tr>
+              <tr><td><code>group</code></td><td>body</td><td>string</td><td>Yes</td><td>The group the grant goes to.</td></tr>
+              <tr><td><code>privilege</code></td><td>body</td><td>string</td><td>Yes</td><td>One of <code>describe</code>, <code>select</code>, <code>write</code>, <code>modify</code>, <code>create</code>, <code>manage-grants</code>, <code>manage-tags</code>.</td></tr>
+              <tr><td><code>branch</code></td><td>body</td><td>string</td><td>No</td><td>A live catalog branch the grant holds through, by name. Only with <code>write</code> or <code>modify</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-grants-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{
+  "securable": {"type": "namespace", "namespace": ["equities"]},
+  "group": "trading-analysts",
+  "privilege": "select"
+}</code></pre>
+        </div>
+        <h4 id="post-grants-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The group holds the privilege, whether this request granted it or it was held already.</td></tr>
+              <tr><td><code>400</code></td><td>
+                <p>The body is wrong. The messages include:</p>
+                <ul>
+                  <li><code>A grant names the group it goes to; grants never go to individuals …</code></li>
+                  <li><code>A privilege is needed</code>, or <code>unknown privilege '<var>x</var>'; known: [describe, select, write, modify, create, manage-grants, manage-tags]</code></li>
+                  <li><code>A securable needs a type: catalog, namespace, table or view</code>, <code>Unknown securable type '<var>x</var>'; expected catalog, namespace, table or view</code>, <code>A table needs a name</code>, <code>A namespace, table or view needs its namespace levels</code></li>
+                  <li><code>create means nothing on a table: it creates namespaces, tables and views in a catalog or namespace</code> (and the same for a view)</li>
+                  <li><code>write means nothing on a view: it has no rows; select reads it, and modify changes its definition</code></li>
+                  <li><code><var>privilege</var> is not granted on one branch: a grant that names a branch gives write or modify, what a commit on it needs; reads and every other change ask through main</code></li>
+                  <li><code>A grant names a branch, and <var>name</var> is a tag, which takes no write</code></li>
+                  <li><code>A JSON body is needed</code>, or <code>Invalid JSON body: …</code></li>
+                </ul>
+              </td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the object or above it; or you belong to the group (<code>no one grants to a group they belong to: <var>group</var></code>); or the grant would break separation of duties. The last two are audited with the reason <code>separation-of-duties</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog, the object (<code>Namespace does not exist: equities</code>, <code>table does not exist: equities.fills</code>) or the branch (<code>Branch does not exist: <var>name</var></code>; an expired branch counts as missing) is not there, or it went away during the write (<code>The branch no longer exists: …</code>, <code>The securable no longer exists: …</code>).</td></tr>
+              <tr><td><code>500</code></td><td>The database did not say whether the write happened: <code>The grant may or may not have been applied; repeat it: …</code>. Sending the same grant again is safe.</td></tr>
+              <tr><td><code>503</code></td><td>The catalog's database cannot be reached. Nothing was applied; the answer carries <code>Retry-After</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The separation refusals read like these:</p>
+        <ul>
+          <li><code>group platform-operators operates the platform and may hold no grant</code></li>
+          <li><code>group grant-admins administers grants on every catalog and may hold no other grant</code></li>
+          <li><code>group trading-engineers holds write in this catalog, a data duty that manage-tags (tags) must stay separate from</code></li>
+        </ul>
+        <h4 id="post-grants-example">Example</h4>
+        <div class="code" data-lang="bash" data-title="Grant select on a namespace">
+<pre><code>curl -sS -i -X POST "$NUNA/management/v1/catalogs/trading/grants" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "namespace", "namespace": ["equities"]},
+       "group": "trading-analysts", "privilege": "select"}'</code></pre>
+        </div>
+        <div class="code" data-lang="http" data-kind="output" data-title="Response">
+<pre><code>HTTP/1.1 204
+X-Request-ID: 4f0c9e2a7b1d4c8e9a3f5b6d7e8c9a01</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-grants-revoke"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/grants/revoke</code></h3>
+        <p>Revokes one grant. The body names the grant exactly as it was made: the same object, group, privilege and branch. A revoke may name a branch that has expired. A revoke is not checked against separation of duties or your own groups.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the object or above it</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-grants-revoke-parameters">Parameters</h4>
+        <p>The same as <a href="#post-grants-parameters">a grant's</a>.</p>
+        <h4 id="post-grants-revoke-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{
+  "securable": {"type": "table", "namespace": ["equities"], "name": "fills"},
+  "group": "trading-engineers",
+  "privilege": "write",
+  "branch": "dev"
+}</code></pre>
+        </div>
+        <h4 id="post-grants-revoke-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The grant is gone.</td></tr>
+              <tr><td><code>400</code></td><td>The body is wrong, with the messages a grant gives.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the object or above it.</td></tr>
+              <tr><td><code>404</code></td><td>The group holds no such grant: <code>No such grant: write to trading-engineers on branch dev</code> (<code>NotFoundException</code>). Or the catalog, object or branch is not there.</td></tr>
+              <tr><td><code>500</code></td><td><code>The revoke may or may not have been applied; repeat it: …</code></td></tr>
+              <tr><td><code>503</code></td><td>The catalog's database cannot be reached. Nothing was applied.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-grants-revoke-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -i -X POST "$NUNA/management/v1/catalogs/trading/grants/revoke" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "table", "namespace": ["equities"], "name": "fills"},
+       "group": "trading-engineers", "privilege": "write", "branch": "dev"}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-grants-preview"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/grants/preview</code></h3>
+        <p>Says what the same body sent to <a href="#post-grants">the grant route</a> would do, through the same checks in the same order, and writes nothing. The answer is <code>admitted</code>, <code>unchanged</code> (the group holds it already, with who granted it and when) or <code>refused</code> (with the refusal and the message the grant route would give). Separation of duties is read here, not inside a write, so a grant made in the meantime can still change the real answer.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the object or above it</span></p>
+        <h4 id="post-grants-preview-parameters">Parameters</h4>
+        <p>The same as <a href="#post-grants-parameters">a grant's</a>.</p>
+        <h4 id="post-grants-preview-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The answer follows, as a <a href="#grant-preview">grant preview</a>. Answers are not audited.</td></tr>
+              <tr><td><code>400</code></td><td>The body cannot be read, as for a grant. A privilege that means nothing on the object is not a <code>400</code> here: it is a <code>refused</code> answer.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the object or above it. This refusal is audited.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog, object or branch is not there.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-grants-preview-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants/preview" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "catalog"}, "group": "trading-engineers",
+       "privilege": "manage-tags"}'</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "securable": {"type": "catalog", "id": "9f1c2a4e-3b7d-4e8a-a6c5-1d2e3f405162"},
+  "group": "trading-engineers",
+  "privilege": "manage-tags",
+  "answer": "refused",
+  "refusal": "separation-of-duties",
+  "reason": "group trading-engineers holds write in this catalog, a data duty that manage-tags (tags) must stay separate from"
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="reading-grants">Reading grants</h2>
+      <p>The listing routes page with <code>pageToken</code> and <code>pageSize</code>. The page size defaults to <code>100</code> (<code>nuna.rest.default-page-size</code>) and a larger request is cut to <code>1000</code> (<code>nuna.rest.max-page-size</code>). A page size that is not a whole number of at least 1 is answered <code>400</code> <code>Invalid page size: <var>x</var></code>, and a token the route did not give is answered <code>400</code> <code>Invalid page token: …</code>. Grants come in order of group, then privilege. Reading grants writes no audit record.</p>
+
+      <section class="endpoint">
+        <h3 id="get-grants"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/grants</code></h3>
+        <p>Lists the grants held by groups. Without <code>group</code>, it lists your own groups' grants, which anyone who holds something in the catalog may read. Naming a group you do not belong to needs <code>manage-grants</code> on the catalog.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the catalog for another group's grants</span></p>
+        <h4 id="get-grants-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>group</code></td><td>query</td><td>string</td><td>No</td><td>A group whose grants to list. Repeat it for several. Default: your own groups.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Most grants in one page. Default <code>100</code>, at most <code>1000</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"grants": [<var>grant</var>, …], "next-page-token": …}</code>. <code>next-page-token</code> is there while more grants follow. A caller with no groups gets an empty list.</td></tr>
+              <tr><td><code>400</code></td><td>The page size or token is wrong.</td></tr>
+              <tr><td><code>403</code></td><td>You named a group you do not belong to and hold no <code>manage-grants</code> on the catalog.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/grants?group=trading-analysts&amp;pageSize=2" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "grants": [
+    {
+      "securable": {"type": "catalog", "id": "9f1c2a4e-3b7d-4e8a-a6c5-1d2e3f405162"},
+      "group": "trading-analysts",
+      "privilege": "describe",
+      "granted-by": "sam",
+      "granted-at": "2026-11-25T14:02:11.418206Z"
+    },
+    {
+      "securable": {"type": "namespace", "id": "2c4e6a80-1b3d-4f5a-8c7e-9a0b1c2d3e4f", "namespace": ["equities"]},
+      "group": "trading-analysts",
+      "privilege": "select",
+      "granted-by": "sam",
+      "granted-at": "2026-11-25T14:03:40.902853Z"
+    }
+  ],
+  "next-page-token": "AAAAEXRyYWRpbmctYW5hbHlzdHMAAAAGc2VsZWN0AAAAASo"
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-grants-on"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/grants/on</code></h3>
+        <p>Lists the grants made on one object, and only on it: grants on the levels above it are not included (see <a href="#get-grants-effective">the effective grants</a> for those).</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the object or above it</span></p>
+        <h4 id="get-grants-on-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>type</code></td><td>query</td><td>string</td><td>Yes</td><td><code>catalog</code>, <code>namespace</code>, <code>table</code> or <code>view</code>.</td></tr>
+              <tr><td><code>namespace</code></td><td>query</td><td>string</td><td>No</td><td>One namespace level. Repeat it for each level, in order: <code>namespace=equities&amp;namespace=daily</code>. Needed for every type but <code>catalog</code>.</td></tr>
+              <tr><td><code>name</code></td><td>query</td><td>string</td><td>No</td><td>The table's or view's name.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Default <code>100</code>, at most <code>1000</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-on-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"grants": [<var>grant</var>, …], "next-page-token": …}</code>.</td></tr>
+              <tr><td><code>400</code></td><td>The object is not named fully, or the page size or token is wrong.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the object or above it.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog or object is not there.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-on-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/grants/on?type=table&amp;namespace=equities&amp;name=fills" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-grants-effective"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/grants/effective</code></h3>
+        <p>Lists every grant that reaches one object: the grants on the catalog, on each namespace above it and on the object itself, from the catalog down. It also names the deployment's grant-admin groups, which manage grants on every catalog without a grant. The answer is not paged.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the object or above it</span></p>
+        <h4 id="get-grants-effective-parameters">Parameters</h4>
+        <p><code>catalog</code>, <code>type</code>, <code>namespace</code> and <code>name</code>, as for <a href="#get-grants-on-parameters">the grants on an object</a>.</p>
+        <h4 id="get-grants-effective-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"securable": <var>securable</var>, "grants": [<var>grant</var>, …], "grant-admin-groups": [<var>group</var>, …]}</code>.</td></tr>
+              <tr><td><code>400</code></td><td>The object is not named fully.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the object or above it.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog or object is not there.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-effective-example">Example</h4>
+        <p>The response below is cut to two grants.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/grants/effective?type=table&amp;namespace=equities&amp;name=fills" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "securable": {
+    "type": "table",
+    "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+    "namespace": ["equities"],
+    "name": "fills",
+    "state": "active"
+  },
+  "grants": [
+    {
+      "securable": {"type": "catalog", "id": "9f1c2a4e-3b7d-4e8a-a6c5-1d2e3f405162"},
+      "group": "trading-engineers",
+      "privilege": "modify",
+      "granted-by": "sam",
+      "granted-at": "2026-11-25T14:02:11.418206Z"
+    },
+    {
+      "securable": {"type": "namespace", "id": "2c4e6a80-1b3d-4f5a-8c7e-9a0b1c2d3e4f", "namespace": ["equities"]},
+      "group": "trading-analysts",
+      "privilege": "select",
+      "granted-by": "sam",
+      "granted-at": "2026-11-25T14:03:40.902853Z"
+    }
+  ],
+  "grant-admin-groups": ["grant-admins"]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-grants-groups"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/grants/groups</code></h3>
+        <p>Lists the groups that hold at least one grant in the catalog, each with the duties and privileges it holds there, and the deployment's grant-admin and platform-operator groups. The catalog knows groups only from its grants: it does not read the directory, so a group that holds nothing in the catalog is not listed. The answer says so in <code>note</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the catalog</span></p>
+        <h4 id="get-grants-groups-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Most groups in one page. Default <code>100</code>, at most <code>1000</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-groups-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The groups follow, by name.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the catalog.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-groups-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/grants/groups?pageSize=1" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "groups": [
+    {"group": "data-stewards", "duties": ["read", "tags"], "privileges": ["manage-tags", "select"]}
+  ],
+  "grant-admin-groups": ["grant-admins"],
+  "platform-operator-groups": ["platform-operators"],
+  "note": "Only groups that hold a grant in this catalog are listed, and the deployment's grant-admin and platform-operator groups: the catalog knows groups from its grants and does not read the directory, so a group that holds nothing here is not listed.",
+  "next-page-token": "AAAADWRhdGEtc3Rld2FyZHM"
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-grants-export"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/grants/export</code></h3>
+        <p>Exports every grant in the catalog, for access reviews: the grants on the catalog, on every namespace and on every active table and view. The answer is not paged.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the catalog</span></p>
+        <h4 id="get-grants-export-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-export-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalog", "exported-at", "exported-by", "grants": [<var>grant</var>, …]}</code>. <code>exported-by</code> is your subject.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-grants</code> on the catalog.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-grants-export-example">Example</h4>
+        <p>The response below is cut to one grant.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/grants/export" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "exported-at": "2026-11-26T09:12:05.138235736Z",
+  "exported-by": "sam",
+  "grants": [
+    {
+      "securable": {"type": "catalog", "id": "9f1c2a4e-3b7d-4e8a-a6c5-1d2e3f405162"},
+      "group": "trading-analysts",
+      "privilege": "describe",
+      "granted-by": "sam",
+      "granted-at": "2026-11-25T14:02:11.418206Z"
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="checking-access">Checking access</h2>
+
+      <section class="endpoint">
+        <h3 id="post-grants-check"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/grants/check</code></h3>
+        <p>Asks, for each check in the body, whether you hold a privilege on an object, as the server would decide it for a real request. With <code>branch</code>, it asks through that catalog branch; without it, through <code>main</code>. An object you hold nothing on is answered as missing, with no <code>securable</code> in its result.</p>
+        <p class="doc-meta"><span class="badge needs">Needs any grant in the catalog</span></p>
+        <h4 id="post-grants-check-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>checks</code></td><td>body</td><td>array</td><td>Yes</td><td>One or more checks, each with <code>securable</code>, <code>privilege</code> and, optionally, <code>branch</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-grants-check-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{
+  "checks": [
+    {"securable": {"type": "table", "namespace": ["equities"], "name": "fills"}, "privilege": "select"},
+    {"securable": {"type": "table", "namespace": ["equities"], "name": "fills"}, "privilege": "write", "branch": "dev"}
+  ]
+}</code></pre>
+        </div>
+        <h4 id="post-grants-check-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"results": [<var>result</var>, …]}</code>, one result per check, in order. The answers are not audited.</td></tr>
+              <tr><td><code>400</code></td><td>No checks: <code>Nothing to check: send {"checks":[{"securable":...,"privilege":...}]}</code>. Or a check names an unknown privilege or an incomplete object.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist (audited); or a check names a branch that does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-grants-check-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants/check" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"checks": [{"securable": {"type": "table", "namespace": ["equities"], "name": "fills"},
+                   "privilege": "select"}]}'</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "results": [
+    {
+      "privilege": "select",
+      "securable": {
+        "type": "table",
+        "id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+        "namespace": ["equities"],
+        "name": "fills",
+        "state": "active"
+      },
+      "allowed": true
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="securable">Securable</h3>
+      <p>How an answer names an object.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>type</code></td><td>string</td><td><code>catalog</code>, <code>namespace</code>, <code>table</code> or <code>view</code>.</td></tr>
+            <tr><td><code>id</code></td><td>string</td><td>The object's id, a UUID.</td></tr>
+            <tr><td><code>namespace</code></td><td>array of strings</td><td>The namespace levels: the namespace itself, or the one a table or view is in. Absent for a catalog.</td></tr>
+            <tr><td><code>name</code></td><td>string</td><td>A table's or view's name.</td></tr>
+            <tr><td><code>state</code></td><td>string</td><td>A table's or view's state, in lower case: <code>active</code>, or <code>dropped</code> while it can still be restored.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="grant">Grant</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>securable</code></td><td>object</td><td>The object the grant is on, as a <a href="#securable">securable</a>.</td></tr>
+            <tr><td><code>group</code></td><td>string</td><td>The group that holds it.</td></tr>
+            <tr><td><code>privilege</code></td><td>string</td><td>The privilege.</td></tr>
+            <tr><td><code>branch</code></td><td>string</td><td>The catalog branch the grant holds through. Absent for a grant on every ref.</td></tr>
+            <tr><td><code>granted-by</code></td><td>string</td><td>The subject who made the grant.</td></tr>
+            <tr><td><code>granted-at</code></td><td>string</td><td>When, as an ISO-8601 instant.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="grant-preview">Grant preview</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>securable</code>, <code>group</code>, <code>privilege</code>, <code>branch</code></td><td></td><td>The grant asked about. <code>branch</code> only when the body named one.</td></tr>
+            <tr><td><code>answer</code></td><td>string</td><td><code>admitted</code>, <code>unchanged</code> or <code>refused</code>.</td></tr>
+            <tr><td><code>refusal</code></td><td>string</td><td>With <code>refused</code>: <code>privilege-not-on-object</code>, <code>privilege-not-on-a-branch</code>, <code>self-grant</code> or <code>separation-of-duties</code>.</td></tr>
+            <tr><td><code>reason</code></td><td>string</td><td>With <code>refused</code>: the message the grant route would answer.</td></tr>
+            <tr><td><code>granted-by</code>, <code>granted-at</code></td><td>string</td><td>With <code>unchanged</code>: who made the grant the group already holds, and when.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="group-entry">Group entry</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>group</code></td><td>string</td><td>The group's name.</td></tr>
+            <tr><td><code>duties</code></td><td>array of strings</td><td>The duties its privileges in this catalog give: <code>read</code> (<code>describe</code>, <code>select</code>), <code>data</code> (<code>write</code>, <code>modify</code>, <code>create</code>), <code>grants</code> (<code>manage-grants</code>), <code>tags</code> (<code>manage-tags</code>).</td></tr>
+            <tr><td><code>privileges</code></td><td>array of strings</td><td>The privileges it holds anywhere in the catalog.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="check-result">Check result</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>privilege</code></td><td>string</td><td>The privilege asked about.</td></tr>
+            <tr><td><code>branch</code></td><td>string</td><td>The branch asked through, when the check named one.</td></tr>
+            <tr><td><code>securable</code></td><td>object</td><td>The object, as a <a href="#securable">securable</a>. Absent when it is missing or you hold nothing on it.</td></tr>
+            <tr><td><code>allowed</code></td><td>boolean</td><td>Whether you hold the privilege.</td></tr>
+            <tr><td><code>reason</code></td><td>string</td><td>Why not, when <code>allowed</code> is false: the denial's message, or the object's not-found message.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/access.html">Identity and access</a>: privileges, groups and how grants pass down the tree.</li>
+          <li><a href="../security/authorization.html">Authorization</a>: separation of duties and the self-grant rule.</li>
+          <li><a href="row-column-rules.html">Row and column rules</a>: filter rows and mask columns for a group.</li>
+          <li><a href="../reference/audit-records.html#record-types">Audit record format</a>: the record each grant and revoke leaves.</li>
+          <li><a href="../console/grants.html">The Grants page</a>: the same grants from the console.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java</code>, <code>Securables.java</code>, <code>Holdings.java</code> and <code>Denials.java</code> in the same folder, <code>catalog-security/src/main/java/nuna/catalog/security/Privilege.java</code> and <code>Separation.java</code>, and <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The <code>GET</code> examples were run against the demo and their responses rewritten to the fictional estate. The <code>POST</code> examples were not run: their responses are built from the code.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

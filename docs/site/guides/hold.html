@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/hold">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Place and lift a legal hold · nuna docs</title>
+  <meta name="description" content="Place a legal hold on a catalog, namespace, table or view so that nothing under it can be deleted, and release it when the matter ends.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Place and lift a legal hold</h1>
+        <p class="lead">Place a legal hold on a catalog, namespace, table or view so that nothing under it can be deleted, and release it when the matter ends.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data stewards</span>
+          <span class="badge needs">Needs <code>manage-tags</code> on the object</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Your group holds <code>manage-tags</code> on the object or above it.</li>
+        <li>You have the reason as it must be recorded, such as the matter it is for. The hold carries it for as long as it stands, and the audit trail keeps it after.</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+      <p>While a hold stands, nothing under it can be dropped or purged, snapshot expiry and orphan removal stop, and commits that remove snapshots are refused. Commits that add data still succeed, and compaction still runs. On a view, the hold stops it being dropped or purged; its definition can still be replaced. <a href="../concepts/governance.html#legal-holds">Governance</a> lists every block.</p>
+
+      <h2 id="place-hold">Place a hold</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Open the table, view or namespace, and select its <b class="ui">Access</b> tab.</p>
+              <p>To hold a path you do not want to open, select <b class="ui">Governance</b> in the rail, then <b class="ui">Holds and freezes</b>, then <b class="ui">Place a hold on a path</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Place a hold</b>.</p>
+              <p>On a namespace the button is <b class="ui">Place a hold here</b>. The dialog <b class="ui">Place a hold on fills</b> opens.</p>
+            </li>
+            <li>
+              <p class="step-title">Enter the reason in <b class="ui">Reason, as it will be recorded</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Place the hold</b>.</p>
+              <p>The dialog confirms with <b class="ui">Held:</b> and the object's name, and the hold appears in the <b class="ui">Legal holds</b> panel.</p>
+            </li>
+          </ol>
+          <figure class="shot pending" id="fig-hold-dialog"
+                  data-shot="guides-hold-dialog"
+                  data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Fequities%1Feu%1Fxetra&amp;n=trades&amp;tab=access"
+                  data-shot-user="stella"
+                  data-shot-width="1440"
+                  data-shot-state="The demo's held table markets.equities.eu.xetra.trades, with its seeded hold in the Legal holds panel.">
+            <figcaption>A held table's Access tab, with the hold and its reason in the Legal holds panel.</figcaption>
+          </figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Post the reason to the object's <code>holds</code>. A catalog's are at <code>/management/v1/catalogs/trading/holds</code>, a namespace's at <code>…/namespaces/equities/holds</code>, a view's at <code>…/views/<var>view</var>/holds</code>.</p>
+          <div class="code" data-lang="bash" data-title="Hold equities.fills">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/holds" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Matter 2026-114: trade surveillance review"}'</code></pre>
+          </div>
+          <p>It answers <code>201</code> with the hold. Keep its <code>id</code>: you release the hold by it.</p>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "id": "acb5a6a8-9603-443b-a7a6-f5e4903c8953",
+  "level": "table:…",
+  "reason": "Matter 2026-114: trade surveillance review",
+  "placed-by": "…",
+  "placed-at": "2026-11-26T15:17:19.210Z"
+}</code></pre>
+          </div>
+        </section>
+      </div>
+
+      <aside class="callout check">
+        <p class="callout-title">The hold is standing</p>
+        <p>The catalog's holds list it under <code>standing</code>, with its reason, who placed it and when. In the console it is on the <b class="ui">Holds and freezes</b> tab of the <b class="ui">Governance</b> page, in <b class="ui">Standing</b>.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/governance/holds" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </aside>
+
+      <h2 id="release-hold">Release a hold</h2>
+      <p>Release a hold on the level it was placed on. Releasing it lets the worker expire snapshots and remove files there again, and lets the objects be dropped and purged.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Select <b class="ui">Release</b> on the hold's row.</p>
+              <p>The row is in the <b class="ui">Legal holds</b> panel of any object under the hold, or in <b class="ui">Standing</b> on the <b class="ui">Holds and freezes</b> tab. The dialog <b class="ui">Release a hold</b> opens.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Release the hold</b>.</p>
+              <p>The dialog confirms with <b class="ui">Released</b>. The hold moves to <b class="ui">Lifted and released</b>.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Delete the hold by its id, on the object it was placed on. It answers <code>204</code>.</p>
+          <div class="code" data-lang="bash" data-title="Release the hold on equities.fills">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/holds/acb5a6a8-9603-443b-a7a6-f5e4903c8953" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+        </section>
+      </div>
+      <p>Each placement and release leaves an audit record of type <code>nuna.catalog.hold</code>, with the action (<code>PLACED</code> or <code>RELEASED</code>), the hold's id, the object, the reason and who did it. The catalog's holds list shows released holds for 30 days.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>400</code> <code>Missing field reason: a non-empty string</code></td><td>No reason was sent. The console says <b class="ui">Write the reason: the hold carries it for as long as it stands.</b></td><td>Enter the reason.</td></tr>
+            <tr><td><code>400</code> <code>Field reason is longer than 1000 characters</code></td><td>The reason is too long.</td><td>Shorten it and point to the matter's own record.</td></tr>
+            <tr><td><code>403</code> <code><var>subject</var> holds no privilege that gives manage-tags for …</code></td><td>Your groups hold no <code>manage-tags</code> on the object or above it.</td><td>Ask a grant admin for the grant, or ask a data steward.</td></tr>
+            <tr><td><code>404</code> <code>No hold … on this table</code></td><td>The hold is not on this object: it was placed on a level above, or has been released.</td><td>Release it on the level it was placed on; the holds list names it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>What others see while the hold stands:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Refusals under a hold</caption>
+          <thead><tr><th scope="col">Message</th><th scope="col">When</th></tr></thead>
+          <tbody>
+            <tr><td><code>Table equities.fills is under a legal hold and cannot be dropped</code></td><td>Someone drops a held table; a view or namespace says the same with its own word.</td></tr>
+            <tr><td><code>Table … is under legal hold: its snapshots cannot be removed</code></td><td>An engine commits a snapshot expiry.</td></tr>
+            <tr><td><code>Table equities.fills is under legal hold: nothing may be removed, so no … runs</code></td><td>Someone asks for snapshot expiry or an orphan scan now.</td></tr>
+            <tr><td><code>… is under a legal hold and cannot be purged</code></td><td>The worker tries to purge a dropped held object.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/governance.html">Governance</a>: holds beside attributes and freezes.</li>
+          <li><a href="freeze.html">Freeze and unfreeze for disaster recovery</a>: stopping commits, not deletions.</li>
+          <li><a href="../console/governance.html">The Governance page</a>: the holds and freezes lists.</li>
+          <li><a href="../api/governance.html#endpoints">Governance API</a>: every hold endpoint.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>MaintenancePolicy.java</code>, <code>MaintenanceRequests.java</code>, <code>LifecycleRoutes.java</code> and <code>ManagementGuard.java</code> in the same package, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java</code>, <code>catalog-audit/src/main/java/nuna/catalog/audit/HoldChange.java</code>, <code>catalog-server/src/main/resources/nuna/ui/panels.js</code> and <code>catalog-server/src/main/resources/nuna/ui/governance.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The holds listing, with the demo's standing hold, was read from the local demo with a GET request; the response above keeps its shape and its id. Placing and releasing a hold were not run: the demo is shared.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/spark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spark · nuna docs</title>
+  <meta name="description" content="Connect Spark to a nuna catalog with Iceberg's REST catalog and vended credentials, read and write a branch or tag, and run Iceberg's maintenance procedures within nuna's limits.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Spark</h1>
+        <p class="lead">Connect Spark to a nuna catalog with Iceberg's REST catalog and vended credentials, read and write a branch or tag, and run Iceberg's maintenance procedures within nuna's limits.</p>
+        <p class="doc-meta"><span class="badge for">For engine users</span> <span class="badge tested">Tested in the engine matrix</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Spark 4.1 with Iceberg's Spark runtime and AWS bundle on the class path. The engine matrix tests Spark 4.1.4 with <code>iceberg-spark-runtime-4.1_2.13</code> 1.12.0 and <code>iceberg-aws-bundle</code> 1.12.0.</li>
+        <li>An access token in <code>NUNA_TOKEN</code> (<a href="tokens.html">Get a token</a>), and grants on the catalog for one of its groups: <code>select</code> to read, <code>write</code> to change data, <code>create</code> and <code>modify</code> to create and change tables (<a href="../reference/privileges.html">Privileges</a>).</li>
+        <li>Network access from the driver and the executors to the server and to the object store.</li>
+      </ul>
+
+      <h2 id="configure-the-catalog">Configure the catalog</h2>
+      <p>These are the settings the engine matrix runs, for a Spark catalog named <code>trading</code> on the nuna catalog <code>trading</code>. The Spark catalog's name is yours to choose; <code>warehouse</code> names the nuna catalog.</p>
+      <div class="code" data-lang="bash" data-title="spark-sql with a nuna catalog">
+<pre><code>spark-sql \
+  --packages org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:1.12.0,org.apache.iceberg:iceberg-aws-bundle:1.12.0 \
+  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+  --conf spark.sql.catalog.trading=org.apache.iceberg.spark.SparkCatalog \
+  --conf spark.sql.catalog.trading.type=rest \
+  --conf spark.sql.catalog.trading.uri=https://nuna.example/ \
+  --conf spark.sql.catalog.trading.warehouse=trading \
+  --conf "spark.sql.catalog.trading.token=${NUNA_TOKEN}" \
+  --conf spark.sql.catalog.trading.header.X-Iceberg-Access-Delegation=vended-credentials \
+  --conf spark.sql.catalog.trading.io-impl=org.apache.iceberg.aws.s3.S3FileIO \
+  --conf spark.sql.catalog.trading.rest-catalog-purge=true</code></pre>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <caption>What each setting does</caption>
+          <thead><tr><th scope="col">Setting, after <code>spark.sql.catalog.trading</code></th><th scope="col">Why</th></tr></thead>
+          <tbody>
+            <tr><td><code>type=rest</code>, <code>uri</code></td><td>Iceberg's REST catalog client, at the server's address. The client adds <code>/v1/…</code> itself.</td></tr>
+            <tr><td><code>warehouse</code></td><td>The nuna catalog, or <code><var>catalog</var>@<var>ref</var></code> for a branch or tag.</td></tr>
+            <tr><td><code>token</code></td><td>The bearer token sent with every request. For a token that renews itself, set <code>credential</code> and <code>oauth2-server-uri</code> instead (<a href="tokens.html#let-an-engine-renew-its-own-token">Let an engine renew its own token</a>).</td></tr>
+            <tr><td><code>header.X-Iceberg-Access-Delegation</code></td><td>Asks for vended credentials, so Spark needs no object store keys of its own. nuna vends them without the header too.</td></tr>
+            <tr><td><code>io-impl</code></td><td>Iceberg's S3 file IO, which takes the vended credentials and the object store's address from the table's load answer, and refreshes the credentials before they expire.</td></tr>
+            <tr><td><code>rest-catalog-purge=true</code></td><td>Sends <code>DROP TABLE … PURGE</code> to the catalog instead of deleting files from Spark. nuna drops the table softly and purges it after the retention period.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="callout check">
+        <p class="callout-title">Spark lists the catalog's namespaces</p>
+        <p>Run <code>SHOW NAMESPACES IN trading;</code>. The namespaces you may see are listed; an error that names <code>NotAuthorizedException</code> means the token was refused.</p>
+      </aside>
+
+      <h2 id="read-and-write">Read and write</h2>
+      <p>Tables are named <code><var>spark catalog</var>.<var>namespace</var>.<var>table</var></code>, with every level of a nested namespace: <code>trading.equities.daily.positions</code>. Create a nested namespace one level at a time.</p>
+      <div class="code" data-lang="sql">
+<pre><code>CREATE NAMESPACE IF NOT EXISTS trading.equities;
+CREATE TABLE trading.equities.fills (fill_id BIGINT, symbol STRING, quantity BIGINT, filled_at TIMESTAMP)
+  USING iceberg PARTITIONED BY (days(filled_at));
+INSERT INTO trading.equities.fills VALUES (1, 'ACME', 100, TIMESTAMP '2026-11-25 14:30:00');
+SELECT symbol, sum(quantity) FROM trading.equities.fills GROUP BY symbol;</code></pre>
+      </div>
+      <p>New tables are format version 3. Set <code>TBLPROPERTIES ('format-version'='2')</code> for a v2 table. The catalog chooses each table's location: a <code>LOCATION</code> clause is ignored.</p>
+
+      <h2 id="branches-and-tags">Branches and tags</h2>
+      <p>A nuna branch or tag covers the whole catalog. Spark reaches it as another Spark catalog whose <code>warehouse</code> is <code><var>catalog</var>@<var>ref</var></code>, with the other settings the same:</p>
+      <div class="code" data-lang="bash">
+<pre><code>  --conf spark.sql.catalog.trading_dev=org.apache.iceberg.spark.SparkCatalog \
+  --conf spark.sql.catalog.trading_dev.warehouse=trading@dev \
+  …</code></pre>
+      </div>
+      <ul>
+        <li>Through a branch, Spark reads the branch's tables and writes to them; the writes stay on the branch until it is merged with the management API (<a href="../guides/branch-workflow.html">Work on a branch</a>). Creating, dropping and renaming tables happen on main only.</li>
+        <li>Through a tag, Spark only reads. Iceberg's client refuses a table change itself, since the tag's configuration does not list the commit endpoint, and a data write fails at the object store, since a tag's credentials are read-only.</li>
+      </ul>
+      <p>These are nuna's catalog-wide refs. Iceberg's own table branches and tags (<code>ALTER TABLE … CREATE BRANCH</code>, <code>VERSION AS OF</code>) also work, inside one table.</p>
+
+      <h2 id="maintenance-procedures">Maintenance procedures</h2>
+      <p>Iceberg's procedures run through <code>CALL trading.system.<var>procedure</var>(…)</code>. The engine matrix ran each of these:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Procedure</th><th scope="col">Against nuna</th></tr></thead>
+          <tbody>
+            <tr><td><code>rewrite_data_files</code>, <code>rewrite_position_delete_files</code>, <code>rewrite_manifests</code></td><td>Work. They need <code>write</code> on the table.</td></tr>
+            <tr><td><code>expire_snapshots</code></td><td>Commits, but no file is deleted: vended credentials cannot delete objects. nuna's maintenance worker deletes expired files. Snapshots younger than the deployment's minimum snapshot age, or on a table under a legal hold, cannot be expired.</td></tr>
+            <tr><td><code>remove_orphan_files</code></td><td>Needs <code>prefix_listing =&gt; true</code>, since Spark's Hadoop file system has no <code>s3</code> scheme. An <code>older_than</code> within the last 24 hours is refused. No file is deleted, for the same reason as above.</td></tr>
+            <tr><td><code>compute_table_stats</code></td><td>Works; the statistics are committed to the table.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>nuna's maintenance worker can also run compaction for you on a schedule (<a href="../concepts/maintenance.html">Maintenance</a>).</p>
+
+      <h2 id="what-was-tested">What was tested</h2>
+      <p>The engine matrix runs Spark against nuna every night code changes: create, read, evolve and drop tables of format versions 2 and 3 in a three-level namespace; row-level delete, update and merge, copy-on-write and merge-on-read; schema and partition evolution; time travel; table branches, tags and write-audit-publish; views; the procedures above; upgrading v2 to v3; v3 row lineage, variant and geometry types; and the catalog's branches and tags. <a href="../reference/engines.html">Engine compatibility</a> gives each result.</p>
+      <p>Spark itself refuses two things: column default values (<code>Cannot add column d since setting default values in Spark is currently unsupported</code>), and <code>ALTER VIEW … AS</code> (<code>ALTER VIEW ... AS is not supported. Use CREATE OR REPLACE VIEW instead</code>). Geometry and geography types need <code>spark.sql.geospatial.enabled=true</code>.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>NotAuthorizedException: Not authorized: the bearer token is missing or was not accepted</code></td><td>The token is missing, expired or not trusted.</td><td>Get a new token; for long jobs, let the client renew it.</td></tr>
+            <tr><td><code>NoSuchWarehouseException: The given warehouse does not exist: …</code></td><td>The catalog or ref does not exist, or you hold nothing in it.</td><td>Check <code>warehouse</code>, and ask a grant admin for access.</td></tr>
+            <tr><td><code>ForbiddenException: … holds no privilege that gives …</code></td><td>Your groups lack the privilege the statement needs.</td><td>Ask a grant admin for it.</td></tr>
+            <tr><td><code>BadRequestException: createTable is refused on branch dev of catalog trading: …</code></td><td>Tables are created, dropped and renamed on main only.</td><td>Do it through the main catalog, then work on the branch.</td></tr>
+            <tr><td>S3 <code>AccessDenied</code> on a write</td><td>You may only read the table, or you are on a tag: the credentials are read-only.</td><td>Ask for <code>write</code>, or write through main or a branch.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/engines.html">Engine compatibility</a>: every Spark result.</li>
+          <li><a href="../guides/branch-workflow.html">Work on a branch</a>: branches from Spark, then merging.</li>
+          <li><a href="../security/credential-vending.html">Credential vending</a>: what Spark's credentials allow.</li>
+          <li><a href="https://iceberg.apache.org/docs/1.12.0/spark-configuration/">Iceberg's Spark configuration</a>: every catalog setting.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-tests-engines/images/spark/run.sh</code>, <code>catalog-tests-engines/images/spark/spark_matrix.py</code>, <code>catalog-tests-engines/images/spark/refs_matrix.py</code>, <code>catalog-tests-engines/images/spark/compaction_matrix.py</code>, <code>catalog-tests-engines/images/spark/Dockerfile</code> and <code>catalog-tests-engines/src/test/java/nuna/catalog/engines/EngineMatrixTest.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The settings are the engine matrix's, with this site's names. The matrix passed in the nightly run at commit <code>639b0da5</code> on 2026-11-25; Spark was not run for this page, and the <code>--packages</code> form of the command was not run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/iceberg-namespaces">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iceberg REST: namespaces · nuna docs</title>
+  <meta name="description" content="List, create, load, check, drop and change the properties of namespaces, under /v1/{prefix}/namespaces.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Iceberg REST: namespaces</h1>
+        <p class="lead">List, create, load, check, drop and change the properties of namespaces, under <code>/v1/{prefix}/namespaces</code>.</p>
+      </header>
+
+      <p>A namespace holds tables, views and other namespaces, to any depth (<a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>). In a path, <code>{namespace}</code> is every level joined by <code>%1F</code>: <code>equities%1Fdaily</code> is <code>equities.daily</code>. In a body, a namespace is an array of its levels, <code>["equities", "daily"]</code>.</p>
+      <p>Names are unique without regard to case: <code>Equities</code> and <code>equities</code> are the same namespace. The server keeps and answers the name as it was first given. A level may not be empty.</p>
+      <p>Through a branch or tag prefix, namespaces can be listed, loaded and checked, and the properties answered are main's; creating, dropping and changing properties happen on main only (<a href="iceberg-config.html#the-prefix">The prefix</a>). The examples use curl with <code>NUNA</code> and <code>TOKEN</code> set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Namespace endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-namespaces"><code>/v1/{prefix}/namespaces</code></a></td><td>Lists the namespaces under a parent.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-namespaces"><code>/v1/{prefix}/namespaces</code></a></td><td>Creates a namespace.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-namespaces-namespace"><code>/v1/{prefix}/namespaces/{namespace}</code></a></td><td>Loads a namespace's properties.</td></tr>
+            <tr><td><code>HEAD</code></td><td><a href="#head-namespaces-namespace"><code>/v1/{prefix}/namespaces/{namespace}</code></a></td><td>Says whether a namespace exists.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-namespaces-namespace"><code>/v1/{prefix}/namespaces/{namespace}</code></a></td><td>Drops an empty namespace.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-namespaces-namespace-properties"><code>/v1/{prefix}/namespaces/{namespace}/properties</code></a></td><td>Sets and removes properties.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-namespaces"><span class="method" data-method="GET">GET</span> <code>/v1/{prefix}/namespaces</code></h3>
+        <p>Lists the namespaces one level below <code>parent</code>, or the top-level namespaces when <code>parent</code> is missing, sorted by name. Paging works as <a href="index.html#paging">Paging</a> describes: without <code>pageToken</code>, every namespace comes in one answer.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the parent</span></p>
+        <h4 id="get-namespaces-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>prefix</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog, or <code><var>catalog</var>@<var>ref</var></code>.</td></tr>
+              <tr><td><code>parent</code></td><td>query</td><td>string</td><td>No</td><td>The namespace to list under, levels joined by <code>%1F</code>.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>Empty for the first page; then the last answer's <code>next-page-token</code>.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Namespaces per page, with <code>pageToken</code> only. Default <code>100</code>, at most <code>1000</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespaces-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"namespaces": [[<var>level</var>, …], …], "next-page-token": <var>token or null</var>}</code>.</td></tr>
+              <tr><td><code>400</code></td><td>A bad page size or token: <code>Invalid page size: 0</code>, <code>Invalid page token: …</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The parent does not exist, or you hold nothing on it (<code>NoSuchNamespaceException</code>); or the catalog or ref does not exist (<code>NoSuchWarehouseException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespaces-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces?parent=equities" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"namespaces": [["equities", "daily"]], "next-page-token": null}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-namespaces"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces</code></h3>
+        <p>Creates a namespace, with properties if given. Its parent must already exist: create <code>equities</code> before <code>equities.daily</code>. The creation is audited. Takes an <code>Idempotency-Key</code> (<a href="index.html#idempotency-keys">Idempotency keys</a>).</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the parent</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-namespaces-body">Body</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>namespace</code></td><td>body</td><td>array of strings</td><td>Yes</td><td>The new namespace's levels, its parent's first.</td></tr>
+              <tr><td><code>properties</code></td><td>body</td><td>object</td><td>No</td><td>String keys and values. A key or value may not be null.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-namespaces-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>Created: <code>{"namespace": […], "properties": {…}}</code>.</td></tr>
+              <tr><td><code>400</code></td><td>The body is not valid, for example <code>Invalid namespace: empty</code>; or the prefix names a branch or tag.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the parent, but not create.</td></tr>
+              <tr><td><code>404</code></td><td>The parent does not exist: <code>Namespace does not exist: <var>parent</var></code> (<code>NoSuchNamespaceException</code>).</td></tr>
+              <tr><td><code>409</code></td><td><code>Namespace already exists: <var>namespace</var></code> (<code>AlreadyExistsException</code>), also when the name differs only in case.</td></tr>
+              <tr><td><code>500</code></td><td>The database did not say whether the write was applied and reading it back did not settle it: <code>Creating namespace … may or may not have been applied: …</code> (<code>ServiceFailureException</code>). Repeat with the same <code>Idempotency-Key</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-namespaces-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-equities-daily-1" \
+  -d '{"namespace": ["equities", "daily"], "properties": {"owner": "trading-engineers"}}'</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"namespace": ["equities", "daily"], "properties": {"owner": "trading-engineers"}}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-namespaces-namespace"><span class="method" data-method="GET">GET</span> <code>/v1/{prefix}/namespaces/{namespace}</code></h3>
+        <p>Answers a namespace's levels and properties.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the namespace</span></p>
+        <h4 id="get-namespaces-namespace-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"namespace": […], "properties": {…}}</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>namespace</var></code> (<code>NoSuchNamespaceException</code>), also when you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespaces-namespace-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces/equities%1Fdaily" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="head-namespaces-namespace"><span class="method" data-method="HEAD">HEAD</span> <code>/v1/{prefix}/namespaces/{namespace}</code></h3>
+        <p>Says whether a namespace exists, with no body. A namespace you hold nothing on answers as missing.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the namespace</span></p>
+        <h4 id="head-namespaces-namespace-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>It exists.</td></tr>
+              <tr><td><code>404</code></td><td>It does not exist, or you may not see it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-namespaces-namespace"><span class="method" data-method="DELETE">DELETE</span> <code>/v1/{prefix}/namespaces/{namespace}</code></h3>
+        <p>Drops a namespace that holds nothing: no table, view or namespace, and no table or view that a branch or tag still names. The drop is audited. Takes an <code>Idempotency-Key</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-namespaces-namespace-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>Dropped.</td></tr>
+              <tr><td><code>400</code></td><td>The prefix names a branch or tag.</td></tr>
+              <tr><td><code>403</code></td><td>You lack modify, or <code>Namespace <var>namespace</var> is under a legal hold and cannot be dropped</code> (<code>ForbiddenException</code>).</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>namespace</var></code> (<code>NoSuchNamespaceException</code>).</td></tr>
+              <tr><td><code>409</code></td><td><code>Namespace <var>namespace</var> is not empty</code>, or <code>Namespace <var>namespace</var> is not empty: a branch or tag names a table or view in it</code> (<code>NamespaceNotEmptyException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-namespaces-namespace-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/v1/trading/namespaces/equities%1Fdaily" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-namespaces-namespace-properties"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/properties</code></h3>
+        <p>Sets some properties and removes others, in one change that is audited. A key may not be in both lists. If the namespace changes while the update runs, the server tries again, up to five times, and then gives up with nothing applied. Takes an <code>Idempotency-Key</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-namespaces-namespace-properties-body">Body</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>updates</code></td><td>body</td><td>object</td><td>No</td><td>Properties to set.</td></tr>
+              <tr><td><code>removals</code></td><td>body</td><td>array of strings</td><td>No</td><td>Keys to remove.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-namespaces-namespace-properties-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"updated": […], "removed": […], "missing": […]}</code>: the keys set, the keys removed, and the keys asked to be removed that were not there.</td></tr>
+              <tr><td><code>400</code></td><td>The prefix names a branch or tag, or the body is not valid.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>namespace</var></code>.</td></tr>
+              <tr><td><code>422</code></td><td><code>Invalid namespace update, cannot simultaneously set and remove keys: […]</code> (<code>UnprocessableEntityException</code>).</td></tr>
+              <tr><td><code>500</code></td><td><code>Namespace <var>namespace</var> changed 5 times while its properties were updated; nothing was applied</code> (<code>ServiceFailureException</code>). Send it again.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-namespaces-namespace-properties-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces/equities/properties" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"updates": {"owner": "trading-engineers"}, "removals": ["comment"]}'</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"updated": ["owner"], "removed": ["comment"], "missing": []}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+      <h3 id="namespace">Namespace</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>namespace</code></td><td>array of strings</td><td>The levels, outermost first, as they were first given.</td></tr>
+            <tr><td><code>properties</code></td><td>object</td><td>String keys and values.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="iceberg-tables.html">Iceberg REST: tables</a>: the tables in a namespace.</li>
+          <li><a href="search.html">Name search and listings</a>: a namespace's tables with their figures, from the management API.</li>
+          <li><a href="../reference/privileges.html">Privileges</a>: describe, create and modify.</li>
+          <li><a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml">The Iceberg REST catalog standard</a>: the namespace endpoints' full definition.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Http.java</code> and <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The listing's shape and paging were captured from the local demo with read-only requests; the writes were not run against it.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

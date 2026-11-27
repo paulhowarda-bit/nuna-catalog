@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/audit-tables">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit tables writer settings · nuna docs</title>
+  <meta name="description" content="Point the audit tables writer at the catalog and its source, and set up the Object Lock archive.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Audit tables writer settings</h1>
+        <p class="lead">Point the audit tables writer at the catalog and its source, and set up the Object Lock archive.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The audit tables writer is its own program, <code>nuna-audit-tables</code>, installed by its own chart. It signs in to the catalog as its own principal, whose group holds <code>create</code> and <code>write</code> on the audit catalog and nothing else, and writes the table <code>events</code> with the credentials the catalog vends it. It takes the audit records from one source: the audit topic (<code>kafka</code>, the default) or the catalog's log over OTLP/HTTP (<code>otlp</code>). With the source <code>otlp</code> it can also write the Object Lock archive.</p>
+
+      <h2 id="the-writer">The writer</h2>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-catalog-uri"><code>nuna.audit-tables.catalog-uri</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_CATALOGURI</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.catalog-uri</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The catalog's base URI, such as <code>http://nuna-catalog:8181/</code>. Without it the writer stops with <code>nuna.audit-tables.catalog-uri names no catalog</code>, and the chart refuses to render.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-catalog"><code>nuna.audit-tables.catalog</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>nuna_audit</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_CATALOG</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.catalog</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The audit catalog, declared in the catalog's <a href="catalogs.html#nuna-storage-catalogs"><code>nuna.storage.catalogs</code></a> and named in its <a href="audit.html#nuna-audit-tables-catalog"><code>nuna.audit.tables.catalog</code></a>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-namespace"><code>nuna.audit-tables.namespace</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>audit</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_NAMESPACE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.namespace</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The namespace in the audit catalog holding the table <code>events</code>. The writer creates both.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-principal"><code>nuna.audit-tables.principal</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_PRINCIPAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.principal</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The writer's own principal id as the catalog records it, the value of its token's user id claim. The records of its own requests are left out of the table. Without it the writer stops with <code>nuna.audit-tables.principal must name the writer's own principal id, as the catalog records it: the records of its own requests are left out of the table</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-commit-interval"><code>nuna.audit-tables.commit-interval</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>PT1M</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_COMMITINTERVAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.commit-interval</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How often waiting rows are committed: rows are about this far behind the source. Positive.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-max-rows"><code>nuna.audit-tables.max-rows</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>100000</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_MAXROWS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.max-rows</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Rows that make a commit before the interval has passed, bounding the writer's memory. At least 1.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-client-properties"><code>nuna.audit-tables.client-properties</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of string to string</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd>set in YAML: the keys hold dots</dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.client-properties</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>More Iceberg client properties, such as TLS settings or an S3 endpoint override for the vended credentials. Write keys holding dots in brackets, such as <code>"[s3.endpoint]"</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-source"><code>nuna.audit-tables.source</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>enumeration</dd>
+          <dt>Default</dt><dd><code>kafka</code></dd>
+          <dt>Allowed values</dt><dd><code>kafka</code>, <code>otlp</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_SOURCE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.source</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the records come from: the audit topic, or the catalog's log sent to the writer's OTLP/HTTP receiver by the catalog chart's <a href="helm-values.html#nuna-catalog-telemetry"><code>telemetry.logsEndpoint</code></a>.</p>
+      </section>
+
+      <h2 id="nuna-audit-tables-token">The token</h2>
+
+      <p>The writer signs in by the OAuth 2 client-credentials grant, which Iceberg's client makes and renews. Without the token settings the writer stops with <code>nuna.audit-tables.token: set endpoint, client-id and client-secret</code>; without one of the three, with <code>nuna.audit-tables.token needs endpoint, client-id and client-secret: the client-credentials grant</code>.</p>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-token-endpoint"><code>nuna.audit-tables.token.endpoint</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_TOKEN_ENDPOINT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.token.endpoint</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The identity provider's token endpoint.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-token-client-id"><code>nuna.audit-tables.token.client-id</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_TOKEN_CLIENTID</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.token.client-id</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The writer's client id there.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-token-client-secret"><code>nuna.audit-tables.token.client-secret</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_TOKEN_CLIENTSECRET</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The client's secret. Keep it in the chart's Secret.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-token-scope"><code>nuna.audit-tables.token.scope</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: Iceberg's client asks for <code>catalog</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_TOKEN_SCOPE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.token.scope</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The scope to ask for.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-token-audience"><code>nuna.audit-tables.token.audience</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (the chart sets <code>nuna-catalog</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_TOKEN_AUDIENCE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.token.audience</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>An audience to ask for, if the provider needs one. The catalog checks <code>aud</code>.</p>
+      </section>
+
+      <h2 id="source-kafka">Source kafka</h2>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-kafka-bootstrap-servers"><code>nuna.audit-tables.kafka.bootstrap-servers</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required for the source <code>kafka</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_KAFKA_BOOTSTRAPSERVERS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.kafka.bootstrap-servers</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Kafka cluster holding the audit topic. Without it the writer stops with <code>nuna.audit-tables.kafka.bootstrap-servers names no Kafka cluster, and nuna.audit-tables.source is kafka</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-kafka-topic"><code>nuna.audit-tables.kafka.topic</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>nuna.catalog.audit</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_KAFKA_TOPIC</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.kafka.topic</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The catalog's audit topic, its <a href="audit.html#nuna-audit-audit-topic"><code>nuna.audit.audit-topic</code></a>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-kafka-group"><code>nuna.audit-tables.kafka.group</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>nuna-audit-tables</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_KAFKA_GROUP</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.kafka.group</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The writer's consumer group. Its offsets only show the writer's lag: the table holds the offsets it resumes from.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-kafka-properties"><code>nuna.audit-tables.kafka.properties</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of string to string</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd>set in YAML: the keys hold dots</dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.kafka.properties</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>More Kafka consumer settings, such as TLS and SASL. Secret ones, such as <code>sasl.jaas.config</code>, go in the Secret as <code>nuna.audit-tables.kafka.properties.<var>name</var></code>. They may not set what the writer owns: <code>bootstrap.servers</code>, <code>group.id</code>, <code>enable.auto.commit</code>, <code>auto.offset.reset</code>, <code>isolation.level</code>, <code>key.deserializer</code>, <code>value.deserializer</code> (<code>nuna.audit-tables.kafka.properties may not set [<var>names</var>]</code>).</p>
+      </section>
+
+      <h2 id="source-otlp">Source otlp</h2>
+
+      <p>The receiver takes <code>POST /v1/logs</code>, protobuf or JSON, keeps the records of the log <code>nuna.audit</code> and ignores the rest. A record is written once however late a copy of it comes. Records are answered when taken, before their commit: a writer that stops loses from the table what waits for its commit, at most a commit interval, but not from the catalog's log.</p>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-otlp-port"><code>nuna.audit-tables.otlp.port</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>4318</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_OTLP_PORT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.otlp.port</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The port the receiver listens on.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-otlp-token"><code>nuna.audit-tables.otlp.token</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required for the source <code>otlp</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_OTLP_TOKEN</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The token every request must carry in <code>X-Nuna-Audit-Token</code>: at least 32 letters, digits, <code>-</code>, <code>_</code>, <code>.</code> or <code>~</code>. The catalog chart sends it from <a href="helm-values.html#nuna-catalog-telemetry"><code>telemetry.logsTokenSecret</code></a>. Without a valid one the writer stops with <code>nuna.audit-tables.otlp.token must be set, at least 32 letters, digits, '-', '_', '.' or '~'</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-otlp-dedup-window"><code>nuna.audit-tables.otlp.dedup-window</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>15m</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_OTLP_DEDUPWINDOW</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.otlp.dedup-window</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long a record's id is remembered to leave out a second copy as it arrives. A copy whose record time is older is looked up among the table's rows of its day before the commit. Positive.</p>
+      </section>
+
+      <h2 id="nuna-audit-tables-archive">The archive</h2>
+
+      <p>With a bucket set, every record the receiver takes is archived first, in one hash chain per catalog server run, with a locked checkpoint at least every <code>checkpoint-interval</code>. The archive needs the source <code>otlp</code>: <code>nuna.audit-tables.archive.bucket is set, and nuna.audit-tables.source is kafka: the archive is fed from the catalog's log, so it needs the source otlp</code>. The catalog reads the same bucket (<a href="audit.html#the-archive"><code>nuna.audit.archive.*</code></a>).</p>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-bucket"><code>nuna.audit-tables.archive.bucket</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: no archive</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_BUCKET</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.bucket</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The Object Lock bucket. It must have been created with Object Lock, or the writer refuses to start.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-prefix"><code>nuna.audit-tables.archive.prefix</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>audit</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_PREFIX</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.prefix</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The key prefix of every chain and checkpoint. Not empty, and not ending in <code>/</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-region"><code>nuna.audit-tables.archive.region</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>us-east-1</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_REGION</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.region</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The bucket's region.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-endpoint"><code>nuna.audit-tables.archive.endpoint</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: AWS S3</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_ENDPOINT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.endpoint</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>An S3-compatible store's endpoint, reached by path.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-access-key-id"><code>nuna.audit-tables.archive.access-key-id</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: the default credentials chain</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_ACCESSKEYID</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>With <code>secret-access-key</code>, a static key; set both or neither.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-secret-access-key"><code>nuna.audit-tables.archive.secret-access-key</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_SECRETACCESSKEY</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key in the config tree Secret of the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The key's secret.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-ca-bundle"><code>nuna.audit-tables.archive.ca-bundle</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>path (a PEM file)</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_CABUNDLE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.ca-bundle</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>CAs to trust beside the JVM's, for a store with a private CA. In the chart, mount it with <code>archiveCaConfigMap.name</code>, at <code>/etc/nuna/archive-ca</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-retention"><code>nuna.audit-tables.archive.retention</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>2557d</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_RETENTION</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.retention</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long each segment and checkpoint is locked. At least seven years (2557 days); less stops the writer with <code>archive retention <var>value</var> is below the seven-year floor</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-segment-events"><code>nuna.audit-tables.archive.segment-events</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>10000</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_SEGMENTEVENTS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.segment-events</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The most records in one segment.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-segment-age"><code>nuna.audit-tables.archive.segment-age</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>1m</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_SEGMENTAGE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.segment-age</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The longest a record waits before its segment is written.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-checkpoint-interval"><code>nuna.audit-tables.archive.checkpoint-interval</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>5m</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_CHECKPOINTINTERVAL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.checkpoint-interval</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How often a checkpoint is written when no segment was. The catalog's check reports a checkpoint older than twice this as late.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-audit-tables-archive-max-waiting"><code>nuna.audit-tables.archive.max-waiting</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>100000</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_AUDITTABLES_ARCHIVE_MAXWAITING</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.audit-tables.archive.max-waiting</code> in the <code>nuna-audit-tables</code> chart</dd>
+          <dt>Read by</dt><dd>the audit tables writer</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The most records waiting for their segment before the receiver answers 503.</p>
+      </section>
+
+      <h2 id="example">Example</h2>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    audit-tables:
+      catalog-uri: http://nuna-catalog.nuna.svc:8181/
+      principal: nuna-audit-tables
+      source: otlp
+      token:
+        endpoint: https://idp.example/realms/data/protocol/openid-connect/token
+        client-id: nuna-audit-tables
+      archive:
+        bucket: nuna-audit-archive
+        endpoint: https://s3.example
+        ca-bundle: /etc/nuna/archive-ca/ca.crt
+secrets:
+  existingSecret: nuna-audit-tables-secrets
+archiveCaConfigMap:
+  name: storage-ca</code></pre>
+      </div>
+
+      <p>The Secret holds <code>nuna.audit-tables.token.client-secret</code>, <code>nuna.audit-tables.otlp.token</code> and the archive's keys.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="audit.html">Audit settings</a>: what the server sends and where it reads the tables</li>
+          <li><a href="../install/helm-audit-tables.html">Install the audit tables writer</a>: the chart, step by step</li>
+          <li><a href="../operate/audit-pipeline.html">Run the audit pipeline</a>: lag, the archive check and what to do</li>
+          <li><a href="helm-values.html#nuna-audit-tables">Helm chart values</a>: every value of the writer's chart</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java</code>, <code>catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java</code>, <code>catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java</code>, <code>catalog-audit-tables/src/main/resources/application.yaml</code> and <code>deploy/helm/nuna-audit-tables/</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the writer's chart.</p>
+        <p>No writer was started with them for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

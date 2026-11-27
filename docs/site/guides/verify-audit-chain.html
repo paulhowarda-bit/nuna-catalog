@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/verify-audit-chain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verify the audit chain · nuna docs</title>
+  <meta name="description" content="Check that an audit record holds its place in its server run's hash chain in the archive, and read what an unverified or missing record means.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Verify the audit chain</h1>
+        <p class="lead">Check that an audit record holds its place in its server run's hash chain in the archive, and read what an unverified or missing record means.</p>
+        <p class="doc-meta">
+          <span class="badge for">For auditors</span>
+          <span class="badge needs">Needs <code>select</code> on the audit catalog</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>Each catalog server run numbers its audit records and chains them: every record carries its number in the run and the hash of the record before it. The audit tables writer copies each record, byte for byte, into the archive bucket, in segments locked against change until their retention ends. A check walks every chain hourly. A record that verifies proves it was archived as written, and that every earlier record of its run is there.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The archive is configured: the server's <code>nuna.audit.archive.bucket</code>, and the audit tables writer's <code>archive.bucket</code> with the source <code>otlp</code> (<a href="../configure/audit-tables.html">Audit tables writer settings</a>). Without it the console says <b class="ui">No archive is configured on this server, so no chain is checked.</b></li>
+        <li>Your groups hold <code>select</code> on the audit catalog, as for the feed (<a href="query-audit.html">Query the audit trail</a>).</li>
+      </ul>
+
+      <h2 id="check-the-whole-archive">Check the whole archive</h2>
+      <p>On the console's <b class="ui">Audit</b> page, the <b class="ui">Hash chain</b> panel (<b class="ui">checked hourly</b>) gives the last check's verdict: <b class="ui">Whole at</b> a time, <b class="ui">Records missing</b>, <b class="ui">Not intact</b> or <b class="ui">Not checked yet</b>. It lists how many <b class="ui">Runs</b> were verified, the newest <b class="ui">Checkpoints</b>, the <b class="ui">Archive</b> location and the <b class="ui">Last check</b>, and, under <b class="ui">What was found</b>, each chain with a problem. With curl, <code>GET /management/v1/audit/archive</code> answers the same.</p>
+
+      <h2 id="check-one-record">Check one record</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Find the record on the <b class="ui">Audit</b> page and select <b class="ui">Show record</b>.</p>
+              <p>Its line carries a pill: <b class="ui">Chain verified</b>, <b class="ui">Not verified yet</b>, <b class="ui">Earlier record missing</b> or <b class="ui">Missing from archive</b>. <b class="ui">Hash chain</b> in the record says the same in words.</p>
+            </li>
+            <li>
+              <p class="step-title">Under <b class="ui">Archive</b>, select <b class="ui">Check this record</b>.</p>
+              <p>The console reads the record's segment from the archive and shows <b class="ui">Hash matches</b> or <b class="ui">Hash does not match</b>, its place in its run's chain, the hashes before and after it, and the segment's key. A record the archive has not yet received shows <b class="ui">Not archived yet</b>.</p>
+            </li>
+          </ol>
+          <figure class="shot pending" id="fig-audit-chain-record"
+                  data-shot="guides-audit-chain-record"
+                  data-shot-route="#p=audit&amp;c=lakehouse"
+                  data-shot-user="gary"
+                  data-shot-width="1440"
+                  data-shot-state="An archive is configured and checked; one record is open with Check this record answered.">
+            <figcaption>An audit record's place in its hash chain, checked against the archive.</figcaption>
+          </figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Take the record's <code>log-run</code>, <code>log-seq</code> and <code>event-id</code> from the audit feed, then ask for its place in the chain.</p>
+          <div class="code" data-lang="bash" data-title="Record 4812 of a server run">
+<pre><code>curl -sS "$NUNA/management/v1/audit/chains/3f9b2c71-5e0a-4d86-a1c4-7b2d9e60f415/records/4812?event-id=0b7e5d1c-6a2f-4e39-8c41-5f2a9d7e3b10" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "chain": "3f9b2c71-5e0a-4d86-a1c4-7b2d9e60f415",
+  "log-run": "3f9b2c71-5e0a-4d86-a1c4-7b2d9e60f415",
+  "log-seq": 4812,
+  "event-id": "0b7e5d1c-6a2f-4e39-8c41-5f2a9d7e3b10",
+  "archived": true,
+  "position": 4812,
+  "hash": "…",
+  "previous-hash": "…",
+  "next-hash": "…",
+  "link-holds": true,
+  "verified": true,
+  "checked-at": "2026-11-25T18:00:00Z",
+  "segment": {"key": "audit/runs/3f9b2c71-5e0a-4d86-a1c4-7b2d9e60f415/0000000000000004801.log", "first-position": 4801, "last-position": 4900}
+}</code></pre>
+          </div>
+          <p><code>link-holds</code> says whether the record's hash of the one before it matches; <code>verified</code>, whether the hourly check has verified the chain through it.</p>
+          <p class="gap">The response above follows the route's field names; it was not read from a running server, since the local demo has no archive. Which fields an unarchived record's answer carries was not confirmed.</p>
+        </section>
+      </div>
+
+      <h2 id="what-each-state-means">What each state means</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>A record's chain states</caption>
+          <thead><tr><th scope="col">In the console</th><th scope="col">In the feed (<code>chain.status</code>)</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Chain verified</td><td><code>verified</code></td><td>The check verified the record with every earlier record of its server run.</td></tr>
+            <tr><td>Not verified yet</td><td><code>unverified</code></td><td>The check has not yet reached the record. It verifies at a later check.</td></tr>
+            <tr><td>Earlier record missing</td><td><code>unverified</code>, with <code>missing</code> below the record's number</td><td>Records earlier in its run never reached the archive. The record stays unverified until they arrive, which may be never.</td></tr>
+            <tr><td>Missing from archive</td><td><code>unverified</code>, with <code>missing</code> covering the record's number</td><td>The archive does not have this record.</td></tr>
+            <tr><td>No pill</td><td><code>no-archive</code> or <code>no-place</code></td><td>No archive is configured, or the record cannot be placed: the Kafka copy does not say which server run logged it, or an older server did not number it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <aside class="callout warning">
+        <p class="callout-title">A missing or mismatched record is evidence</p>
+        <p><b class="ui">Hash does not match</b>, <b class="ui">Not intact</b> or a record missing from the archive means the archive does not hold what the server wrote. Keep the record's run, number and segment key, and report it to whoever owns the audit archive.</p>
+      </aside>
+
+      <p>Records that are only <b class="ui">Not verified yet</b> need nothing: the next hourly check reaches them.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The record is proven</p>
+        <p><b class="ui">Hash matches</b> with the check having verified the chain through it: the archive holds the record as written, with every record of its run before it.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>503</code> <code>The audit archive is not configured on this server (nuna.audit.archive.bucket)</code></td><td>The server has no archive bucket set.</td><td>Ask an operator to configure the archive.</td></tr>
+            <tr><td><code>503</code> <code>The audit archive cannot be read now; retry later</code></td><td>The archive bucket did not answer.</td><td>Retry.</td></tr>
+            <tr><td><code>400</code> <code>number must be the record's number in its run, a whole number from 1, not …</code></td><td>The number is not a positive whole number.</td><td>Use the record's <code>log-seq</code>.</td></tr>
+            <tr><td><code>400</code> <code>run must be a UUID, not …</code> or <code>event-id must be a UUID, not …</code></td><td>The run or event id is malformed.</td><td>Copy <code>log-run</code> and <code>event-id</code> from the feed.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>select</code></td><td>Your groups lack <code>select</code> on the audit catalog.</td><td>Ask a grant admin.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="query-audit.html">Query the audit trail</a>: find the record first.</li>
+          <li><a href="../concepts/audit.html">Audit</a>: how records are written, chained and archived.</li>
+          <li><a href="../api/audit.html#endpoints">Audit API</a>: the archive and chain endpoints.</li>
+          <li><a href="../install/helm-audit-tables.html">Install the audit tables writer</a>: the writer that fills the archive.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java</code>, <code>catalog-server/src/main/resources/nuna/ui/audit.js</code> and <code>catalog-audit-tables/README.md</code> ("The archive"), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The local demo's archive route answered <code>{"configured":false}</code> to a GET request, so no record was checked against an archive.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

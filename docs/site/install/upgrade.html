@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/upgrade">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upgrade nuna · nuna docs</title>
+  <meta name="description" content="Roll a new release of the catalog server one server at a time while the first new server migrates the database schema, then upgrade the maintenance worker and the audit tables writer.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Upgrade nuna</h1>
+        <p class="lead">Roll a new release of the catalog server one server at a time while the first new server migrates the database schema, then upgrade the maintenance worker and the audit tables writer.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <p>An upgrade is a new image tag and a <code>helm upgrade</code>. The catalog server's Deployment rolls one new server at a time and stops no old server until its replacement is ready (<code>maxSurge: 1</code>, <code>maxUnavailable: 0</code>). The first new server migrates the schema before it reports ready, while the old servers keep serving.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The new images are built and pushed under a new tag (<a href="images.html">Container images</a>). Helm sees no change in a new image under the same tag.</li>
+        <li>Read the release notes for the new version (<a href="../reference/release-notes.html">Release notes</a>), and compare the charts' <code>values.yaml</code> with your values for new or renamed keys.</li>
+        <li>The database has a recent backup or a point-in-time-recovery window that covers the upgrade.</li>
+      </ul>
+
+      <h2 id="upgrade-catalog-server">Upgrade the catalog server</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Render the new chart with your values.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm template nuna-catalog deploy/helm/nuna-catalog -n nuna -f values.yaml \
+  --set image.tag=0.2.0 &gt; /dev/null</code></pre>
+          </div>
+          <p>A new required value stops it with an error naming the value.</p>
+        </li>
+        <li>
+          <p class="step-title">Upgrade the release.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm upgrade nuna-catalog deploy/helm/nuna-catalog -n nuna -f values.yaml --set image.tag=0.2.0</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Watch the roll.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna rollout status deployment/nuna-catalog --timeout=20m</code></pre>
+          </div>
+          <p>The first new server runs the self-check, then the schema migrations. Other new servers that start while it migrates wait for its lock, for up to 5 minutes, and the start-up probe allows each server 10 minutes. Each old server pauses 5 s before it shuts down, so the Service stops routing to it first.</p>
+        </li>
+      </ol>
+
+      <h2 id="upgrade-worker-and-writer">Upgrade the worker and the writer</h2>
+      <p>Upgrade them after the catalog server, the same way:</p>
+      <div class="code" data-lang="bash">
+<pre><code>helm upgrade nuna-maintenance deploy/helm/nuna-maintenance -n nuna -f worker-values.yaml --set image.tag=0.2.0
+helm upgrade nuna-audit-tables deploy/helm/nuna-audit-tables -n nuna -f audit-tables-values.yaml --set image.tag=0.2.0</code></pre>
+      </div>
+      <p>Both use the <code>Recreate</code> strategy, so the old pod stops before the new one starts and two never overlap. A compaction Job already running keeps its own image until it ends.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">Every server runs the new version</p>
+        <p><code>kubectl -n nuna get pods -l app.kubernetes.io/instance=nuna-catalog -o jsonpath='{.items[*].spec.containers[0].image}'</code> shows only the new tag, and <a href="verify.html">Check the install</a> passes.</p>
+      </aside>
+
+      <h2 id="rolling-back">Rolling back</h2>
+      <p class="gap">Not documented yet: rolling back to an older release after its schema migrated. The migrations only move forward and no test runs an older server on a newer schema, so restoring the database from before the upgrade is the only path the code supports.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>The roll stops with one new pod in <code>CrashLoopBackOff</code>.</td><td>The new server refused to start; the old ones keep serving.</td><td>Read its log. Fix the values and run <code>helm upgrade</code> again.</td></tr>
+            <tr><td><code>schema migration failed</code></td><td>A migration failed on the database.</td><td>Read the cause logged with it. The old servers keep serving the old schema.</td></tr>
+            <tr><td>A new server is killed by its start-up probe during the migration.</td><td>The migration took longer than 10 minutes.</td><td>Raise <code>startupProbe.failureThreshold</code> for the upgrade.</td></tr>
+            <tr><td>Nothing rolls.</td><td>The tag did not change.</td><td>Use a new tag, or run <code>kubectl -n nuna rollout restart deployment/nuna-catalog</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/release-notes.html">Release notes</a>: what changed in each version.</li>
+          <li><a href="../operate/backup-dr.html">Back up and recover</a>: restoring the database.</li>
+          <li><a href="../operate/kubectl.html">Helm and kubectl recipes</a>: watching and restarting releases.</li>
+          <li><a href="helm-catalog.html">Install the catalog server with Helm</a>: what the chart creates.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-catalog/templates/deployment.yaml</code>, <code>deploy/helm/nuna-catalog/values.yaml</code>, the worker's and writer's Deployment templates, <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code> and <code>deploy/README.md</code> (The chart: Rolling upgrades), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No upgrade was run for this page. nuna's load tests include a rolling upgrade across schema versions on PostgreSQL.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

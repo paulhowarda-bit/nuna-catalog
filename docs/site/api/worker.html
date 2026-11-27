@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/worker">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worker endpoints · nuna docs</title>
+  <meta name="description" content="The endpoints only the maintenance worker calls: its work list, file deletions, job, scan and assessment reports, DR verification work and branch expiry.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Worker endpoints</h1>
+        <p class="lead">The endpoints only the maintenance worker calls: its work list, file deletions, job, scan and assessment reports, DR verification work and branch expiry, under <code>/management/v1/maintenance</code> and each catalog's objects.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+      </header>
+
+      <p>You never call these yourself: the worker does, as described in <a href="../concepts/maintenance.html">Maintenance</a>. They are documented so you can read the worker's traffic and its refusals. Every route here needs a maintenance principal acting as itself; anyone else is refused with <code>403</code>, <code>only a maintenance principal may call <var>operation</var></code>, audited with the reason <code>not_maintenance</code>. The worker's storage prefixes are on <a href="maintenance.html#get-maintenance-storage-prefixes">Maintenance</a>.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Worker endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-work"><code>/management/v1/maintenance/work</code></a></td><td>Gives the worker its work, by section.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-objects-id-pending-deletions"><code>/management/v1/catalogs/{catalog}/objects/{id}/pending-deletions</code></a></td><td>Records files to delete later.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-objects-id-pending-deletions-complete"><code>…/objects/{id}/pending-deletions/complete</code></a></td><td>Marks recorded files deleted.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-maintenance-jobs-id"><code>/management/v1/maintenance/jobs/{id}</code></a></td><td>Reports a job.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-maintenance-scans-id"><code>/management/v1/maintenance/scans/{id}</code></a></td><td>Reports a scan.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-maintenance-tables-id-assessment"><code>/management/v1/maintenance/tables/{id}/assessment</code></a></td><td>Reports a table's assessment.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-maintenance-tables-id-compaction"><code>/management/v1/maintenance/tables/{id}/compaction</code></a></td><td>Reports a table's compaction.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-dr-work"><code>/management/v1/maintenance/dr-work</code></a></td><td>Gives the DR verifier the tables behind their watermark.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-maintenance-tables-id-dr-watermark"><code>/management/v1/maintenance/tables/{id}/dr-watermark</code></a></td><td>Records a verified DR watermark.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-maintenance-refs-id-warn"><code>/management/v1/maintenance/refs/{id}/warn</code></a></td><td>Warns that a branch is about to expire.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-maintenance-refs-id-end"><code>/management/v1/maintenance/refs/{id}/end</code></a></td><td>Ends an expired branch.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="work-and-deletions">Work and deletions</h2>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-work"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/work</code></h3>
+        <p>Gives the worker its work list, one section at a time, paged with <code>pageToken</code> and <code>pageSize</code>.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="get-maintenance-work-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>section</code></td><td>query</td><td>string</td><td>No</td><td><code>tables</code>, <code>purges</code>, <code>deletions</code>, <code>requests</code> or <code>refs</code>.</td></tr>
+              <tr><td><code>pageToken</code>, <code>pageSize</code></td><td>query</td><td></td><td>No</td><td>Paging within the section.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-work-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"tables", "purges", "deletions", "refs", "requests", "next-page-token"}</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>No work list section <var>x</var>; there are tables, purges, deletions, requests and refs</code>, or <code>The page token is not one of section <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>The caller is not a maintenance principal.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="gap">Not documented yet: the fields of each work list item. This page was written from the route's checks, not from the item builders.</p>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-objects-id-pending-deletions"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/pending-deletions</code></h3>
+        <p>Records files of a table that the worker will delete once the cleanup window allows. Every location must lie beneath the table's location.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-objects-id-pending-deletions-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>locations</code></td><td>body</td><td>array of strings</td><td>Yes</td><td>1 to 1000 file locations.</td></tr>
+              <tr><td><code>refs</code></td><td>body</td><td>array of strings</td><td>Yes</td><td>The ids of the refs the worker found naming the table.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-objects-id-pending-deletions-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>201</code> or <code>200</code></td><td><code>{"recorded", "not-before"}</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Field locations must be an array of 1 to 1000 items</code>, or <code>Every location must lie beneath the table's location <var>r</var>, with no empty, . or .. segment, not <var>x</var></code>.</td></tr>
+              <tr><td><code>409</code></td><td>The refs naming the table changed (<code>RefsChangedException</code>, with the current <code>refs</code>), or the table is not active or dropped: <code><var>id</var> is <var>state</var>: only an active or dropped table's files are recorded for deletion</code> (<code>NotDeletableException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-objects-id-pending-deletions-complete"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/pending-deletions/complete</code></h3>
+        <p>Marks recorded deletions done, by their ids: <code>{"ids": [<var>…</var>]}</code>.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-objects-id-pending-deletions-complete-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The deletions are marked done.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <h2 id="reports">Reports</h2>
+
+      <section class="endpoint">
+        <h3 id="put-maintenance-jobs-id"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/maintenance/jobs/{id}</code></h3>
+        <p>Reports one job, at its start and again at its end, for <a href="maintenance.html#get-maintenance-nights">the nights</a>. The report itself is not audited; a refusal is.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="put-maintenance-jobs-id-body">Request body</h4>
+        <p><code>night</code>, <code>opens</code>, <code>closes</code>, <code>kind</code> (<code>compaction</code>, <code>orphan-scan</code>, <code>snapshot-expiry</code>, <code>manifest-rewrite</code>, <code>purge</code>, <code>deletion</code>), <code>object-id</code>, <code>slot</code>, <code>started-at</code>, <code>ended-at</code>, <code>outcome</code> (<code>running</code>, <code>succeeded</code>, <code>failed</code>, <code>cut-off</code>), <code>files-in</code>, <code>files-out</code>, <code>snapshots-expired</code>, <code>files-deleted</code>, <code>bytes-deleted</code> and, for a requested job, <code>requested-at</code>.</p>
+        <h4 id="put-maintenance-jobs-id-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The job is recorded.</td></tr>
+              <tr><td><code>404</code></td><td>The catalog never had the object.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="put-maintenance-scans-id"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/maintenance/scans/{id}</code></h3>
+        <p>Reports a scan, at its start and at its end, with what the worker reached on each store. <a href="maintenance.html#get-maintenance-scans">The scans</a> and <a href="maintenance.html#get-catalog-maintenance-readiness">readiness</a> read these reports.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="put-maintenance-scans-id-body">Request body</h4>
+        <p><code>started-at</code>, and optionally <code>ended-at</code>, <code>outcome</code>, <code>failures</code>, <code>error</code> and <code>storage</code>.</p>
+        <h4 id="put-maintenance-scans-id-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The scan is recorded.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="put-maintenance-tables-id-assessment"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/maintenance/tables/{id}/assessment</code></h3>
+        <p>Reports a table's assessment, which <a href="health.html#get-table-health">table health</a> shows.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="put-maintenance-tables-id-assessment-body">Request body</h4>
+        <p><code>catalog</code>, <code>namespace</code>, <code>name</code>, <code>assessed-at</code>, <code>data-files</code>, <code>small-files</code>, <code>position-delete-files</code>, <code>deletion-vectors</code>, <code>equality-delete-files</code>, <code>reasons</code> and <code>score</code>.</p>
+        <h4 id="put-maintenance-tables-id-assessment-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The assessment is recorded.</td></tr>
+              <tr><td><code>404</code></td><td>The table is not there.</td></tr>
+              <tr><td><code>409</code></td><td>The id now names another table (<code>TableReplacedException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="put-maintenance-tables-id-compaction"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/maintenance/tables/{id}/compaction</code></h3>
+        <p>Reports a table's compaction: <code>catalog</code>, <code>namespace</code>, <code>name</code>, <code>started-at</code>, <code>ended-at</code> and <code>outcome</code>.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="put-maintenance-tables-id-compaction-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The compaction is recorded.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <h2 id="dr-verification">DR verification</h2>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-dr-work"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/dr-work</code></h3>
+        <p>Gives the DR verifier every active table and view whose DR watermark is below its <code>main</code> pointer, or which has none, by id: each with its location, its pointer, its watermark, the journaled versions above the watermark, oldest first, and when the oldest of them was committed. See <a href="../concepts/disaster-recovery.html">Disaster recovery</a>.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="get-maintenance-dr-work-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Default <code>100</code>, at most <code>1000</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-dr-work-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The work list, with <code>next-page-token</code> while more follows.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid page token: <var>x</var></code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="put-maintenance-tables-id-dr-watermark"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/maintenance/tables/{id}/dr-watermark</code></h3>
+        <p>Records that the verifier found every file of a version of the object's <code>main</code> pointer in the DR store: <code>{"version": <var>n</var>, "metadata-location": "…"}</code>. The location must be the one the journal records for that version, or the pointer's. A watermark never moves back.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="put-maintenance-tables-id-dr-watermark-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The watermark is recorded, or that version was kept already.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not a table or view id: <var>x</var></code>, or <code>Missing field version: a pointer version, from 1</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>No active table or view <var>id</var></code> (<code>NoSuchTableException</code>).</td></tr>
+              <tr><td><code>409</code></td><td><code>A higher DR watermark is kept for <var>id</var> than version <var>n</var>, and a watermark never moves back</code> (<code>WatermarkBehindException</code>); the version is above the pointer (<code>WatermarkAheadException</code>); <code>The journal holds no version <var>n</var> of <var>id</var></code> (<code>UnknownVersionException</code>); or <code>Version <var>n</var> of <var>id</var> is <var>location</var>, not <var>other</var></code> (<code>WatermarkMismatchException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <h2 id="ref-expiry">Ref expiry</h2>
+      <p>A catalog branch expires when it has not been renewed (see <a href="refs.html#post-refs-ref-renew">renewing a branch</a>). The worker warns within <code>nuna.refs.expiry-warning</code> of the expiry and ends the branch once it has passed; each leaves a ref record (<code>EXPIRING</code>, <code>EXPIRED</code>).</p>
+
+      <section class="endpoint">
+        <h3 id="post-maintenance-refs-id-warn"><span class="method" data-method="POST">POST</span> <code>/management/v1/maintenance/refs/{id}/warn</code></h3>
+        <p>Records the warning that a branch is about to expire.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-maintenance-refs-id-warn-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"id", "expires-at", "sent"}</code>.</td></tr>
+              <tr><td><code>409</code></td><td><code>Ref <var>name</var> is not within <var>d</var> of an expiry (nuna.refs.expiry-warning)</code> (<code>RefNotExpiringException</code>), or a warning for it is already being sent (<code>RefWarningInFlightException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-maintenance-refs-id-end"><span class="method" data-method="POST">POST</span> <code>/management/v1/maintenance/refs/{id}/end</code></h3>
+        <p>Ends a branch past its expiry, freeing its name.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-maintenance-refs-id-end-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The branch is ended.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not a ref id: <var>x</var></code>.</td></tr>
+              <tr><td><code>409</code></td><td><code>Ref <var>name</var> is a tag, which never expires</code>, or <code>Ref <var>name</var> expires at <var>time</var></code> (<code>RefNotExpiredException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: what the worker does and when.</li>
+          <li><a href="maintenance.html">Maintenance</a>: the routes people call to read the worker's results.</li>
+          <li><a href="dr.html">Disaster recovery</a>: the watermarks the verifier records.</li>
+          <li><a href="refs.html">Branches and tags</a>: making and renewing branches.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java</code>, <code>HealthRoutes.java</code>, <code>DrRoutes.java</code>, <code>RefRoutes.java</code> and <code>ManagementGuard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run: these routes refuse every caller but the worker, and the worker's identity was not used. No examples are given for that reason.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

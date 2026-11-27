@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/namespace">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The namespace page · nuna docs</title>
+  <meta name="description" content="What a namespace holds, who may do what in it, how it is governed, its audit trail and its description: the Contents, Access, Audit and Properties tabs.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The namespace page</h1>
+        <p class="lead">A namespace's page answers what it holds, what your groups may do in it, how it is governed (classification, owner, regulated mark, holds and DR freeze), its audit trail and its description. Engine users, data stewards, grant admins and platform operators each use a different tab.</p>
+      </header>
+
+      <figure class="shot pending" id="fig-console-namespace" data-shot="console-namespace" data-shot-route="#c=lakehouse&amp;k=namespace&amp;ns=markets" data-shot-user="presenter" data-shot-width="1440" data-shot-state="Namespace markets in lakehouse, Contents tab."><figcaption>The Contents tab of a namespace.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>Anyone whose groups hold describe on the namespace or above. The <b class="ui">Audit</b> tab appears only to those who manage the catalog's grants; the server answers it only with manage-grants on the namespace. Changing the description needs modify. The governance buttons need manage-tags, and the DR freeze needs a platform operator.</p>
+
+      <h2 id="head">The head</h2>
+      <p>The head shows the path, then <b class="ui"><var>N</var> tables · <var>N</var> views · <var>N</var> child namespaces</b> and, when one is set, <b class="ui">owner <var>owner</var></b>. <b class="ui">Copy path</b> copies the dotted path, such as <code>equities.daily</code>; <b class="ui">Copy link</b> copies the page's address. A long path folds to <b class="ui">…</b> in the crumbs.</p>
+
+      <h2 id="contents">Contents</h2>
+      <p>The child namespaces, tables and views your groups may see, with the same columns as <a href="catalog.html#contents">the Catalog page's Contents</a>. When it is empty: <b class="ui">Nothing in this namespace</b>, "Or nothing your groups may see. If you expected something here, ask a grant admin."</p>
+
+      <h2 id="access">Access</h2>
+      <p>The <b class="ui">Access</b> tab shows, in order:</p>
+      <ul>
+        <li><b class="ui">Grant access</b>, for those who manage grants: <a href="grants.html#grant-access">the Grant access dialog</a>, on this namespace.</li>
+        <li><b class="ui">What you may do</b>: what your groups' grants allow here, such as <b class="ui">Read its data</b> or <b class="ui">Create tables, views and namespaces in it</b>. With none: "Your groups hold no grant that reaches this namespace."</li>
+        <li>The governance panel, with <b class="ui">What the catalog enforces</b>, <b class="ui">Legal holds</b> and <b class="ui">Attributes</b>.</li>
+        <li><b class="ui">Kept by branches and tags</b>.</li>
+        <li>The grants: <b class="ui">Grants that reach this namespace</b> for those who manage grants, otherwise <b class="ui">Your groups' grants</b>.</li>
+      </ul>
+      <p><a href="table.html#access">The table page's Access tab</a> describes each panel, dialog and refusal; a namespace differs in these ways:</p>
+      <ul>
+        <li>Its status reads <b class="ui">DR freeze in force</b> or <b class="ui">No DR freeze</b>, and <b class="ui"><var>N</var> legal holds</b> or <b class="ui">No legal hold</b>. What it sets, everything beneath inherits, shown as <b class="ui">inherited from namespace <var>path</var></b>.</li>
+        <li><b class="ui">Mark as a regulated area</b> and <b class="ui">Clear the regulated mark</b> (manage-tags). "A regulated area closes every table beneath this namespace that has no classification of its own: it can be found and described, but not read, written or changed until someone classifies it, and it cannot be unregistered." The dialog asks for <b class="ui">Reason, as it will be recorded</b>, and its buttons are <b class="ui">Mark as regulated</b> and <b class="ui">Clear the mark</b>.</li>
+        <li><b class="ui">Place a hold here</b> (manage-tags) places a legal hold on everything beneath.</li>
+        <li><b class="ui">Freeze for DR</b> and <b class="ui">Lift the DR freeze</b>, for platform operators. "A DR freeze stops every commit and cleanup beneath this namespace until it is lifted. Platform operators set it." The dialog's field suggests <b class="ui">DR reconcile in progress</b> and asks "Write the reason."; its buttons are <b class="ui">Freeze</b> and <b class="ui">Lift the freeze</b>. Anyone else who calls it is refused with <code>only platform operators may call setDrFreeze</code>.</li>
+      </ul>
+
+      <h2 id="audit">Audit</h2>
+      <p>The namespace's audit trail, newest first, with the same filters and panels as <a href="table.html#audit">the table page's Audit tab</a>. Without manage-grants, the tab is not shown and its link says "An object's audit trail is open to those who manage <var>catalog</var>'s grants."</p>
+
+      <h2 id="properties">Properties</h2>
+      <p>The <b class="ui">Properties</b> tab has one setting the console may change, <b class="ui">Description</b> (the property <code>comment</code>, at most 1,000 characters, none by default), with <b class="ui">Change</b> and <b class="ui">Reset</b>. "A change here is checked and audited like an engine's." Beneath, <b class="ui">Every property</b> lists every key engines set, read-only. Two have notes: <code>location</code> "Changes nothing: the catalog assigns every table's location itself, never from its namespace." and <code>owner</code> "Not the owner the catalog enforces: that one is on the Access tab."</p>
+      <p>The Change dialog's button is <b class="ui">Set it</b>; it refuses an empty value ("Write the description, or reset it to have none.") and a long one ("At most 1,000 characters; this has <var>N</var>."). Read through a branch or tag, the properties are main's and read-only, under <b class="ui">main's, read now</b>.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>The namespace and its properties</td><td><code>GET /v1/{prefix}/namespaces/{ns}</code> (<a href="../api/iceberg-namespaces.html#endpoints">Namespaces</a>)</td></tr>
+            <tr><td>Change or Reset the description</td><td><code>POST /v1/{prefix}/namespaces/{ns}/properties</code> (<a href="../api/iceberg-namespaces.html#endpoints">Namespaces</a>)</td></tr>
+            <tr><td>Contents, with figures</td><td><code>GET /management/v1/catalogs/{catalog}/namespaces/{ns}/tables</code>, <code>…/namespaces</code> (<a href="../api/search.html#endpoints">Name search and listings</a>)</td></tr>
+            <tr><td>Governance; set or remove an attribute</td><td><code>GET …/namespaces/{ns}/governance</code>; <code>PUT</code>, <code>DELETE …/attributes/{attribute}</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Place and release a hold</td><td><code>POST …/holds</code>, <code>DELETE …/holds/{id}</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Freeze and lift</td><td><code>PUT</code>, <code>DELETE …/namespaces/{ns}/dr-freeze</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Grants that reach it</td><td><code>GET /management/v1/catalogs/{catalog}/grants/effective</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>Audit</td><td><code>GET …/namespaces/{ns}/audit</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="table.html">The table page</a>: the full Access and Audit tabs.</li>
+          <li><a href="../concepts/governance.html">Governance</a>: regulated areas, holds and freezes.</li>
+          <li><a href="../guides/hold.html">Place and lift a legal hold</a>: the task step by step.</li>
+          <li><a href="../guides/freeze.html">Freeze and unfreeze for disaster recovery</a>: the DR freeze.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>browse.js</code>, <code>access.js</code>, <code>panels.js</code>, <code>settings.js</code> and <code>kept.js</code>, and from <code>GovernanceRoutes.java</code>, <code>AuditReadRoutes.java</code> and <code>ManagementGuard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

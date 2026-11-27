@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The local demo · nuna docs</title>
+  <meta name="description" content="The demo runs nuna and the services around it on a one-node kind cluster on your laptop, with sample data, for trying nuna and showing it. It is not a production install.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>The local demo</h1>
+        <p class="lead">The demo runs nuna and the services around it on a one-node <code>kind</code> cluster on your laptop, with sample data, for trying nuna and showing it. It is not a production install: it uses test keys, developer tokens and a certificate authority of its own.</p>
+      </header>
+
+      <p><code>demo/demo.sh up</code> builds nuna from your checkout and starts the core: PostgreSQL as the server's database, Silo as the object store, Keycloak as the identity provider, the server with its console, the maintenance worker, the audit tables writer, and Trino with CloudBeaver as its web page. Five switches add the rest, each on with <code>demo/demo.sh <var>switch</var></code> and off with <code>demo/demo.sh <var>switch</var> stop</code>: <code>gen</code>, a simulated broker-dealer writing live data; <code>ss</code>, SingleStore synced with Iceberg both ways; <code>kafka</code>, Kafka and Kafka Connect; <code>cdc</code>, change data capture from three databases; and <code>metrics</code>, Grafana with Prometheus and Tempo. Everything runs in namespace <code>nuna-demo</code> of context <code>kind-nuna</code>, behind one front door that serves every port over HTTPS on <code>localhost</code>.</p>
+
+      <figure class="diagram" id="fig-demo-stack">
+        <svg viewBox="0 0 720 300" role="img" aria-labelledby="fig-demo-stack-t fig-demo-stack-d">
+          <title id="fig-demo-stack-t">What the demo's core runs</title>
+          <desc id="fig-demo-stack-d">Your browser and engines reach the front door on localhost ports 8180 to 8188. The front door passes requests to Keycloak, the nuna server with its console, CloudBeaver and Silo. CloudBeaver queries Trino, which calls the server. The server keeps its catalog in PostgreSQL and the table files are in Silo. The maintenance worker and the audit tables writer call the server.</desc>
+          <rect class="d-group" x="150" y="10" width="560" height="280" rx="12"/>
+          <text class="d-note" x="430" y="30">kind cluster nuna, namespace nuna-demo</text>
+          <rect class="d-node" x="10" y="120" width="120" height="56" rx="10"/>
+          <text class="d-label" x="70" y="153">Browser, engines</text>
+          <rect class="d-node" x="170" y="110" width="110" height="76" rx="10"/>
+          <text class="d-label" x="225" y="143">Front door</text>
+          <text class="d-note" x="225" y="165">8180 to 8188</text>
+          <path class="d-edge" d="M130 148H170" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="320" y="40" width="130" height="44" rx="10"/>
+          <text class="d-label" x="385" y="67">Keycloak</text>
+          <rect class="d-node d-accent" x="320" y="126" width="130" height="44" rx="10"/>
+          <text class="d-label" x="385" y="153">nuna server</text>
+          <rect class="d-node" x="320" y="212" width="130" height="44" rx="10"/>
+          <text class="d-label" x="385" y="239">CloudBeaver</text>
+          <path class="d-edge" d="M280 130L320 62" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 148H320" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M280 166L320 234" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="490" y="212" width="90" height="44" rx="10"/>
+          <text class="d-label" x="535" y="239">Trino</text>
+          <path class="d-edge" d="M450 234H490" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M535 212L450 160" marker-end="url(#d-arrow)"/>
+          <rect class="d-store" x="490" y="100" width="100" height="40" rx="6"/>
+          <text class="d-label" x="540" y="125">PostgreSQL</text>
+          <rect class="d-store" x="610" y="100" width="90" height="40" rx="6"/>
+          <text class="d-label" x="655" y="125">Silo</text>
+          <path class="d-edge" d="M450 140L490 125" marker-end="url(#d-arrow)"/>
+          <rect class="d-node" x="490" y="30" width="210" height="44" rx="10"/>
+          <text class="d-label" x="595" y="57">Worker, audit tables writer</text>
+          <path class="d-edge-dash" d="M490 60L450 136" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>The core the demo starts. Engines and the worker read and write table files in Silo with credentials the server vends.</figcaption>
+      </figure>
+
+      <div class="table-wrap">
+        <table>
+          <caption>The demo's addresses, all HTTPS on localhost</caption>
+          <thead><tr><th scope="col">Port</th><th scope="col">Service</th><th scope="col">Answers</th></tr></thead>
+          <tbody>
+            <tr><td><code>8180</code></td><td>Keycloak, the demo's identity provider</td><td>Always</td></tr>
+            <tr><td><code>8181</code></td><td>The nuna server: its APIs, and the console at <code>/ui/</code></td><td>Always</td></tr>
+            <tr><td><code>8182</code></td><td>kafbat, Kafka's web page</td><td>While Kafka runs (<code>gen</code> with <code>kafka</code>, or <code>cdc</code>)</td></tr>
+            <tr><td><code>8183</code></td><td>SingleStore Studio</td><td>While <code>ss</code> is on</td></tr>
+            <tr><td><code>8184</code></td><td>Silo's console</td><td>Always</td></tr>
+            <tr><td><code>8185</code></td><td>CloudBeaver, a SQL editor on Trino and the CDC databases</td><td>Always</td></tr>
+            <tr><td><code>8186</code></td><td>Kafka Connect's REST API, behind a password</td><td>While Kafka Connect runs</td></tr>
+            <tr><td><code>8187</code></td><td>Silo's S3 API</td><td>Always</td></tr>
+            <tr><td><code>8188</code></td><td>Grafana</td><td>While <code>metrics</code> is on</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ul class="cards">
+        <li><a href="start-stop.html"><span class="card-title">Start, stop and reset the demo</span><span class="card-text">What up, down and wipe do and keep, the certificate, the commit the demo runs and the memory it needs.</span></a></li>
+        <li><a href="sign-in.html"><span class="card-title">Demo users and sign-in</span><span class="card-text">Every demo user and group, what each may do, and signing in to the console and the other pages.</span></a></li>
+        <li><a href="brokerage-world.html"><span class="card-title">The brokerage world</span><span class="card-text">The generated broker-dealer data, where it lands and the views that reconcile it.</span></a></li>
+        <li><a href="singlestore.html"><span class="card-title">SingleStore in the demo</span><span class="card-text">The change feed from SingleStore into Iceberg, and Iceberg pipelines back.</span></a></li>
+        <li><a href="trino-cloudbeaver.html"><span class="card-title">Trino and CloudBeaver in the demo</span><span class="card-text">Querying the catalog as a demo user, with row filters and column masks applied.</span></a></li>
+        <li><a href="cdc.html"><span class="card-title">Change data capture in the demo</span><span class="card-text">PostgreSQL, Oracle and CockroachDB changes into Iceberg history tables.</span></a></li>
+        <li><a href="kafka-metrics.html"><span class="card-title">Kafka, metrics and traces in the demo</span><span class="card-text">kafbat, Grafana and Tempo, and what each shows.</span></a></li>
+        <li><a href="commands.html"><span class="card-title">demo.sh reference</span><span class="card-text">Every subcommand of the demo's script, its options, environment variables and messages.</span></a></li>
+      </ul>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/databases">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choosing a database · nuna docs</title>
+  <meta name="description" content="The server keeps its pointers in PostgreSQL, CockroachDB, Oracle or MongoDB; each decides commits the same way, and the server checks at start-up that each is set up to keep them.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Choosing a database</h1>
+        <p class="lead">The server keeps its pointers in PostgreSQL, CockroachDB, Oracle or MongoDB; each decides commits the same way, and the server checks at start-up that each is set up to keep them.</p>
+      </header>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>You choose the database with <code>nuna.database.backend</code>: <code>postgresql</code> (the default, for PostgreSQL and CockroachDB, set with <code>spring.datasource.*</code> and told apart by the server), <code>oracle</code>, or <code>mongodb</code> (with <code>nuna.database.mongodb.uri</code>, which must name the database and set <code>socketTimeoutMS</code>). Every database passes the same shared test suite. YugabyteDB is refused at start-up.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="commits">Commits</h3>
+      <p>On every database a commit is one transaction that locks each pointer it swaps in a fixed order, compares it with the version the server read, and writes the pointer, journal, outbox and idempotency answer together. PostgreSQL, CockroachDB and Oracle use READ COMMITTED with row locks; MongoDB uses a snapshot transaction with majority write concern. The server never lets a driver or pool repeat a COMMIT on its own.</p>
+      <h3 id="unknown-outcome">An unknown outcome</h3>
+      <p>When a connection fails after COMMIT, the server asks the database whether the commit landed, and answers only once the answer is durable.</p>
+      <div class="tabs" data-group="db">
+        <section class="tab" data-tab="postgresql" data-label="PostgreSQL">
+          <p>The server locks the table's pointer row, looks for the commit in the journal, then writes to a counter so that synchronous commit waits for the standby before it answers.</p>
+        </section>
+        <section class="tab" data-tab="cockroachdb" data-label="CockroachDB">
+          <p>The server locks the pointer row and looks for the commit in the journal. A retryable conflict before COMMIT is tried again up to 10 times.</p>
+        </section>
+        <section class="tab" data-tab="oracle" data-label="Oracle">
+          <p>The server asks Transaction Guard for the transaction's outcome by its logical transaction id. Without one, it locks the pointer row and looks in the journal.</p>
+        </section>
+        <section class="tab" data-tab="mongodb" data-label="MongoDB">
+          <p>The server retries the commit command, or writes a marker in a new transaction, then waits for a majority write before reading the journal with majority read concern.</p>
+        </section>
+      </div>
+      <h3 id="self-check">The start-up self-check</h3>
+      <p>Before it migrates the schema, the server checks that the database keeps what it acknowledges, and refuses to start on any finding not named in <code>nuna.database.allow-unsafe</code>; a finding allowed there is logged as a warning.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Self-check findings by database</caption>
+          <thead><tr><th scope="col">Database</th><th scope="col">Findings</th></tr></thead>
+          <tbody>
+            <tr><td>PostgreSQL</td><td><code>pg.sync-commit-off</code>, <code>pg.no-sync-standby</code>, <code>pg.fsync-off</code>, <code>pg.commit-cancel-timeout</code></td></tr>
+            <tr><td>CockroachDB</td><td><code>crdb.replicas</code>, <code>crdb.fsync-off</code>, <code>crdb.read-committed-off</code></td></tr>
+            <tr><td>Oracle</td><td><code>ora.no-data-guard</code>, <code>ora.no-transaction-guard</code>, <code>ora.commit-replay</code>, <code>ora.commit-nowait</code>, <code>ora.linguistic-sort</code>, <code>ora.journal-job-down</code></td></tr>
+            <tr><td>MongoDB</td><td><code>mongo.not-replica-set</code>, <code>mongo.too-few-voters</code>, <code>mongo.weak-write-concern</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="what-each-needs">What each needs</h3>
+      <ul>
+        <li>PostgreSQL: a synchronous standby, and the <code>pg_monitor</code> role so the check can see it; no <code>statement_timeout</code> or <code>idle_in_transaction_session_timeout</code> for the server's role.</li>
+        <li>CockroachDB: the <code>VIEWCLUSTERSETTING</code> privilege, the cluster setting <code>sql.txn.read_committed_isolation.enabled</code>, and a licence in production; without one, the cluster throttles after 7 days.</li>
+        <li>Oracle: Transaction Guard with <code>COMMIT_OUTCOME</code> on the service and no failover type, Data Guard, <code>NLS_SORT=BINARY</code>, and <code>EXECUTE</code> on <code>DBMS_APP_CONT</code>, <code>SELECT</code> on <code>V_$DATABASE</code>, <code>V_$SERVICES</code> and <code>V_$PARAMETER</code>, and <code>CREATE JOB</code>.</li>
+        <li>MongoDB: a replica set with enough voting members, majority write concern, and the <code>clusterMonitor</code> and <code>readWrite</code> roles.</li>
+      </ul>
+      <h3 id="migrations">Schema migrations</h3>
+      <p>The first server of a new release migrates the schema as it starts. Every step only adds, so servers of the old release keep working beside it during a rolling upgrade.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>On every database, an acknowledged commit is durable, and of two racing commits one wins.</li>
+        <li>The server refuses to start on a database set up to lose acknowledged writes, unless you allow the finding.</li>
+        <li>The server does not set up replication, backups or point-in-time recovery: you declare the recovery window in <code>nuna.governance.pitr-window</code>.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li><a href="../configure/database.html">Database settings</a>, and the install pages <a href="../install/postgresql.html">Use PostgreSQL</a>, <a href="../install/cockroachdb.html">Use CockroachDB</a>, <a href="../install/oracle.html">Use Oracle</a> and <a href="../install/mongodb.html">Use MongoDB</a>.</li>
+        <li>The console's <a href="../console/service.html">Service page</a>, whose Store panel shows the database as the server finds it.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>One database per deployment.</li>
+        <li>Paging tokens do not expire; they name a key, not a position.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="commits.html">How a commit works</a>: the loop every database serves.</li>
+          <li><a href="../install/upgrade.html">Upgrade nuna</a>: rolling upgrades and migrations.</li>
+          <li><a href="disaster-recovery.html">Disaster recovery</a>: when the database's replica is ahead of the store's.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>docs/storage-design.md</code>, <code>deploy/README.md</code>, the server's database settings and the stores in <code>catalog-store-sql</code>, <code>catalog-store-oracle</code> and <code>catalog-store-mongo</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run. The Oracle grants come from <code>deploy/README.md</code> and were not traced to the store's code.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

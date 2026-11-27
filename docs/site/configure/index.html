@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configuration · nuna docs</title>
+  <meta name="description" content="Every setting of the server, the maintenance worker and the audit tables writer, and how settings reach each program.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>Configuration</h1>
+        <p class="lead">Every setting of the server, the maintenance worker and the audit tables writer, and how settings reach each program.</p>
+      </header>
+
+      <ul class="cards">
+        <li>
+          <a href="catalogs.html">
+            <span class="card-title">Catalog settings</span>
+            <span class="card-text">Declare each catalog and bind it to a storage profile.</span>
+          </a>
+        </li>
+        <li>
+          <a href="database.html">
+            <span class="card-title">Database settings</span>
+            <span class="card-text">The catalog's database and its start-up self-check.</span>
+          </a>
+        </li>
+        <li>
+          <a href="storage.html">
+            <span class="card-title">Storage settings</span>
+            <span class="card-text">Storage profiles and credential vending.</span>
+          </a>
+        </li>
+        <li>
+          <a href="security.html">
+            <span class="card-title">Security settings</span>
+            <span class="card-text">Token issuers, administrative groups and Trino catalogs.</span>
+          </a>
+        </li>
+        <li>
+          <a href="audit.html">
+            <span class="card-title">Audit settings</span>
+            <span class="card-text">The audit log, Kafka, the archive and the audit catalog.</span>
+          </a>
+        </li>
+        <li>
+          <a href="governance.html">
+            <span class="card-title">Governance and refs settings</span>
+            <span class="card-text">Rate limits, retention, maintenance defaults and branch limits.</span>
+          </a>
+        </li>
+        <li>
+          <a href="server.html">
+            <span class="card-title">Server settings</span>
+            <span class="card-text">Paging, caches, the console's sign-in, health peers and logging.</span>
+          </a>
+        </li>
+        <li>
+          <a href="maintenance.html">
+            <span class="card-title">Maintenance worker settings</span>
+            <span class="card-text">The worker's catalog, stores, window and compaction.</span>
+          </a>
+        </li>
+        <li>
+          <a href="audit-tables.html">
+            <span class="card-title">Audit tables writer settings</span>
+            <span class="card-text">The writer's source, table and archive.</span>
+          </a>
+        </li>
+        <li>
+          <a href="helm-values.html">
+            <span class="card-title">Helm chart values</span>
+            <span class="card-text">Every value of the three charts.</span>
+          </a>
+        </li>
+      </ul>
+
+      <h2 id="which-program-reads">Which program reads which settings</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Settings by program</caption>
+          <thead><tr><th scope="col">Program</th><th scope="col">Chart</th><th scope="col">Settings it reads</th></tr></thead>
+          <tbody>
+            <tr><td>The server, <code>nuna-catalog</code></td><td><code>nuna-catalog</code></td><td><code>nuna.database.*</code>, <code>nuna.storage.*</code>, <code>nuna.security.*</code>, <code>nuna.opa.*</code>, <code>nuna.audit.*</code>, <code>nuna.governance.*</code>, <code>nuna.refs.*</code>, <code>nuna.rest.*</code>, <code>nuna.ui.*</code>, <code>nuna.health.*</code>, <code>spring.datasource.*</code>, <code>logging.*</code></td></tr>
+            <tr><td>The maintenance worker, <code>nuna-maintenance</code></td><td><code>nuna-maintenance</code></td><td><code>nuna.maintenance.*</code></td></tr>
+            <tr><td>The audit tables writer, <code>nuna-audit-tables</code></td><td><code>nuna-audit-tables</code></td><td><code>nuna.audit-tables.*</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Each program reads its settings once, at start-up, and refuses to start on one it cannot use, naming the setting. No setting changes while a program runs: change it and restart.</p>
+
+      <h2 id="how-settings-reach">How settings reach a program</h2>
+
+      <p>Each program is a Spring Boot application, and takes settings the ways Spring Boot does. The charts use three of them:</p>
+
+      <ul>
+        <li><strong>A YAML file.</strong> The chart renders its <code>config</code> value into <code>application.yaml</code> in a ConfigMap, mounts it at <code>/etc/nuna/config</code> and points <code>SPRING_CONFIG_ADDITIONAL_LOCATION</code> at it. Its settings beat the defaults in the program's own <code>application.yaml</code>.</li>
+        <li><strong>A Secret as a config tree.</strong> The chart mounts the Secret named in <code>secrets.existingSecret</code>, or the one it makes from <code>secrets.values</code>, at <code>/etc/nuna/secrets</code> and imports it with <code>SPRING_CONFIG_IMPORT=optional:configtree:/etc/nuna/secrets/</code>. Each key of the Secret is a setting's full name, such as <code>spring.datasource.password</code>, and its value the setting's value.</li>
+        <li><strong>Environment variables.</strong> The chart's <code>env</code> value adds them. An environment variable beats the YAML file and the config tree for the same setting.</li>
+      </ul>
+
+      <p>Put each setting in one place. Secrets go only in the Secret: database passwords, the MongoDB connection string, storage keys, client secrets and the audit receiver's token.</p>
+
+      <h2 id="environment-variable-names">Environment variable names</h2>
+
+      <p>A setting's environment variable is its name in upper case, with each <code>.</code> turned into <code>_</code> and each <code>-</code> removed: <code>nuna.security.grant-admin-groups</code> is <code>NUNA_SECURITY_GRANTADMINGROUPS</code>. A list entry takes its index, counting from 0: <code>NUNA_SECURITY_ISSUERS_0_ISSUER</code>. A map key in an environment variable is read in lower case and cannot hold a <code>-</code> or <code>.</code>, so set map entries, such as profiles, catalogs and maintenance defaults, in YAML.</p>
+
+      <p>Durations take ISO-8601 (<code>PT10M</code>, <code>P1D</code>) or a number and a unit: <code>ns</code>, <code>us</code>, <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code>. A bare number is milliseconds.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="helm-values.html">Helm chart values</a>: the <code>config</code>, <code>secrets</code> and <code>env</code> values</li>
+          <li><a href="../install/index.html">Install</a>: installing the three charts</li>
+          <li><a href="../concepts/architecture.html">Architecture</a>: what each program does</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-catalog/templates/deployment.yaml</code>, <code>deploy/helm/nuna-maintenance/templates/deployment.yaml</code>, <code>deploy/helm/nuna-audit-tables/templates/deployment.yaml</code>, <code>catalog-server/src/main/resources/application.yaml</code>, <code>catalog-maintenance/src/main/resources/application.yaml</code> and <code>catalog-audit-tables/src/main/resources/application.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The environment variable forms follow Spring Boot's relaxed binding; no program was started to try each one.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

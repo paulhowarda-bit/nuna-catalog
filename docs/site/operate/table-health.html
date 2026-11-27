@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/table-health">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Table health · nuna docs</title>
+  <meta name="description" content="How the maintenance worker judges whether a table needs compaction, what its score means, what puts a table in tonight&#x27;s queue, and how to ask for maintenance now.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Table health</h1>
+        <p class="lead">How the maintenance worker judges whether a table needs compaction, what its score means, what puts a table in tonight's queue, and how to ask for maintenance now.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators and data stewards</span></p>
+      </header>
+
+      <p>Each night, in the cleanup window, the maintenance worker reads every enabled table's current manifests and reports an <strong>assessment</strong> to the catalog: whether the table needs compaction, why, and how badly. Tables that need it join <strong>tonight's queue</strong>, and compaction Jobs start from its head.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The maintenance worker running, with a cleanup window (<a href="maintenance-nights.html">Maintenance nights</a>).</li>
+        <li><code>select</code> on a table to read its health; <code>modify</code> to change its policy or ask for maintenance.</li>
+      </ul>
+
+      <h2 id="why-a-table-needs-compaction">Why a table needs compaction</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Reasons in an assessment</caption>
+          <thead><tr><th scope="col">Reason</th><th scope="col">When</th></tr></thead>
+          <tbody>
+            <tr><td><code>small-files</code></td><td>One partition holds at least <code>compaction.min-input-files</code> data files smaller than 75% of <code>compaction.target-file-size-bytes</code>.</td></tr>
+            <tr><td><code>deletes</code></td><td>Its delete files (position deletes, deletion vectors and equality deletes) number more than <code>compaction.delete-file-ratio</code> of its data files.</td></tr>
+            <tr><td><code>equality-deletes</code></td><td>It has any equality-delete file, which every reader must join against.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The thresholds are maintenance policy keys, set on a catalog, namespace or table like the rest of the policy (<a href="../guides/table-settings.html">Change a table's settings</a>):</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Compaction thresholds</caption>
+          <thead><tr><th scope="col">Policy key</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>compaction.target-file-size-bytes</code></td><td><code>536870912</code></td><td>The size a Job writes. A data file under 75% of it is small.</td></tr>
+            <tr><td><code>compaction.min-input-files</code></td><td><code>5</code></td><td>Small files one partition must hold before the table needs compaction for them.</td></tr>
+            <tr><td><code>compaction.delete-file-ratio</code></td><td><code>0.3</code></td><td>The share of its data files its delete files must pass. A decimal above 0.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="the-score-and-tonights-queue">The score and tonight's queue</h2>
+      <p>The <strong>score</strong> says how far past its thresholds a table is: 1 at a threshold, 2 twice past it. It is the larger of small files over <code>min-input-files</code> and the delete files' share over <code>delete-file-ratio</code>.</p>
+      <p>Tonight's queue orders the tables that need compaction: tables with equality deletes first, then the highest score. Jobs start from its head while fewer than <code>compaction.max-jobs</code> run, so the head of the queue is what the night compacts first. Each table gets at most one Job a night. Tables still waiting when the window closes are counted as left over and assessed again the next night.</p>
+      <p>In the console, a table in the queue carries a mark beside its name and in the tree, and its page says where it stands: <code>Tonight's queue, neediest first: this table is <var>n</var>th of <var>m</var></code>.</p>
+
+      <h2 id="read-a-tables-health">Read a table's health</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>Open the table and select its <strong>Maintenance</strong> tab. The Maintenance page lists tonight's queue for the whole catalog.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Call the table's health route (<a href="../clients/curl.html">curl</a>, <a href="../api/maintenance.html#endpoints">reference</a>):</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/health" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+        </section>
+      </div>
+      <div class="code" data-lang="json" data-kind="output">
+<pre><code>{
+  "id": "…",
+  "catalog": "trading",
+  "namespace": ["equities"],
+  "name": "fills",
+  "assessment": {
+    "assessed-at": "…",
+    "needs-compaction": true,
+    "reasons": ["equality-deletes", "small-files"],
+    "score": 2.0,
+    "data-files": 40,
+    "small-files": 10,
+    "small-file-share": 0.25,
+    "delete-files": 3,
+    "position-delete-files": 1,
+    "deletion-vectors": 1,
+    "equality-delete-files": 1
+  },
+  "last-compaction": { "started-at": "…", "ended-at": "…", "outcome": "cut-off" },
+  "requests": []
+}</code></pre>
+      </div>
+      <ul>
+        <li><code>assessment</code> is absent until the worker has assessed the table; <code>last-compaction</code> until a Job has run for it.</li>
+        <li><code>small-files</code> counts only partitions holding at least <code>min-input-files</code> small files: what a Job would rewrite.</li>
+        <li><code>last-compaction.outcome</code> is <code>running</code>, <code>succeeded</code>, <code>failed</code> or <code>cut-off</code>.</li>
+      </ul>
+      <p>A caller with no grant on the table gets <code>404</code> <code>NoSuchTableException</code>, as for a table that does not exist. <code>GET /management/v1/maintenance/tables</code> lists the queue across every catalog, neediest first, showing only tables the caller may <code>select</code>.</p>
+
+      <h2 id="ask-for-maintenance-now">Ask for maintenance now</h2>
+      <p>With <code>modify</code> on a table you can ask for its compaction or orphan scan to run now, inside the window or outside it:</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/maintenance/requests" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"job": "compaction"}'</code></pre>
+      </div>
+      <ul>
+        <li>The answer is <code>202</code>, with the request in state <code>waiting</code>. The worker takes it at its next scan, so it starts within one scan interval.</li>
+        <li>One request waits per table and job; asking again returns the one waiting.</li>
+        <li>A requested compaction runs whether or not the table needs one. Its Job stops <a href="../configure/maintenance.html#nuna-maintenance-request-deadline"><code>nuna.maintenance.request-deadline</code></a> (two hours) after it starts, in place of the window's end.</li>
+        <li>Each request is audited as a governance change of the table.</li>
+      </ul>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Answer or symptom</th><th scope="col">Cause</th></tr></thead>
+          <tbody>
+            <tr><td><code>403</code> on a request</td><td>No <code>modify</code> on the table, or a DR freeze over it.</td></tr>
+            <tr><td><code>409</code> <code>MaintenanceNotAllowedException</code></td><td>The table's policy does not run that job: turned off at some level, or an orphan scan under a legal hold.</td></tr>
+            <tr><td>No assessment</td><td>The worker has not run a cleanup window since the table was created, or the table's compaction is turned off.</td></tr>
+            <tr><td>Needy tables left over night after night</td><td>See <a href="runbooks.html#nunacompactionfallingbehind"><code>NunaCompactionFallingBehind</code></a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="maintenance-nights.html">Maintenance nights</a>.</li>
+          <li><a href="../console/maintenance.html">The Maintenance page</a> and <a href="../console/table.html">the table page</a>.</li>
+          <li><a href="../api/maintenance.html#endpoints">Maintenance API</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-maintenance/README.md</code> (Compaction on need), <code>catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java</code>, <code>catalog-server/…/governance/MaintenanceRoutes.java</code>, <code>catalog-server/src/main/resources/nuna/ui/queue.js</code> and <code>docs/observability/table-health.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page. The example answer is the documented one, renamed to the example estate.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

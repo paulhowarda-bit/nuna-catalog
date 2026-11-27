@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Concepts · nuna docs</title>
+  <meta name="description" content="The ideas behind nuna, in reading order: what the parts are, how a commit is decided, and how access, storage, audit and maintenance work.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>Concepts</h1>
+        <p class="lead">The ideas behind nuna, in reading order: what the parts are, how a commit is decided, and how access, storage, audit and maintenance work.</p>
+      </header>
+
+      <p>Each page explains one mechanism: what it is, how it works, what it guarantees and what it does not, and where you see it. Read the first four in order if you are new to nuna; the rest stand on their own.</p>
+
+      <ul class="cards">
+        <li>
+          <a href="architecture.html">
+            <span class="card-title">How nuna fits together</span>
+            <span class="card-text">The server, its database, the object store, the maintenance worker, the audit pipeline, the console and engines, and who talks to whom.</span>
+          </a>
+        </li>
+        <li>
+          <a href="catalog-objects.html">
+            <span class="card-title">Catalogs, namespaces, tables and views</span>
+            <span class="card-text">The object model, how names are compared, how a table's location is assigned, and the REST prefix.</span>
+          </a>
+        </li>
+        <li>
+          <a href="commits.html">
+            <span class="card-title">How a commit works</span>
+            <span class="card-text">Requirements and updates, how the database decides one winner, retries, idempotency and multi-table transactions.</span>
+          </a>
+        </li>
+        <li>
+          <a href="branches-and-tags.html">
+            <span class="card-title">Catalog branches and tags</span>
+            <span class="card-text">Refs of a whole catalog: what a branch keeps, how a merge is judged, and when a branch expires.</span>
+          </a>
+        </li>
+        <li>
+          <a href="storage.html">
+            <span class="card-title">Storage profiles and credential vending</span>
+            <span class="card-text">How the server maps a table to an object store and prefix, and the short-lived credentials an engine receives.</span>
+          </a>
+        </li>
+        <li>
+          <a href="access.html">
+            <span class="card-title">Identity and access</span>
+            <span class="card-text">Principals, groups, the seven privileges, grants and how they pass down the tree, and separation of duties.</span>
+          </a>
+        </li>
+        <li>
+          <a href="row-column-rules.html">
+            <span class="card-title">Row filters and column masks</span>
+            <span class="card-text">Per-group rules on flagged tables, who may see them, and why a flagged table's storage access is withheld.</span>
+          </a>
+        </li>
+        <li>
+          <a href="governance.html">
+            <span class="card-title">Governance</span>
+            <span class="card-text">Regulated and flagged tables, legal holds and DR freezes: what each blocks and who may place or lift it.</span>
+          </a>
+        </li>
+        <li>
+          <a href="lifecycle.html">
+            <span class="card-title">Dropping, restoring and purging</span>
+            <span class="card-text">Why every drop is soft, how long you have to restore, and what a purge deletes.</span>
+          </a>
+        </li>
+        <li>
+          <a href="audit.html">
+            <span class="card-title">The audit trail</span>
+            <span class="card-text">What is recorded and when, the hash-chained archive, and the audit tables you can query with SQL.</span>
+          </a>
+        </li>
+        <li>
+          <a href="maintenance.html">
+            <span class="card-title">Maintenance</span>
+            <span class="card-text">Scans, the health score, compaction on need, snapshot expiry, orphan scans and the cleanup window.</span>
+          </a>
+        </li>
+        <li>
+          <a href="disaster-recovery.html">
+            <span class="card-title">Disaster recovery</span>
+            <span class="card-text">The DR watermark, the verifier, and how tables are brought back to a version the DR region holds whole.</span>
+          </a>
+        </li>
+        <li>
+          <a href="databases.html">
+            <span class="card-title">Choosing a database</span>
+            <span class="card-text">PostgreSQL, CockroachDB, Oracle and MongoDB: what each needs and what the server checks at start-up.</span>
+          </a>
+        </li>
+      </ul>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

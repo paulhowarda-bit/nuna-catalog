@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/catalog-objects">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Catalogs, namespaces, tables and views · nuna docs</title>
+  <meta name="description" content="A catalog holds namespaces, which nest and hold tables and views; the server names each object, assigns each table its location, and keeps a pointer to each one's current metadata file.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Catalogs, namespaces, tables and views</h1>
+        <p class="lead">A catalog holds namespaces, which nest and hold tables and views; the server names each object, assigns each table its location, and keeps a pointer to each one's current metadata file.</p>
+      </header>
+
+      <figure class="diagram" id="fig-object-tree">
+        <svg viewBox="0 0 720 300" role="img" aria-labelledby="fig-object-tree-t fig-object-tree-d">
+          <title id="fig-object-tree-t">The objects of one catalog</title>
+          <desc id="fig-object-tree-d">Catalog trading holds namespaces equities and reference. Namespace equities holds table fills, view open_orders and namespace daily, which holds table positions. Table fills has a pointer to its current metadata file in the object store.</desc>
+          <rect class="d-node d-accent" x="20" y="124" width="130" height="52" rx="10"/>
+          <text class="d-label" x="85" y="155">trading</text>
+          <text class="d-note" x="85" y="194">catalog</text>
+          <rect class="d-node" x="210" y="54" width="130" height="52" rx="10"/>
+          <text class="d-label" x="275" y="85">equities</text>
+          <rect class="d-node" x="210" y="194" width="130" height="52" rx="10"/>
+          <text class="d-label" x="275" y="225">reference</text>
+          <text class="d-note" x="275" y="264">namespaces</text>
+          <rect class="d-node" x="400" y="14" width="130" height="44" rx="10"/>
+          <text class="d-label" x="465" y="41">fills</text>
+          <rect class="d-node" x="400" y="72" width="130" height="44" rx="10"/>
+          <text class="d-label" x="465" y="99">open_orders</text>
+          <rect class="d-node" x="400" y="130" width="130" height="44" rx="10"/>
+          <text class="d-label" x="465" y="157">daily</text>
+          <rect class="d-node" x="400" y="208" width="130" height="44" rx="10"/>
+          <text class="d-label" x="465" y="235">instruments</text>
+          <rect class="d-node d-store" x="590" y="14" width="110" height="44" rx="10"/>
+          <text class="d-label" x="645" y="41">metadata</text>
+          <path class="d-edge" d="M150 140L210 86" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M150 160L210 214" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M340 72L400 40" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M340 80H400" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M340 90L400 146" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M340 222H400" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M530 36H590" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="560" y="76">pointer</text>
+        </svg>
+        <figcaption>Namespaces nest to any depth. Each table's record points to its current metadata file in the object store.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>nuna keeps four kinds of object:</p>
+      <dl>
+        <dt>Catalog</dt>
+        <dd>The top of the tree. A <a class="term" href="../reference/glossary.html#term-catalog">catalog</a> is bound to one storage profile, one KMS key set and one legal entity, and an engine names it as its warehouse.</dd>
+        <dt>Namespace</dt>
+        <dd>A level of the tree. A <a class="term" href="../reference/glossary.html#term-namespace">namespace</a> holds tables, views and other namespaces, to any depth, and carries properties. <code>equities.daily</code> is the namespace <code>daily</code> inside <code>equities</code>.</dd>
+        <dt>Table</dt>
+        <dd>An Apache Iceberg table: a metadata file that names its schema, partitioning, properties and <a class="term" href="../reference/glossary.html#term-snapshot">snapshots</a>, and the data files those snapshots list.</dd>
+        <dt>View</dt>
+        <dd>An Apache Iceberg view: a metadata file that holds a query and its versions.</dd>
+      </dl>
+      <p>The table and view formats are the <a href="https://iceberg.apache.org/spec/">Iceberg table spec</a> and the <a href="https://iceberg.apache.org/view-spec/">Iceberg view spec</a>. nuna adds the tree around them, the names, and the rules for where files may live.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+
+      <h3 id="catalogs-come-from-settings">Catalogs come from the settings</h3>
+      <p>You declare each catalog in the server's settings, under <code>nuna.storage.catalogs.<var>name</var></code>, with its storage profile, its KMS key set and its legal entity. All three are required.</p>
+      <div class="code" data-lang="yaml" data-title="application.yaml">
+<pre><code>nuna:
+  storage:
+    catalogs:
+      trading:
+        profile: onprem
+        kms-key-set: trading-keys
+        legal-entity: example-securities</code></pre>
+      </div>
+      <p>At start-up the server creates each declared catalog that does not exist yet and writes an audit record for it, with <code>nuna-configuration</code> as the principal. No API creates a catalog. A catalog's binding to its profile, key set and legal entity never changes: if the database holds the catalog with a different binding, the server refuses to start, and its log says "a catalog's boundary never changes". A catalog name cannot hold <code>@</code>, which the REST prefix keeps for <a href="branches-and-tags.html">catalog branches and tags</a>.</p>
+
+      <h3 id="names">Names</h3>
+      <p>Names are case-insensitive and case-preserving. The server compares names after Unicode NFC normalization and lower-casing that does not depend on the locale, so <code>Fills</code> and <code>fills</code> are one name, and the server shows the name as it was first given. Within one namespace, tables and views share one set of names: a view cannot take the name of a table beside it. Only objects that have not been dropped hold a name, so a drop frees the name at once.</p>
+      <p>You can rename a table or view, and move it to another namespace of the same catalog. A rename keeps the object's id and its location. A namespace cannot be renamed.</p>
+
+      <h3 id="locations">Locations</h3>
+      <p>The server assigns every new table its location: the storage profile's table root followed by the table's id, a UUID. The location never depends on the namespace or the name, so a rename or a move changes no file. A request that names another location is refused with <code>400</code> and the message "Location is assigned by the catalog: <var>root</var>, not <var>location</var>". The properties that steer where Iceberg writes, <code>write.data.path</code>, <code>write.metadata.path</code>, <code>write.object-storage.path</code> and <code>write.folder-storage.path</code>, must lie within the table's location. Properties that configure storage access, any key starting <code>s3.</code>, <code>client.</code>, <code>http-client.</code>, <code>gcs.</code> or <code>adls.</code>, and <code>io-impl</code> and <code>py-io-impl</code>, are refused: the server alone sets them.</p>
+
+      <h3 id="pointers-and-metadata-files">Pointers and metadata files</h3>
+      <p>Each commit writes a new metadata file under the table's location, named by the table's version number and a fresh UUID: <code><var>location</var>/metadata/00042-<var>uuid</var>.metadata.json</code>. The database keeps the table's <a class="term" href="../reference/glossary.html#term-pointer">pointer</a>: the location of the current metadata file, the version, and the file's SHA-256. When the server reads a metadata file, it checks the file against that hash. <a href="commits.html">How a commit works</a> explains how a pointer moves.</p>
+
+      <h3 id="rest-prefix">The REST prefix</h3>
+      <p>An engine names a catalog as its warehouse. <code>GET /v1/config?warehouse=trading</code> answers with the prefix the engine puts in every later path, the catalog's name in lower case, with the endpoints this server supports and how long an idempotency key is kept:</p>
+      <div class="code" data-lang="json" data-kind="output" data-title="The prefix in the config answer">
+<pre><code>{
+  "defaults": {},
+  "overrides": {
+    "prefix": "trading"
+  }
+}</code></pre>
+      </div>
+      <p>The block above leaves out the <code>endpoints</code> list and the idempotency key lifetime. A table's path is then <code>/v1/trading/namespaces/equities/tables/fills</code>. A nested namespace's levels are joined by the unit separator, written <code>%1F</code> in a path: <code>/v1/trading/namespaces/equities%1Fdaily/tables/positions</code>. The warehouse <code>trading@dev</code> names the catalog branch <code>dev</code>, as <a href="branches-and-tags.html">Catalog branches and tags</a> explains. With <code>nuna.rest.default-warehouse</code> set, an engine that names no warehouse gets that catalog; without it, the server answers <code>400</code> "Missing query parameter warehouse, and this server has no default warehouse".</p>
+
+      <h3 id="format-versions">Format versions</h3>
+      <p>A new table is Iceberg format version 3 unless the create request asks for another with the <code>format-version</code> property. Format versions 1 to 3 are accepted. An upgrade past 3 is refused with <code>400</code> "Table format version 4 is not supported; the highest is 3".</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>No two objects in one namespace that have not been dropped hold the same name, compared as the server compares names.</li>
+        <li>An object's id never changes, through renames and moves, and a table's location never changes.</li>
+        <li>Every table of a catalog lives under its storage profile's allowed prefixes. The server refuses a location outside them.</li>
+        <li>A caller who holds no privilege anywhere in a catalog gets the same answer as for a catalog that does not exist. The same holds for namespaces, tables and views.</li>
+        <li>The server does not check that the data files a snapshot lists exist; the engine that commits a snapshot wrote them.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>In the console, the <a href="../console/catalog.html">Catalog page</a>, the <a href="../console/namespace.html">namespace page</a>, the <a href="../console/table.html">table page</a> and the <a href="../console/view.html">view page</a>.</li>
+        <li>In the API, <a href="../api/iceberg-namespaces.html#endpoints">Iceberg REST: namespaces</a>, <a href="../api/iceberg-tables.html#endpoints">Iceberg REST: tables</a>, <a href="../api/iceberg-views.html#endpoints">Iceberg REST: views</a> and <a href="../api/catalogs.html#endpoints">Catalogs</a>.</li>
+        <li>In the settings, <a href="../configure/catalogs.html">Catalog settings</a>.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>A catalog's storage profile, KMS key set and legal entity are fixed once the catalog exists.</li>
+        <li>A namespace cannot be renamed.</li>
+        <li>A list answers 100 entries a page by default and at most 1,000; the next page is named by an opaque token that does not expire.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/create-catalog.html">Create a catalog</a>: declare a catalog in the settings.</li>
+          <li><a href="../guides/rename-move.html">Rename or move a table or view</a>: what changes and what does not.</li>
+          <li><a href="storage.html">Storage profiles and credential vending</a>: where a catalog's tables live.</li>
+          <li><a href="../reference/table-properties.html">Table properties</a>: the properties the server reads or refuses.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-core/src/main/java/nuna/catalog/core/Names.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/TableFiles.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/MetadataFiles.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code> and <code>docs/storage-design.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run. The configuration example uses the fictional estate's names.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

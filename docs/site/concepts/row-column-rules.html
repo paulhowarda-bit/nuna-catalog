@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/row-column-rules">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Row filters and column masks · nuna docs</title>
+  <meta name="description" content="A row filter limits which rows of a table a group sees, and a column mask replaces a column's values for it; the server keeps one rule per group on a flagged table, and a trusted engine applies them.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Row filters and column masks</h1>
+        <p class="lead">A row filter limits which rows of a table a group sees, and a column mask replaces a column's values for it; the server keeps one rule per group on a flagged table, and a trusted engine applies them.</p>
+      </header>
+
+      <figure class="diagram" id="fig-row-column">
+        <svg viewBox="0 0 720 240" role="img" aria-labelledby="fig-row-column-t fig-row-column-d">
+          <title id="fig-row-column-t">Who reads a flagged table's files</title>
+          <desc id="fig-row-column-d">A data steward flags the table and a grant admin sets each group's rule. Trino, a trusted engine, loads the table and asks the server for the user's filter and masks before it returns rows. Any other engine is refused storage access.</desc>
+          <rect class="d-node" x="20" y="20" width="180" height="56" rx="10"/>
+          <text class="d-label" x="110" y="53">Data steward: flag</text>
+          <rect class="d-node" x="20" y="100" width="180" height="56" rx="10"/>
+          <text class="d-label" x="110" y="133">Grant admin: rules</text>
+          <rect class="d-node d-accent" x="270" y="60" width="180" height="56" rx="10"/>
+          <text class="d-label" x="360" y="93">nuna server</text>
+          <rect class="d-node d-ok" x="520" y="20" width="180" height="56" rx="10"/>
+          <text class="d-label" x="610" y="53">Trino (trusted)</text>
+          <rect class="d-node d-bad" x="520" y="150" width="180" height="56" rx="10"/>
+          <text class="d-label" x="610" y="183">Other engines</text>
+          <path class="d-edge" d="M200 48L270 80" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M200 128L270 98" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M450 80L520 50" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="485" y="46">filters, masks, files</text>
+          <path class="d-edge-dash" d="M450 100L520 175" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="470" y="160">403</text>
+        </svg>
+        <figcaption>Only a trusted engine that applies the rules receives a flagged table's files.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>A <em>rule</em> belongs to one group on one table. It has a row filter, column masks, or both. The row filter is a Trino SQL expression: a reader in the group sees only the rows where it is true. Each column mask is a Trino SQL expression that replaces the column's value, such as <code>NULL</code> or <code>'***'</code>.</p>
+      <p>Rules apply only to a table <em>flagged</em> with the governance attribute <code>row-column-policy</code> set to <code>true</code>. A data steward, with <code>manage-tags</code>, sets the flag. A grant admin, with <code>manage-grants</code>, sets the rules, under the same self-grant rule as grants: no one sets a rule for a group they belong to.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="what-a-reader-sees">What a reader sees</h3>
+      <p>When a person reads a flagged table through a trusted engine, the server combines the rules of the groups they are in:</p>
+      <ul>
+        <li>A table with no rules shows every row, unmasked, to anyone who may select.</li>
+        <li>Once a table has a rule, a reader in none of the rules' groups sees no rows.</li>
+        <li>The filters of the reader's groups are joined with OR. A rule with no filter admits every row.</li>
+        <li>A column stays unmasked if any of the reader's rules leaves it unmasked. If all of them mask it the same way, that mask applies; if they mask it differently, the column reads as <code>NULL</code>.</li>
+      </ul>
+
+      <h3 id="why-files-are-withheld">Why files are withheld</h3>
+      <p>A rule only works if the engine applies it, and an engine that reads the files directly could skip it. So the server gives a flagged table's storage access (loading it, vending credentials, committing) only to trusted engines, registered by a platform operator, and to maintenance principals for maintenance. Any other engine, and the console, gets <code>403</code> <code>table <var>name</var> has a row/column policy; only a trusted engine that enforces it gets storage access</code>. See <a href="../security/row-column.html">Row-level security and column masking</a> for the path the rules take to the engine.</p>
+
+      <h3 id="who-sees-rules">Who sees a rule's expressions</h3>
+      <p>Grant admins with <code>manage-grants</code> on the table see each rule's expressions. Data stewards with <code>manage-tags</code> see how many rules there are and for which groups, not the expressions. A reader with <code>select</code> sees only their own outcome: whether their rows are filtered and which columns are masked for them.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>Every expression is parsed as Trino SQL when it is set, and every column it names must exist in the table's current schema.</li>
+        <li>A schema change that renames or drops a column a rule names is refused, on main, on branches and in merges, until the grant admin changes the rule.</li>
+        <li>The flag cannot be removed or set to <code>false</code> while rules stand.</li>
+        <li>Every rule set or removed leaves an audit record of type <code>nuna.catalog.row-column-rule</code>.</li>
+        <li>The rules are applied by the engine, not by the server. Only Trino, through its OPA access control, applies them today.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <p>In the console, a table's <b class="ui">Access</b> tab holds the panel <b class="ui">Row filters and column masks</b>, and a reader sees <b class="ui">Your view of this table</b>. The endpoints are in the <a href="../api/row-column-rules.html#endpoints">Row and column rules API</a>.</p>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>Each expression is at most 4,000 characters, with no NUL character.</li>
+        <li>A rule masks at most 500 columns.</li>
+        <li>The flag goes on a table, never on a catalog, namespace or view, and it is not inherited.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/row-column-rules.html">Add a row filter or column mask</a>: flag a table and add rules.</li>
+          <li><a href="../security/row-column.html">Row-level security and column masking</a>: how the rules reach the engine.</li>
+          <li><a href="../security/opa.html">Use OPA</a>: wiring Trino to the server's decisions.</li>
+          <li><a href="governance.html">Governance</a>: the flag beside the other governance attributes.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/RowColumnPolicy.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleColumnGuard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RowColumnReadRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Authorizer.java</code> and <code>catalog-server/src/main/resources/nuna/ui/rules.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>A flagged table's rules, a reader's own outcome, and the refusal of storage access to an untrusted caller were read from the local demo with GET requests.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

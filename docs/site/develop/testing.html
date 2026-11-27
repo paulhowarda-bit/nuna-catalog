@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="develop/testing">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How nuna is tested · nuna docs</title>
+  <meta name="description" content="nuna's tests run in three tiers, chosen by JUnit tags: a fast build with no containers, a heavy build with every container, and nightly tests that run for hours.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>How nuna is tested</h1>
+        <p class="lead">nuna's tests run in three tiers, chosen by JUnit tags: a fast build with no containers, a heavy build with every container, and nightly tests that run for hours.</p>
+      </header>
+
+      <h2 id="what-it-is">What it is</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>The three tiers</caption>
+          <thead><tr><th scope="col">Command</th><th scope="col">Runs</th></tr></thead>
+          <tbody>
+            <tr><td><code>./gradlew build</code></td><td>Every test not tagged <code>heavy</code>, <code>overnight</code> or <code>cas</code>: about 1,580 tests that need only Java.</td></tr>
+            <tr><td><code>./gradlew build -Pheavy</code></td><td>Also every test tagged <code>heavy</code>: every test that starts a container (PostgreSQL, CockroachDB, Oracle, MongoDB, the S3 store, Kafka, Keycloak, Chrome), including the full store suite on all four databases and every fault-injection test.</td></tr>
+            <tr><td><code>./gradlew build -Pnightly</code></td><td>Only the tests tagged <code>overnight</code> and <code>cas</code>: the load and resilience runs, the engine matrix, the per-mutation fault sweeps, and the compare-and-swap test at 1,000 rounds on every database.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="shared-suite">The shared store suite</h3>
+      <p>Every database store passes one suite of tests from <code>catalog-store-api</code>. It injects lost answers and lost COMMITs, kills connections mid-commit and fails over, and checks that every acknowledged commit is present exactly once. The compare-and-swap test, <code>CommitSuite#exactlyOneWriterWinsEachRound</code>, races writers on one pointer round after round and checks that exactly one wins each round.</p>
+      <h3 id="conformance">Conformance</h3>
+      <p><code>catalog-tests-conformance</code> runs the Iceberg REST Compatibility Kit against the server, and fails if a test that passed stops passing.</p>
+      <h3 id="engine-matrix">The engine matrix</h3>
+      <p><code>catalog-tests-engines</code> deploys the server with its Helm chart into a kind cluster and runs Spark, Kafka Connect, PyIceberg and SingleStore against it: create, write, read, evolve and drop format version 2 and 3 tables in a three-level namespace, row-level deletes, updates and merges, and reads of each other's tables.</p>
+      <h3 id="s3-store">The S3 store</h3>
+      <p>Every test that needs S3 uses one store, chosen with <code>-Ps3=silo</code> (the default), <code>ceph</code> or <code>aws</code>; <code>aws</code> also needs <code>-Pnuna.aws.profile=<var>profile</var></code>.</p>
+      <h3 id="bites">Bite runs</h3>
+      <p>A test that guards a check is proved by a bite: a recorded patch, in <code>bites/</code>, that breaks the check. <code>bites/run.sh</code> applies each patch, runs its test, expects it to fail, reverts, and checks that every tracked file is restored. A bite's verdict is BITES when the test fails on its own, NO BITE when it passes, and SETUP when the run proves neither. The fast build checks that every recorded patch still applies.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>The fast build runs anywhere a JDK 25 runs, with no container engine.</li>
+        <li>Heavy and nightly runs never take a result from the build cache: each run is a new sample.</li>
+        <li>A heavy test task that runs past 60 minutes, or a nightly one past 120 minutes, fails rather than hangs.</li>
+        <li>Latency figures from a laptop show relative behaviour only.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>Two Gradle tasks run at once (<code>org.gradle.workers.max=2</code>), so at most two modules' containers run together.</li>
+        <li>Each test JVM gets 4 GB of heap.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="index.html">Build nuna from source</a>: the fast build.</li>
+          <li><a href="../reference/engines.html">Engine compatibility</a>: the engines and versions the matrix runs.</li>
+          <li><a href="modules.html">Module map</a>: where each suite lives.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>build.gradle.kts</code>, <code>gradle.properties</code>, <code>CLAUDE.md</code> (Builds, Bites), <code>catalog-tests-engines/README.md</code> and the modules' build descriptions, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No build was run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

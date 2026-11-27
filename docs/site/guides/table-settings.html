@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/table-settings">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Change a table's settings · nuna docs</title>
+  <meta name="description" content="Change a table's write settings, such as its file format, compression or delete mode, from the console's Settings drawer or as table properties from an engine.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Change a table's settings</h1>
+        <p class="lead">Change a table's write settings, such as its file format, compression or delete mode, from the console's Settings drawer or as table properties from an engine.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data engineers</span>
+          <span class="badge needs">Needs <code>modify</code> on the table</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>A table's settings are Iceberg table properties. A change, from the console or an engine, is a commit to the table: every commit rule applies, it needs <code>modify</code>, and the audit trail records it. Snapshot expiry, compaction and orphan removal are not properties; they are set in the maintenance policy (<a href="maintenance-policy.html">Set a catalog's maintenance policy</a>).</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Your groups hold <code>modify</code> on the table, or on its namespace or catalog.</li>
+        <li>To change a table on a catalog branch, read the branch: the change commits there. Through a tag no change is offered.</li>
+      </ul>
+
+      <h2 id="change-a-setting">Change a setting</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Open the table and select <b class="ui">Settings</b>.</p>
+              <p>The drawer opens over the table with two panels: <b class="ui">Settings</b>, what the console may change, and <b class="ui">Every property</b>, each property set on the table, whoever set it.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Change</b> on the setting's line.</p>
+              <p>The dialog, named after the setting and the table, says what the setting does and shows its property key, the values it takes and its default.</p>
+            </li>
+            <li>
+              <p class="step-title">Enter or choose the value and select <b class="ui">Set it</b>.</p>
+              <p>The console checks the value before sending it. The answer reads, for instance, <b class="ui">Parquet compression is now zstd</b>.</p>
+            </li>
+          </ol>
+          <p><b class="ui">Reset</b> removes the property, so the default applies again; confirm with <b class="ui">Reset it</b>.</p>
+          <figure class="shot pending" id="fig-table-settings"
+                  data-shot="guides-table-settings"
+                  data-shot-route="#c=lakehouse&amp;k=table&amp;ns=markets%1Ffx&amp;n=rates&amp;tab=settings"
+                  data-shot-user="ana"
+                  data-shot-width="1440"
+                  data-shot-state="Reading main; the Settings drawer is open on markets.fx.rates.">
+            <figcaption>The Settings drawer: the settings the console changes, and every property on the table.</figcaption>
+          </figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Commit a property change">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces/equities/tables/fills" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"requirements": [],
+       "updates": [{"action": "set-properties", "updates": {"write.delete.mode": "merge-on-read"}},
+                   {"action": "remove-properties", "removals": ["write.parquet.compression-level"]}]}'</code></pre>
+          </div>
+          <p>The server answers <code>200</code> with the table's new metadata.</p>
+        </section>
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <div class="code" data-lang="sql" data-title="Set and unset table properties">
+<pre><code>ALTER TABLE trading.equities.fills SET TBLPROPERTIES ('write.delete.mode' = 'merge-on-read');
+ALTER TABLE trading.equities.fills UNSET TBLPROPERTIES ('write.parquet.compression-level');</code></pre>
+          </div>
+          <p>An engine may set any key; the console lists only the settings below and shows every other key read-only.</p>
+        </section>
+      </div>
+
+      <h2 id="settings-the-console-changes">The settings the console changes</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Table settings in the console's Settings drawer</caption>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Property</th><th scope="col">Values</th><th scope="col">Default</th></tr></thead>
+          <tbody>
+            <tr><td>File format of new data</td><td><code>write.format.default</code></td><td><code>parquet</code>, <code>avro</code>, <code>orc</code></td><td><code>parquet</code></td></tr>
+            <tr><td>Parquet compression</td><td><code>write.parquet.compression-codec</code></td><td><code>zstd</code>, <code>snappy</code>, <code>gzip</code>, <code>uncompressed</code></td><td><code>zstd</code></td></tr>
+            <tr><td>Parquet compression level</td><td><code>write.parquet.compression-level</code></td><td>1 to 22 for zstd, 1 to 9 for gzip; none for the others</td><td>the codec's own</td></tr>
+            <tr><td>Target data file size</td><td><code>write.target-file-size-bytes</code></td><td>16 MB to 4 GB</td><td>512 MB</td></tr>
+            <tr><td>How rows are spread before writing</td><td><code>write.distribution-mode</code></td><td><code>none</code>, <code>hash</code>, <code>range</code></td><td>the engine's choice</td></tr>
+            <tr><td>How deletes rewrite rows</td><td><code>write.delete.mode</code></td><td><code>copy-on-write</code>, <code>merge-on-read</code></td><td><code>copy-on-write</code></td></tr>
+            <tr><td>How updates rewrite rows</td><td><code>write.update.mode</code></td><td><code>copy-on-write</code>, <code>merge-on-read</code></td><td><code>copy-on-write</code></td></tr>
+            <tr><td>How merges rewrite rows</td><td><code>write.merge.mode</code></td><td><code>copy-on-write</code>, <code>merge-on-read</code></td><td><code>copy-on-write</code></td></tr>
+            <tr><td>Column statistics kept</td><td><code>write.metadata.metrics.default</code></td><td><code>none</code>, <code>counts</code>, <code>truncate(16)</code>, <code>full</code></td><td><code>truncate(16)</code></td></tr>
+            <tr><td>Earlier metadata files listed</td><td><code>write.metadata.previous-versions-max</code></td><td>1 to 10,000</td><td>100</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Merge-on-read needs format version 2 or later. Spark honours the three modes; Trino always merges on read. A namespace's settings drawer offers one setting, <b class="ui">Description</b> (<code>comment</code>), at most 1,000 characters.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The table carries the new value</p>
+        <p>The setting's line shows the new value, and <b class="ui">Every property</b> lists the key. The table's <b class="ui">History</b> tab shows the commit, with you as its author.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>Merge-on-read needs format version 2 or later, and this table is version 1.</code> in the dialog</td><td>The table is Iceberg format version 1.</td><td>Upgrade the table's format version first, or keep copy-on-write.</td></tr>
+            <tr><td><code>400</code> <code>Property write.data.path must lie within the table location …, not …</code></td><td>A path property points outside the table's location. The same holds for <code>write.metadata.path</code>, <code>write.object-storage.path</code> and <code>write.folder-storage.path</code>.</td><td>Leave the path properties unset, or point them inside the table's location.</td></tr>
+            <tr><td><code>400</code> <code>Property encryption.key-id is fixed when the table is created</code></td><td>The commit changed the table's encryption key id.</td><td>Make a new table for a new key.</td></tr>
+            <tr><td><code>400</code> <code>Location is assigned by the catalog: …, not …</code></td><td>The commit changed the table's location.</td><td>Leave the location alone; nuna assigns it.</td></tr>
+            <tr><td><code>403</code> <code>Writes to … are frozen for DR reconcile: …</code></td><td>The table, a namespace above it or the catalog is frozen.</td><td>Change it after the freeze is lifted.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>modify</code></td><td>Your groups lack <code>modify</code> on the table.</td><td>Ask a grant admin (<a href="grant-access.html">Grant and revoke access</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/table-properties.html">Table properties</a>: every property nuna reads or refuses.</li>
+          <li><a href="maintenance-policy.html">Set a catalog's maintenance policy</a>: expiry, compaction and orphan removal.</li>
+          <li><a href="../console/table.html">The table page</a>: the Settings drawer and the table's tabs.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/resources/nuna/ui/settings.js</code>, <code>catalog-server/src/main/resources/nuna/ui/table.js</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No setting was changed on the local demo.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

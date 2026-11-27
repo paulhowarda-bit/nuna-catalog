@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/authentication">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authentication · nuna docs</title>
+  <meta name="description" content="Authentication is how the server establishes who a request acts as: it checks the request's bearer token against the identity providers you trust, and never issues a token itself.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Authentication</h1>
+        <p class="lead">Authentication is how the server establishes who a request acts as: it checks the request's bearer token against the identity providers you trust, and never issues a token itself.</p>
+      </header>
+
+      <figure class="diagram" id="fig-authentication">
+        <svg viewBox="0 0 720 220" role="img" aria-labelledby="fig-authentication-t fig-authentication-d">
+          <title id="fig-authentication-t">How a request is authenticated</title>
+          <desc id="fig-authentication-d">An engine gets a token from the identity provider and sends it to the server. The server fetches the issuer's signing keys from its JWKS URI, checks the token, and reads the principal and groups from its claims.</desc>
+          <rect class="d-node" x="20" y="30" width="180" height="56" rx="10"/>
+          <text class="d-label" x="110" y="63">Identity provider</text>
+          <rect class="d-node" x="20" y="140" width="180" height="56" rx="10"/>
+          <text class="d-label" x="110" y="173">Engine or person</text>
+          <rect class="d-node d-accent" x="420" y="140" width="200" height="56" rx="10"/>
+          <text class="d-label" x="520" y="173">nuna server</text>
+          <path class="d-edge" d="M110 140V86" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="160" y="118">get a token</text>
+          <path class="d-edge" d="M200 168H420" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="310" y="160">Authorization: Bearer …</text>
+          <path class="d-edge-dash" d="M420 150L200 70" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="330" y="90">fetch signing keys (JWKS)</text>
+        </svg>
+        <figcaption>The server reads its signing keys from each issuer's JWKS URI and checks every request's token itself.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>Every request to the server carries a bearer token in its <code>Authorization</code> header, issued by an identity provider you name in <code>nuna.security.issuers</code>. The server checks the token's signature, issuer, audience and lifetime, then reads three claims: the user id, which names the <a class="term" href="../reference/glossary.html#term-principal">principal</a>; the groups, which decide what the principal may do; and the client id, which names the program that asked for the token. Nothing else about a person is stored or trusted.</p>
+      <p>Only the console's own files, the OPA decision endpoints and <code>/v1/oauth/tokens</code> skip this check. The OPA endpoints check the end user's token themselves (see <a href="opa.html">Use OPA</a>). <code>/v1/oauth/tokens</code> never issues a token: it answers <code>400</code> with error <code>unsupported_grant_type</code> and a description that begins <code>This catalog does not issue tokens.</code> and names where to get one.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="checking-token">Checking a token</h3>
+      <p>The server reads the token's <code>iss</code> claim to choose the issuer, then verifies the token against that issuer's settings:</p>
+      <ul>
+        <li>The issuer must be one of <code>nuna.security.issuers</code>; any other is refused.</li>
+        <li>The signature must verify with a key from the issuer's <code>jwks-uri</code>, by an algorithm in its <code>algorithms</code> list. Only asymmetric algorithms can be named, so unsigned and shared-secret tokens are always refused.</li>
+        <li>The <code>aud</code> claim must include one of the issuer's <code>audiences</code>.</li>
+        <li>The token must have an <code>exp</code> claim. <code>exp</code> and <code>nbf</code> are checked with the clock skew <code>nuna.security.clock-skew</code> allows, 60 s by default.</li>
+        <li>The claims named by <code>user-id-claim</code> and <code>client-id-claim</code> must be present. A token without the <code>groups-claim</code> belongs to no group.</li>
+      </ul>
+      <p>The server never uses OpenID discovery: it reads keys only from the configured <code>jwks-uri</code>. It caches them for 5 minutes and refreshes them ahead of expiry. A token signed with a key id it has not seen makes it fetch the keys once more, which is how a key rotation reaches it; it fetches at most twice in 30 s. A fetch waits at most 500 ms to connect and 5 s for the answer.</p>
+      <p>A token from an identity provider that moved the groups claim elsewhere because the user has too many groups (a <code>_claim_names</code> entry for it) is refused: the application registered for the catalog must emit only the groups assigned to it.</p>
+
+      <h3 id="engines-acting-for-people">Engines acting for people</h3>
+      <p>A shared engine such as Trino serves many people with one connection. The server decides such a request for the end user, not for the engine, when the engine is a <em>trusted engine</em>: one a platform operator has registered by its issuer and client id at <code>/management/v1/engines</code>. A trusted engine names its end user in one of two ways:</p>
+      <ul>
+        <li>It sends its own token in <code>Authorization</code> and names the user in <code>X-Nuna-End-User</code> (the user id as the issuer's user-id claim carries it), with the user's groups in <code>X-Nuna-End-User-Groups</code>, comma-separated and each percent-encoded.</li>
+        <li>It passes the user's own token in <code>Authorization</code> and sends its own token in <code>X-Nuna-Engine-Authorization</code>. Both tokens are verified, and the user's groups come from the user's token. This is how Trino works with <code>iceberg.rest-catalog.session=USER</code>. The same token in both headers is the engine acting as itself.</li>
+      </ul>
+      <p>An engine that is not registered and names an end user is refused with <code>403</code>. A trusted engine that names no end user acts as itself, with its own token's groups.</p>
+
+      <h3 id="service-identities">Service identities</h3>
+      <p>Programs that act for no person sign in with a token of their own, usually by the OAuth client-credentials grant at the identity provider (see <a href="../clients/tokens.html">Get a token</a>). The maintenance worker is such a program: its principal id is listed in <code>nuna.security.maintenance-principals</code>, which gives it the maintenance role when it acts as itself (see <a href="authorization.html#maintenance-principals">Authorization</a>).</p>
+
+      <h3 id="developer-tokens">Developer tokens in the console</h3>
+      <p>The console signs people in through the identity provider named in <code>nuna.ui.oidc</code>, by the authorization code flow with PKCE. With <code>nuna.ui.dev-token-login</code> set to <code>true</code>, it also offers a box to paste a bearer token. That box is for local development only, and it is off by default. A pasted token is checked like any other, so it gives no more than its own claims.</p>
+      <aside class="callout demo">
+        <p class="callout-title">The demo turns developer tokens on</p>
+        <p>The local demo sets <code>nuna.ui.dev-token-login</code> to <code>true</code> and trusts an issuer of its own whose tokens it mints for its users. Neither belongs in a production install.</p>
+      </aside>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>No request reaches a route without a token the server verified, except the paths named above.</li>
+        <li>Every refused token leaves an audit record of type <code>nuna.catalog.auth-failure</code> with the issuer, the claimed subject, the client id, the reason, the request id and the remote address. The token itself is never recorded.</li>
+        <li>The reason is recorded and logged, but not sent to the client. A refused token always answers the same body, so a caller learns nothing about why.</li>
+        <li>The server does not check whether a token was revoked at the identity provider before it expires. Keep token lifetimes short at the identity provider.</li>
+        <li>When the identity provider's keys cannot be fetched, the server answers <code>503</code>, not <code>401</code>, so engines retry instead of dropping their credentials.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <p>A request without a token, or with one the server refuses, answers <code>401</code>:</p>
+      <div class="code" data-lang="json" data-kind="output" data-title="401 response body">
+<pre><code>{"error":{"message":"Not authorized: the bearer token is missing or was not accepted","type":"NotAuthorizedException","code":401}}</code></pre>
+      </div>
+      <p>Its <code>WWW-Authenticate</code> header is <code>Bearer</code> when no token was sent, <code>Bearer error="invalid_token"</code> when the token was refused, and <code>Bearer error="invalid_request"</code> when the request's headers are malformed.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Refusals and their answers</caption>
+          <thead><tr><th scope="col">Status</th><th scope="col">Message in the body</th><th scope="col">When</th></tr></thead>
+          <tbody>
+            <tr><td><code>401</code></td><td><code>Not authorized: the bearer token is missing or was not accepted</code></td><td>No token, or a token refused for any reason in "Checking a token". The audit record and the server's log give the reason, such as <code>issuer … is not trusted</code> or <code>token from … rejected: …</code>.</td></tr>
+            <tr><td><code>401</code></td><td>the same</td><td><code>X-Nuna-End-User-Groups</code> without <code>X-Nuna-End-User</code>, or <code>X-Nuna-Engine-Authorization</code> beside <code>X-Nuna-End-User</code>.</td></tr>
+            <tr><td><code>403</code></td><td><code>Forbidden: client … is not a registered trusted engine, so it may not act for another user</code></td><td>An unregistered client named an end user.</td></tr>
+            <tr><td><code>503</code></td><td><code>The token could not be checked: its issuer's signing keys could not be fetched; retry later</code></td><td>The issuer's JWKS URI could not be reached. The answer carries <code>Retry-After</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The settings are in <a href="../configure/security.html#nuna-security-issuers">Security settings</a>; the console's sign-in settings are in <a href="../configure/server.html">Server settings</a>.</p>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>The server starts only with at least one issuer: <code>nuna.security.issuers names no trusted token issuer; the catalog accepts no request without one</code>.</li>
+        <li>Each issuer needs all seven fields: <code>issuer</code>, <code>jwks-uri</code>, <code>audiences</code>, <code>algorithms</code>, <code>user-id-claim</code>, <code>groups-claim</code> and <code>client-id-claim</code>. An empty <code>algorithms</code> or <code>audiences</code> list stops the server from starting.</li>
+        <li>The trusted-engine registry stores an <code>end-user-claim</code> and <code>flags</code> for each engine, but no decision reads them.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="authorization.html">Authorization</a>: what the principal and its groups may do once the token is accepted.</li>
+          <li><a href="../install/identity-provider.html">Connect an identity provider</a>: setting up issuers, audiences and the groups claim.</li>
+          <li><a href="../clients/tokens.html">Get a token</a>: how engines and scripts get a token to send.</li>
+          <li><a href="../api/engines.html#endpoints">Engines API</a>: registering a trusted engine.</li>
+          <li><a href="what-is-audited.html">What is audited</a>: the record an authentication failure leaves.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/EngineRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/OAuthRoute.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java</code> and <code>catalog-audit/src/main/java/nuna/catalog/audit/AuthFailure.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The 401 body and its <code>WWW-Authenticate</code> headers were read from the local demo with GET requests without a token and with a malformed one. The 403 and 503 answers were not provoked.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

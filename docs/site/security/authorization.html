@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/authorization">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authorization · nuna docs</title>
+  <meta name="description" content="Authorization is how the server decides whether the principal of a request may do what it asks: from the privileges its groups were granted on the object or above it, the roles your settings give groups, and the governance rules on the object.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Authorization</h1>
+        <p class="lead">Authorization is how the server decides whether the principal of a request may do what it asks: from the privileges its groups were granted on the object or above it, the roles your settings give groups, and the governance rules on the object.</p>
+      </header>
+
+      <figure class="diagram" id="fig-authorization">
+        <svg viewBox="0 0 720 230" role="img" aria-labelledby="fig-authorization-t fig-authorization-d">
+          <title id="fig-authorization-t">The order of an authorization decision</title>
+          <desc id="fig-authorization-d">The server first looks for a grant to one of the subject's groups, on the object or above it, that implies the privilege the operation needs. If one exists, the governance rules for regulated areas, flagged tables and identity-less writes apply in that order. Any refusal is audited.</desc>
+          <rect class="d-node" x="20" y="40" width="200" height="64" rx="10"/>
+          <text class="d-label" x="120" y="68">Which privilege?</text>
+          <text class="d-note" x="120" y="88">from the operation</text>
+          <rect class="d-node d-accent" x="260" y="40" width="200" height="64" rx="10"/>
+          <text class="d-label" x="360" y="68">Held by a group?</text>
+          <text class="d-note" x="360" y="88">on it or above it</text>
+          <rect class="d-node" x="500" y="40" width="200" height="64" rx="10"/>
+          <text class="d-label" x="600" y="68">Governance rules</text>
+          <text class="d-note" x="600" y="88">regulated, flagged, identity</text>
+          <path class="d-edge" d="M220 72H260" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M460 72H500" marker-end="url(#d-arrow)"/>
+          <rect class="d-node d-bad" x="260" y="150" width="200" height="56" rx="10"/>
+          <text class="d-label" x="360" y="183">Refused and audited</text>
+          <path class="d-edge" d="M360 104V150" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M600 104L440 150" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="380" y="130">no</text>
+        </svg>
+        <figcaption>A grant is needed first; governance can then still refuse what a grant allows.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>The server decides every request for its <em>subject</em>: the principal its token names, or the end user a trusted engine acts for (see <a href="authentication.html#engines-acting-for-people">Authentication</a>). Each operation needs one of seven <a href="../reference/privileges.html">privileges</a> on the object it touches. The subject holds that privilege when one of its groups was granted a privilege that includes it, on the object or on anything above it: the catalog, then each namespace down to the object.</p>
+      <p>Grants go to groups from the identity provider's token, never to people. There is no DENY grant and no superuser: nothing takes away what a grant gives, and no setting gives every privilege everywhere.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="privileges-and-inheritance">Privileges and inheritance</h3>
+      <p>The privileges are <code>describe</code>, <code>select</code>, <code>write</code>, <code>modify</code>, <code>create</code>, <code>manage-grants</code> and <code>manage-tags</code>. <code>modify</code> includes <code>write</code> and <code>select</code>, <code>write</code> includes <code>select</code>, and every privilege includes <code>describe</code>. A grant on a namespace reaches every namespace, table and view in it, including those created later. <a href="../reference/privileges.html">Privileges</a> lists what each allows and which operation needs which.</p>
+      <p>A grant can name a catalog branch. It then counts only for requests through that branch, and only <code>write</code> and <code>modify</code> can be granted that way. Every other grant counts through every ref, main included.</p>
+
+      <h3 id="separation-of-duties">Separation of duties</h3>
+      <p>The privileges fall into four duties: reading (<code>describe</code>, <code>select</code>), data (<code>write</code>, <code>modify</code>, <code>create</code>), grants (<code>manage-grants</code>) and tags (<code>manage-tags</code>). Within one catalog, one group may not hold two duties that conflict:</p>
+      <ul>
+        <li>A group that manages grants holds no other duty.</li>
+        <li>Data and tags never share a group.</li>
+        <li>Reading goes with data or with tags.</li>
+      </ul>
+      <p>The server checks this across the whole catalog for the group, inside the same database write as the grant, so two grants made at the same moment cannot break it together. A grant that would break it is refused with <code>403</code>, for example <code>group trading-engineers holds create in this catalog, a data duty that manage-tags (tags) must stay separate from</code>. The message names the first conflicting privilege the group already holds.</p>
+
+      <h3 id="self-grant-rule">The self-grant rule</h3>
+      <p>No one grants to a group they belong to, and no one sets a row filter or column mask for one. The refusals are <code>no one grants to a group they belong to: <var>group</var></code> and <code>no one sets row filters or column masks for a group they belong to: <var>group</var></code>, both <code>403</code> and audited. The principals listed in <code>nuna.security.own-group-principals</code> are exempt from this rule only; separation of duties still applies to them. Leave that list empty in production.</p>
+
+      <h3 id="grant-admins">Grant admins</h3>
+      <p>Members of a group in <code>nuna.security.grant-admin-groups</code> hold <code>manage-grants</code> on every catalog by configuration, not by a grant, and see every catalog. Such a group may hold no other grant: <code>group <var>group</var> administers grants on every catalog and may hold no other grant</code>. Any group can also be granted <code>manage-grants</code> on one catalog, namespace, table or view.</p>
+
+      <h3 id="platform-operators">Platform operators</h3>
+      <p>Members of a group in <code>nuna.security.platform-operator-groups</code> run the deployment: the trusted-engine registry, DR freezes, the maintenance worker's scans and storage set-up, and the delete policies. They see every catalog but hold no privilege on its data, and their group may hold no grant: <code>group <var>group</var> operates the platform and may hold no grant</code>. An operation only they may call refuses everyone else with <code>only platform operators may call <var>operation</var></code>; the engine registry says <code>only platform operators run the trusted-engine registry</code>. A group in both lists stops the server from starting.</p>
+
+      <h3 id="maintenance-principals">Maintenance principals</h3>
+      <p>A principal whose id is in <code>nuna.security.maintenance-principals</code>, acting as itself and for no end user, is a maintenance principal. Only it may call the worker's endpoints (purges, pending deletions, scan reports); anyone else is refused with <code>only a maintenance principal may call <var>operation</var></code>. It still needs grants for ordinary operations. It alone, besides trusted engines, gets storage access to a table flagged for row and column rules, and each such access is audited first as a maintenance exemption. On main it may also remove old schemas and partition specs with only <code>write</code>.</p>
+
+      <h3 id="governance-rules">Governance rules</h3>
+      <p>After a grant allows an operation on a table or view, three rules apply in this order:</p>
+      <ol>
+        <li>A table without a classification of its own, in a regulated area (the table, a namespace above it or its catalog has <code>regulated</code> set to <code>true</code>), is refused everything but <code>describe</code> and <code>manage-tags</code>: <code>table <var>name</var> is in a regulated area and has no classification; it is closed until it is classified</code>.</li>
+        <li>A table flagged with <code>row-column-policy</code> gives storage access (load, credentials, commits) only to trusted engines and maintenance principals: <code>table <var>name</var> has a row/column policy; only a trusted engine that enforces it gets storage access</code>.</li>
+        <li>With <code>nuna.security.refuse-identity-less-commits</code> set to <code>true</code>, a trusted engine that names no end user may not write in a regulated area: <code>engine <var>client</var> named no end user, and writes to regulated areas must name one</code>. The setting is off by default.</li>
+      </ol>
+      <p>Legal holds, DR freezes and retention classes are checked by the operations they stop, not here; see <a href="../concepts/governance.html">Governance</a>.</p>
+
+      <h2 id="what-a-refusal-tells-you">What a refusal tells you</h2>
+      <p>A refusal for want of a privilege answers <code>403</code> with type <code>ForbiddenException</code> and names the subject, the privilege checked and the operation, in the form <code><var>subject</var> holds no privilege that gives select for loadTable</code>. Through a branch or tag it adds <code> on this branch or tag</code>.</p>
+      <p>Names are hidden from those who hold nothing on them. A subject whose groups hold nothing on a namespace, table or view gets the answer for one that does not exist, such as <code>404</code> <code>NoSuchTableException</code>. A subject whose groups hold nothing in a catalog, and who is no grant admin or platform operator, gets <code>404</code> <code>NoSuchWarehouseException</code> <code>The given warehouse does not exist: <var>catalog</var></code>. Every refusal, hidden or not, is audited as a <code>nuna.catalog.denial</code> record.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>Every Iceberg and management request is decided before its work starts, and every refusal is audited.</li>
+        <li>A privilege name the server does not know, stored by a newer version, gives nothing.</li>
+        <li>The server does not read the directory. It knows a group only from grants and from the groups in tokens, so it cannot tell you who is in a group.</li>
+        <li>The server decides access to catalog objects; access to the files themselves depends on the vended credentials it issues and on your object store's own policies (see <a href="credential-vending.html">Credential vending</a>).</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <p>In the console, the <b class="ui">Grants</b> page lists and changes a catalog's grants, and each object's <b class="ui">Access</b> tab shows the grants that reach it and <b class="ui">What you may do</b>. The endpoints are in the <a href="../api/grants.html#endpoints">Grants API</a>; the settings are in <a href="../configure/security.html#nuna-security-grant-admin-groups">Security settings</a>.</p>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li><code>create</code> means nothing on a table or view, and <code>write</code> means nothing on a view; the server refuses such grants with <code>400</code>.</li>
+        <li>A grant that names a branch gives only <code>write</code> or <code>modify</code>, and a tag cannot be named.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/access.html">Identity and access</a>: the same model, introduced from the start.</li>
+          <li><a href="../reference/privileges.html">Privileges</a>: each privilege and the operations that need it.</li>
+          <li><a href="../guides/grant-access.html">Grant and revoke access</a>: making grants, and what to do with each refusal.</li>
+          <li><a href="row-column.html">Row-level security and column masking</a>: the rules applied to what a reader sees.</li>
+          <li><a href="hardening.html">Hardening checklist</a>: keeping the role lists small and checked.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-security/src/main/java/nuna/catalog/security/Authorizer.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Privilege.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Separation.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/OwnGroups.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The refusals for loading a flagged table, for a missing privilege, for a hidden table and for the engine registry were read from the local demo with GET requests as its users. No grant was made or refused for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operate · nuna docs</title>
+  <meta name="description" content="Day-to-day running of nuna: what to watch, what runs at night, and what to do when something fails.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>Operate</h1>
+        <p class="lead">Day-to-day running of nuna: what to watch, what runs at night, and what to do when something fails.</p>
+      </header>
+
+      <p>Read the first four pages once when you set nuna up: they say what the server and the maintenance worker report and how to collect it. Keep the troubleshooting page and the runbooks to hand for when something goes wrong.</p>
+      <ul class="cards">
+        <li><a href="health.html"><span class="card-title">Health checks</span><span class="card-text">The probes Kubernetes uses, the health routes for platform operators, and the database self-check at start-up.</span></a></li>
+        <li><a href="metrics.html"><span class="card-title">Metrics</span><span class="card-text">Every metric the server and the maintenance worker export, with its type, unit, labels and meaning.</span></a></li>
+        <li><a href="traces-and-logs.html"><span class="card-title">Traces, logs and the request id</span><span class="card-text">The spans each request and each scan make, the JSON log lines, and following one request across the parts.</span></a></li>
+        <li><a href="dashboards-alerts.html"><span class="card-title">Dashboards and alerts</span><span class="card-text">The three Grafana dashboards and the 29 Prometheus alert rules, how to install them and what each watches.</span></a></li>
+        <li><a href="maintenance-nights.html"><span class="card-title">Maintenance nights</span><span class="card-text">The worker's schedule, the cleanup window, and reading a night's figures.</span></a></li>
+        <li><a href="table-health.html"><span class="card-title">Table health</span><span class="card-text">The health score, its reasons, and what puts a table in tonight's compaction queue.</span></a></li>
+        <li><a href="audit-pipeline.html"><span class="card-title">Run the audit pipeline</span><span class="card-text">The audit log, the outbox relay, the Kafka copy, the archive and the audit tables writer, and checking each is current.</span></a></li>
+        <li><a href="backup-dr.html"><span class="card-title">Back up and recover</span><span class="card-text">What to back up, the DR watermark and verifier, and recovering in the DR region step by step.</span></a></li>
+        <li><a href="scaling.html"><span class="card-title">Scaling</span><span class="card-text">Replicas, the database, the worker's compaction slots, and what the load tests measured.</span></a></li>
+        <li><a href="kubectl.html"><span class="card-title">Helm and kubectl recipes</span><span class="card-text">Status, logs, restarts after a Secret change and rollbacks for each of the three releases.</span></a></li>
+        <li><a href="troubleshooting.html"><span class="card-title">Troubleshooting</span><span class="card-text">Symptom, cause and fix, grouped by part, with the messages as nuna prints them.</span></a></li>
+        <li><a href="runbooks.html"><span class="card-title">Alert runbooks</span><span class="card-text">One section per alert rule: what it means, its impact, what to check and how to fix it.</span></a></li>
+      </ul>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

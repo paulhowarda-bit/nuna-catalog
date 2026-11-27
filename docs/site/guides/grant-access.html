@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/grant-access">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grant and revoke access · nuna docs</title>
+  <meta name="description" content="Grant a group a privilege on a catalog, namespace, table or view, check what it will do before you grant it, and revoke it again.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Grant and revoke access</h1>
+        <p class="lead">Grant a group a privilege on a catalog, namespace, table or view, check what it will do before you grant it, and revoke it again.</p>
+        <p class="doc-meta">
+          <span class="badge for">For grant admins</span>
+          <span class="badge needs">Needs <code>manage-grants</code> on the object</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You are in a group named in <code>nuna.security.grant-admin-groups</code>, or one of your groups holds <code>manage-grants</code> on the object or above it.</li>
+        <li>You are not in the group you grant to: no one grants to their own group.</li>
+        <li>You know the group's name as the identity provider's token carries it. The server does not read the directory, so it cannot check the name.</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="choose-object-and-privilege">Choose the object and the privilege</h2>
+      <p>Grant on the highest object that covers the work: a grant on a namespace reaches every table, view and namespace in it, including those created later. Grant the lowest privilege that does the work, since each includes those below it: <code>describe</code>, then <code>select</code>, then <code>write</code>, then <code>modify</code>. <code>create</code>, <code>manage-grants</code> and <code>manage-tags</code> stand apart. <a href="../reference/privileges.html">Privileges</a> says what each allows.</p>
+      <p>Mind separation of duties: in one catalog, a group that manages grants holds nothing else, and a group that changes data does not also set tags.</p>
+
+      <h2 id="grant-privilege">Grant a privilege</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Select <b class="ui">Grants</b> in the rail.</p>
+              <p>To grant on one object instead, open its page, select its <b class="ui">Access</b> tab and select <b class="ui">Grant access</b> there; the dialog then grants on that object.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Grant access</b>.</p>
+              <p>The dialog <b class="ui">Grant access in trading</b> opens.</p>
+            </li>
+            <li>
+              <p class="step-title">Enter the group in <b class="ui">Group</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Choose the access in <b class="ui">Access</b>.</p>
+              <p>The choices run from <b class="ui">See it</b> to <b class="ui">Manage grants</b>, each including those above it on the ladder.</p>
+            </li>
+            <li>
+              <p class="step-title">Choose the object in <b class="ui">On</b>.</p>
+              <p>Search for a namespace, table or view, or select <b class="ui">Use the whole catalog</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Read the line under the fields.</p>
+              <p>The console asks the server what the grant would do. It says what the group will be able to do, that the group already holds it, or why the server would refuse it, such as <b class="ui">You belong to trading-analysts. No one grants to their own group: ask another grant admin.</b></p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Grant</b>.</p>
+              <p>The dialog says <b class="ui">Granted select on equities to trading-analysts.</b> and offers <b class="ui">See the record</b>, the audit record of the grant.</p>
+            </li>
+          </ol>
+          <figure class="shot pending" id="fig-grant-dialog"
+                  data-shot="guides-grant-dialog"
+                  data-shot-route="#p=grants&amp;c=lakehouse"
+                  data-shot-user="gary"
+                  data-shot-width="1440"
+                  data-shot-state="The Grant access dialog open, with group demo-quants, access Read its data and a namespace chosen, showing the admitted line.">
+            <figcaption>The Grant access dialog, with the line that says what the grant will do.</figcaption>
+          </figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Ask first what the grant would do. The preview takes the grant's body, writes nothing and leaves no audit record:</p>
+          <div class="code" data-lang="bash" data-title="Preview a grant of select on equities">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants/preview" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "namespace", "namespace": ["equities"]}, "group": "trading-analysts", "privilege": "select"}'</code></pre>
+          </div>
+          <p>Its <code>answer</code> is <code>admitted</code>; <code>unchanged</code>, with <code>granted-by</code> and <code>granted-at</code>, when the group already holds it; or <code>refused</code>, with <code>refusal</code> (<code>privilege-not-on-object</code>, <code>self-grant</code> or <code>separation-of-duties</code>) and <code>reason</code>, the message the grant would answer. Then grant:</p>
+          <div class="code" data-lang="bash" data-title="Grant select on equities to trading-analysts">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "namespace", "namespace": ["equities"]}, "group": "trading-analysts", "privilege": "select"}'</code></pre>
+          </div>
+          <p>A grant answers <code>204</code> with no body, also when the group already holds it. The <code>securable</code>'s <code>type</code> is <code>catalog</code>, <code>namespace</code>, <code>table</code> or <code>view</code>; a namespace, table or view names its <code>namespace</code> levels, and a table or view its <code>name</code>. To grant through one catalog branch only, add <code>"branch": "dev"</code>, with <code>write</code> or <code>modify</code>.</p>
+        </section>
+      </div>
+
+      <aside class="callout check">
+        <p class="callout-title">The group's grants now include the new one</p>
+        <p>The object's effective grants list it, with the object it was granted on. In the console, the object's <b class="ui">Access</b> tab shows it under <b class="ui">Grants that reach this namespace</b>. With curl:</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/grants/effective?type=table&amp;namespace=equities&amp;name=fills" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </aside>
+
+      <h2 id="revoke-privilege">Revoke a privilege</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Select <b class="ui">Grants</b> in the rail.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Revoke</b> on the grant's row.</p>
+              <p>The dialog <b class="ui">Revoke select from trading-analysts</b> says what the group loses and that the grant and its revocation stay in the audit trail.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Revoke</b> in the dialog.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Send the grant's body to <code>/revoke</code>. It answers <code>204</code>.</p>
+          <div class="code" data-lang="bash" data-title="Revoke select on equities from trading-analysts">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants/revoke" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"securable": {"type": "namespace", "namespace": ["equities"]}, "group": "trading-analysts", "privilege": "select"}'</code></pre>
+          </div>
+        </section>
+      </div>
+      <p>A revoke removes only the grant it names. If the group holds the same privilege on an object above, it keeps it through that grant: check the effective grants.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>403</code> <code>no one grants to a group they belong to: trading-analysts</code></td><td>You are in that group.</td><td>Ask another grant admin.</td></tr>
+            <tr><td><code>403</code> <code>group trading-engineers holds create in this catalog, a data duty that manage-tags (tags) must stay separate from</code></td><td>The group already holds a duty in the catalog that conflicts with the one you grant. The message names one privilege it holds, not where.</td><td>Grant the privilege to a different group, or revoke the conflicting grants first.</td></tr>
+            <tr><td><code>403</code> <code>group grant-admins administers grants on every catalog and may hold no other grant</code></td><td>The group is a grant-admin group.</td><td>Grant to another group.</td></tr>
+            <tr><td><code>403</code> <code>group platform-operators operates the platform and may hold no grant</code></td><td>The group is a platform-operator group.</td><td>Grant to another group.</td></tr>
+            <tr><td><code>403</code> <code><var>subject</var> holds no privilege that gives manage-grants for grant</code></td><td>Your groups hold no <code>manage-grants</code> on the object or above it.</td><td>Ask a grant admin.</td></tr>
+            <tr><td><code>400</code> <code>create means nothing on a table: it creates namespaces, tables and views in a catalog or namespace</code></td><td><code>create</code> on a table or view.</td><td>Grant <code>create</code> on the namespace.</td></tr>
+            <tr><td><code>400</code> <code>write means nothing on a view: it has no rows; select reads it, and modify changes its definition</code></td><td><code>write</code> on a view.</td><td>Grant <code>select</code> or <code>modify</code>.</td></tr>
+            <tr><td><code>400</code> <code>select is not granted on one branch: a grant that names a branch gives write or modify, what a commit on it needs; reads and every other change ask through main</code></td><td>A branch was named with another privilege.</td><td>Leave out <code>branch</code>.</td></tr>
+            <tr><td><code>400</code> <code>A grant names the group it goes to; grants never go to individuals …</code></td><td>The body has no <code>group</code>.</td><td>Name a group.</td></tr>
+            <tr><td><code>400</code> <code>unknown privilege '…'; known: [describe, select, write, modify, create, manage-grants, manage-tags]</code></td><td>The privilege is misspelt.</td><td>Use one of the names listed.</td></tr>
+            <tr><td><code>404</code> <code>No such grant: select to trading-analysts</code></td><td>A revoke named a grant that does not exist.</td><td>List the grants on the object and revoke the one there.</td></tr>
+            <tr><td><code>404</code> <code>Branch does not exist: dev</code></td><td>The branch named does not exist or has expired.</td><td>Check the catalog's branches.</td></tr>
+            <tr><td><code>500</code> <code>The grant may or may not have been applied; repeat it: …</code></td><td>The database's answer was lost.</td><td>Repeat the request; a repeated grant answers <code>204</code> unchanged.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/authorization.html">Authorization</a>: inheritance, separation of duties and the roles set in the settings.</li>
+          <li><a href="../reference/privileges.html">Privileges</a>: what each privilege allows.</li>
+          <li><a href="../console/grants.html">The Grants page</a>: every part of the page.</li>
+          <li><a href="../api/grants.html#endpoints">Grants API</a>: listing, checking and exporting grants.</li>
+          <li><a href="row-column-rules.html">Add a row filter or column mask</a>: limiting what a granted group reads.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Separation.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Privilege.java</code>, <code>catalog-server/src/main/resources/nuna/ui/grant.js</code>, <code>catalog-server/src/main/resources/nuna/ui/governance.js</code> and <code>catalog-server/src/main/resources/nuna/ui/panels.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The listing and effective-grants answers were read from the local demo with GET requests. The preview, grant and revoke were not run: they are POST requests and the demo is shared.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

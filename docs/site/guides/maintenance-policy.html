@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/maintenance-policy">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Set a catalog's maintenance policy · nuna docs</title>
+  <meta name="description" content="Choose what the maintenance worker does to tables on its own: snapshot expiry, orphan removal, compaction and manifest rewrite, set on a catalog and overridden key by key below it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Set a catalog's maintenance policy</h1>
+        <p class="lead">Choose what the maintenance worker does to tables on its own: snapshot expiry, orphan removal, compaction and manifest rewrite, set on a catalog and overridden key by key below it.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data engineers and platform operators</span>
+          <span class="badge needs">Needs <code>modify</code> on the catalog</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>A maintenance policy is a set of keys. It may be set on a catalog, a namespace, a table or a view; each level sets only the keys it names and inherits the rest from the level above, then from the deployment's defaults (<code>nuna.governance.maintenance-defaults</code>), then from the built-in values. Built in, nothing runs: every <code>enabled</code> key is <code>false</code>. Guardrails then have the last word.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Your groups hold <code>modify</code> on the level you set the policy on. Reading a policy needs <code>describe</code>.</li>
+        <li>The maintenance worker runs for the catalog (<a href="../install/helm-maintenance.html">Install the maintenance worker</a>). It reads the policy at its next scan.</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="set-the-policy">Set the catalog's policy</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Select <b class="ui">Maintenance</b> in the rail.</p>
+              <p>The panel <b class="ui">Policy for trading</b> lists each key with its <b class="ui">Value</b> and who <b class="ui">Set by</b>: the catalog, a guardrail or the built-in value.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Edit the catalog's policy</b>.</p>
+              <p>The dialog <b class="ui">Policy for trading</b> has one field per key. A field you leave empty leaves that key to the built-in value.</p>
+            </li>
+            <li>
+              <p class="step-title">Enter the values and select <b class="ui">Save the policy</b>.</p>
+              <p>The answer reads <b class="ui">Saved the policy for trading</b>. Emptying every field removes the catalog's policy.</p>
+            </li>
+          </ol>
+          <p>The console edits the catalog's policy only. A table's <b class="ui">Maintenance</b> tab shows <b class="ui">Policy for this table</b>, each key with where it was set; set a namespace's or table's own keys with the API.</p>
+          <figure class="shot pending" id="fig-maintenance-policy"
+                  data-shot="guides-maintenance-policy"
+                  data-shot-route="#p=maintenance&amp;c=lakehouse"
+                  data-shot-user="ana"
+                  data-shot-width="1440"
+                  data-shot-state="The lakehouse catalog's policy as demo.sh up sets it; the policy panel is in view.">
+            <figcaption>The Maintenance page's policy panel, each setting with where it was set.</figcaption>
+          </figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Set the catalog's own keys">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/maintenance-policy" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"snapshot-expiry.enabled": "true", "snapshot-expiry.max-snapshot-age": "P7D",
+       "orphan-removal.enabled": "true", "compaction.enabled": "true"}'</code></pre>
+          </div>
+          <p>The body replaces the level's own keys; keys it leaves out are inherited. The server answers <code>200</code> with the stored policy. The same path under a namespace, table or view (<code>…/namespaces/equities/tables/fills/maintenance-policy</code>) sets that level's keys, and <code>DELETE</code> removes a level's policy.</p>
+          <div class="code" data-lang="bash" data-title="Read the policy in force on a table">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/maintenance-policy" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response (shortened)">
+<pre><code>{
+  "target": {"kind": "table", "id": "…"},
+  "policy": {},
+  "resolved": {
+    "snapshot-expiry.enabled": {"value": "true", "source": "catalog:…"},
+    "snapshot-expiry.max-snapshot-age": {"value": "P7D", "source": "catalog:…"},
+    "orphan-removal.older-than": {"value": "P14D", "source": "built-in"},
+    "compaction.target-file-size-bytes": {"value": "536870912", "source": "built-in"}
+  },
+  "retention-classes": []
+}</code></pre>
+          </div>
+          <p><code>policy</code> is the level's own keys; <code>resolved</code> is every key in force, with its <code>source</code>: <code>built-in</code>, <code>default</code> (the deployment's), a level's kind and id, or <code>guardrail</code> with a <code>reason</code>.</p>
+        </section>
+      </div>
+
+      <h2 id="policy-keys">The policy keys</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Maintenance policy keys, as the console names them, with built-in values</caption>
+          <thead><tr><th scope="col">Key</th><th scope="col">In the console</th><th scope="col">Built in</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>snapshot-expiry.enabled</code></td><td>Snapshot expiry</td><td><code>false</code></td><td>Expire old snapshots.</td></tr>
+            <tr><td><code>snapshot-expiry.max-snapshot-age</code></td><td>Keep snapshots for</td><td><code>P5D</code></td><td>Snapshots older than this expire. At least the minimum snapshot age.</td></tr>
+            <tr><td><code>snapshot-expiry.min-snapshots-to-keep</code></td><td>Keep at least</td><td><code>1</code></td><td>Never expire below this many snapshots.</td></tr>
+            <tr><td><code>orphan-removal.enabled</code></td><td>Orphan removal</td><td><code>false</code></td><td>Remove files in the table's location that nothing references.</td></tr>
+            <tr><td><code>orphan-removal.older-than</code></td><td>Remove orphans older than</td><td><code>P14D</code></td><td>Only files older than this. Must be longer than the database's PITR window.</td></tr>
+            <tr><td><code>compaction.enabled</code></td><td>Compaction</td><td><code>false</code></td><td>Rewrite small data files into larger ones.</td></tr>
+            <tr><td><code>compaction.target-file-size-bytes</code></td><td>Target file size</td><td><code>536870912</code></td><td>The size compaction aims for (512 MB).</td></tr>
+            <tr><td><code>compaction.min-input-files</code></td><td>Fewest input files</td><td><code>5</code></td><td>A partition needs at least this many files under 75% of the target size for the table to need compaction.</td></tr>
+            <tr><td><code>compaction.delete-file-ratio</code></td><td>Delete-file share</td><td><code>0.3</code></td><td>A table whose delete files pass this share of its data files needs compaction.</td></tr>
+            <tr><td><code>manifest-rewrite.enabled</code></td><td>Manifest rewrite</td><td><code>false</code></td><td>Rewrite manifests into fewer.</td></tr>
+            <tr><td><code>manifest-rewrite.min-manifests</code></td><td>Fewest manifests</td><td><code>100</code></td><td>The manifest count that triggers a rewrite of the current snapshot's small data manifests.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Durations are ISO-8601, such as <code>P7D</code> or <code>PT12H</code>.</p>
+      <p class="gap">How the worker compares <code>manifest-rewrite.min-manifests</code> with a table's manifests was not confirmed in the worker's code.</p>
+
+      <h2 id="guardrails">Guardrails</h2>
+      <ul>
+        <li><code>snapshot-expiry.max-snapshot-age</code> is raised to the minimum snapshot age, <code>nuna.governance.minimum-snapshot-age</code> (default one hour), or a retention class's own if it is longer.</li>
+        <li><code>orphan-removal.older-than</code> is raised above the database's PITR window, <code>nuna.governance.pitr-window</code> (default seven days), so a restore never needs a removed file.</li>
+        <li>Under a legal hold, snapshot expiry and orphan removal are off: nothing may be removed. Compaction and manifest rewrite still run.</li>
+        <li>Under a DR freeze, every job is off.</li>
+      </ul>
+
+      <aside class="callout check">
+        <p class="callout-title">The worker follows the new policy</p>
+        <p>The policy panel shows each key with its new value set by the catalog, and a table's <b class="ui">Policy for this table</b> shows what it inherits. The worker's next scan queues the jobs the policy turns on.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>400</code> <code>Unknown maintenance policy key …; known keys: […]</code></td><td>A key is misspelled or not a policy key.</td><td>Use a key from the table above.</td></tr>
+            <tr><td><code>400</code> <code>snapshot-expiry.max-snapshot-age must be at least PT1H, the minimum snapshot age</code></td><td>The age is below the deployment's minimum.</td><td>Set a longer age.</td></tr>
+            <tr><td><code>400</code> <code>orphan-removal.older-than must be longer than the database PITR window P7D, so a restore never needs a removed file</code></td><td>The age is not longer than the PITR window.</td><td>Set a longer age.</td></tr>
+            <tr><td><code>400</code> <code>snapshot-expiry.max-snapshot-age is an ISO-8601 duration such as P7D or PT12H, not 7 days</code></td><td>A value has the wrong form. Booleans answer <code>… is true or false, not …</code>, ratios <code>… is a decimal number such as 0.3, not …</code>.</td><td>Send the value in the form the key takes.</td></tr>
+            <tr><td><code>400</code> <code>Maintenance policy key … needs a plain value</code></td><td>A value is an object, an array or null.</td><td>Send each value as a string, number or boolean.</td></tr>
+            <tr><td><code>400</code> <code>A maintenance policy sets at least one key; DELETE removes the policy</code></td><td>The body is empty.</td><td>Send at least one key, or use <code>DELETE</code>.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>modify</code></td><td>Your groups lack <code>modify</code> on that level.</td><td>Ask a grant admin (<a href="grant-access.html">Grant and revoke access</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="compact-now.html">Compact a table or scan for orphans now</a>: one job on one table, at the next scan.</li>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: what each job does and when the worker runs it.</li>
+          <li><a href="../configure/governance.html">Governance settings</a>: defaults, the minimum snapshot age and the PITR window.</li>
+          <li><a href="../api/governance.html#endpoints">Governance API</a>: the policy endpoints.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenancePolicy.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSettings.java</code>, <code>catalog-server/src/main/resources/nuna/ui/maintenance.js</code> and <code>catalog-server/src/main/resources/nuna/ui/health.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The response's shape was read from the local demo's catalog policy with a GET request. No policy was changed.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>
