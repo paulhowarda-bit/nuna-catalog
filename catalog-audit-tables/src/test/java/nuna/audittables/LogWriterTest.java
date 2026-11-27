@@ -278,6 +278,16 @@ class LogWriterTest {
     }
 
     @Test
+    void aMaxRowsPastHalfTheIntRangeStillTakesRecords() {
+        // Backlog 303: twice Integer.MAX_VALUE in an int is -2, which refused every offer with 503, so the OTLP
+        // exporter retried each batch with backoff and the DR drill's last records waited past its servers' end.
+        LogWriter writer = writer(Integer.MAX_VALUE);
+
+        assertThat(offer(writer, reads(2))).isEqualTo(new LogWriter.Taken(2, 0, 0, 0));
+        assertThat(offer(writer, reads(1)).written()).isEqualTo(1);
+    }
+
+    @Test
     void aTableDroppedBetweenCommitsIsMadeAgainWithTheRecordsItHeld() {
         // Backlog 284: the catalog's database new under a running writer, or the table dropped.
         LogWriter writer = writer(1_000);
