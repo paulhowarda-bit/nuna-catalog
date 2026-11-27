@@ -2,16 +2,16 @@ Breaks: the bank payments history table, which holds bank account numbers, left 
 Module: demo-datagen
 Test: FlaggedTablesTest#demoShFlagsEveryTableWithTaxIdsBirthDatesAddressesOrBankAccountNumbers
 diff --git a/demo/demo.sh b/demo/demo.sh
-index a869a636..ebbdcd6f 100644
+index de0551d1..801a1071 100644
 --- a/demo/demo.sh
 +++ b/demo/demo.sh
-@@ -811,8 +811,7 @@ trusted_engines() {
+@@ -843,8 +843,7 @@ trusted_engines() {
  # column masks, and any other client gets 403. demo-datagen's FlaggedTablesTest holds the list to the tables' columns.
  FLAGGED_TABLES="brokerage.party.parties brokerage.party.beneficial_owners brokerage.money_movement.payments
    brokerage.singlestore.parties brokerage.singlestore.beneficial_owners brokerage.singlestore.payments
 -  history.postgres.party.parties history.postgres.party.beneficial_owners history.postgres.money_movement.payments
 -  history.oracle.treasury.bank_payments"
 +  history.postgres.party.parties history.postgres.party.beneficial_owners history.postgres.money_movement.payments"
- # Flags, as stella, each table of FLAGGED_TABLES under a namespace (brokerage.party, say); setting it again changes
- # nothing. Fails at the first table the catalog does not have.
- flag_tables() {
+ # Each flagged table's sensitive columns, by its name, the same under every namespace: what gary masks for ana's
+ # demo-analysts. FlaggedTablesTest holds them to the tables' columns.
+ FLAGGED_MASKS="parties:birth_date,tax_id,address_line beneficial_owners:birth_date,tax_id,address_line
