@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 3 S, 8 M, 3 L, 4 XL, and 1 not estimated yet (`Effort: ?`).
+**18 open:** 3 S, 8 M, 3 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,7 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [316](backlog/316.md) | ? | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | one investigation and one command | 2026-11-27 |
 | [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
 | [318](backlog/318.md) | S | Brokerage world: fixes from the live check of items 151 to 155 and 308 | small fixes to what the first live run of the whole brokerage world shows, each with a test where one fits | 2026-11-27 |
 
@@ -1300,36 +1299,6 @@ than one collector, `telemetry.sampling` at 1.0 in work's values, README.md sayi
 tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
 forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
-### 316. Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: demo/
-- Effort: S to M, one investigation and one command
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-- In the running demo (commit a9c7ea81), `nuna_audit.audit.events` has no snapshot although the audit tables
-  pod is Running: the audit summary's snapshot id is null and Audit shows nothing. Find why the writer commits
-  nothing.
-- `demo/demo.sh sql` opens a SingleStore prompt in database `ops` (line 26), which the feed setup drops
-  (lines 1088-1090 and 1207). Not tested.
-
-What done looks like: the writer commits within its interval and Audit shows records; `demo.sh sql` opens a
-database that exists.
-
-## Found, 2026-11-27
-
-- `demo.sh sql` opens database `brokerage` now (landed with 313 to 315).
-- The writer commits nothing because every commit is refused 403: "service-account-nuna-audit-tables holds no
-  privilege that gives modify for updateTable". The demo's `nuna_audit.audit.events` predates the writer's added
-  columns (`log_run`, `log_seq`, `branch`, `subject_ids`), and `EventsTable.open` adds them on open, a schema change
-  that needs `modify`; `AuditCatalogGrants` gives the writers' group only `create` and `write` (D23, amended
-  2026-11-20). At work every upgrade that adds a column meets the same wall.
-- catalog-security recommends that the server add the absent columns itself at startup, recorded as
-  `nuna-configuration`, and the writer keep `create` and `write` (least privilege: `modify` would let it drop or
-  rename the table). That changes what D23 covers, so it waits on Paul. The other ways: grant the writers `modify`
-  (amends D23 too), or grant it in the demo alone (no D row; work stays broken until an operator acts).
-
 ### 317. Internal documents disagree with the code
 
 - Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
@@ -1669,3 +1638,4 @@ finds is fixed here or put in an item of its own.
 | [313](backlog/313.md) | Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240) | done | 2026-11-27 |
 | [314](backlog/314.md) | Grafana dashboards and demo.sh messages name backlog items and D rows | done | 2026-11-27 |
 | [315](backlog/315.md) | Console: small faults the documentation writers found | done | 2026-11-27 |
+| [316](backlog/316.md) | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | done | 2026-11-27 |

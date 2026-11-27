@@ -1,0 +1,17 @@
+Breaks: The server adds every column the audit table writer added, not only those the table lacks, so a table given some of them is refused the rest.
+Module: catalog-audit-tables
+Test: EventsColumnsTest#aTableGivenSomeOfThemGetsTheRest+aTableWithEveryColumnNeedsNoCommit
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsColumns.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsColumns.java
+index 30df6530..c7c29f18 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsColumns.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsColumns.java
+@@ -34,8 +34,7 @@ public final class EventsColumns {
+     public static Optional<String> update(String metadataJson) {
+         TableMetadata base = TableMetadataParser.fromJson(metadataJson);
+         Schema current = base.schema();
+-        List<Types.NestedField> absent = EventsTable.ADDED.stream()
+-                .filter(c -> current.findField(c.name()) == null).toList();
++        List<Types.NestedField> absent = EventsTable.ADDED;
+         if (absent.isEmpty()) {
+             return Optional.empty();
+         }

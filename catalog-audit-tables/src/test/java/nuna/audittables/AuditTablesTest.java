@@ -11,6 +11,7 @@ import nuna.catalog.audit.AuditRows;
 import nuna.catalog.audit.EventCodec;
 import nuna.catalog.security.TestIdp;
 import nuna.catalog.server.CatalogServer;
+import nuna.catalog.server.rest.AuditTableColumns;
 import nuna.catalog.tests.kafka.TestKafka;
 import nuna.catalog.tests.s3.TestS3;
 import java.io.IOException;
@@ -40,6 +41,7 @@ import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.IcebergGenerics;
@@ -498,5 +500,29 @@ class AuditTablesTest {
         assertThat(get(config, olive, run + "-olive").statusCode()).isEqualTo(200);
         assertThat(get(table, olive, run + "-olive").statusCode()).isEqualTo(404);
         assertThat(get(table, token("avery", AUDITORS), run + "-avery").statusCode()).isEqualTo(200);
+    }
+
+    /**
+     * A table made before the writer's added columns is given them by the server (D23, amended 2026-11-27): the writer,
+     * holding only create and write on the audit catalog, is refused the schema change, and opens the table once the
+     * server has made it.
+     */
+    @Test
+    void theServerGivesAnOlderTableTheColumnsTheWriterMayNotAdd() {
+        RESTCatalog writer = client(AUDIT, token(WRITER, WRITERS), run + "-writer");
+        writer.createNamespace(namespace());
+        TableIdentifier id = TableIdentifier.of(namespace(), EventsTable.NAME);
+        writer.buildTable(id, EventsTable.FIRST).withPartitionSpec(EventsTable.SPEC)
+                .withProperty(TableProperties.FORMAT_VERSION, "2").create();
+        assertThatThrownBy(() -> EventsTable.open(writer, namespace(), TOPIC)).as("modify is not the writer's")
+                .isInstanceOf(ForbiddenException.class);
+        AuditTableColumns columns = server.getBean(AuditTableColumns.class);
+
+        assertThat(columns.addAbsent(namespace().level(0))).isEqualTo(AuditTableColumns.Outcome.ADDED);
+
+        assertThat(EventsTable.open(writer, namespace(), TOPIC)).isNotNull();
+        assertThat(writer.loadTable(id).schema().asStruct()).isEqualTo(EventsTable.SCHEMA.asStruct());
+        assertThat(columns.addAbsent(namespace().level(0))).as("added once")
+                .isEqualTo(AuditTableColumns.Outcome.COMPLETE);
     }
 }
