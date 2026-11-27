@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**21 open:** 4 S, 9 M, 3 L, 4 XL, and 1 not estimated yet (`Effort: ?`).
+**22 open:** 5 S, 9 M, 3 L, 4 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,6 +33,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [315](backlog/315.md) | S | Console: small faults the documentation writers found | five small changes in the console, Atelier's to settle where they touch design | 2026-11-27 |
 | [316](backlog/316.md) | ? | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | one investigation and one command | 2026-11-27 |
 | [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
+| [318](backlog/318.md) | S | Brokerage world: fixes from the live check of items 151 to 155 and 308 | small fixes to what the first live run of the whole brokerage world shows, each with a test where one fits | 2026-11-27 |
 
 ## Open items in full
 
@@ -1386,6 +1387,24 @@ The documentation site was written from the code; these internal documents say o
 
 What done looks like: each corrected from the code. The public documentation is `docs/site/`; where an internal
 document only repeats it, it may point there instead.
+
+### 318. Brokerage world: fixes from the live check of items 151 to 155 and 308
+
+- Added: 2026-11-27 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo/demo.sh demo/singlestore/brokerage-feeds.sql demo-datagen/ bites/WORLD-318/
+- Effort: S, small fixes to what the first live run of the whole brokerage world shows, each with a test where one fits
+
+Items 151 to 155 and 308 landed on the fast build alone; Paul asked for one live check at the end (2026-11-26). The
+demo was rebuilt at e7582289 with the brokerage world deleted and started fresh, and these broke:
+
+1. `demo.sh up` printed "ana PUT /management/v1/catalogs/lakehouse/maintenance-policy answered 403", so maintenance
+   was never turned on in lakehouse's policy. Item 152's `lake_grants` moved demo-analysts' modify from the catalog to
+   its namespaces, so ana may no longer set the catalog's policy.
+2. `demo.sh ss` stopped at "ERROR 1064 ... near 'trigger TEXT'": item 152's `sanctions_screens` has a column named
+   `trigger`, a reserved word, and SingleStore makes the world's tables with unquoted names.
+
+What done looks like: `up` sets lakehouse's policy; `ss` and `gen` start the world; every further fault the live check
+finds is fixed here or put in an item of its own.
 
 ## Done and dropped
 

@@ -605,7 +605,7 @@ final class BackOffice {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("screen_id", nextScreen++);
         row.put("list_version", LIST_VERSION);
-        row.put("trigger", trigger);
+        row.put("screen_trigger", trigger);
         row.put("subject_type", subjectType);
         row.put("subject_id", subjectId);
         row.put("subject_name", name);
@@ -766,7 +766,7 @@ final class BackOffice {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("screen_id", nextScreen++);
         row.put("list_version", LIST_VERSION);
-        row.put("trigger", "wire");
+        row.put("screen_trigger", "wire");
         row.put("subject_type", "wire_counterparty");
         row.put("subject_id", id);
         row.put("subject_name", SEEDED_MATCH.name());

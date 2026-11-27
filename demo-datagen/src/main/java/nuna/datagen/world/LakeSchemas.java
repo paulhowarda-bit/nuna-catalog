@@ -234,7 +234,7 @@ public final class LakeSchemas {
                 .add("sdn_type", TEXT).add("program", TEXT).add("title", TEXT).add("call_sign", TEXT)
                 .add("vess_type", TEXT).add("tonnage", TEXT).add("grt", TEXT).add("vess_flag", TEXT)
                 .add("vess_owner", TEXT).add("remarks", TEXT).add("published_on", DATE);
-            case SANCTIONS_SCREENS -> c.add("screen_id", LONG).add("list_version", TEXT).add("trigger", TEXT)
+            case SANCTIONS_SCREENS -> c.add("screen_id", LONG).add("list_version", TEXT).add("screen_trigger", TEXT)
                 .add("subject_type", TEXT).add("subject_id", TEXT).add("subject_name", TEXT)
                 .add("brokerage_account", LONG).add("payment_id", TEXT).add("result", TEXT)
                 .add("matched_ent_num", LONG).add("match_score", PERCENT).add("disposition", TEXT)
