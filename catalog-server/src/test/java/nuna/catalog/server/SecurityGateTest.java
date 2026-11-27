@@ -617,11 +617,36 @@ class SecurityGateTest {
     }
 
     private static String opaRowFilters(String catalog, String token) {
+        return opaRowFilters(catalog, token, "pii");
+    }
+
+    private static String opaRowFilters(String catalog, String token, String table) {
         return """
                 {"input":{"context":{"identity":{"user":"anyone","groups":["grant-admins"],
                   "extraCredentials":{"token":"%s"}}},
                  "action":{"operation":"GetRowFilters","resource":{"table":{"catalogName":"%s",
-                  "schemaName":"sales.eu","tableName":"pii"}}}}}""".formatted(token, catalog);
+                  "schemaName":"sales.eu","tableName":"%s"}}}}}""".formatted(token, catalog, table);
+    }
+
+    /**
+     * Trino asks a view's row filter too, as it reads one: a view a user may read has none of its own, since Trino asks
+     * again for each table under it, as that user. Before item 318 a view was answered as a table nuna does not
+     * have, so every view in Trino returned no rows.
+     */
+    @Test
+    void aViewTheUserMayReadHasNoRowFilterOfItsOwn() throws Exception {
+        String views = "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/views";
+        ok(send(DANA, "POST", views, VIEW.formatted("pii_view", System.currentTimeMillis())));
+        try {
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate", ANN.substring(7),
+                    "pii_view")).body()).isEqualTo("{\"result\":[]}");
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate",
+                    IssuerForTests.bearer("xena", "strangers").substring(7), "pii_view")).body())
+                    .as("a user who may not read the view")
+                    .isEqualTo("{\"result\":[{\"expression\":\"false\"}]}");
+        } finally {
+            noContent(send(DANA, "DELETE", views + "/pii_view", null));
+        }
     }
 
     @Test
