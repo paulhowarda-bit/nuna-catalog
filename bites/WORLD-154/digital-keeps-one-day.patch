@@ -1,0 +1,16 @@
+Breaks: brokerage.digital keeps its snapshots a day, not the design's 7
+Module: demo-datagen
+Test: MaintenancePoliciesTest#demoShSetsThePoliciesThisTestHoldsWithKeysTheCatalogKnows+everyStreamsNamespaceKeepsSnapshotsShortAndIsCompactedSoonerThanTheCatalogsPolicy
+diff --git a/demo/demo.sh b/demo/demo.sh
+index 21b8217b..0da24b43 100644
+--- a/demo/demo.sh
++++ b/demo/demo.sh
+@@ -1093,7 +1093,7 @@ maintenance_policy() {
+ MAINTENANCE_POLICIES='
+ table brokerage.compliance.aml_cases {"compaction.enabled": "false", "manifest-rewrite.enabled": "false"}
+ namespace brokerage.markets {"snapshot-expiry.max-snapshot-age": "PT1H", "snapshot-expiry.min-snapshots-to-keep": "1", "compaction.min-input-files": "2", "manifest-rewrite.min-manifests": "10"}
+-namespace brokerage.digital {"snapshot-expiry.max-snapshot-age": "P7D", "snapshot-expiry.min-snapshots-to-keep": "1", "compaction.min-input-files": "2", "manifest-rewrite.min-manifests": "10"}
++namespace brokerage.digital {"snapshot-expiry.max-snapshot-age": "P1D", "snapshot-expiry.min-snapshots-to-keep": "1", "compaction.min-input-files": "2", "manifest-rewrite.min-manifests": "10"}
+ '
+ # Sets MAINTENANCE_POLICIES, on every gen after lake_grants: as ana, whose demo-analysts hold modify on every
+ # brokerage namespace but compliance's; and as presenter, the one person who may modify in brokerage.compliance (no

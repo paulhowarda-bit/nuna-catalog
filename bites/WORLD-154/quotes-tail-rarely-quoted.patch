@@ -1,0 +1,16 @@
+Breaks: the tail securities are quoted one minute in twenty, not five, so a day holds far fewer quotes than the design's rate
+Module: demo-datagen
+Test: StreamsTest#quotesComeThroughTheSessionAtAboutThirtySevenThousandADayEachStraddlingItsPrice
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Quotes.java b/demo-datagen/src/main/java/nuna/datagen/world/Quotes.java
+index 28909b59..6b81a6b1 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Quotes.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Quotes.java
+@@ -39,7 +39,7 @@ final class Quotes {
+         this.out = out;
+         rate = new double[market.securities().size()];
+         for (int i = 0; i < rate.length; i++) {
+-            rate[i] = Math.min(1.0, Math.max(0.2, 3 / Math.sqrt(i + 1.0)));
++            rate[i] = Math.min(1.0, Math.max(0.05, 3 / Math.sqrt(i + 1.0)));
+         }
+     }
+ 

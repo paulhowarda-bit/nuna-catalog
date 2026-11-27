@@ -1,0 +1,16 @@
+Breaks: demo.sh's fill leaves ${BROKERAGE_SECURITIES} in the generator's manifests, so it reaches the bootstrap as text
+Module: demo-datagen
+Test: ScaleTest#demoShFillsTheScaleIntoTheGeneratorsManifests
+diff --git a/demo/demo.sh b/demo/demo.sh
+index 21b8217b..2cbd3eaa 100644
+--- a/demo/demo.sh
++++ b/demo/demo.sh
+@@ -214,7 +214,7 @@ fill() {
+     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
+     -e "s|\${BROKERAGE_IMAGE}|$BROKERAGE_IMAGE|g" -e "s|\${BROKERAGE_IMAGE_ID}|$BROKERAGE_IMAGE_ID|g" \
+     -e "s|\${BROKERAGE_ROUTE}|$(world_route)|g" \
+-    -e "s|\${BROKERAGE_ACCOUNTS}|$BROKERAGE_ACCOUNTS|g" -e "s|\${BROKERAGE_SECURITIES}|$BROKERAGE_SECURITIES|g" \
++    -e "s|\${BROKERAGE_ACCOUNTS}|$BROKERAGE_ACCOUNTS|g" \
+     -e "s|\${BROKERAGE_CATCH_UP_DAYS}|$BROKERAGE_CATCH_UP_DAYS|g" \
+     -e "s|\${BROKERAGE_MEMORY_LIMIT}|$(world_memory limit)|g" \
+     -e "s|\${BROKERAGE_MEMORY_REQUEST}|$(world_memory request)|g" \

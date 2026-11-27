@@ -1,0 +1,16 @@
+Breaks: click_events has no element column, so the sink drops every click's element
+Module: demo-datagen
+Test: LakeSchemasTest#everyRowTheWorldSendsFitsItsTableAndEveryColumnIsUsed
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/LakeSchemas.java b/demo-datagen/src/main/java/nuna/datagen/world/LakeSchemas.java
+index 007e516b..1caf0033 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/LakeSchemas.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/LakeSchemas.java
+@@ -262,7 +262,7 @@ public final class LakeSchemas {
+                 .add("ended_at", TIME).add("ended_by", TEXT).add("page_views", INT).add("events", INT)
+                 .add("business_date", DATE);
+             case CLICK_EVENTS -> c.add("event_id", LONG).add("session_id", LONG).add("brokerage_account", LONG)
+-                .add("event_type", TEXT).add("page", TEXT).add("element", TEXT).add("security_id", LONG)
++                .add("event_type", TEXT).add("page", TEXT).add("security_id", LONG)
+                 .add("symbol", TEXT).add("business_date", DATE).add("event_time", TIME);
+         }
+         return new Schema(c.fields);
