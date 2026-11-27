@@ -27,7 +27,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
-| [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR | at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
+| [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [313](backlog/313.md) | M | Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240) | some dozen messages across four modules, and the tests that quote them | 2026-11-27 |
 | [314](backlog/314.md) | S | Grafana dashboards and demo.sh messages name backlog items and D rows | text only | 2026-11-27 |
 | [315](backlog/315.md) | S | Console: small faults the documentation writers found | five small changes in the console, Atelier's to settle where they touch design | 2026-11-27 |
@@ -1221,11 +1221,12 @@ were written and compiled, not run here. Open until the overnight run passes the
   run) now covers the note's words, the status line, Up to keeping the start, the button and `from=any`, the Record
   tab's link and a link's other time. Bite recorded, not run: `bites/UI/console-ref-start-dropped-with-up-to`.
 
-### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR
+### 265. Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work)
 
+- Decided: 2026-11-27, D54
 - Added: 2026-11-24 by observability-audit, from its research report of 2026-11-24
 - Touches: catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java catalog-server/src/main/java/nuna/catalog/server/metrics/MetricsWiring.java catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java catalog-server/src/test/ deploy/helm/nuna-catalog/values.yaml deploy/helm/nuna-maintenance/values.yaml docs/observability/README.md docs/observability/spans.md bites/
-- Effort: M, at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43
+- Effort: M, at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43
 
 **What is wrong.**
 
@@ -1297,6 +1298,10 @@ left off, and forcing a 5xx on an Iceberg route in the shared demo means breakin
 marking is `ServerSpanStatusTest`'s. Left, at work with item 43: the `loadbalancing` tier in front if work runs more
 than one collector, `telemetry.sampling` at 1.0 in work's values, README.md saying which mode work runs, and a forced
 5xx seen in work's Grafana.
+
+**At work, 2026-11-27 (D54).** Paul: "can we mark it as for work. Not for here". The home part is built and the demo's
+tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
+forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
 ### 313. Server error messages sent to clients end in internal tags such as (D19) and (D20, backlog 240)
 
