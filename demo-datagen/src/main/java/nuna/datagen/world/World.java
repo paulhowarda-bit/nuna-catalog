@@ -1113,7 +1113,7 @@ public final class World {
             schedule(at(LocalTime.of(10, 0).plusSeconds(rng2.below(5 * 3600))), () -> acatsIn(a));
         }
         if (rng2.chance(0.00025)) {
-            boolean full = rng2.chance(0.3);
+            boolean full = rng2.chance(0.6);     // most transfers out move the whole account
             // After the morning's settlements and corporate actions, before the open: no order is open.
             schedule(at(LocalTime.of(8, 10)), () -> acatsOut(a, full));
         }

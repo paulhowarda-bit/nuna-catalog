@@ -62,6 +62,9 @@ event. The scope, in the order the phases need it (a choice made here, Paul may 
 - Left out of the world: options, funds, fixed income, IRA distributions, mergers and spin-offs, interest on credit
   balances, commissions (the world's broker charges none).
 
+Item 155 built both lists at once, as templates 70 to 91; `backlog/155.md` lists them, their fields and the world's
+rates.
+
 ## The firm beyond the ledger
 
 What each function records, the rule that shapes it, and where it lands. Volumes are estimates for 1,000 accounts;
@@ -213,9 +216,9 @@ a sanctions match that raise alerts.
   left running for a working day holds about 50 business days and 3 million rows. A month at that scale (the fast
   build's test) is 40,000 financial transactions and 346,000 journal lines.
 - **Java, in a Gradle module `demo-datagen`** (a choice made here, Paul may overrule). The kit's engine is ported; the
-  22 booking schemes and the chart are data the port reads, exported from the kit, so a new kit version changes data
-  and only touches code where it adds a calculation. The port must reproduce `events_v8.json` (44 financial
-  transactions, 289 journal lines) and the kit's own checks before it books anything. Java keeps the tests in the fast
+  44 booking schemes (v14's 22, item 155's 22) and the chart are data the port reads, exported from the kit, so a new
+  kit version changes data and only touches code where it adds a calculation. The port must reproduce
+  `events_v8.json` (44 financial transactions, 289 journal lines) and the kit's own checks before it books anything. Java keeps the tests in the fast
   build with no new prerequisite, keeps dependencies on Maven for work, and the Iceberg Java library already writes
   what the tables need (v3 deletion vectors, views, tags, branches).
 

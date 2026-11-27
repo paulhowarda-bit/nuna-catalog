@@ -1,0 +1,16 @@
+Breaks: a split rescales a lot's shares but not its reference shares, so its remaining cost changes
+Module: demo-datagen
+Test: DemoKitTemplatesTest#aSplitRescalesEachLotAtUnchangedCostAndTheFractionIsPaidInCash+aSplitRescalesShortLotsAtUnchangedProceeds
+diff --git a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+index 9f989242..a3c4d16c 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
++++ b/demo-datagen/src/main/java/nuna/datagen/kit/Engine.java
+@@ -324,7 +324,7 @@ public final class Engine {
+             BigDecimal delta = now.subtract(free);
+             out.add(new Part(lot, delta, null, null));
+             total = total.add(delta);
+-            rescaled.put(lot, new LotRef(ba, sec, ref.amount(), scaled(id, lot, ref.shares(), ratioNew, ratioOld)));
++            rescaled.put(lot, ref);
+         }
+         return new Outcome(Map.of("totalShares", total), out, () -> refs.putAll(rescaled));
+     }
