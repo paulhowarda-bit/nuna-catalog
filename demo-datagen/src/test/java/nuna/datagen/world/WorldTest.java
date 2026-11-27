@@ -55,7 +55,7 @@ class WorldTest {
         public void endOfDay(LocalDate d) {
             days++;
             assertThat(lastOrderStatus.values()).as("no order open after the close of " + d)
-                .allMatch(s -> s.equals("filled") || s.contains("expired"));
+                .allMatch(s -> s.equals("filled") || s.contains("expired") || s.equals("trade_busted"));
         }
 
         String hash() {
@@ -91,7 +91,7 @@ class WorldTest {
         assertThat(r.counts.get(Feed.PRICES_EOD)).isEqualTo(22 * 300);
         assertThat(r.counts.get(Feed.ACCOUNTS)).isEqualTo(1000);
         assertThat(r.counts.get(Feed.SECURITIES)).isEqualTo(300);
-        assertThat(r.counts.get(Feed.BOOKING_SCHEMES)).isEqualTo(44);
+        assertThat(r.counts.get(Feed.BOOKING_SCHEMES)).isEqualTo(45);
         assertThat(r.counts).containsKeys(Feed.ORDERS, Feed.BALANCES_EOD, Feed.CALENDAR, Feed.CHART_OF_ACCOUNTS);
         // Item 155: every template of the demo kit's brokerage events posts in the month.
         assertThat(r.templates.keySet()).as("templates posted: " + r.templates)

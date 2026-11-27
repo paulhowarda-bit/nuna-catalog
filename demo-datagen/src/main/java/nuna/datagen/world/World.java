@@ -76,7 +76,23 @@ public final class World {
     private final List<Account> accounts = new ArrayList<>();
     private final Oms oms = new Oms(this::emit);
     private final Clearing clearing;
+    private final Tax tax;
+    private final Margin margin;
+    private final Reporting reporting = new Reporting(this::emitRaw);
+    private final Regulatory regulatory;
     private Sink sink;
+    /** The month-end close built at the month's last 17:00, published after the day's end (item 153). */
+    private MonthEnd pendingClose;
+    private MonthEnd lastClose;
+    private boolean seedBust = true, bustSeeded;
+    /** Per brokerage account, its statement's activity definitions as they stood at the last close, and its equity. */
+    private final Map<Long, Map<Integer, BigDecimal>> lastActivity = new HashMap<>();
+    private final Map<Long, BigDecimal> lastEquity = new HashMap<>();
+    /** The buy fills of the day, for the bust: the order, the fill and its lot. */
+    private record BuyFill(Order order, FinancialTransaction fill, long quantity, BigDecimal price, BigDecimal value,
+                           String fillId, String venue) {}
+    private final List<BuyFill> buyFills = new ArrayList<>();
+    private final Map<Long, LocalDate> shortOpened = new HashMap<>();
     private LocalDate day;
     private boolean started;
     private int businessDays;
@@ -108,6 +124,9 @@ public final class World {
         BigDecimal estimateLeft;
         BigDecimal value = BigDecimal.ZERO;     // fill amount or gross proceeds, summed
         BigDecimal fees = BigDecimal.ZERO;
+        BigDecimal secFee = BigDecimal.ZERO.setScale(2), taf = BigDecimal.ZERO.setScale(2);
+        int executions;
+        String venue;
         String status = "accepted";
 
         Order(Account account, Security security, String side, String type, long quantity, BigDecimal estimatedPrice,
@@ -153,6 +172,9 @@ public final class World {
         this.rng2 = new Rng(settings.seed() * 31 + 155);
         this.market = new Market(rng, settings.securities());
         this.clearing = new Clearing(this::emit, calendar, market, true);
+        this.tax = new Tax(this::emit, engine);
+        this.margin = new Margin(this::emit, engine, market, calendar, sec -> borrowRate(sec) != null);
+        this.regulatory = new Regulatory(this::emit, engine, calendar);
         String[] personas = {"dormant", "buy_and_hold", "active_trader", "short_seller"};
         double[] weights = {0.30, 0.42, 0.23, 0.05};
         for (int i = 0; i < settings.accounts(); i++) {
@@ -203,6 +225,22 @@ public final class World {
         return this;
     }
 
+    /** The world without its seeded trade bust after a month end (item 153): a clean world, for tests. */
+    public World withoutSeededBust() {
+        seedBust = false;
+        return this;
+    }
+
+    /** Whether the seeded trade bust has happened yet. */
+    public boolean bustSeeded() {
+        return bustSeeded;
+    }
+
+    /** The last month-end close the world built, or null. */
+    public MonthEnd lastClose() {
+        return lastClose;
+    }
+
     /** Whether the seeded fail to deliver has happened yet. */
     public boolean clearingBreakSeeded() {
         return clearing.breakSeeded();
@@ -218,6 +256,12 @@ public final class World {
 
     private void emit(Instant at, Feed feed, Map<String, Object> row) {
         sink.accept(new Event(at, feed, row));
+        reporting.observe(at, feed, row);
+        regulatory.observe(feed, row);
+    }
+
+    private void emitRaw(Instant at, Feed feed, Map<String, Object> row) {
+        sink.accept(new Event(at, feed, row));
     }
 
     /** Plays the next business day into the sink and returns its date. */
@@ -231,6 +275,9 @@ public final class World {
                 BigDecimal amount = dollars(rng.lognormal(a.margin() ? 40000 : 15000, a.persona().equals("dormant") ? 0.7 : 1.0), 100);
                 schedule(at(LocalTime.of(7, 30)), () -> cashDeposit(a, amount));
             }
+        }
+        if (seedBust && !bustSeeded && lastClose != null && calendar.previous(day).equals(lastClose.periodEnd())) {
+            schedule(at(LocalTime.of(7, 15)), this::bust);
         }
         settleDue();
         int played = businessDays;
@@ -255,6 +302,11 @@ public final class World {
         }
         businessDays++;
         sink.endOfDay(d);
+        if (pendingClose != null) {
+            MonthEnd close = pendingClose;
+            pendingClose = null;
+            sink.monthEnd(close);
+        }
         day = calendar.next(d);
         return d;
     }
@@ -406,6 +458,7 @@ public final class World {
             row.put("event_time", at);
             emit(at, Feed.JOURNAL_LINES, row);
         }
+        posted(at, t);
         return true;
     }
 
@@ -803,6 +856,15 @@ public final class World {
         o.filled += q;
         o.value = o.value.add(value);
         o.fees = o.fees.add(fees);
+        o.executions++;
+        o.venue = o.venue == null || o.venue.equals(venue) ? venue : "multiple";
+        if (template == 44 || template == 61) {
+            o.secFee = o.secFee.add((BigDecimal) f.get(14));
+            o.taf = o.taf.add((BigDecimal) f.get(15));
+        }
+        if (template == 41) {
+            buyFills.add(new BuyFill(o, t, q, p, value, fillId, venue));
+        }
         o.status = o.filled == o.quantity ? "filled" : "partially_filled";
         if (o.filled == o.quantity) {
             openOrders.remove(o.id);
@@ -813,6 +875,14 @@ public final class World {
         upsertOrder(o);
         oms.executed(current, state(o), venue, q, p, fillId, t.id(), calendar.settlement(day));
         clearing.trade(a.id(), s, o.side, q, value);
+        if (o.filled == o.quantity) {
+            confirm(o, "new");
+        }
+    }
+
+    private void confirm(Order o, String status) {
+        reporting.confirm(current, day, o.id, o.ref, o.account.id(), o.security, o.side, o.tradeDate,
+            calendar.settlement(o.tradeDate), o.filled, o.value, o.secFee, o.taf, o.executions, o.venue, status);
     }
 
     /**
@@ -932,8 +1002,12 @@ public final class World {
                 openOrders.remove(o.id);
                 upsertOrder(o);
                 oms.expired(now, state(o));
+                if (o.filled > 0) {
+                    confirm(o, "new");
+                }
             }
         }
+        margin.requirements(now, day);
     }
 
     private void endOfDay() {
@@ -990,6 +1064,14 @@ public final class World {
             }
         }
         clearing.endOfDay(now, day);
+        tax.endOfDay(now, day);
+        margin.endOfDay(now, day, accounts);
+        regulatory.endOfDay(now, day, accounts);
+        buyFills.removeIf(b -> !calendar.isMonthEnd(day));
+        if (calendar.isMonthEnd(day)) {
+            pendingClose = monthEnd(now);
+            lastClose = pendingClose;
+        }
     }
 
     private void bars(LocalTime start) {
@@ -1370,6 +1452,30 @@ public final class World {
         splitsByEx.computeIfAbsent(ex, k -> new ArrayList<>()).add(split);
         pendingSplits.put(s.id(), split);
         busyUntil.put(s.id(), ex);
+        corporateActionRow(split.id(), s, ratio[0] > ratio[1] ? "forward_split" : "reverse_split", ex, ex, null, null,
+            ratio[0], ratio[1]);
+    }
+
+    /** A corporate action announced (item 153): the reference row for brokerage.reference.corporate_actions. */
+    private void corporateActionRow(String id, Security s, String type, LocalDate ex, LocalDate record, LocalDate pay,
+                                    BigDecimal rate, Long ratioNew, Long ratioOld) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("corporate_action_id", id);
+        row.put("security_id", s.id());
+        row.put("symbol", s.symbol());
+        row.put("cusip", s.cusip());
+        row.put("action_type", type);
+        row.put("announced_date", day);
+        row.put("ex_date", ex);
+        row.put("record_date", record);
+        row.put("pay_date", pay);
+        row.put("rate", rate);
+        row.put("ratio_new", ratioNew);
+        row.put("ratio_old", ratioOld);
+        row.put("currency_id", rate == null ? null : USD);
+        row.put("business_date", day);
+        row.put("event_time", current);
+        emit(current, Feed.CORPORATE_ACTIONS, row);
     }
 
     /** Whether a security pays a quarterly cash dividend: every ETF and about half the common stocks. */
@@ -1392,9 +1498,10 @@ public final class World {
             BigDecimal yield = BigDecimal.valueOf(8 + Math.floorMod(market.index(s) * 104729, 37), 3);
             BigDecimal rate = market.price(s).multiply(yield).divide(new BigDecimal(4), 4, RoundingMode.HALF_UP)
                 .max(new BigDecimal("0.0100"));
-            dividendsByEx.computeIfAbsent(ex, k -> new ArrayList<>())
-                .add(new Dividend(corporateAction(), s, rate, ex, pay));
+            Dividend d = new Dividend(corporateAction(), s, rate, ex, pay);
+            dividendsByEx.computeIfAbsent(ex, k -> new ArrayList<>()).add(d);
             busyUntil.put(s.id(), pay);
+            corporateActionRow(d.id(), s, "cash_dividend", ex, ex, pay, rate, null, null);
         }
     }
 
@@ -1428,9 +1535,24 @@ public final class World {
         long sec = d.security().id();
         FinancialTransaction t = ft(exTemplate, a, "corporate_actions", Map.of(6, sec, 8, quantity, 10, amount,
             11, d.id(), 12, d.rate(), 13, d.ex().toEpochDay(), 14, d.ex().toEpochDay(), 15, d.pay().toEpochDay()));
+        BigDecimal qualified = exTemplate == 88 ? tax.qualifiedFraction(a.id(), sec, d.ex()) : BigDecimal.ZERO;
         if (book(current, t, false)) {
-            later(d.pay(), LocalTime.of(8, 5), () -> book(current, ft(payTemplate, a, "corporate_actions",
-                Map.of(6, sec, 9, t.id(), 10, amount, 11, d.id(), 15, d.pay().toEpochDay())), false));
+            entitlement(t, d.id(), exTemplate == 88 ? "cash_dividend" : "payment_in_lieu", d.security(),
+                exTemplate == 88 ? "long" : "short", quantity, amount, null, qualified, d.ex());
+            if (exTemplate == 88) {
+                tax.dividendEntitled(t.id(), a.id(), d.security(), d.id(), qualified);
+            }
+            later(d.pay(), LocalTime.of(8, 5), () -> {
+                FinancialTransaction paid = ft(payTemplate, a, "corporate_actions",
+                    Map.of(6, sec, 9, t.id(), 10, amount, 11, d.id(), 15, d.pay().toEpochDay()));
+                if (book(current, paid, false)) {
+                    incomePayment(paid, d.id(), payTemplate == 89 ? "cash_dividend" : "payment_in_lieu",
+                        d.security(), payTemplate == 89 ? "credit" : "debit", quantity, amount, d.pay());
+                    if (payTemplate == 89) {
+                        tax.dividendPaid(paid.id(), t.id(), amount, d.pay());
+                    }
+                }
+            });
         }
     }
 
@@ -1455,10 +1577,14 @@ public final class World {
                 f.put(8, held);
             }
             FinancialTransaction t = ft(86, a, "corporate_actions", f);
+            BigDecimal shortBefore = engine.normalBalance(a.id(), 3102, sec);
             if (!book(current, t, false)) {
                 continue;
             }
             BigDecimal now = engine.normalBalance(a.id(), 3002, sec);
+            entitlement(t, split.id(), split.ratioNew() > split.ratioOld() ? "forward_split" : "reverse_split",
+                split.security(), held.signum() > 0 ? "long" : "short", held.signum() > 0 ? held : shortBefore, null,
+                held.signum() > 0 ? now : engine.normalBalance(a.id(), 3102, sec), null, split.ex());
             BigDecimal fraction = now.subtract(now.setScale(0, RoundingMode.DOWN));
             if (fraction.signum() > 0) {
                 cashInLieu(a, split, t.id(), fraction);
@@ -1489,8 +1615,11 @@ public final class World {
         if (amount.signum() == 0) {
             return;
         }
-        book(current, ft(87, a, "corporate_actions", Map.of(6, sec, 8, fraction, 9, splitTransaction, 10, amount,
-            11, split.id(), 12, price, 18, named)), false);
+        FinancialTransaction t = ft(87, a, "corporate_actions", Map.of(6, sec, 8, fraction, 9, splitTransaction,
+            10, amount, 11, split.id(), 12, price, 18, named));
+        if (book(current, t, false)) {
+            incomePayment(t, split.id(), "cash_in_lieu", split.security(), "credit", fraction, amount, day);
+        }
     }
 
     /** A security's annual borrow rate when it is hard to borrow (one in nine, 15% to 45%), else null. */
@@ -1536,6 +1665,303 @@ public final class World {
                 }
             });
         }
+    }
+
+    // ---------------------------------------------------------------- the firm's books and reporting (item 153)
+
+    private Account account(long id) {
+        return accounts.get((int) (id - 70_000_001L));
+    }
+
+    /** After the ledger posted a transaction: tax lots and realizations, and the margin snapshots. */
+    private void posted(Instant at, FinancialTransaction t) {
+        if (!t.has(FinancialTransaction.SECURITY)) {
+            return;
+        }
+        Security s = market.byIndex((int) (t.longValue(FinancialTransaction.SECURITY) - 100001));
+        long ba = t.brokerageAccount();
+        switch (t.template()) {
+            case 41 -> {
+                tax.opened(at, day, ba, s, t.id(), day, true);
+                if (account(ba).margin()) {
+                    margin.imlReducing(ba);
+                }
+            }
+            case 61 -> {
+                tax.shortOpened(t.id(), day);
+                if (account(ba).margin()) {
+                    margin.imlReducing(ba);
+                }
+            }
+            case 83 -> {
+                List<ReceivedLot> lots = t.receivedLots();
+                for (int k = 0; k < lots.size(); k++) {
+                    tax.opened(at, day, ba, s, Engine.receivedLot(t.id(), k + 1),
+                        LocalDate.ofEpochDay(lots.get(k).acquired()), false);
+                }
+            }
+            case 44 -> tax.disposed(at, day, t, s, t.lots(), t.decimal(13));
+            case 87 -> tax.disposed(at, day, t, s, t.lots(), t.decimal(10));
+            case 84 -> tax.disposed(at, day, t, s, t.lots(), null);
+            case 64 -> tax.covered(at, day, t, s, t.lots(), t.decimal(13));
+            case 92 -> tax.busted(t.longValue(FinancialTransaction.ORIGINATING_ID));
+            default -> {
+            }
+        }
+    }
+
+    private void entitlement(FinancialTransaction t, String corporateAction, String type, Security s, String side,
+                             BigDecimal eligible, BigDecimal amount, BigDecimal after, BigDecimal qualified,
+                             LocalDate ex) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("entitlement_id", "ENT-" + t.id());
+        row.put("corporate_action_id", corporateAction);
+        row.put("action_type", type);
+        row.put("brokerage_account", t.brokerageAccount());
+        row.put("security_id", s.id());
+        row.put("symbol", s.symbol());
+        row.put("position_side", side);
+        row.put("eligible_quantity", eligible);
+        row.put("entitled_amount", amount);
+        row.put("quantity_after", after);
+        row.put("qualified_fraction", qualified);
+        row.put("financial_transaction_id", t.id());
+        row.put("ex_date", ex);
+        row.put("business_date", day);
+        row.put("event_time", current);
+        emit(current, Feed.ENTITLEMENTS, row);
+    }
+
+    private void incomePayment(FinancialTransaction t, String corporateAction, String type, Security s,
+                               String direction, BigDecimal quantity, BigDecimal amount, LocalDate pay) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("income_payment_id", "INC-" + t.id());
+        row.put("corporate_action_id", corporateAction);
+        row.put("payment_type", type);
+        row.put("brokerage_account", t.brokerageAccount());
+        row.put("security_id", s.id());
+        row.put("symbol", s.symbol());
+        row.put("direction", direction);
+        row.put("quantity", quantity);
+        row.put("amount", amount);
+        row.put("financial_transaction_id", t.id());
+        row.put("pay_date", pay);
+        row.put("business_date", day);
+        row.put("event_time", current);
+        emit(current, Feed.INCOME_PAYMENTS, row);
+    }
+
+    /** The statement's activity lines, each the month's movement of one definition. */
+    private static final int[] ACTIVITY = {1201, 1204, 1202, 1304, 1303, 1305, 1301, 1302, 1203};
+
+    /**
+     * The month-end close, at the month's last 17:00: each brokerage account's statement and positions as the ledger
+     * holds them (tie 7), the month's 1099-B and 1099-DIV lines, the Rule 606 report, net capital and the
+     * best-execution review.
+     */
+    private MonthEnd monthEnd(Instant now) {
+        YearMonth period = YearMonth.from(day);
+        Map<MonthEnd.Table, List<Map<String, Object>>> rows = MonthEnd.emptyRows();
+        for (Account a : accounts) {
+            if (!engine.balances(a.id()).isEmpty()) {
+                statement(now, period, a, rows);
+            }
+        }
+        tax.close(period, rows.get(MonthEnd.Table.FORM_1099B), rows.get(MonthEnd.Table.FORM_1099DIV));
+        reporting.close(period, day, rows.get(MonthEnd.Table.RULE606_ROUTING), rows.get(MonthEnd.Table.BEST_EX_REVIEWS));
+        regulatory.close(period, day, accounts, rows.get(MonthEnd.Table.NET_CAPITAL));
+        return new MonthEnd(period, day, rows);
+    }
+
+    private BigDecimal raw(long ba, int definition) {
+        return engine.balance(ba, definition, null, null);
+    }
+
+    private void statement(Instant now, YearMonth period, Account a,
+                           Map<MonthEnd.Table, List<Map<String, Object>>> rows) {
+        long ba = a.id();
+        String id = "STM-" + period.toString().replace("-", "") + "-" + ba;
+        BigDecimal lmv = BigDecimal.ZERO, smv = BigDecimal.ZERO;
+        TreeMap<Long, BigDecimal> held = new TreeMap<>();
+        for (BalanceKey k : engine.balances(ba).keySet()) {
+            if ((k.definition() == 3002 || k.definition() == 3102) && k.lot() == null) {
+                BigDecimal q = engine.normalBalance(ba, k.definition(), k.security());
+                held.merge(k.security(), k.definition() == 3002 ? q : q.negate(), BigDecimal::add);
+            }
+        }
+        for (var e : held.entrySet()) {
+            if (e.getValue().signum() == 0) {
+                continue;
+            }
+            Security s = market.byIndex((int) (e.getKey() - 100001));
+            BigDecimal close = market.price(s);
+            BigDecimal value = close.multiply(e.getValue()).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal cost = e.getValue().signum() > 0 ? engine.normalBalance(ba, 1002, s.id())
+                : engine.normalBalance(ba, 1107, s.id()).negate();
+            if (e.getValue().signum() > 0) {
+                lmv = lmv.add(value);
+            } else {
+                smv = smv.subtract(value);
+            }
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("period", period.toString());
+            p.put("statement_id", id);
+            p.put("brokerage_account", ba);
+            p.put("security_id", s.id());
+            p.put("symbol", s.symbol());
+            p.put("cusip", s.cusip());
+            p.put("quantity", e.getValue());
+            p.put("close_price", close.setScale(2, RoundingMode.HALF_UP));
+            p.put("market_value", value);
+            p.put("cost_basis", cost);
+            p.put("unrealized_gain_loss", value.subtract(cost));
+            rows.get(MonthEnd.Table.STATEMENT_POSITIONS).add(p);
+        }
+        BigDecimal cash = raw(ba, 1001), receivable = raw(ba, 1003), dividends = raw(ba, 1005);
+        BigDecimal payable = raw(ba, 1101).negate(), fees = raw(ba, 1102).negate(), interest = raw(ba, 1103).negate();
+        BigDecimal inLieu = raw(ba, 1108).negate();
+        BigDecimal equity = cash.add(receivable).add(dividends).subtract(payable).subtract(fees).subtract(interest)
+            .subtract(inLieu).add(lmv).subtract(smv);
+        Map<Integer, BigDecimal> before = lastActivity.getOrDefault(ba, Map.of());
+        Map<Integer, BigDecimal> after = new HashMap<>();
+        BigDecimal[] moved = new BigDecimal[ACTIVITY.length];
+        for (int i = 0; i < ACTIVITY.length; i++) {
+            BigDecimal b = engine.normalBalance(ba, ACTIVITY[i]);
+            after.put(ACTIVITY[i], b);
+            moved[i] = b.subtract(before.getOrDefault(ACTIVITY[i], BigDecimal.ZERO));
+        }
+        lastActivity.put(ba, after);
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("period", period.toString());
+        r.put("statement_id", id);
+        r.put("brokerage_account", ba);
+        r.put("account_kind", a.kind());
+        r.put("period_start", period.atDay(1));
+        r.put("period_end", day);
+        r.put("opening_equity", lastEquity.getOrDefault(ba, BigDecimal.ZERO.setScale(2)));
+        r.put("cash_balance", cash);
+        r.put("unsettled_sales_receivable", receivable);
+        r.put("unsettled_purchases_payable", payable);
+        r.put("dividends_receivable", dividends);
+        r.put("accrued_fees", fees);
+        r.put("accrued_interest", interest);
+        r.put("payment_in_lieu_payable", inLieu);
+        r.put("long_market_value", lmv);
+        r.put("short_market_value", smv);
+        r.put("total_equity", equity);
+        r.put("net_deposits", moved[0]);
+        r.put("dividends", moved[1]);
+        r.put("realized_gain_loss", moved[2]);
+        r.put("account_fees", moved[3]);
+        r.put("margin_interest", moved[4]);
+        r.put("payments_in_lieu", moved[5]);
+        r.put("transaction_fees", moved[6].add(moved[7]));
+        r.put("securities_transferred", moved[8]);
+        r.put("restated", false);
+        r.put("restatement_reason", null);
+        r.put("generated_at", now);
+        rows.get(MonthEnd.Table.STATEMENTS).add(r);
+        lastEquity.put(ba, equity);
+    }
+
+    /**
+     * 07:15 on the first business day after a month end, before settlement: the seeded trade bust (item 153). A venue
+     * breaks a buy execution of the month's last day as clearly erroneous (FINRA Rule 11890); the ledger reverses it
+     * (template 92), the order, clearing and the confirm follow, and the month's statement for the account is restated
+     * on a catalog branch merged into main, while the tag month-end-YYYY-MM keeps what the statements said.
+     */
+    private void bust() {
+        BuyFill pick = null;
+        for (int i = buyFills.size() - 1; i >= 0 && pick == null; i--) {
+            BuyFill b = buyFills.get(i);
+            long ba = b.order().account.id();
+            long sec = b.order().security.id();
+            if (tax.untouched(b.fill().id()) && !closed.contains(ba)
+                && engine.freeShares(ba, sec, b.fill().id()).compareTo(BigDecimal.valueOf(b.quantity())) == 0
+                && settlements.getOrDefault(day, List.of()).contains(b.order())) {
+                pick = b;
+            }
+        }
+        buyFills.clear();
+        if (pick == null) {
+            return;
+        }
+        Order o = pick.order();
+        Account a = o.account;
+        Security s = o.security;
+        FinancialTransaction t = ft(92, a, "oms", Map.of(6, s.id(), 8, pick.quantity(),
+            FinancialTransaction.ORIGINATING_ID, pick.fill().id(), 11, pick.fillId(), 12, pick.price(),
+            13, pick.value(), 15, o.tradeDate.toEpochDay(), 17, "clearly_erroneous"));
+        if (!book(current, t, false)) {
+            return;
+        }
+        bustSeeded = true;
+        longLots.get(a.id()).get(s.id()).remove(pick.fill().id());
+        o.filled -= pick.quantity();
+        o.value = o.value.subtract(pick.value());
+        o.executions--;
+        o.status = "trade_busted";
+        if (o.filled == 0) {
+            settlements.get(day).remove(o);
+        }
+        upsertOrder(o);
+        oms.busted(current, state(o));
+        clearing.bust(current, a.id(), s, pick.quantity(), pick.value(), o.tradeDate);
+        reporting.confirm(current, day, o.id, o.ref, a.id(), s, o.side, o.tradeDate, calendar.settlement(o.tradeDate),
+            o.filled, o.value, o.secFee, o.taf, o.executions, o.venue, o.filled == 0 ? "cancelled" : "corrected");
+        restate(a, s, pick);
+    }
+
+    /**
+     * The busted month's statements and positions as they should have read: every account's as closed, the busted
+     * account's corrected, so the writer replaces the month's partition whole.
+     */
+    private void restate(Account a, Security s, BuyFill b) {
+        MonthEnd close = lastClose;
+        Map<MonthEnd.Table, List<Map<String, Object>>> rows = MonthEnd.emptyRows();
+        String reason = "trade bust " + b.fillId() + ": clearly erroneous execution broken by the venue";
+        BigDecimal closePrice = null;
+        for (Map<String, Object> p : close.rows().get(MonthEnd.Table.STATEMENT_POSITIONS)) {
+            if (!p.get("brokerage_account").equals(a.id())) {
+                rows.get(MonthEnd.Table.STATEMENT_POSITIONS).add(p);
+                continue;
+            }
+            Map<String, Object> c = new LinkedHashMap<>(p);
+            if (p.get("security_id").equals(s.id())) {
+                closePrice = (BigDecimal) p.get("close_price");
+                BigDecimal q = ((BigDecimal) p.get("quantity")).subtract(BigDecimal.valueOf(b.quantity()));
+                if (q.signum() == 0) {
+                    continue;
+                }
+                BigDecimal value = closePrice.multiply(q).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal cost = ((BigDecimal) p.get("cost_basis")).subtract(b.value());
+                c.put("quantity", q);
+                c.put("market_value", value);
+                c.put("cost_basis", cost);
+                c.put("unrealized_gain_loss", value.subtract(cost));
+            }
+            rows.get(MonthEnd.Table.STATEMENT_POSITIONS).add(c);
+        }
+        BigDecimal lmvOff = closePrice == null ? BigDecimal.ZERO
+            : closePrice.multiply(BigDecimal.valueOf(b.quantity())).setScale(2, RoundingMode.HALF_UP);
+        for (Map<String, Object> st : close.rows().get(MonthEnd.Table.STATEMENTS)) {
+            if (!st.get("brokerage_account").equals(a.id())) {
+                rows.get(MonthEnd.Table.STATEMENTS).add(st);
+                continue;
+            }
+            Map<String, Object> c = new LinkedHashMap<>(st);
+            c.put("unsettled_purchases_payable",
+                ((BigDecimal) st.get("unsettled_purchases_payable")).subtract(b.value()));
+            c.put("long_market_value", ((BigDecimal) st.get("long_market_value")).subtract(lmvOff));
+            BigDecimal equity = ((BigDecimal) st.get("total_equity")).add(b.value()).subtract(lmvOff);
+            c.put("total_equity", equity);
+            c.put("restated", true);
+            c.put("restatement_reason", reason);
+            c.put("generated_at", current);
+            rows.get(MonthEnd.Table.STATEMENTS).add(c);
+            lastEquity.put(a.id(), equity);
+        }
+        sink.restated(new MonthEnd.Restatement(b.fillId(), close.period(), reason, a.id(), current, rows));
     }
 
     private static BigDecimal dollars(double v, int multiple) {

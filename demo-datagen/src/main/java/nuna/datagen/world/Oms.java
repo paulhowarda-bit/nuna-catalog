@@ -114,6 +114,11 @@ final class Oms {
         forget(o.id());
     }
 
+    /** An execution the venue broke after the day (item 153): the order as it stands without it. */
+    void busted(Instant at, OrderState o) {
+        event(at, o, "trade_busted", null, null);
+    }
+
     private void forget(long order) {
         routes.remove(order);
         lastEvent.remove(order);
@@ -134,7 +139,7 @@ final class Oms {
         row.put("limit_price", o.limitPrice());
         row.put("quantity", o.quantity());
         row.put("filled_quantity", o.filled());
-        row.put("leaves_quantity", type.equals("expired") ? 0L : o.quantity() - o.filled());
+        row.put("leaves_quantity", type.equals("expired") || type.equals("trade_busted") ? 0L : o.quantity() - o.filled());
         row.put("average_price", o.averagePrice());
         row.put("status", o.status());
         row.put("locate_id", o.locate());

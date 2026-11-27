@@ -11,6 +11,7 @@ import java.util.Map;
 import nuna.datagen.kit.Kit;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.LakeSchemas;
+import nuna.datagen.world.MonthEnd;
 import nuna.datagen.world.World;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
@@ -37,7 +38,9 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
     static final List<Namespace> NAMESPACES = List.of(ROOT, Namespace.of("brokerage", "reference"),
         Namespace.of("brokerage", "markets"), Namespace.of("brokerage", "party"), Namespace.of("brokerage", "ledger"),
         Namespace.of("brokerage", "trading"), Namespace.of("brokerage", "clearing"), Recon.NAMESPACE,
-        Namespace.of("brokerage", "kafka"));
+        Namespace.of("brokerage", "kafka"), Namespace.of("brokerage", "margin"), Namespace.of("brokerage", "tax"),
+        Namespace.of("brokerage", "client_reporting"), Namespace.of("brokerage", "regulatory"),
+        Namespace.of("brokerage", "asset_servicing"));
     static final Namespace LEDGER = Namespace.of("brokerage", "ledger");
 
     /**
@@ -57,6 +60,8 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
     private final Closeable closer;
     private final Duration commitInterval;
     private final Duration patience;
+    /** Writes the month-end closes and restatements (item 153); none where the lake only changes metadata. */
+    private MonthEndWriter closes;
 
     /**
      * @param catalog  a catalog with namespaces and views, as RESTCatalog and InMemoryCatalog are
@@ -116,6 +121,16 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
                 catalog.buildTable(id, schema).withPartitionSpec(LakeSchemas.spec(f, schema))
                     .withProperty(TableProperties.FORMAT_VERSION, "2")
                     .create();
+                System.out.println("created table " + id);
+            }
+        }
+        // The month-end close's tables (item 153), which the generator writes itself.
+        for (MonthEnd.Table t : MonthEnd.Table.values()) {
+            TableIdentifier id = id(t.lakeTable());
+            if (!catalog.tableExists(id)) {
+                Schema schema = MonthEnd.schema(t);
+                catalog.buildTable(id, schema).withPartitionSpec(MonthEnd.spec(schema))
+                    .withProperty(TableProperties.FORMAT_VERSION, "2").create();
                 System.out.println("created table " + id);
             }
         }
@@ -237,6 +252,29 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
     }
 
     // ---------------------------------------------------------------- run
+
+    /** Writes the month-end closes with this writer, whose catalog reads and writes data files. */
+    public IcebergLake withCloses(MonthEndWriter closes) {
+        this.closes = closes;
+        return this;
+    }
+
+    @Override
+    public void monthEnd(MonthEnd close) {
+        if (closes == null) {
+            System.out.println("WARN no writer for the month-end close of " + close.period());
+            return;
+        }
+        closes.write(close);
+        reconViews();
+    }
+
+    @Override
+    public void restated(MonthEnd.Restatement restatement) {
+        if (closes != null) {
+            closes.restated(restatement);
+        }
+    }
 
     @Override
     public void ensureLocateId() {

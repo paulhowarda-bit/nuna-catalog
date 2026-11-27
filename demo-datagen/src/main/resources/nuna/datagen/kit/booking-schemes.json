@@ -1,5 +1,5 @@
 {
- "source": "ledger kit v14, schemes_v20.py (booking scheme v20, financial transaction v8); the demo kit's own copy from here on (D48); templates 70 to 91 added by item 155",
+ "source": "ledger kit v14, schemes_v20.py (booking scheme v20, financial transaction v8); the demo kit's own copy from here on (D48); templates 70 to 91 added by item 155; template 92 added by item 153",
  "commonFields": {
   "1": "financialTransactionId",
   "2": "effectiveDate",
@@ -504,6 +504,19 @@
    },
    "startsLifecycle": false,
    "originTemplate": 90
+  },
+  {
+   "id": 92,
+   "name": "EquityBuyExecutionBusted",
+   "fields": {
+    "11": "fillId",
+    "12": "fillPrice",
+    "13": "fillAmount",
+    "15": "tradeDate",
+    "17": "reasonCode"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 41
   }
  ],
  "nonNegativeFields": [
@@ -8103,6 +8116,223 @@
     }
    ],
    "note": "Item 155. The payment in lieu charged to Cash on the pay date: on both clocks the cash control falls against the encumbrance or commitment, no net-equity line."
+  },
+  {
+   "name": "EQUITY_BUY_EXECUTION_BUSTED",
+   "id": 92,
+   "template": 92,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1101,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1002,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5101,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4102,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3002,
+       "side": "Debit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3001,
+       "side": "Credit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "field": 9
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "Item 153. A buy fill (template 41) the venue busted before it settled, after the month-end close: the fill's own lines undone but for the order's hold, which the close already released. Cost and the unsettled purchase out by the fill amount (field 13), both clocks' encumbrance and commitment back to net equity, and the lot opened by the fill (field 9, its financialTransactionId) emptied. Only for a lot untouched since the fill, so its remaining cost is the fill amount (R12)."
   }
  ]
 }

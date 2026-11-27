@@ -172,7 +172,9 @@ class PublisherTest {
 
     /** A feed's records as an unbroken run on route both sends them: through its topic, or into its SingleStore table. */
     private static List<String> expected(Feed f, Topics whole, Rows wholeRows) {
-        return f.path == Feed.Path.KAFKA ? whole.records.get(f) : new ArrayList<>(wholeRows.rows.get(f).values());
+        // A feed the days played never used (an entitlement, say) has no records either way.
+        return f.path == Feed.Path.KAFKA ? whole.records.getOrDefault(f, List.of())
+            : new ArrayList<>(wholeRows.rows.getOrDefault(f, new TreeMap<>()).values());
     }
 
     @Test
@@ -186,7 +188,7 @@ class PublisherTest {
 
         assertThat(topics.records).doesNotContainKey(Feed.ORDERS);
         for (Feed f : Feed.numbered()) {
-            assertThat(topics.records.get(f)).as(f.name()).isEqualTo(expected(f, whole, wholeRows));
+            assertThat(topics.records.getOrDefault(f, List.of())).as(f.name()).isEqualTo(expected(f, whole, wholeRows));
         }
         List<String> events = topics.records.get(Feed.ORDER_EVENTS);
         assertThat(events).hasSizeGreaterThan(wholeOrders.rows.size())

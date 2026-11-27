@@ -132,6 +132,63 @@ public final class LakeSchemas {
                 .add("symbol", TEXT).add("quantity", LONG).add("source", TEXT).add("easy_to_borrow", FLAG)
                 .add("borrow_rate", RATE).add("order_ref", TEXT).add("business_date", DATE)
                 .add("requested_at", TIME).add("expires_at", TIME);
+            case CORPORATE_ACTIONS -> c.add("corporate_action_id", TEXT).add("security_id", LONG).add("symbol", TEXT)
+                .add("cusip", TEXT).add("action_type", TEXT).add("announced_date", DATE).add("ex_date", DATE)
+                .add("record_date", DATE).add("pay_date", DATE).add("rate", PRICE).add("ratio_new", LONG)
+                .add("ratio_old", LONG).add("currency_id", LONG).add("business_date", DATE).add("event_time", TIME);
+            case ENTITLEMENTS -> c.add("entitlement_id", TEXT).add("corporate_action_id", TEXT).add("action_type", TEXT)
+                .add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT).add("position_side", TEXT)
+                .add("eligible_quantity", SHARES).add("entitled_amount", MONEY).add("quantity_after", SHARES)
+                .add("qualified_fraction", RATE).add("financial_transaction_id", LONG).add("ex_date", DATE)
+                .add("business_date", DATE).add("event_time", TIME);
+            case INCOME_PAYMENTS -> c.add("income_payment_id", TEXT).add("corporate_action_id", TEXT)
+                .add("payment_type", TEXT).add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT)
+                .add("direction", TEXT).add("quantity", SHARES).add("amount", MONEY).add("financial_transaction_id", LONG)
+                .add("pay_date", DATE).add("business_date", DATE).add("event_time", TIME);
+            case HOUSE_REQUIREMENTS -> c.add("security_id", LONG).add("symbol", TEXT).add("effective_date", DATE)
+                .add("band", TEXT).add("marginable", FLAG).add("close_price", MONEY).add("reg_t_initial_rate", RATE)
+                .add("finra_long_rate", RATE).add("house_long_rate", RATE).add("finra_short_rate", RATE)
+                .add("finra_short_per_share", MONEY).add("house_short_rate", RATE).add("business_date", DATE)
+                .add("event_time", TIME);
+            case ACCOUNT_MARGIN_EOD -> c.add("business_date", DATE).add("brokerage_account", LONG)
+                .add("money_balance", MONEY).add("debit_balance", MONEY).add("long_market_value", MONEY)
+                .add("short_market_value", MONEY).add("equity", MONEY).add("reg_t_excess", MONEY)
+                .add("finra_requirement", MONEY).add("house_requirement", MONEY).add("house_surplus", MONEY)
+                .add("iml_reducing_transactions", INT).add("intraday_margin_deficit", MONEY).add("open_calls", INT);
+            case MARGIN_CALLS -> c.add("call_event_id", LONG).add("call_id", TEXT).add("call_type", TEXT)
+                .add("event_type", TEXT).add("brokerage_account", LONG).add("amount", MONEY).add("house_surplus", MONEY)
+                .add("call_date", DATE).add("due_date", DATE).add("business_date", DATE).add("event_time", TIME);
+            case TAX_LOTS -> c.add("business_date", DATE).add("lot", LONG).add("brokerage_account", LONG)
+                .add("security_id", LONG).add("symbol", TEXT).add("acquired_by", TEXT).add("acquired_date", DATE)
+                .add("holding_period_start", DATE).add("shares", SHARES).add("cost", MONEY)
+                .add("wash_sale_adjustment", MONEY).add("tax_basis", MONEY).add("covered", FLAG);
+            case REALIZED_GAINS -> c.add("realization_id", TEXT).add("financial_transaction_id", LONG)
+                .add("template_id", INT).add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT)
+                .add("lot", LONG).add("position_side", TEXT).add("shares", SHARES).add("date_acquired", DATE)
+                .add("date_sold", DATE).add("proceeds", MONEY).add("cost", MONEY).add("basis_wash_adjustment", MONEY)
+                .add("gain_loss", MONEY).add("term", TEXT).add("business_date", DATE).add("event_time", TIME);
+            case WASH_SALES -> c.add("wash_sale_id", TEXT).add("realization_id", TEXT).add("brokerage_account", LONG)
+                .add("security_id", LONG).add("symbol", TEXT).add("loss_lot", LONG).add("replacement_lot", LONG)
+                .add("shares", SHARES).add("loss_disallowed", MONEY).add("sale_date", DATE)
+                .add("replacement_date", DATE).add("found", TEXT).add("business_date", DATE).add("event_time", TIME);
+            case CONFIRMS -> c.add("confirm_id", TEXT).add("status", TEXT).add("corrects_confirm_id", TEXT)
+                .add("order_id", LONG).add("order_ref", TEXT).add("brokerage_account", LONG).add("security_id", LONG)
+                .add("symbol", TEXT).add("cusip", TEXT).add("side", TEXT).add("capacity", TEXT).add("trade_date", DATE)
+                .add("settlement_date", DATE).add("quantity", LONG).add("average_price", PRICE).add("principal", MONEY)
+                .add("sec_fee", MONEY).add("finra_taf", MONEY).add("net_amount", MONEY).add("executions", INT)
+                .add("venue", TEXT).add("business_date", DATE).add("event_time", TIME);
+            case CAT_EVENTS -> c.add("cat_event_id", LONG).add("event_type", TEXT).add("reporter_type", TEXT)
+                .add("reporter_id", TEXT).add("fdid", TEXT).add("order_id", LONG).add("order_ref", TEXT)
+                .add("route_id", TEXT).add("exec_id", TEXT).add("security_id", LONG).add("symbol", TEXT)
+                .add("side", TEXT).add("order_type", TEXT).add("price", PRICE).add("quantity", LONG)
+                .add("time_in_force", TEXT).add("destination", TEXT).add("trade_date", DATE)
+                .add("event_timestamp", TIME).add("business_date", DATE);
+            case RESERVE_COMPUTATION -> c.add("computation_date", DATE).add("free_credit_balances", MONEY)
+                .add("total_credits", MONEY).add("customer_debit_balances", MONEY).add("debit_reduction", MONEY)
+                .add("securities_borrowed", MONEY).add("fails_to_deliver", MONEY).add("total_debits", MONEY)
+                .add("excess_of_credits", MONEY).add("reserve_required", MONEY).add("reserve_account_before", MONEY)
+                .add("deposit", MONEY).add("reserve_account_after", MONEY).add("deposit_due_date", DATE)
+                .add("business_date", DATE).add("event_time", TIME);
         }
         return new Schema(c.fields);
     }
@@ -139,10 +196,11 @@ public final class LakeSchemas {
     /** The table's partitioning: the daily tables by business or trade date, small ones by month, reference data not. */
     public static PartitionSpec spec(Feed feed, Schema schema) {
         return switch (feed) {
-            case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD, STOCK_RECORD ->
+            case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD, STOCK_RECORD, TAX_LOTS ->
                 PartitionSpec.builderFor(schema).day("business_date").build();
             case ORDER_EVENTS, ROUTES, EXECUTIONS -> PartitionSpec.builderFor(schema).day("trade_date").build();
-            case PRICES_EOD, LOCATES -> PartitionSpec.builderFor(schema).month("business_date").build();
+            case PRICES_EOD, LOCATES, ENTITLEMENTS, INCOME_PAYMENTS, ACCOUNT_MARGIN_EOD, MARGIN_CALLS, REALIZED_GAINS,
+                 WASH_SALES, CONFIRMS, CAT_EVENTS -> PartitionSpec.builderFor(schema).month("business_date").build();
             case CNS_OBLIGATIONS -> PartitionSpec.builderFor(schema).month("trade_date").build();
             case SETTLEMENTS -> PartitionSpec.builderFor(schema).month("settlement_date").build();
             default -> PartitionSpec.unpartitioned();

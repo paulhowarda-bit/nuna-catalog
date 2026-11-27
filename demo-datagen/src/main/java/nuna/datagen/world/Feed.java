@@ -39,7 +39,27 @@ public enum Feed {
     SETTLEMENTS(Path.KAFKA, "brokerage.clearing.settlements", "brokerage.clearing", "settlements"),
     FAILS(Path.KAFKA, "brokerage.clearing.fails", "brokerage.clearing", "fails"),
     STOCK_RECORD(Path.KAFKA, "brokerage.clearing.stock-record", "brokerage.clearing", "stock_record"),
-    LOCATES(Path.KAFKA, "brokerage.clearing.locates", "brokerage.clearing", "locates");
+    LOCATES(Path.KAFKA, "brokerage.clearing.locates", "brokerage.clearing", "locates"),
+    // The firm's books and reporting (item 153). Asset servicing: each corporate action as announced, each account's
+    // entitlement at the ex-date and each payment.
+    CORPORATE_ACTIONS(Path.KAFKA, "brokerage.reference.corporate-actions", "brokerage.reference", "corporate_actions"),
+    ENTITLEMENTS(Path.KAFKA, "brokerage.asset-servicing.entitlements", "brokerage.asset_servicing", "entitlements"),
+    INCOME_PAYMENTS(Path.KAFKA, "brokerage.asset-servicing.income-payments", "brokerage.asset_servicing",
+        "income_payments"),
+    // Margin: the house requirement of each security, each margin account at the day's end, and the calls.
+    HOUSE_REQUIREMENTS(Path.KAFKA, "brokerage.margin.house-requirements", "brokerage.margin", "house_requirements"),
+    ACCOUNT_MARGIN_EOD(Path.KAFKA, "brokerage.margin.account-margin-eod", "brokerage.margin", "account_margin_eod"),
+    MARGIN_CALLS(Path.KAFKA, "brokerage.margin.margin-calls", "brokerage.margin", "margin_calls"),
+    // Tax: the open tax lots at each day's end, each lot's part of a sale, and the wash sales.
+    TAX_LOTS(Path.KAFKA, "brokerage.tax.tax-lots", "brokerage.tax", "tax_lots"),
+    REALIZED_GAINS(Path.KAFKA, "brokerage.tax.realized-gains", "brokerage.tax", "realized_gains"),
+    WASH_SALES(Path.KAFKA, "brokerage.tax.wash-sales", "brokerage.tax", "wash_sales"),
+    // Client reporting: a confirmation per order and trade date (10b-10); the statements are the month-end close's.
+    CONFIRMS(Path.KAFKA, "brokerage.client-reporting.confirms", "brokerage.client_reporting", "confirms"),
+    // Regulatory: the CAT events of every order, route and fill, and the weekly 15c3-3 reserve computation.
+    CAT_EVENTS(Path.KAFKA, "brokerage.regulatory.cat-events", "brokerage.regulatory", "cat_events"),
+    RESERVE_COMPUTATION(Path.KAFKA, "brokerage.regulatory.reserve-computation", "brokerage.regulatory",
+        "reserve_computation");
 
     public enum Path { KAFKA, SINGLESTORE }
 

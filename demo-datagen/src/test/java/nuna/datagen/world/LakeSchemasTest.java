@@ -53,11 +53,17 @@ class LakeSchemasTest {
                 });
             }
         };
-        for (int i = 0; i < 22; i++) {
+        // 23 days: October's 22 and November's first, when the seeded bust corrects October's close (item 153).
+        for (int i = 0; i < 23; i++) {
             w.runDay(check);
         }
         assertThat(used.get(Feed.FINANCIAL_TRANSACTIONS)).contains(LakeSchemas.LOCATE_ID);
         schemas.forEach((f, schema) -> {
+            // The world's margin accounts are rarely levered enough to be called in a month: MarginTest checks the
+            // calls' rows fill their table.
+            if (f == Feed.MARGIN_CALLS) {
+                return;
+            }
             Set<String> unused = new HashSet<>();
             schema.columns().forEach(c -> unused.add(c.name()));
             unused.removeAll(used.get(f));

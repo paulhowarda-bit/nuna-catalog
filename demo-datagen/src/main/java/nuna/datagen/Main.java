@@ -9,7 +9,10 @@ import java.util.List;
 import java.util.Map;
 import nuna.datagen.kit.Kit;
 import nuna.datagen.live.Custody;
+import nuna.datagen.live.HttpRefs;
 import nuna.datagen.live.IcebergLake;
+import nuna.datagen.live.MonthEndWriter;
+import org.apache.iceberg.rest.RESTCatalog;
 import nuna.datagen.live.KafkaTopics;
 import nuna.datagen.live.Pacer;
 import nuna.datagen.live.Publisher;
@@ -139,6 +142,7 @@ public final class Main {
              SingleStore store = route.singlestore() ? new SingleStore(env("SINGLESTORE_URL", null),
                  env("SINGLESTORE_USER", "root"), env("SINGLESTORE_PASSWORD", null), kit) : null) {
             World.Settings settings = lake.settings();
+            lake.withCloses(closes());
             Pacer pacer = new Pacer();
             // What this world has sent each way: through Kafka, each topic's records since the world began; through
             // SingleStore, each table's rows. The way that is off drained into the lake before it went off (demo.sh),
@@ -241,6 +245,23 @@ public final class Main {
     static IcebergLake lake() {
         return IcebergLake.open(env("NUNA_CATALOG_URI", "http://nuna-catalog:8181"), env("NUNA_WAREHOUSE", "lakehouse"),
             env("NUNA_TOKEN", null), Duration.ofMillis(Long.parseLong(env("BROKERAGE_COMMIT_INTERVAL_MS", "15000"))));
+    }
+
+    /**
+     * The month-end close's writer (item 153): a catalog that writes data files with the credentials the catalog vends,
+     * and the catalog's refs for the tag and the restatement branch.
+     */
+    static MonthEndWriter closes() {
+        String uri = env("NUNA_CATALOG_URI", "http://nuna-catalog:8181");
+        String warehouse = env("NUNA_WAREHOUSE", "lakehouse");
+        String token = env("NUNA_TOKEN", null);
+        Map<String, String> properties = Map.of("uri", uri, "token", token,
+            "header.X-Iceberg-Access-Delegation", "vended-credentials");
+        RESTCatalog catalog = new RESTCatalog();
+        Map<String, String> main = new java.util.HashMap<>(properties);
+        main.put("warehouse", warehouse);
+        catalog.initialize("brokerage-close", main);
+        return new MonthEndWriter(catalog, new HttpRefs(uri, warehouse, token, properties));
     }
 
     static String env(String name, String fallback) {
