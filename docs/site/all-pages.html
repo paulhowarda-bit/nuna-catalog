@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en" data-root="" data-page="all-pages">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>All pages · nuna docs</title>
+  <meta name="description" content="Every page of the nuna documentation, 154 in all, in the order of the side navigation.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/docs.css">
+  <script src="assets/theme.js"></script>
+  <script src="assets/nav.js" defer></script>
+  <script src="assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="index.html">nuna docs</a>
+  <a class="all-pages" href="all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>All pages</h1>
+        <p class="lead">Every page of the nuna documentation, 154 in all, in the order of the side navigation.</p>
+      </header>
+      <h2 id="learn">Learn</h2>
+      <h3 id="start">Get started</h3>
+      <ul class="cards">
+        <li><a href="start/index.html"><span class="card-title">Get started</span><span class="card-text">Three ways in (try the demo, connect an engine to a running nuna, install nuna) and what each needs.</span></a></li>
+        <li><a href="start/quickstart.html"><span class="card-title">Run nuna on your laptop</span><span class="card-text">Install the prerequisites, run <code>demo/demo.sh up</code>, open the console, sign in as <code>presenter</code>, look at one table, stop the demo. States how long the first <code>up</code> takes and why.</span></a></li>
+        <li><a href="start/first-table.html"><span class="card-title">Create your first table</span><span class="card-text">Get a token, point an engine at the demo (tabs: Spark, PyIceberg, Trino, curl), create a namespace and a table, write rows, read them back, find the table in the console and read its History tab.</span></a></li>
+        <li><a href="start/console-tour.html"><span class="card-title">Tour the console</span><span class="card-text">Every rail page once, with the demo&#x27;s data: Go to a path, a table&#x27;s tabs, last night&#x27;s maintenance, a hold, a grant, an audit record and its place in the chain, the Service page.</span></a></li>
+        <li><a href="start/first-branch.html"><span class="card-title">Work on a catalog branch</span><span class="card-text">Make branch <code>dev</code>, write to it from Spark through the <code>&lt;catalog&gt;@dev</code> prefix, compare it with main in the console, merge it, tag the result.</span></a></li>
+      </ul>
+      <h3 id="concepts">Concepts</h3>
+      <ul class="cards">
+        <li><a href="concepts/index.html"><span class="card-title">Concepts</span><span class="card-text">The ideas behind nuna, in reading order.</span></a></li>
+        <li><a href="concepts/architecture.html"><span class="card-title">How nuna fits together</span><span class="card-text">Diagram and tour of the parts: the server, its database, the object store, the maintenance worker, the audit pipeline and audit tables writer, the console, the identity provider, engines. What runs where and who talks to whom.</span></a></li>
+        <li><a href="concepts/catalog-objects.html"><span class="card-title">Catalogs, namespaces, tables and views</span><span class="card-text">The object model, names and paths, how a table&#x27;s location is assigned from its id, the REST prefix, properties.</span></a></li>
+        <li><a href="concepts/commits.html"><span class="card-title">How a commit works</span><span class="card-text">Requirements and updates, optimistic concurrency, how the database decides one winner, the metadata log, multi-table transactions, what an engine sees on conflict.</span></a></li>
+        <li><a href="concepts/branches-and-tags.html"><span class="card-title">Catalog branches and tags</span><span class="card-text">Refs of the whole catalog, how they differ from Iceberg&#x27;s table branches, naming by <code>&lt;catalog&gt;@&lt;ref&gt;</code>, what a branch keeps, merging, expiry, limits.</span></a></li>
+        <li><a href="concepts/storage.html"><span class="card-title">Storage profiles and credential vending</span><span class="card-text">How the server maps a table to an object store and prefix, what an engine receives (vended credentials, STS), and what it never receives.</span></a></li>
+        <li><a href="concepts/access.html"><span class="card-title">Identity and access</span><span class="card-text">Principals, issuers and groups, the seven privileges, grants and their inheritance down the tree, separation of duties, platform operators and grant admins, what a refusal tells you.</span></a></li>
+        <li><a href="concepts/row-column-rules.html"><span class="card-title">Row filters and column masks</span><span class="card-text">Flagged tables, per-group rules, who may see a rule&#x27;s expression, how engines enforce them through OPA, why a flagged table&#x27;s storage access is withheld.</span></a></li>
+        <li><a href="concepts/governance.html"><span class="card-title">Governance</span><span class="card-text">Regulated and flagged tables, governance attributes, legal holds, DR freezes, delete policies, what each blocks and who may place or lift it.</span></a></li>
+        <li><a href="concepts/lifecycle.html"><span class="card-title">Dropping, restoring and purging</span><span class="card-text">What drop does, the purge window, restore, purge, the metadata log after a drop.</span></a></li>
+        <li><a href="concepts/audit.html"><span class="card-title">The audit trail</span><span class="card-text">What is recorded, the hash chain and what &quot;verified&quot; means, the outbox to Kafka, the archive, the audit tables you can query with SQL.</span></a></li>
+        <li><a href="concepts/maintenance.html"><span class="card-title">Maintenance</span><span class="card-text">Scans, the health score, compaction on need, snapshot expiry, orphan scans, the cleanup window, maintenance on request, what the worker needs to do each.</span></a></li>
+        <li><a href="concepts/disaster-recovery.html"><span class="card-title">Disaster recovery</span><span class="card-text">The DR watermark, the verifier, freezes during recovery, recovering in the DR region, what is and is not replicated by nuna.</span></a></li>
+        <li><a href="concepts/databases.html"><span class="card-title">Choosing a database</span><span class="card-text">PostgreSQL, CockroachDB, Oracle and MongoDB compared: what each needs, what nuna checks at start-up, how commits are decided on each.</span></a></li>
+      </ul>
+      <h3 id="demo">The demo</h3>
+      <ul class="cards">
+        <li><a href="demo/index.html"><span class="card-title">The local demo</span><span class="card-text">What the demo runs (diagram), its URLs, what it is for and what it is not (not a production install).</span></a></li>
+        <li><a href="demo/start-stop.html"><span class="card-title">Start, stop and reset the demo</span><span class="card-text"><code>up</code>, <code>down</code>, <code>stop</code>, <code>reset</code>, <code>wipe</code>; what each keeps; HTTPS and the certificate; the commit the demo runs; resources it needs.</span></a></li>
+        <li><a href="demo/sign-in.html"><span class="card-title">Demo users and sign-in</span><span class="card-text">Every demo user and group, what each may do, signing in to the console and the other UIs, tokens.</span></a></li>
+        <li><a href="demo/brokerage-world.html"><span class="card-title">The brokerage world</span><span class="card-text">The generated data: what is loaded, where, the ties between systems, the reconciliation views.</span></a></li>
+        <li><a href="demo/singlestore.html"><span class="card-title">SingleStore in the demo</span><span class="card-text">The change feed from SingleStore into Iceberg, and Iceberg pipelines back into SingleStore.</span></a></li>
+        <li><a href="demo/trino-cloudbeaver.html"><span class="card-title">Trino and CloudBeaver in the demo</span><span class="card-text">Querying the catalog from Trino and CloudBeaver, signed in as a demo user.</span></a></li>
+        <li><a href="demo/cdc.html"><span class="card-title">Change data capture in the demo</span><span class="card-text"><code>demo.sh cdc</code>: PostgreSQL, Oracle and CockroachDB changes into Iceberg history tables.</span></a></li>
+        <li><a href="demo/kafka-metrics.html"><span class="card-title">Kafka, metrics and traces in the demo</span><span class="card-text">kafbat, Grafana, traces; what each shows.</span></a></li>
+        <li><a href="demo/commands.html"><span class="card-title">demo.sh reference</span><span class="card-text">Every <code>demo/demo.sh</code> subcommand: synopsis, what it does, options, environment variables, what it prints.</span></a></li>
+      </ul>
+      <h2 id="use">Use</h2>
+      <h3 id="console">Console guide</h3>
+      <ul class="cards">
+        <li><a href="console/index.html"><span class="card-title">The console</span><span class="card-text">Layout: header (catalog picker, the Reading slot, Go to a path, theme, sign out), the rail, phone layout, keys. Who sees which rail pages.</span></a></li>
+        <li><a href="console/sign-in.html"><span class="card-title">Signing in to the console</span><span class="card-text">Signing in through the identity provider, developer tokens where allowed, signing out, what the sign-in errors mean.</span></a></li>
+        <li><a href="console/overview.html"><span class="card-title">The Overview page</span><span class="card-text">Every panel, what it counts, its empty and switched-off states.</span></a></li>
+        <li><a href="console/catalog.html"><span class="card-title">The Catalog page</span><span class="card-text">Contents and Properties tabs; the maintenance policy link.</span></a></li>
+        <li><a href="console/namespace.html"><span class="card-title">The namespace page</span><span class="card-text">Contents, Access, Audit and Properties tabs.</span></a></li>
+        <li><a href="console/table.html"><span class="card-title">The table page</span><span class="card-text">Overview, Schema, History, Access (governance, row and column rules, grants, what you may do), Maintenance and Audit tabs; the Settings drawer.</span></a></li>
+        <li><a href="console/view.html"><span class="card-title">The view page</span><span class="card-text">Overview, Versions, Access and Audit tabs.</span></a></li>
+        <li><a href="console/branches-and-tags.html"><span class="card-title">The Branches and tags page</span><span class="card-text">The refs list, making a branch or tag, a branch&#x27;s Changes and Merge tabs, a tag&#x27;s What it keeps tab, the Record tab, limits and refusals.</span></a></li>
+        <li><a href="console/maintenance.html"><span class="card-title">The Maintenance page</span><span class="card-text">Last night, the 30-night figures, tonight&#x27;s queue, the maintenance policy, the setup checklist, compact a table now.</span></a></li>
+        <li><a href="console/governance.html"><span class="card-title">The Governance page</span><span class="card-text">Summary and Holds and freezes tabs; placing and lifting a hold or freeze.</span></a></li>
+        <li><a href="console/grants.html"><span class="card-title">The Grants page</span><span class="card-text">Listing grants, Grant access, revoking, the privilege ladder in the console&#x27;s words, the separation-of-duties and self-grant refusals.</span></a></li>
+        <li><a href="console/audit.html"><span class="card-title">The Audit page</span><span class="card-text">The feed, filters, a record, the chain status, the archive check, completeness and lag.</span></a></li>
+        <li><a href="console/service.html"><span class="card-title">The Service page</span><span class="card-text">Catalog health for the whole deployment, the worker&#x27;s scans and storage, DR replication, the store.</span></a></li>
+      </ul>
+      <h3 id="guides">Guides</h3>
+      <ul class="cards">
+        <li><a href="guides/index.html"><span class="card-title">Guides</span><span class="card-text">Every task, grouped: data, access, governance, maintenance, audit.</span></a></li>
+        <li><a href="guides/create-catalog.html"><span class="card-title">Create a catalog</span><span class="card-text">With its storage profile and first grants.</span></a></li>
+        <li><a href="guides/grant-access.html"><span class="card-title">Grant and revoke access</span><span class="card-text">Console, curl; inheritance; what to do with the separation-of-duties refusal.</span></a></li>
+        <li><a href="guides/row-column-rules.html"><span class="card-title">Add a row filter or column mask</span><span class="card-text">Flag the table, add a rule per group, check what a reader sees.</span></a></li>
+        <li><a href="guides/branch-workflow.html"><span class="card-title">Write, audit and publish with a branch</span><span class="card-text">Write to a branch, check it, merge or discard it.</span></a></li>
+        <li><a href="guides/tag.html"><span class="card-title">Keep a point in time with a tag</span><span class="card-text">Make a tag, read through it, let it expire or remove it.</span></a></li>
+        <li><a href="guides/time-travel.html"><span class="card-title">Read an earlier version of a table</span><span class="card-text">Snapshots and table refs from each engine; the History tab.</span></a></li>
+        <li><a href="guides/register-table.html"><span class="card-title">Register an existing table</span><span class="card-text">Bring a table&#x27;s metadata file under nuna.</span></a></li>
+        <li><a href="guides/rename-move.html"><span class="card-title">Rename or move a table or view</span><span class="card-text">Within and across namespaces; what changes and what does not.</span></a></li>
+        <li><a href="guides/table-settings.html"><span class="card-title">Change a table&#x27;s settings</span><span class="card-text">The console&#x27;s Settings drawer and the same properties from an engine.</span></a></li>
+        <li><a href="guides/multi-table-commit.html"><span class="card-title">Commit to several tables at once</span><span class="card-text">The transactions endpoint; what all-or-nothing means here.</span></a></li>
+        <li><a href="guides/hold.html"><span class="card-title">Place and lift a legal hold</span><span class="card-text">Who may, what it blocks, the audit record it leaves.</span></a></li>
+        <li><a href="guides/freeze.html"><span class="card-title">Freeze and unfreeze for disaster recovery</span><span class="card-text">The DR freeze on a table or catalog.</span></a></li>
+        <li><a href="guides/drop-restore-purge.html"><span class="card-title">Drop, restore and purge a table</span><span class="card-text">The window, restore, purge, refusals under a hold.</span></a></li>
+        <li><a href="guides/compact-now.html"><span class="card-title">Compact a table or scan for orphans now</span><span class="card-text">Maintenance on request from the console and the API; reading the result.</span></a></li>
+        <li><a href="guides/maintenance-policy.html"><span class="card-title">Set a catalog&#x27;s maintenance policy</span><span class="card-text">Each policy key, its default, what it changes.</span></a></li>
+        <li><a href="guides/query-audit.html"><span class="card-title">Query the audit trail</span><span class="card-text">The feed over the API, the audit tables from SQL, finding one change.</span></a></li>
+        <li><a href="guides/verify-audit-chain.html"><span class="card-title">Verify the audit chain</span><span class="card-text">Check a record&#x27;s place in the chain and what an unverified record means.</span></a></li>
+      </ul>
+      <h3 id="clients">Command line and clients</h3>
+      <ul class="cards">
+        <li><a href="clients/index.html"><span class="card-title">Command line and clients</span><span class="card-text">No nuna CLI: curl for the APIs, engines for data, <code>demo.sh</code> and <code>kind.sh</code> for local stacks, Helm and kubectl for clusters. Links to each.</span></a></li>
+        <li><a href="clients/tokens.html"><span class="card-title">Get a token</span><span class="card-text">OAuth client credentials against your identity provider, the <code>/v1/oauth/tokens</code> endpoint, <code>demo.sh token</code>; how long tokens last.</span></a></li>
+        <li><a href="clients/curl.html"><span class="card-title">Use the APIs with curl</span><span class="card-text">Setting <code>NUNA</code> and <code>TOKEN</code> (section 7), the certificate, request ids, paging, <code>If-Match</code>, reading errors. Every other page&#x27;s curl assumes this set-up.</span></a></li>
+        <li><a href="clients/spark.html"><span class="card-title">Spark</span><span class="card-text">Catalog settings, credential vending, refs by prefix, maintenance procedures, what was tested.</span></a></li>
+        <li><a href="clients/trino.html"><span class="card-title">Trino</span><span class="card-text">Catalog properties, OAuth, what works.</span></a></li>
+        <li><a href="clients/pyiceberg.html"><span class="card-title">PyIceberg</span><span class="card-text"><code>load_catalog</code> settings, writes, what was tested.</span></a></li>
+        <li><a href="clients/kafka-connect.html"><span class="card-title">Kafka Connect</span><span class="card-text">The Iceberg sink against nuna; upsert is not supported.</span></a></li>
+        <li><a href="clients/singlestore.html"><span class="card-title">SingleStore</span><span class="card-text">Iceberg pipelines and the change feed connector.</span></a></li>
+        <li><a href="clients/other-engines.html"><span class="card-title">Other engines</span><span class="card-text">DuckDB, StarRocks, Flink and others: nuna has not tested them. The standard Iceberg REST settings, each engine marked &quot;Not tested by nuna&quot;.</span></a></li>
+      </ul>
+      <h2 id="run">Run</h2>
+      <h3 id="install">Install</h3>
+      <ul class="cards">
+        <li><a href="install/index.html"><span class="card-title">Install</span><span class="card-text">The install paths (the demo, a local kind cluster, a production cluster with Helm, a locked-down estate) and the order of the steps.</span></a></li>
+        <li><a href="install/requirements.html"><span class="card-title">Requirements</span><span class="card-text">Kubernetes and Helm versions, a database, an object store, an identity provider, network paths, sizes.</span></a></li>
+        <li><a href="install/images.html"><span class="card-title">Container images</span><span class="card-text">The three images, building them, mirroring them to your registry.</span></a></li>
+        <li><a href="install/helm-catalog.html"><span class="card-title">Install the catalog server with Helm</span><span class="card-text"><code>config</code> and <code>secrets</code>, what the chart creates, the checks it makes before rendering.</span></a></li>
+        <li><a href="install/helm-maintenance.html"><span class="card-title">Install the maintenance worker</span><span class="card-text">The worker chart, the identity it needs, its storage access.</span></a></li>
+        <li><a href="install/helm-audit-tables.html"><span class="card-title">Install the audit tables writer</span><span class="card-text">The audit tables chart, its Kafka and catalog access.</span></a></li>
+        <li><a href="install/postgresql.html"><span class="card-title">Use PostgreSQL</span><span class="card-text">Database, user and grants, TLS client certificate, settings, the start-up self-check.</span></a></li>
+        <li><a href="install/cockroachdb.html"><span class="card-title">Use CockroachDB</span><span class="card-text">As above for CockroachDB.</span></a></li>
+        <li><a href="install/oracle.html"><span class="card-title">Use Oracle</span><span class="card-text">As above for Oracle.</span></a></li>
+        <li><a href="install/mongodb.html"><span class="card-title">Use MongoDB</span><span class="card-text">As above for MongoDB, including the replica set it needs.</span></a></li>
+        <li><a href="install/object-storage.html"><span class="card-title">Set up object storage</span><span class="card-text">Buckets, prefixes and storage profiles (tabs: AWS S3, Ceph, Silo); the STS role for vending.</span></a></li>
+        <li><a href="install/aws-roles-anywhere.html"><span class="card-title">Reach AWS with IAM Roles Anywhere</span><span class="card-text">Certificates in place of keys for the server and worker.</span></a></li>
+        <li><a href="install/identity-provider.html"><span class="card-title">Connect an identity provider</span><span class="card-text">Issuers, audiences, the groups claim, grant-admin and platform-operator groups, the console&#x27;s sign-in client; a Keycloak example.</span></a></li>
+        <li><a href="install/telemetry.html"><span class="card-title">Send telemetry</span><span class="card-text">OTLP endpoints for metrics, traces and logs; the collector.</span></a></li>
+        <li><a href="install/kind.html"><span class="card-title">Run nuna on a local kind cluster</span><span class="card-text"><code>deploy/kind/kind.sh</code> and <code>deploy/local/run.sh</code> on Podman; each command&#x27;s options.</span></a></li>
+        <li><a href="install/locked-down.html"><span class="card-title">Install on a locked-down network</span><span class="card-text">Mirrored images and repositories, proxies, an internal certificate authority, no outbound access.</span></a></li>
+        <li><a href="install/verify.html"><span class="card-title">Check the install</span><span class="card-text">Health endpoints, the start-up self-check, a first token, a first table, the worker&#x27;s first scan.</span></a></li>
+        <li><a href="install/upgrade.html"><span class="card-title">Upgrade nuna</span><span class="card-text">Rolling a new image, database schema changes, chart changes. Write only what the code supports; a gap is better than a guess.</span></a></li>
+        <li><a href="install/uninstall.html"><span class="card-title">Uninstall nuna</span><span class="card-text">Removing the releases; what stays in the database and the object store.</span></a></li>
+      </ul>
+      <h3 id="configure">Configure</h3>
+      <ul class="cards">
+        <li><a href="configure/index.html"><span class="card-title">Configuration</span><span class="card-text">How settings reach each program (<code>application.yaml</code>, environment variables, a Secret as a config tree, Helm <code>config</code>), which program reads which prefix, and where secrets go.</span></a></li>
+        <li><a href="configure/catalogs.html"><span class="card-title">Catalog settings</span><span class="card-text"><code>nuna.catalog.*</code>.</span></a></li>
+        <li><a href="configure/database.html"><span class="card-title">Database settings</span><span class="card-text"><code>nuna.database.*</code> and the <code>spring.datasource.*</code> keys nuna needs.</span></a></li>
+        <li><a href="configure/storage.html"><span class="card-title">Storage settings</span><span class="card-text"><code>nuna.storage.*</code>, storage profiles.</span></a></li>
+        <li><a href="configure/security.html"><span class="card-title">Security settings</span><span class="card-text"><code>nuna.security.*</code>, <code>nuna.oidc.*</code>, <code>nuna.opa.*</code>.</span></a></li>
+        <li><a href="configure/audit.html"><span class="card-title">Audit settings</span><span class="card-text"><code>nuna.audit.*</code>.</span></a></li>
+        <li><a href="configure/governance.html"><span class="card-title">Governance and refs settings</span><span class="card-text"><code>nuna.governance.*</code>, <code>nuna.refs.*</code>.</span></a></li>
+        <li><a href="configure/server.html"><span class="card-title">Server settings</span><span class="card-text"><code>nuna.rest.*</code>, <code>nuna.ui.*</code>, <code>nuna.health.*</code>, <code>nuna.telemetry.*</code>, <code>nuna.changefeed.*</code>, <code>server.port</code>, logging.</span></a></li>
+        <li><a href="configure/maintenance.html"><span class="card-title">Maintenance worker settings</span><span class="card-text"><code>nuna.maintenance.*</code>.</span></a></li>
+        <li><a href="configure/audit-tables.html"><span class="card-title">Audit tables writer settings</span><span class="card-text"><code>nuna.audit-tables.*</code>.</span></a></li>
+        <li><a href="configure/helm-values.html"><span class="card-title">Helm chart values</span><span class="card-text">Every value of the three charts, one <code>h2</code> per chart.</span></a></li>
+      </ul>
+      <h3 id="operate">Operate</h3>
+      <ul class="cards">
+        <li><a href="operate/index.html"><span class="card-title">Operate</span><span class="card-text">Day-to-day running: what to watch, what runs at night, what to do when something fails.</span></a></li>
+        <li><a href="operate/health.html"><span class="card-title">Health checks</span><span class="card-text">Liveness and readiness, the server and catalog health routes, the start-up self-check of the database&#x27;s safety settings.</span></a></li>
+        <li><a href="operate/metrics.html"><span class="card-title">Metrics</span><span class="card-text">Every metric the server and the worker export: name, type, labels, meaning.</span></a></li>
+        <li><a href="operate/traces-and-logs.html"><span class="card-title">Traces, logs and the request id</span><span class="card-text">Spans, structured logs, following one request across the parts.</span></a></li>
+        <li><a href="operate/dashboards-alerts.html"><span class="card-title">Dashboards and alerts</span><span class="card-text">The Grafana dashboards and Prometheus alert rules, installing them, what each panel and rule watches.</span></a></li>
+        <li><a href="operate/maintenance-nights.html"><span class="card-title">Maintenance nights</span><span class="card-text">The worker&#x27;s schedule, the cleanup window, reading a night&#x27;s figures, jobs cut off or failed.</span></a></li>
+        <li><a href="operate/table-health.html"><span class="card-title">Table health</span><span class="card-text">The score, its reasons, what raises a table into the queue.</span></a></li>
+        <li><a href="operate/audit-pipeline.html"><span class="card-title">Run the audit pipeline</span><span class="card-text">The outbox relay, the Kafka copy, the archive, the audit tables writer; checking each is current.</span></a></li>
+        <li><a href="operate/backup-dr.html"><span class="card-title">Back up and recover</span><span class="card-text">What to back up, the DR watermark and verifier, recovering in the DR region step by step.</span></a></li>
+        <li><a href="operate/scaling.html"><span class="card-title">Scaling</span><span class="card-text">Replicas, database connections, the worker&#x27;s slots. Only what the code and tests show.</span></a></li>
+        <li><a href="operate/kubectl.html"><span class="card-title">Helm and kubectl recipes</span><span class="card-text">Status, logs, restarts after a Secret change, rollbacks, for each of the three releases.</span></a></li>
+        <li><a href="operate/troubleshooting.html"><span class="card-title">Troubleshooting</span><span class="card-text">Symptom, cause and fix, grouped by part. Messages quoted exactly.</span></a></li>
+        <li><a href="operate/runbooks.html"><span class="card-title">Alert runbooks</span><span class="card-text">One <code>h2</code> per alert rule: what it means, impact, check, fix, escalate.</span></a></li>
+      </ul>
+      <h3 id="security">Security</h3>
+      <ul class="cards">
+        <li><a href="security/index.html"><span class="card-title">Security</span><span class="card-text">The layers, in the order a request meets them.</span></a></li>
+        <li><a href="security/authentication.html"><span class="card-title">Authentication</span><span class="card-text">Token validation, issuers, service identities for the worker and engines, developer tokens and why they are for the demo only.</span></a></li>
+        <li><a href="security/authorization.html"><span class="card-title">Authorization</span><span class="card-text">Privileges, grants, inheritance, separation of duties, the self-grant rule, platform operators, grant admins, maintenance principals, identity-less commits.</span></a></li>
+        <li><a href="security/opa.html"><span class="card-title">Use OPA</span><span class="card-text">The decision endpoints nuna serves to OPA, wiring an engine&#x27;s policy to them.</span></a></li>
+        <li><a href="security/row-column.html"><span class="card-title">Row-level security and column masking</span><span class="card-text">Enforcement path, which engines enforce it, what is withheld from engines on flagged tables.</span></a></li>
+        <li><a href="security/credential-vending.html"><span class="card-title">Credential vending</span><span class="card-text">Scoped, short-lived credentials per table, STS, what is logged.</span></a></li>
+        <li><a href="security/encryption.html"><span class="card-title">Encryption and keys</span><span class="card-text">In transit, at rest, KMS.</span></a></li>
+        <li><a href="security/what-is-audited.html"><span class="card-title">What is audited</span><span class="card-text">Every audited action and denial, by record type.</span></a></li>
+        <li><a href="security/hardening.html"><span class="card-title">Hardening checklist</span><span class="card-text">Every setting and deployment choice that tightens an install, each with its check.</span></a></li>
+      </ul>
+      <h2 id="look-up">Look up</h2>
+      <h3 id="api">API reference</h3>
+      <ul class="cards">
+        <li><a href="api/index.html"><span class="card-title">API reference</span><span class="card-text">The APIs and their base paths, authentication, errors, paging, <code>If-Match</code> and versions, request ids, the endpoint index.</span></a></li>
+        <li><a href="api/iceberg-config.html"><span class="card-title">Iceberg REST: configuration and tokens</span><span class="card-text"><code>GET /v1/config</code> (the warehouse, the <code>&lt;catalog&gt;@&lt;ref&gt;</code> prefix, advertised endpoints), <code>POST /v1/oauth/tokens</code>.</span></a></li>
+        <li><a href="api/iceberg-namespaces.html"><span class="card-title">Iceberg REST: namespaces</span><span class="card-text">List, create, load, update properties, drop.</span></a></li>
+        <li><a href="api/iceberg-tables.html"><span class="card-title">Iceberg REST: tables</span><span class="card-text">List, create, load (with vended credentials), commit, register, rename, drop, metrics reports.</span></a></li>
+        <li><a href="api/iceberg-views.html"><span class="card-title">Iceberg REST: views</span><span class="card-text">List, create, load, replace, rename, drop.</span></a></li>
+        <li><a href="api/iceberg-transactions.html"><span class="card-title">Iceberg REST: transactions</span><span class="card-text"><code>POST /v1/{prefix}/transactions/commit</code>.</span></a></li>
+        <li><a href="api/catalogs.html"><span class="card-title">Catalogs</span><span class="card-text"><code>/management/v1/catalogs</code>.</span></a></li>
+        <li><a href="api/engines.html"><span class="card-title">Engines</span><span class="card-text"><code>/management/v1/engines</code>.</span></a></li>
+        <li><a href="api/grants.html"><span class="card-title">Grants</span><span class="card-text"><code>/management/v1/catalogs/{catalog}/grants</code>.</span></a></li>
+        <li><a href="api/row-column-rules.html"><span class="card-title">Row and column rules</span><span class="card-text">Rules, export, a caller&#x27;s own rules.</span></a></li>
+        <li><a href="api/opa.html"><span class="card-title">OPA decisions</span><span class="card-text"><code>/opa/v1/allow</code>, <code>/opa/v1/row-filters</code>, <code>/opa/v1/column-masks</code>.</span></a></li>
+        <li><a href="api/audit.html"><span class="card-title">Audit</span><span class="card-text">An object&#x27;s audit, the catalog feed, records and the chain.</span></a></li>
+        <li><a href="api/governance.html"><span class="card-title">Governance</span><span class="card-text">Summary, holds, freezes, attributes.</span></a></li>
+        <li><a href="api/lifecycle.html"><span class="card-title">Lifecycle</span><span class="card-text">Dropped objects, restore, purge, the metadata log.</span></a></li>
+        <li><a href="api/refs.html"><span class="card-title">Branches and tags</span><span class="card-text">Refs, merging, expiry.</span></a></li>
+        <li><a href="api/maintenance.html"><span class="card-title">Maintenance</span><span class="card-text">Requests, jobs, nights, scans, tables, readiness, storage setup and prefixes, delete policies, the estate, the maintenance policy.</span></a></li>
+        <li><a href="api/health.html"><span class="card-title">Health</span><span class="card-text">Server, catalog and table health.</span></a></li>
+        <li><a href="api/dr.html"><span class="card-title">Disaster recovery</span><span class="card-text">Watermarks, reconcile.</span></a></li>
+        <li><a href="api/search.html"><span class="card-title">Name search and listings</span><span class="card-text">Search by name across catalogs; a namespace&#x27;s tables with their figures.</span></a></li>
+        <li><a href="api/worker.html"><span class="card-title">Worker endpoints</span><span class="card-text">The endpoints only the maintenance worker calls (work, DR work, ref expiry); marked internal.</span></a></li>
+      </ul>
+      <h3 id="reference">Reference</h3>
+      <ul class="cards">
+        <li><a href="reference/index.html"><span class="card-title">Reference</span><span class="card-text">Facts to look up.</span></a></li>
+        <li><a href="reference/engines.html"><span class="card-title">Engine compatibility</span><span class="card-text">Each engine against each feature (row-level writes, schema and partition evolution, time travel, branches, views, statistics, v3), with the version tested and the result.</span></a></li>
+        <li><a href="reference/iceberg-support.html"><span class="card-title">Iceberg support</span><span class="card-text">Format versions, spec features, REST endpoints advertised and not.</span></a></li>
+        <li><a href="reference/privileges.html"><span class="card-title">Privileges</span><span class="card-text">Each privilege: what it allows, on which objects, what it includes.</span></a></li>
+        <li><a href="reference/errors.html"><span class="card-title">Error responses</span><span class="card-text">Each status and error type nuna returns, when, and what to do.</span></a></li>
+        <li><a href="reference/limits.html"><span class="card-title">Limits</span><span class="card-text">Every enforced limit (page sizes, ref counts, scan budgets, request sizes), with its setting if it has one.</span></a></li>
+        <li><a href="reference/audit-records.html"><span class="card-title">Audit record format</span><span class="card-text">Fields and record types.</span></a></li>
+        <li><a href="reference/table-properties.html"><span class="card-title">Table properties</span><span class="card-text">Properties nuna reads, sets or refuses.</span></a></li>
+        <li><a href="reference/glossary.html"><span class="card-title">Glossary</span><span class="card-text">Every term in section 6.4, defined in one or two sentences.</span></a></li>
+        <li><a href="reference/faq.html"><span class="card-title">Questions and answers</span><span class="card-text">Questions people ask, each answered in a paragraph with links.</span></a></li>
+        <li><a href="reference/release-notes.html"><span class="card-title">Release notes</span><span class="card-text">The current version (<code>0.1.0-SNAPSHOT</code>) and what each milestone added, in reader terms.</span></a></li>
+      </ul>
+      <h3 id="develop">Building from source</h3>
+      <ul class="cards">
+        <li><a href="develop/index.html"><span class="card-title">Build nuna from source</span><span class="card-text">JDK 25, Gradle, the fast build, building the images.</span></a></li>
+        <li><a href="develop/modules.html"><span class="card-title">Module map</span><span class="card-text">Each Gradle module and what it holds.</span></a></li>
+        <li><a href="develop/testing.html"><span class="card-title">How nuna is tested</span><span class="card-text">The fast and heavy builds, container tests, the engine matrix, nightly tests, bites, in reader terms.</span></a></li>
+      </ul>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

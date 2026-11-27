@@ -3,16 +3,16 @@ Module: catalog-server
 Test: ConsoleFilesCacheTest#aFileAnswersByAnEtagOfItsBytesAndNeverByLastModified
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
-index cce6843f..55ccb3f5 100644
+index 2e218070..eac328be 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
-@@ -60,8 +60,7 @@ public class UiWiring implements WebMvcConfigurer {
+@@ -78,8 +78,7 @@ public class UiWiring implements WebMvcConfigurer {
       */
      @Override
      public void addResourceHandlers(ResourceHandlerRegistry registry) {
 -        registry.addResourceHandler("/ui/*").addResourceLocations(FILES).setCacheControl(CacheControl.noCache())
 -                .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
 +        registry.addResourceHandler("/ui/*").addResourceLocations(FILES).setCacheControl(CacheControl.noCache());
+         registry.addResourceHandler("/docs/**").addResourceLocations(DOCS).setCacheControl(CacheControl.noCache())
+                 .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
      }
- 
-     /** A strong ETag of a file's bytes; the files are read from the jar, so each is hashed once. */

@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/opa">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OPA decisions · nuna docs</title>
+  <meta name="description" content="The three endpoints Trino's OPA access control calls to learn each user's row filter and column masks on a table, under /opa/v1.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>OPA decisions</h1>
+        <p class="lead">The three endpoints Trino's OPA access control calls to learn each user's row filter and column masks on a table, under <code>/opa/v1</code>.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The server answers these calls itself, in the form Trino's OPA access control expects; no OPA server sits between them. Trino points three settings of its <code>access-control.properties</code> here, and forwards each user's own catalog token as the extra credential <code>token</code>. <a href="../security/opa.html">Use OPA</a> shows the Trino side. The filters and masks come from the rules a grant admin sets with the <a href="row-column-rules.html">Row and column rules</a> API.</p>
+      <p>These endpoints take no <code>Authorization</code> header: Trino's calls to OPA carry no token of their own. What they answer depends only on the user's token inside the body, which the server verifies as it verifies any token, and they fail closed. They write no audit record and store nothing.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>OPA decision endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th><th scope="col">Trino setting</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST</code></td><td><a href="#post-opa-allow"><code>/opa/v1/allow</code></a></td><td>Allows every operation Trino asks about.</td><td><code>opa.policy.uri</code></td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-opa-row-filters"><code>/opa/v1/row-filters</code></a></td><td>Gives the user's row filter on one table.</td><td><code>opa.policy.row-filters-uri</code></td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-opa-column-masks"><code>/opa/v1/column-masks</code></a></td><td>Gives the user's mask on each column Trino asks about.</td><td><code>opa.policy.batch-column-masking-uri</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="how-the-server-decides">How the server decides</h2>
+      <p>Trino sends <code>{"input": {"context": {"identity": {…}}, "action": {…}}}</code>. For the two rule endpoints the server works out its answer in this order:</p>
+      <ol>
+        <li>It looks up the table's Trino catalog, ignoring case, in <a href="../configure/security.html#nuna-opa-catalogs"><code>nuna.opa.catalogs</code></a>. A Trino catalog not listed there gets no filter and no masks: name every Trino catalog that reads the server.</li>
+        <li>It reads the user's token from <code>input.context.identity.extraCredentials.token</code> and verifies it. Trino's own <code>user</code> and <code>groups</code> are ignored: the user and their groups come only from the token.</li>
+        <li>It finds the table in the warehouse the Trino catalog maps to. The warehouse is a catalog, or <code><var>catalog</var>@<var>ref</var></code> to read through a live branch or tag. The Trino schema name is split on dots into namespace levels, so <code>equities.daily</code> is the namespace <code>equities</code>, <code>daily</code>.</li>
+        <li>It takes the rules on the table for the user's groups.</li>
+      </ol>
+      <p>In a listed Trino catalog, the answer is closed when the token is missing or blank, when the server does not accept it, when the schema or table name is missing, or when the table does not exist or the user holds no grant on it or above it. Closed means no rows (the filter <code>false</code>) and every column <code>NULL</code>. The answer is the same for a table that does not exist as for one the user may not know of.</p>
+      <p>Rules from several groups add up:</p>
+      <ul>
+        <li>A table with no rules gets no filter and no masks.</li>
+        <li>A table with rules, none of them for the user's groups, gets the filter <code>false</code>: no rows.</li>
+        <li>The user's filters are joined with <code>OR</code>, each in brackets. A rule of theirs with no filter admits every row, so the answer then has no filter.</li>
+        <li>A column is masked only when every one of the user's rules masks it. If they all mask it the same way, that expression is the mask; if they differ, the mask is <code>NULL</code>.</li>
+      </ul>
+
+      <section class="endpoint">
+        <h3 id="post-opa-allow"><span class="method" data-method="POST">POST</span> <code>/opa/v1/allow</code></h3>
+        <p>Answers yes to every question, whatever the body holds. The server's own routes decide what a user may reach when Trino asks the catalog for a table, so OPA has nothing more to refuse.</p>
+        <h4 id="post-opa-allow-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>Always <code>{"result":true}</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-opa-allow-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/opa/v1/allow" -H "Content-Type: application/json" -d '{"input": {}}'</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"result":true}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-opa-row-filters"><span class="method" data-method="POST">POST</span> <code>/opa/v1/row-filters</code></h3>
+        <p>Gives the row filter the user gets on one table, Trino's <code>GetRowFilters</code> question.</p>
+        <h4 id="post-opa-row-filters-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>input.context.identity.extraCredentials.token</code></td><td>body</td><td>string</td><td>Yes</td><td>The user's own catalog token, which Trino forwards.</td></tr>
+              <tr><td><code>input.action.resource.table.catalogName</code></td><td>body</td><td>string</td><td>Yes</td><td>The Trino catalog.</td></tr>
+              <tr><td><code>input.action.resource.table.schemaName</code></td><td>body</td><td>string</td><td>Yes</td><td>The namespace levels, joined by dots.</td></tr>
+              <tr><td><code>input.action.resource.table.tableName</code></td><td>body</td><td>string</td><td>Yes</td><td>The table.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-opa-row-filters-body">Request body</h4>
+        <div class="code" data-lang="json" data-title="row-filters.json">
+<pre><code>{
+  "input": {
+    "context": {
+      "identity": {"user": "lee", "groups": [], "extraCredentials": {"token": "…"}}
+    },
+    "action": {
+      "operation": "GetRowFilters",
+      "resource": {"table": {"catalogName": "trading", "schemaName": "equities", "tableName": "fills"}}
+    }
+  }
+}</code></pre>
+        </div>
+        <h4 id="post-opa-row-filters-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>
+                <ul>
+                  <li><code>{"result":[{"expression":"<var>filter</var>"}]}</code>: the user's filter.</li>
+                  <li><code>{"result":[{"expression":"false"}]}</code>: no rows, because the answer is closed or none of the user's groups has a rule on a table that has rules.</li>
+                  <li><code>{"result":[]}</code>: no filter, because the table has no rules, a rule of the user's has no filter, or the Trino catalog is not in <code>nuna.opa.catalogs</code>.</li>
+                </ul>
+              </td></tr>
+              <tr><td><code>400</code></td><td><code>The body is not JSON</code> (<code>BadRequestException</code>).</td></tr>
+              <tr><td><code>503</code></td><td><code>The user's token could not be checked; retry later</code> (<code>ServiceUnavailableException</code>), with <code>Retry-After: 2</code>. The issuer's keys could not be fetched, so the server gives no answer and Trino fails the query rather than run it with rules that might be wrong.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-opa-row-filters-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/opa/v1/row-filters" \
+  -H "Content-Type: application/json" \
+  -d @row-filters.json</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"result":[{"expression":"desk = 'EQ'"}]}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-opa-column-masks"><span class="method" data-method="POST">POST</span> <code>/opa/v1/column-masks</code></h3>
+        <p>Gives the mask of each column Trino asks about, Trino's batched <code>GetColumnMask</code> question. Trino asks for every column of a table it reads in one batch, under the names its schema gives them. Column names are compared without regard to case. The answer lists only the columns that have a mask, each by its position in the request, counted from <code>0</code>.</p>
+        <p>When the user's rules mask a column the batch does not name, the rules and the schema Trino read disagree: the column has another name in that schema, for example in an older snapshot or on a branch. Masking by name would leave that column bare under its other name, so every column of that table is <code>NULL</code> instead.</p>
+        <h4 id="post-opa-column-masks-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>input.context.identity.extraCredentials.token</code></td><td>body</td><td>string</td><td>Yes</td><td>The user's own catalog token.</td></tr>
+              <tr><td><code>input.action.filterResources</code></td><td>body</td><td>array</td><td>Yes</td><td>One <code>{"column": {"catalogName", "schemaName", "tableName", "columnName", "columnType"}}</code> per column. The columns may come from several tables.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-opa-column-masks-body">Request body</h4>
+        <div class="code" data-lang="json" data-title="column-masks.json">
+<pre><code>{
+  "input": {
+    "context": {
+      "identity": {"user": "lee", "extraCredentials": {"token": "…"}}
+    },
+    "action": {
+      "operation": "GetColumnMask",
+      "filterResources": [
+        {"column": {"catalogName": "trading", "schemaName": "equities", "tableName": "fills",
+                    "columnName": "fill_id", "columnType": "bigint"}},
+        {"column": {"catalogName": "trading", "schemaName": "equities", "tableName": "fills",
+                    "columnName": "account_id", "columnType": "varchar"}}
+      ]
+    }
+  }
+}</code></pre>
+        </div>
+        <h4 id="post-opa-column-masks-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"result":[{"index":<var>n</var>,"viewExpression":{"expression":"<var>mask</var>"}}, …]}</code>, one entry per masked column. <code>{"result":[]}</code> when no column asked about is masked.</td></tr>
+              <tr><td><code>400</code></td><td><code>The body is not JSON</code> (<code>BadRequestException</code>).</td></tr>
+              <tr><td><code>503</code></td><td><code>The user's token could not be checked; retry later</code> (<code>ServiceUnavailableException</code>), with <code>Retry-After: 2</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-opa-column-masks-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/opa/v1/column-masks" \
+  -H "Content-Type: application/json" \
+  -d @column-masks.json</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"result":[{"index":1,"viewExpression":{"expression":"'***'"}}]}</code></pre>
+        </div>
+        <p class="gap">Not documented yet: the answer to a row-filter or column-mask request whose body is valid JSON but names no Trino catalog. No test covers it.</p>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+      <p>Every answer is one object with a single field, <code>result</code>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The result of each endpoint</caption>
+          <thead><tr><th scope="col">Endpoint</th><th scope="col"><code>result</code></th></tr></thead>
+          <tbody>
+            <tr><td><code>/opa/v1/allow</code></td><td><code>true</code>.</td></tr>
+            <tr><td><code>/opa/v1/row-filters</code></td><td>An array of at most one <code>{"expression"}</code>: the SQL predicate the user's rows must meet.</td></tr>
+            <tr><td><code>/opa/v1/column-masks</code></td><td>An array of <code>{"index", "viewExpression": {"expression"}}</code>: the position of the column in the request, and the SQL expression Trino shows in its place.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/opa.html">Use OPA</a>: wiring Trino's access control to these endpoints.</li>
+          <li><a href="../concepts/row-column-rules.html">Row filters and column masks</a>: flagged tables and how rules apply.</li>
+          <li><a href="row-column-rules.html">Row and column rules</a>: setting the rules these endpoints serve.</li>
+          <li><a href="engines.html">Engines</a>: registering Trino as a trusted engine, so it reaches a flagged table's files.</li>
+          <li><a href="../configure/security.html#nuna-opa-catalogs">Security settings</a>: <code>nuna.opa.catalogs</code>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaRoutes.java</code>, <code>OpaAnswers.java</code>, <code>OpaSettings.java</code> and <code>Authentication.java</code> in the same folder, <code>catalog-security/src/main/java/nuna/catalog/security/RowColumnPolicy.java</code>, <code>catalog-server/src/test/java/nuna/catalog/server/security/OpaAnswersTest.java</code>, <code>catalog-server/src/test/java/nuna/catalog/server/SecurityGateTest.java</code> and <code>demo/k8s/trino.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No example was run: the endpoints take only <code>POST</code>, and the demo was used read-only. The request bodies and answers follow <code>OpaAnswersTest</code> and <code>SecurityGateTest</code>, rewritten to the fictional estate.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

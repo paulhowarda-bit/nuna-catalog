@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/engines">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Engine compatibility · nuna docs</title>
+  <meta name="description" content="What each engine was tested doing against nuna: the version, and the result for each Iceberg feature, from the engine matrix that runs every night code changes.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Engine compatibility</h1>
+        <p class="lead">What each engine was tested doing against nuna: the version, and the result for each Iceberg feature, from the engine matrix that runs every night code changes.</p>
+        <p class="doc-meta"><span class="badge tested">Tested in the engine matrix</span></p>
+      </header>
+
+      <p>The engine matrix starts each engine in a container against a real nuna server and object store, and asserts each result below. Its seven tests (Spark, compaction, Kafka Connect, PyIceberg, the audit tables, branches and tags, SingleStore) all passed in the nightly run at commit <code>639b0da5</code>, on 2026-11-25. An engine or version not listed here has not been tested by nuna; it may well work, since nuna serves the standard API (<a href="../clients/other-engines.html">Other engines</a>).</p>
+
+      <h2 id="versions-tested">Versions tested</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Engine</th><th scope="col">Version</th><th scope="col">Iceberg library</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            <tr><td><a href="../clients/spark.html">Spark</a></td><td>4.1.4 (Scala 2.13, Java 21)</td><td><code>iceberg-spark-runtime-4.1_2.13</code> 1.12.0, <code>iceberg-aws-bundle</code> 1.12.0</td><td>Tested</td></tr>
+            <tr><td><a href="../clients/pyiceberg.html">PyIceberg</a></td><td>0.12.0, on Python 3.12, with <code>pyarrow</code></td><td>PyIceberg itself</td><td>Tested</td></tr>
+            <tr><td><a href="../clients/kafka-connect.html">Kafka Connect</a></td><td>Apache Kafka 4.2.2</td><td>Apache Iceberg sink connector 1.12.0</td><td>Tested</td></tr>
+            <tr><td><a href="../clients/singlestore.html">SingleStore</a></td><td>10.9.0</td><td>SingleStore's Iceberg pipelines</td><td>Tested</td></tr>
+            <tr><td><a href="../clients/trino.html">Trino</a></td><td>484 runs in the demo</td><td>Trino's Iceberg connector</td><td>Not tested by nuna</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="results">Results</h2>
+      <p>Each cell is what the test asserts. "Yes" means the engine did it against nuna and the result was checked; "Not tested" means no test tried it.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Feature results by engine</caption>
+          <thead><tr><th scope="col">Feature</th><th scope="col">Spark</th><th scope="col">PyIceberg</th><th scope="col">Kafka Connect</th><th scope="col">SingleStore</th></tr></thead>
+          <tbody>
+            <tr><td>Create, read and drop, format v2</td><td>Yes</td><td>Yes</td><td>Not tested</td><td>Reads</td></tr>
+            <tr><td>Create, read and drop, format v3</td><td>Yes</td><td>Yes; appends are refused by PyIceberg (<code>ValueError: Cannot write manifest for table version: 3</code>)</td><td>Yes: creates the table and writes to it</td><td>Reads</td></tr>
+            <tr><td>Nested namespaces (three levels)</td><td>Yes</td><td>Yes, each level created in turn</td><td>Yes</td><td>Not tested</td></tr>
+            <tr><td>Appends</td><td>Yes</td><td>Yes (v2)</td><td>Yes</td><td>Read-only</td></tr>
+            <tr><td>Row-level delete, update and merge, copy-on-write</td><td>Yes, v2 and v3</td><td>Delete, overwrite and upsert, v2</td><td>Not tested</td><td>Reads the result</td></tr>
+            <tr><td>Row-level delete, update and merge, merge-on-read</td><td>Yes: position deletes on v2, deletion vectors on v3</td><td>Reads Spark's</td><td>Not tested</td><td>Reads the result, deletion vectors included</td></tr>
+            <tr><td>Schema evolution</td><td>Yes: rename, drop, widen <code>int</code> to <code>bigint</code>, add a nested field, reorder</td><td>Yes</td><td>Yes: adds a column</td><td>Reads, by current names</td></tr>
+            <tr><td>Partition evolution and sort order</td><td>Yes</td><td>Reads Spark's</td><td>Not tested</td><td>Reads</td></tr>
+            <tr><td>Time travel</td><td>Yes: by snapshot id, timestamp and tag</td><td>Yes: by snapshot name and timestamp</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Table branches and tags, write-audit-publish</td><td>Yes: branch, tag, <code>fast_forward</code>, cherry-pick</td><td>Reads Spark's</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Catalog branches and tags (<code><var>catalog</var>@<var>ref</var></code>)</td><td>Yes: reads a tag; a write to a tag is refused; branch writes land on the branch and reach main after a merge</td><td>Yes</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Views</td><td>Yes: create, <code>CREATE OR REPLACE VIEW</code>, <code>ALTER VIEW … SET TBLPROPERTIES</code>; <code>ALTER VIEW … AS</code> is refused by Spark</td><td>Reads Spark's</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Statistics (<code>compute_table_stats</code>)</td><td>Yes</td><td>Reads the table</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Upgrade a table from v2 to v3</td><td>Yes</td><td>Reads the result</td><td>Not tested</td><td>Reads the result</td></tr>
+            <tr><td>Row lineage (v3)</td><td>Yes</td><td>Reads the table</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Column default values (v3)</td><td>Refused by Spark</td><td>Not tested</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Variant type (v3)</td><td>Yes</td><td>Cannot load the table (<code>Unsupported field type: 'variant'</code>)</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Geometry and geography types (v3)</td><td>Yes, with <code>spark.sql.geospatial.enabled=true</code></td><td>Cannot load the table</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td><code>CREATE OR REPLACE TABLE</code></td><td>Yes: history kept</td><td>Reads the result</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Maintenance procedures</td><td>Yes: <code>rewrite_data_files</code>, <code>rewrite_position_delete_files</code>, <code>rewrite_manifests</code>, <code>expire_snapshots</code>, <code>remove_orphan_files</code>, with the limits below</td><td>Not tested</td><td>Not tested</td><td>Reads the result</td></tr>
+            <tr><td>Audit tables</td><td>Yes: read</td><td>Yes: read</td><td>Not tested</td><td>Not tested</td></tr>
+            <tr><td>Upsert</td><td>Through <code>MERGE</code></td><td>Yes (<code>upsert</code>)</td><td>Not supported by the 1.12.0 sink</td><td>Read-only</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="limits-the-tests-found">Limits the tests found</h2>
+      <ul>
+        <li><code>expire_snapshots</code> commits, but leaves the expired files in place: vended credentials cannot delete objects. nuna's maintenance worker deletes them (<a href="../concepts/maintenance.html">Maintenance</a>).</li>
+        <li><code>remove_orphan_files</code> needs <code>prefix_listing =&gt; true</code>, since Spark's Hadoop file system has no <code>s3</code> scheme, and refuses an <code>older_than</code> within the last 24 hours.</li>
+        <li>A table's compaction run by nuna's maintenance worker, as a Spark job, rewrote 32 files into 4.</li>
+        <li>A write to a catalog tag is refused twice over: Spark refuses an <code>ALTER</code> itself, since the tag does not advertise the endpoint, and a data write fails at the object store, since a tag's credentials are read-only.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../clients/spark.html">Spark</a>: the settings the matrix used.</li>
+          <li><a href="../clients/pyiceberg.html">PyIceberg</a>: the settings and writes tested.</li>
+          <li><a href="../clients/other-engines.html">Other engines</a>: engines nuna has not tested.</li>
+          <li><a href="iceberg-support.html">Iceberg support</a>: format versions and endpoints served.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-tests-engines/src/test/java/nuna/catalog/engines/EngineMatrixTest.java</code>, the scripts and image definitions under <code>catalog-tests-engines/images/</code> (<code>spark/run.sh</code>, <code>spark/refs_matrix.py</code>, <code>python/pyiceberg_matrix.py</code>, <code>python/refs_matrix.py</code>, <code>kafka-connect/run.sh</code> and the Dockerfiles) and <code>gradle.properties</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The results are what the tests assert. That all seven passed was read from the nightly run's test report at commit <code>639b0da5</code> on 2026-11-25; the matrix was not run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

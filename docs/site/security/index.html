@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security · nuna docs</title>
+  <meta name="description" content="How the server protects every catalog, layer by layer, in the order a request meets them: its token, the grants of its groups, the rules on what it reads, the storage credentials it receives, and the audit record it leaves.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="section">
+      <header class="doc-head">
+        <h1>Security</h1>
+        <p class="lead">How the server protects every catalog, layer by layer, in the order a request meets them: its token, the grants of its groups, the rules on what it reads, the storage credentials it receives, and the audit record it leaves.</p>
+      </header>
+
+      <p>Read the pages in order to follow one request through the server. The server issues no tokens, holds no one's password and has no superuser: it trusts the identity providers you name, decides every request from grants to groups, and records what it allowed and what it refused. The last page lists every setting and deployment choice that tightens an install, each with a way to check it.</p>
+
+      <ul class="cards">
+        <li>
+          <a href="authentication.html">
+            <span class="card-title">Authentication</span>
+            <span class="card-text">How the server checks a bearer token, which issuers it trusts, and how an engine acts for the person using it.</span>
+          </a>
+        </li>
+        <li>
+          <a href="authorization.html">
+            <span class="card-title">Authorization</span>
+            <span class="card-text">How privileges, grants to groups and the roles set in the server's settings decide each request, and what the server refuses.</span>
+          </a>
+        </li>
+        <li>
+          <a href="opa.html">
+            <span class="card-title">Use OPA</span>
+            <span class="card-text">The decision endpoints the server answers for an engine's OPA access control, and how to wire Trino to them.</span>
+          </a>
+        </li>
+        <li>
+          <a href="row-column.html">
+            <span class="card-title">Row-level security and column masking</span>
+            <span class="card-text">How row filters and column masks reach the engine that applies them, and what the server withholds from every other engine.</span>
+          </a>
+        </li>
+        <li>
+          <a href="credential-vending.html">
+            <span class="card-title">Credential vending</span>
+            <span class="card-text">The short-lived storage credentials the server hands an engine for one table, what they allow, and what is recorded.</span>
+          </a>
+        </li>
+        <li>
+          <a href="encryption.html">
+            <span class="card-title">Encryption and keys</span>
+            <span class="card-text">Encryption in transit and at rest, and how a storage profile's KMS key is enforced on every write.</span>
+          </a>
+        </li>
+        <li>
+          <a href="what-is-audited.html">
+            <span class="card-title">What is audited</span>
+            <span class="card-text">Every action and refusal that leaves an audit record, by record type, and what leaves none.</span>
+          </a>
+        </li>
+        <li>
+          <a href="hardening.html">
+            <span class="card-title">Hardening checklist</span>
+            <span class="card-text">Every setting and deployment choice that tightens an install, each with how to check it.</span>
+          </a>
+        </li>
+      </ul>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

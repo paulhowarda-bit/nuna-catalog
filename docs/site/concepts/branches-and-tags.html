@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/branches-and-tags">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Catalog branches and tags · nuna docs</title>
+  <meta name="description" content="A catalog branch or tag is a named cut of a whole catalog, every namespace, table and view at one moment, which engines read, and on a branch write, through the warehouse catalog@ref.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Catalog branches and tags</h1>
+        <p class="lead">A catalog branch or tag is a named cut of a whole catalog, every namespace, table and view at one moment, which engines read, and on a branch write, through the warehouse <code>catalog@ref</code>.</p>
+      </header>
+
+      <figure class="diagram" id="fig-branch">
+        <svg viewBox="0 0 720 230" role="img" aria-labelledby="fig-branch-t fig-branch-d">
+          <title id="fig-branch-t">A catalog branch and its merge</title>
+          <desc id="fig-branch-d">Main moves from version 41 to 42. Branch dev is cut at version 41 and commits its own version 1 and 2 of the table. The merge moves main to the branch's metadata in one transaction.</desc>
+          <rect class="d-node" x="20" y="40" width="120" height="48" rx="10"/>
+          <text class="d-label" x="80" y="69">main v41</text>
+          <rect class="d-node" x="300" y="40" width="120" height="48" rx="10"/>
+          <text class="d-label" x="360" y="69">main v42</text>
+          <rect class="d-node" x="160" y="150" width="120" height="48" rx="10"/>
+          <text class="d-label" x="220" y="179">dev v1</text>
+          <rect class="d-node" x="330" y="150" width="120" height="48" rx="10"/>
+          <text class="d-label" x="390" y="179">dev v2</text>
+          <rect class="d-node d-accent" x="560" y="40" width="140" height="48" rx="10"/>
+          <text class="d-label" x="630" y="69">main after merge</text>
+          <path class="d-edge" d="M140 64H300" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M80 88V174H160" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="110" y="214">cut</text>
+          <path class="d-edge" d="M280 174H330" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M420 64H560" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M450 174L600 88" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="560" y="150">merge</text>
+        </svg>
+        <figcaption>A branch commits its own pointers; main does not move until the merge.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>A <a class="term" href="../reference/glossary.html#term-ref">ref</a> names a cut of a whole catalog: every namespace, and every table and view with its pointer, taken in one consistent read of the database. Nothing is copied; the cut records pointers to metadata files that already exist. A <a class="term" href="../reference/glossary.html#term-tag">tag</a> is read-only and never expires. A <a class="term" href="../reference/glossary.html#term-catalog-branch">catalog branch</a> can take commits, and can be merged into <a class="term" href="../reference/glossary.html#term-main">main</a>, the catalog itself.</p>
+      <p>Catalog refs are not Iceberg's table branches and table tags, which live inside one table's metadata file. A catalog branch spans every table of the catalog; a table branch is one table's own.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="naming">Reading through a ref</h3>
+      <p>An engine names a ref in its warehouse as <code><var>catalog</var>@<var>ref</var></code>, for example <code>trading@dev</code> or <code>trading@eod-2026-11-25</code>, and <code>/v1/config</code> answers with that prefix. On a tag the server advertises only the read endpoints; on a branch, the reads and the table commits. A write through a tag is refused with <code>400</code> "<var>operation</var> is refused on tag <var>tag</var> of catalog <var>catalog</var>: a tag is read-only". An unknown or expired ref is <code>404</code> <code>NoSuchWarehouseException</code>, for example "The given warehouse does not exist: trading@dev (catalog trading has no branch or tag dev)".</p>
+      <p>A ref name cannot hold <code>@</code> or <code>/</code>, cannot be <code>main</code>, and has at most 1,000 characters.</p>
+
+      <h3 id="commits-on-a-branch">Commits on a branch</h3>
+      <p>A commit through a branch writes the branch's own pointer for that table, whose version starts at 1, and a metadata file whose name is marked with the branch's id. Main does not move. Creates, drops, renames and namespace changes happen on main only and are refused on a branch with <code>400</code>. A branch-only writer's vended credentials write only beneath <code><var>table location</var>/branches/<var>branch id</var>/</code>. Namespace properties read through a ref are main's current ones.</p>
+
+      <h3 id="merging">Merging</h3>
+      <p>A merge brings every table the branch changed into main, all or nothing, in one database transaction. For each table:</p>
+      <ul>
+        <li>If main has not moved since the cut, main takes the branch's metadata.</li>
+        <li>If main has moved only by maintenance, such as snapshot expiry or a compaction's replaced files, the branch's changes are applied again on main's current metadata.</li>
+        <li>If main has moved in any other way, the merge is refused with <code>409</code> <code>RefMergeConflictException</code>.</li>
+      </ul>
+      <p>Each table's merge is judged as a commit on main, with main's rules, and needs <code>write</code> for data changes or <code>modify</code> for definition changes. Main gets its own copy of the metadata, not marked as a branch's, and the journal records the entry as <code>merge-branch</code>. A merge with <code>?dry-run=true</code> reports what it would do and changes nothing. A merge can change at most 100 tables (<code>nuna.refs.max-merge-tables</code>). A DR freeze refuses the merge, not the branch's own commits. After a merge, the branch is gone: "Branch dev is gone: merged, deleted or past its expiry".</p>
+
+      <h3 id="expiry">Expiry</h3>
+      <p>A branch expires after 30 days without a commit or a renewal, and in any case 180 days after it was created; owners are warned 7 days ahead. An expired branch keeps its name until the maintenance worker ends it. Tags never expire.</p>
+
+      <h3 id="what-a-ref-keeps">What a ref keeps</h3>
+      <p>Every file a ref names is kept: maintenance does not expire the snapshots or delete the files a ref reaches, and a dropped table that a ref names is not purged until no ref names it. A namespace that holds an object a ref names cannot be dropped (<code>409</code> <code>NamespaceNotEmptyException</code>). A principal with <code>manage-tags</code> can remove one object from every ref that names it.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>A ref's cut is consistent: it records every table as of one read of the database.</li>
+        <li>A merge publishes every changed table or none.</li>
+        <li>A tag reads the same data for as long as it exists.</li>
+        <li>A ref does not copy data, and does not protect files from the object store's own lifecycle rules.</li>
+        <li>A merge does not combine two lines of data changes: if main took another engine's commit, the merge is refused and you decide.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>The console's <a href="../console/branches-and-tags.html">Branches and tags page</a>.</li>
+        <li><a href="../api/refs.html#endpoints">Branches and tags API</a>, under <code>/management/v1/catalogs/<var>catalog</var>/refs</code>. Creating, renewing, deleting and merging need <code>create</code> on the catalog; listing and reading need any privilege in it.</li>
+        <li><a href="../configure/governance.html">Governance and refs settings</a>, for the limits below.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Ref limits and their settings</caption>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.refs.max-branches</code></td><td>50</td><td>Branches in one catalog. Past it, <code>409</code> <code>RefLimitException</code>.</td></tr>
+            <tr><td><code>nuna.refs.max-tags</code></td><td>1000</td><td>Tags in one catalog.</td></tr>
+            <tr><td><code>nuna.refs.branch-idle-expiry</code></td><td>30 days</td><td>Time without a commit or renewal before a branch expires.</td></tr>
+            <tr><td><code>nuna.refs.branch-max-life</code></td><td>180 days</td><td>A branch's longest life.</td></tr>
+            <tr><td><code>nuna.refs.expiry-warning</code></td><td>7 days</td><td>How long before expiry the warning is written.</td></tr>
+            <tr><td><code>nuna.refs.max-merge-tables</code></td><td>100</td><td>Tables one merge can change.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A ref's description has at most 200 characters. Keep the database replicas' clocks within an hour of each other.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../start/first-branch.html">Work on a catalog branch</a>: a branch on the demo, start to finish.</li>
+          <li><a href="../guides/branch-workflow.html">Write, audit and publish with a branch</a>: the write-audit-publish pattern.</li>
+          <li><a href="../guides/tag.html">Keep a point in time with a tag</a>: tag the catalog at end of day.</li>
+          <li><a href="commits.html">How a commit works</a>: the rules a merge is judged by.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>docs/refs.md</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java</code> and the refs settings class, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

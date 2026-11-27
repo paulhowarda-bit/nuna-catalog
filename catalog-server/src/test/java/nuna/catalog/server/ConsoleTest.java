@@ -68,10 +68,32 @@ class ConsoleTest {
         assertThat(response.statusCode()).isEqualTo(200);
         assertStrictPolicy(response, "connect-src 'self';");
         Map<String, Object> config = JsonPath.read(response.body(), "$");
-        assertThat(config).containsOnlyKeys("dev-token-login", "oidc");
+        assertThat(config).containsOnlyKeys("dev-token-login", "oidc", "docs-url");
         assertThat(config.get("dev-token-login")).isEqualTo(false);
+        assertThat(config.get("docs-url")).as("the documentation this server serves").isEqualTo("/docs/");
         assertThat(config.get("oidc")).isNull();
         assertThat(response.body().toLowerCase()).doesNotContain("secret");
+    }
+
+    @Test
+    void theDocumentationIsServedWithoutATokenUnderAPolicyThatAllowsNoConnections() throws Exception {
+        HttpResponse<String> home = get("/docs/", null);
+        assertThat(home.statusCode()).isEqualTo(200);
+        assertThat(home.body()).contains("nuna docs");
+        assertStrictPolicy(home, "img-src 'self' data:;");
+        assertThat(home.headers().firstValue("Content-Security-Policy")).hasValueSatisfying(policy ->
+                assertThat(policy).doesNotContain("connect-src"));
+        for (String path : List.of("/docs/console/table.html", "/docs/assets/docs.js", "/docs/assets/docs.css")) {
+            HttpResponse<String> response = get(path, null);
+            assertThat(response.statusCode()).as(path).isEqualTo(200);
+            assertStrictPolicy(response, "img-src 'self' data:;");
+        }
+        assertThat(get("/docs", null).statusCode()).isEqualTo(302);
+        // Its tools and design notes stay out of the jar; odd spellings are refused, never served.
+        assertThat(get("/docs/tools/check.py", null).statusCode()).isEqualTo(404);
+        for (String path : List.of("/docs/..%2Fv1%2Fconfig", "/docs/%2e%2e/v1/config")) {
+            assertThat(get(path, null).statusCode()).as(path).isIn(400, 404);
+        }
     }
 
     @Test

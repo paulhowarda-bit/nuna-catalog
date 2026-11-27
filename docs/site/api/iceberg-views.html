@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/iceberg-views">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iceberg REST: views · nuna docs</title>
+  <meta name="description" content="List, create, load, replace, rename, register and drop views, under /v1/{prefix}/namespaces/{namespace}/views.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Iceberg REST: views</h1>
+        <p class="lead">List, create, load, replace, rename, register and drop views, under <code>/v1/{prefix}/namespaces/{namespace}/views</code>.</p>
+      </header>
+
+      <p>A view is a stored query that engines expand when they read it. These are the standard's view endpoints; this page gives what nuna does differently. Views share their names with tables in a namespace, matched without regard to case. The catalog assigns each view's location, as it does a table's. Every write takes an <code>Idempotency-Key</code> and is audited. Through a branch, replacing a view changes only the branch's version; through a tag, only reads are served (<a href="iceberg-config.html#the-prefix">The prefix</a>). The examples use curl with <code>NUNA</code> and <code>TOKEN</code> set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</p>
+      <p>Loading a view gives no storage credentials and no ETag: a view has no data files.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>View endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-views"><code>/v1/{prefix}/namespaces/{namespace}/views</code></a></td><td>Lists the views in a namespace.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-views"><code>/v1/{prefix}/namespaces/{namespace}/views</code></a></td><td>Creates a view.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Loads a view.</td></tr>
+            <tr><td><code>HEAD</code></td><td><a href="#head-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Says whether a view exists.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Replaces a view with a new version.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-views-view"><code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></a></td><td>Drops a view, which can be restored until it is purged.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-views-rename"><code>/v1/{prefix}/views/rename</code></a></td><td>Renames or moves a view.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-register-view"><code>/v1/{prefix}/namespaces/{namespace}/register-view</code></a></td><td>Registers a view from a metadata file.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-views"><span class="method" data-method="GET">GET</span> <code>/v1/{prefix}/namespaces/{namespace}/views</code></h3>
+        <p>Lists the views in a namespace, with the same parameters and paging as <a href="iceberg-tables.html#get-tables">listing tables</a>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the namespace</span></p>
+        <h4 id="get-views-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"identifiers": [{"namespace": […], "name": "…"}, …], "next-page-token": <var>token or null</var>}</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>namespace</var></code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-views-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces/equities/views" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"identifiers": [{"namespace": ["equities"], "name": "open_orders"}], "next-page-token": null}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-views"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/views</code></h3>
+        <p>Creates a view from the standard's create-view request: <code>name</code>, <code>schema</code>, <code>view-version</code> and optional <code>properties</code>. A <code>location</code> in the request is not used: the catalog assigns one.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-views-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#load-view-result">load view result</a> of the new view.</td></tr>
+              <tr><td><code>400</code></td><td>The request is not valid, for example <code>Invalid view name: …</code>; or the prefix names a branch or tag.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: <var>namespace</var></code>.</td></tr>
+              <tr><td><code>409</code></td><td><code>View already exists: …</code>, or <code>Table with same name already exists: …</code> (<code>AlreadyExistsException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-views-view"><span class="method" data-method="GET">GET</span> <code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></h3>
+        <p>Loads a view's metadata. Through a branch or tag, it is that ref's version. Each load is recorded as a read.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the view</span> <span class="badge audited">Audited</span></p>
+        <h4 id="get-views-view-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#load-view-result">load view result</a>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the view but not select.</td></tr>
+              <tr><td><code>404</code></td><td><code>View does not exist: <var>namespace</var>.<var>view</var></code> (<code>NoSuchViewException</code>), also when you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-views-view-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces/equities/views/open_orders" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="head-views-view"><span class="method" data-method="HEAD">HEAD</span> <code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></h3>
+        <p>Says whether a view exists, with no body. A view you hold nothing on answers as missing.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the view</span></p>
+        <h4 id="head-views-view-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>It exists.</td></tr>
+              <tr><td><code>404</code></td><td>It does not exist, or you may not see it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-views-view"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></h3>
+        <p>Replaces a view: the standard's commit-view request, with requirements and updates, usually adding a new version and making it current. On main, replacing a view that does not exist creates it, and needs create on the namespace. Through a branch, it changes the branch's version of a view the branch holds.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the view</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-views-view-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#load-view-result">load view result</a> after the change.</td></tr>
+              <tr><td><code>400</code></td><td>The request is not valid, or the prefix names a tag.</td></tr>
+              <tr><td><code>403</code></td><td>You lack modify.</td></tr>
+              <tr><td><code>404</code></td><td><code>View does not exist: …</code>; through a branch, also for a view the branch does not hold.</td></tr>
+              <tr><td><code>409</code></td><td>A requirement failed (<code>CommitFailedException</code>): load the view again and redo the change.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-views-view"><span class="method" data-method="DELETE">DELETE</span> <code>/v1/{prefix}/namespaces/{namespace}/views/{view}</code></h3>
+        <p>Drops a view. As with tables, the drop is soft: the view can be restored until it is purged, <code>nuna.rest.drop-retention</code> after the drop.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the view</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-views-view-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>Dropped.</td></tr>
+              <tr><td><code>400</code></td><td>The prefix names a branch or tag.</td></tr>
+              <tr><td><code>403</code></td><td>You lack modify, or the view is under a legal hold.</td></tr>
+              <tr><td><code>404</code></td><td><code>View does not exist: …</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-views-rename"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/views/rename</code></h3>
+        <p>Renames a view, or moves it to another namespace of the same catalog, with the same body as <a href="iceberg-tables.html#post-tables-rename">renaming a table</a>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the view and <code>create</code> on the target namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-views-rename-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>Renamed.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid rename: source and destination are required</code>, or the prefix names a branch or tag.</td></tr>
+              <tr><td><code>404</code></td><td>The view or the target namespace does not exist.</td></tr>
+              <tr><td><code>409</code></td><td><code>Cannot rename <var>source</var> to <var>destination</var>. View already exists</code>, or <code>… Table already exists</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-register-view"><span class="method" data-method="POST">POST</span> <code>/v1/{prefix}/namespaces/{namespace}/register-view</code></h3>
+        <p>Registers a view whose metadata file already exists, at the location the catalog assigns for its UUID. The file a dropped or unregistered view left behind brings that view back, in the namespace it left. The body is <code>{"name": "…", "metadata-location": "…"}</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-register-view-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#load-view-result">load view result</a>.</td></tr>
+              <tr><td><code>400</code></td><td>The file is not at the location the catalog assigns, or the prefix names a branch or tag.</td></tr>
+              <tr><td><code>404</code></td><td>The namespace or the metadata file does not exist.</td></tr>
+              <tr><td><code>409</code></td><td>The name is taken, or another table or view holds the file's UUID (<code>AlreadyExistsException</code>); or the dropped view's restore window has closed (<code>UndropWindowClosedException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+      <h3 id="load-view-result">Load view result</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>metadata-location</code></td><td>string</td><td>The view's current metadata file.</td></tr>
+            <tr><td><code>metadata</code></td><td>object</td><td>The view metadata, as the Iceberg view spec defines it.</td></tr>
+            <tr><td><code>labels</code></td><td>object</td><td>Only when set: <code>{"object-labels": {"classification", "owner", "retention-class"}}</code>, from the view's governance attributes.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The answer has no <code>config</code>: nuna sends no client settings with a view.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="iceberg-tables.html">Iceberg REST: tables</a>: the tables views read.</li>
+          <li><a href="../reference/engines.html">Engine compatibility</a>: which engines create and replace views.</li>
+          <li><a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml">The Iceberg REST catalog standard</a>: the view endpoints' full definition.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/ViewRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/MetadataViews.java</code> and iceberg-core 1.12.0's <code>LoadViewResponseParser</code>, which leaves out an empty <code>config</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The listing's shape was captured from the local demo; the demo held no views, so no view was loaded or changed.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

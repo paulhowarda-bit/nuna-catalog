@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/kafka-connect">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kafka Connect · nuna docs</title>
+  <meta name="description" content="Write Kafka topics into nuna tables with the Apache Iceberg sink connector, which creates the tables, evolves their schemas and writes with vended credentials. It only appends: upsert is not supported.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Kafka Connect</h1>
+        <p class="lead">Write Kafka topics into nuna tables with the Apache Iceberg sink connector, which creates the tables, evolves their schemas and writes with vended credentials. It only appends: upsert is not supported.</p>
+        <p class="doc-meta"><span class="badge for">For engine users</span> <span class="badge tested">Tested in the engine matrix</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Kafka Connect with the Apache Iceberg sink connector on its plugin path. The engine matrix tests Kafka 4.2.2 with the sink 1.12.0: <code>iceberg-kafka-connect</code>, <code>iceberg-parquet</code>, <code>iceberg-orc</code>, <code>iceberg-aws</code> and <code>iceberg-aws-bundle</code>, with Hadoop's client libraries.</li>
+        <li>Put <code>iceberg-orc</code> on the plugin path even though the sink writes Parquet. Iceberg 1.12's writers register Parquet, Avro and ORC together; without ORC, none registers and nothing is written.</li>
+        <li>An access token in <code>NUNA_TOKEN</code> (<a href="tokens.html">Get a token</a>), whose groups hold <code>create</code> on the namespace the sink creates tables in, and <code>write</code> and <code>modify</code> on its tables: a schema change needs <code>modify</code> (<a href="../reference/privileges.html">Privileges</a>).</li>
+      </ul>
+
+      <h2 id="configure-the-sink">Configure the sink</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Set the worker to flush offsets every second.</p>
+          <div class="code" data-lang="properties" data-title="Worker properties, the lines that matter">
+<pre><code>value.converter=org.apache.kafka.connect.json.JsonConverter
+value.converter.schemas.enable=false
+offset.flush.interval.ms=1000</code></pre>
+          </div>
+          <p>Connect polls an idle sink task about once per offset flush, 60 seconds by default, and the Iceberg sink reads its control topic only then. At that pace its control consumer misses the group join and every commit times out.</p>
+        </li>
+        <li>
+          <p class="step-title">Configure the connector with the nuna catalog.</p>
+          <div class="code" data-lang="properties" data-title="iceberg-sink.properties">
+<pre><code>name=fills-sink
+connector.class=org.apache.iceberg.connect.IcebergSinkConnector
+tasks.max=1
+topics=fills
+iceberg.tables=equities.fills
+iceberg.tables.auto-create-enabled=true
+iceberg.tables.evolve-schema-enabled=true
+iceberg.control.topic=fills-control
+iceberg.control.commit.interval-ms=2000
+iceberg.catalog.type=rest
+iceberg.catalog.uri=https://nuna.example
+iceberg.catalog.warehouse=trading
+iceberg.catalog.token=${NUNA_TOKEN}
+iceberg.catalog.header.X-Iceberg-Access-Delegation=vended-credentials
+iceberg.catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO</code></pre>
+          </div>
+          <p><code>iceberg.catalog.*</code> are Iceberg's REST catalog properties with a prefix: <code>warehouse</code> names the nuna catalog, and a renewing token uses <code>iceberg.catalog.credential</code> and <code>iceberg.catalog.oauth2-server-uri</code> in place of <code>token</code> (<a href="tokens.html#let-an-engine-renew-its-own-token">Let an engine renew its own token</a>). How <code>${NUNA_TOKEN}</code> is filled in depends on how you run Connect: a config provider, or the shell that writes the file.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The table appears and fills</p>
+        <p>Produce a few records, wait for the commit interval, then load the table: <code>curl -sS "$NUNA/v1/trading/namespaces/equities/tables/fills" -H "Authorization: Bearer $TOKEN" -H "X-Iceberg-Access-Delegation: none"</code>. The newest snapshot's <code>total-records</code> counts the records.</p>
+      </aside>
+
+      <h2 id="what-was-tested">What was tested</h2>
+      <p>The engine matrix runs the sink against nuna every night code changes. It produces three JSON records; the sink creates the namespace (three levels deep) and a format version 3 table, and commits the three records. A fourth record with a new field makes the sink add a column. The test then reads the table through the API and drops it.</p>
+
+      <h2 id="upsert-is-not-supported">Upsert is not supported</h2>
+      <p>The Apache Iceberg 1.12.0 sink has no upsert or change-data mode: it writes only appends. <code>iceberg.tables.default-id-columns</code> sets identifier fields on the tables it creates and nothing more. To apply updates and deletes from a topic, land it with the sink, then merge it into the target table with Spark.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>The connector runs but no snapshot appears</td><td><code>iceberg-orc</code> is missing from the plugin path, or the worker flushes offsets too seldom.</td><td>Add <code>iceberg-orc</code>; set <code>offset.flush.interval.ms=1000</code>.</td></tr>
+            <tr><td><code>Not authorized: the bearer token is missing or was not accepted</code></td><td>The token expired or was refused.</td><td>Use a renewing token for a long-running connector.</td></tr>
+            <tr><td>A <code>403</code> on a new column</td><td>A schema change needs <code>modify</code> on the table.</td><td>Ask a grant admin for <code>modify</code>, or turn off <code>iceberg.tables.evolve-schema-enabled</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/engines.html">Engine compatibility</a>: what each engine was tested doing.</li>
+          <li><a href="spark.html">Spark</a>: merging landed records into a table.</li>
+          <li><a href="https://iceberg.apache.org/docs/1.12.0/kafka-connect/">Iceberg's Kafka Connect sink</a>: every connector setting.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-tests-engines/images/kafka-connect/run.sh</code>, <code>catalog-tests-engines/images/kafka-connect/pom.xml</code>, <code>catalog-tests-engines/images/kafka-connect/Dockerfile</code>, <code>catalog-tests-engines/src/test/java/nuna/catalog/engines/EngineMatrixTest.java</code> and <code>catalog-tests-engines/README.md</code> (Kafka Connect upsert), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The settings are the engine matrix's, with this site's names. The matrix passed in the nightly run at commit <code>639b0da5</code> on 2026-11-25; Connect was not run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

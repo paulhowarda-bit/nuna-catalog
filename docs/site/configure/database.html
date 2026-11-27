@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/database">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Database settings · nuna docs</title>
+  <meta name="description" content="Name the catalog's database and how the server reaches it, and read what the start-up self-check refuses.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Database settings</h1>
+        <p class="lead">Name the catalog's database and how the server reaches it, and read what the start-up self-check refuses.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>One deployment uses one database, named by <code>nuna.database.backend</code> when it is installed. PostgreSQL, CockroachDB and Oracle are reached through Spring Boot's <code>spring.datasource.*</code> keys; MongoDB through <code>nuna.database.mongodb.uri</code>, with no JDBC database at all. Before it takes a request, and before it changes anything in the database, every server runs the database's self-check and refuses to start while it reports a finding.</p>
+
+      <h2 id="nuna-database-group">nuna.database</h2>
+
+      <section class="setting">
+        <h3 id="nuna-database-backend"><code>nuna.database.backend</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>enumeration</dd>
+          <dt>Default</dt><dd><code>postgresql</code></dd>
+          <dt>Allowed values</dt><dd><code>postgresql</code>, <code>oracle</code>, <code>mongodb</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_DATABASE_BACKEND</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.database.backend</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Which database holds the catalog:</p>
+        <ul>
+        <li><code>postgresql</code>: PostgreSQL or CockroachDB, through <code>spring.datasource.*</code>. The server tells the two apart by what <code>version()</code> answers, and runs the self-check of the one it finds.</li>
+        <li><code>oracle</code>: Oracle single instance, RAC or Exadata, through <code>spring.datasource.*</code>.</li>
+        <li><code>mongodb</code>: a MongoDB replica set, through <code>nuna.database.mongodb.uri</code>. The server then leaves out Spring Boot's DataSource, so it needs no <code>spring.datasource.url</code>.</li>
+      </ul>
+        <p>Choose it once, when the deployment is installed: nuna has no way to move a catalog from one database to another. The first server of a release migrates the database's schema after the self-check passes.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-database-allow-unsafe"><code>nuna.database.allow-unsafe</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>set of strings</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Allowed values</dt><dd>finding codes from the table below</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_DATABASE_ALLOWUNSAFE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.database.allow-unsafe</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The self-check findings the server starts despite, each by its code, such as <code>[pg.no-sync-standby]</code>. Each finding allowed is logged as a warning at start-up, <code>The catalog's database is unsafe, allowed by nuna.database.allow-unsafe: <var>code</var>: <var>detail</var></code>, and shown in the Store panel of the console's health page. Any finding not named still stops the server.</p>
+        <p>Only a test or demo database on a single node needs it. Leave it empty in production. The codes are in <a href="#self-check-findings">Self-check findings</a>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-database-mongodb-uri"><code>nuna.database.mongodb.uri</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a MongoDB connection string)</dd>
+          <dt>Default</dt><dd>none (required when <code>nuna.database.backend</code> is <code>mongodb</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_DATABASE_MONGODB_URI</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: a key named <code>nuna.database.mongodb.uri</code> in the Secret the chart mounts as a config tree (<a href="helm-values.html#nuna-catalog-secrets"><code>secrets.existingSecret</code> or <code>secrets.values</code></a>)</dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The MongoDB replica set's connection string. It must name the catalog's database and set <code>socketTimeoutMS</code>, which bounds every wait on the database. It carries the password, so it belongs in the deployment's Secret, never in <code>config</code>.</p>
+        <p>The server refuses to start without it when the backend is <code>mongodb</code>, with <code>nuna.database.mongodb.uri is required when nuna.database.backend is mongodb</code>; without a database name, with <code>nuna.database.mongodb.uri must name the catalog's database, as in mongodb://h1,h2,h3/catalog?replicaSet=rs0&amp;socketTimeoutMS=30000</code>; and without a positive <code>socketTimeoutMS</code>, with <code>nuna.database.mongodb.uri must set socketTimeoutMS, which bounds every wait on the database</code>. The messages never quote the string, since it holds a password.</p>
+        <p>The catalog's MongoDB role needs <code>clusterMonitor</code> besides <code>readWrite</code> on the database, so that the self-check can read the replica set's configuration.</p>
+      </section>
+
+      <h2 id="spring-datasource-keys">Spring datasource keys</h2>
+
+      <p>These are Spring Boot's own keys. nuna reads them on PostgreSQL, CockroachDB and Oracle, and ignores them on MongoDB. Spring Boot's other <code>spring.datasource.hikari.*</code> keys, such as the pool size, keep Spring Boot's defaults: nuna sets none of them.</p>
+
+      <section class="setting">
+        <h3 id="spring-datasource-url"><code>spring.datasource.url</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a JDBC URL)</dd>
+          <dt>Default</dt><dd>none (required unless the backend is <code>mongodb</code>)</dd>
+          <dt>Environment variable</dt><dd><code>SPRING_DATASOURCE_URL</code></dd>
+          <dt>Helm</dt><dd><code>config.spring.datasource.url</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the catalog's database is:</p>
+        <ul>
+        <li>PostgreSQL and CockroachDB: <code>jdbc:postgresql://<var>host</var>:<var>port</var>/<var>database</var></code>, with any TLS parameters after a <code>?</code>.</li>
+        <li>Oracle: <code>jdbc:oracle:thin:@//<var>host</var>:<var>port</var>/<var>service</var></code>. The service is the catalog's own, with <code>COMMIT_OUTCOME = TRUE</code> (Transaction Guard) and no <code>FAILOVER_TYPE</code>, so the driver never replays a transaction. The self-check refuses any other.</li>
+      </ul>
+        <p>The URL must reach the primary. The catalog chart refuses to render without it unless the backend is <code>mongodb</code>: <code>config.spring.datasource.url is required: the catalog's database</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="spring-datasource-username"><code>spring.datasource.username</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>SPRING_DATASOURCE_USERNAME</code></dd>
+          <dt>Helm</dt><dd><code>config.spring.datasource.username</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The database role the catalog signs in as. What that role needs is on <a href="../install/postgresql.html">Use PostgreSQL</a>, <a href="../install/cockroachdb.html">Use CockroachDB</a> and <a href="../install/oracle.html">Use Oracle</a>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="spring-datasource-password"><code>spring.datasource.password</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>SPRING_DATASOURCE_PASSWORD</code></dd>
+          <dt>Helm</dt><dd><code>secrets</code>: the key <code>spring.datasource.password</code> in the config tree Secret</dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The role's password. It is secret: put it in the Secret the chart mounts as a config tree, as the key <code>spring.datasource.password</code>, never in <code>config</code>.</p>
+        <p>On PostgreSQL the catalog can sign in by a client certificate instead, and its role then has no password: leave this unset and name the certificate files in the URL (<a href="#example-postgresql-client-certificate">the example below</a>).</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="spring-datasource-hikari-data-source-properties-oracle-jdbc-readtimeout"><code>spring.datasource.hikari.data-source-properties.oracle.jdbc.ReadTimeout</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer (milliseconds)</dd>
+          <dt>Default</dt><dd>none: the Oracle driver waits without limit</dd>
+          <dt>Environment variable</dt><dd>none: an environment variable cannot keep the key's capitals</dd>
+          <dt>Helm</dt><dd><code>config.spring.datasource.hikari.data-source-properties.oracle.jdbc.ReadTimeout</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Oracle only: the driver's read timeout, which bounds every wait on the database. Set it in YAML, which keeps the key's capitals.</p>
+      </section>
+
+      <h2 id="self-check-findings">Self-check findings</h2>
+
+      <p>Each server checks the database's safety settings before it migrates or serves. A finding stops the server with <code>The catalog's database is unsafe, so the server does not start</code>, followed by each finding's code and detail, and the advice to make the database safe or, for a test or demo database only, to name each code in <code>nuna.database.allow-unsafe</code>. A self-check that cannot run, because the role lacks a right it needs, stops the server too, and the server has changed nothing in the database. The codes, as the code reports them:</p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Self-check finding codes</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Database</th><th scope="col">Reported when</th></tr></thead>
+          <tbody>
+            <tr><td><code>pg.sync-commit-off</code></td><td>PostgreSQL</td><td><code>synchronous_commit</code> is neither <code>on</code> nor <code>remote_apply</code>.</td></tr>
+            <tr><td><code>pg.no-sync-standby</code></td><td>PostgreSQL</td><td><code>synchronous_standby_names</code> is empty, or no standby streams in <code>sync</code> or <code>quorum</code> state. The role needs <code>pg_monitor</code> to see the standbys.</td></tr>
+            <tr><td><code>pg.fsync-off</code></td><td>PostgreSQL</td><td><code>fsync</code> or <code>full_page_writes</code> is <code>off</code>.</td></tr>
+            <tr><td><code>pg.commit-cancel-timeout</code></td><td>PostgreSQL</td><td><code>statement_timeout</code> or <code>idle_in_transaction_session_timeout</code> is not <code>0</code>: a timeout can cancel a COMMIT's wait for the standby.</td></tr>
+            <tr><td><code>crdb.replicas</code></td><td>CockroachDB</td><td>A zone holding the catalog's database or one of its tables has fewer than 3 voting replicas.</td></tr>
+            <tr><td><code>crdb.fsync-off</code></td><td>CockroachDB</td><td><code>kv.raft_log.synchronization.unsafe.disabled</code> is not <code>false</code>, or the role cannot read it (it needs <code>VIEWCLUSTERSETTING</code>).</td></tr>
+            <tr><td><code>crdb.read-committed-off</code></td><td>CockroachDB</td><td>A READ COMMITTED transaction runs at another isolation: set <code>sql.txn.read_committed_isolation.enabled</code> to <code>true</code>.</td></tr>
+            <tr><td><code>ora.no-data-guard</code></td><td>Oracle</td><td>No Data Guard standby is synchronized in MAXIMUM AVAILABILITY or MAXIMUM PROTECTION.</td></tr>
+            <tr><td><code>ora.no-transaction-guard</code></td><td>Oracle</td><td>The catalog's service has no <code>COMMIT_OUTCOME = TRUE</code>.</td></tr>
+            <tr><td><code>ora.commit-replay</code></td><td>Oracle</td><td>The service has a <code>FAILOVER_TYPE</code> that replays transactions (Application Continuity).</td></tr>
+            <tr><td><code>ora.commit-nowait</code></td><td>Oracle</td><td>COMMIT does not wait for its redo to be written (<code>COMMIT_WAIT</code> is set to something other than <code>WAIT</code>).</td></tr>
+            <tr><td><code>ora.linguistic-sort</code></td><td>Oracle</td><td><code>NLS_SORT</code> is not <code>BINARY</code>. The driver sets the session's language from the JVM's locale and <code>NLS_SORT</code> follows it; an English locale gives <code>BINARY</code>.</td></tr>
+            <tr><td><code>ora.journal-job-down</code></td><td>Oracle</td><td>The scheduler job <code>JOURNAL_PARTITIONS_AHEAD</code> cannot run, or its last runs failed, so a month's first commit would create its own journal partition.</td></tr>
+            <tr><td><code>mongo.not-replica-set</code></td><td>MongoDB</td><td>The server is not a replica set member.</td></tr>
+            <tr><td><code>mongo.too-few-voters</code></td><td>MongoDB</td><td>The replica set has fewer than 3 voting data-bearing members.</td></tr>
+            <tr><td><code>mongo.weak-write-concern</code></td><td>MongoDB</td><td>The default write concern is not majority, or majority writes are not journaled (<code>writeConcernMajorityJournalDefault</code>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="examples">Examples</h2>
+
+      <h3 id="example-postgresql-password">PostgreSQL with a password</h3>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://db.example:5432/nuna
+      username: nuna_catalog
+  nuna:
+    database:
+      backend: postgresql
+secrets:
+  existingSecret: nuna-catalog-secrets</code></pre>
+      </div>
+
+      <p>The Secret holds the password under the key <code>spring.datasource.password</code>:</p>
+
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-catalog-secrets \
+  --from-literal=spring.datasource.password="$DB_PASSWORD"</code></pre>
+      </div>
+
+      <h3 id="example-postgresql-client-certificate">PostgreSQL with a client certificate</h3>
+
+      <p>The role has no password. The chart mounts the Secret named in <code>databaseTls.secretName</code> at <code>/etc/nuna/db-tls</code>, apart from the config tree, and the URL names its three files. The key is PKCS #8 DER, and the driver refuses a key file others can read, which is why the chart mounts the files with mode <code>0440</code>.</p>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://db.example:5432/nuna?sslmode=verify-full&amp;sslrootcert=/etc/nuna/db-tls/ca.crt&amp;sslcert=/etc/nuna/db-tls/client.crt&amp;sslkey=/etc/nuna/db-tls/client.pk8
+      username: nuna_catalog
+databaseTls:
+  secretName: nuna-catalog-db-tls</code></pre>
+      </div>
+
+      <h3 id="example-oracle">Oracle</h3>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  spring:
+    datasource:
+      url: jdbc:oracle:thin:@//db.example:1521/nuna_catalog
+      username: nuna_catalog
+      hikari:
+        data-source-properties:
+          oracle.jdbc.ReadTimeout: 60000
+  nuna:
+    database:
+      backend: oracle</code></pre>
+      </div>
+
+      <h3 id="example-mongodb">MongoDB</h3>
+
+      <p>Leave <code>spring.datasource</code> empty and put the connection string in the Secret:</p>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    database:
+      backend: mongodb
+secrets:
+  existingSecret: nuna-catalog-secrets</code></pre>
+      </div>
+
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-catalog-secrets \
+  --from-literal=nuna.database.mongodb.uri="mongodb://$MONGO_USER:$MONGO_PASSWORD@db1.example,db2.example,db3.example/nuna?replicaSet=rs0&amp;socketTimeoutMS=60000"</code></pre>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/databases.html">Choosing a database</a>: what each database needs and how commits are decided on it</li>
+          <li><a href="../install/postgresql.html">Use PostgreSQL</a>: the role, its grants and TLS, step by step</li>
+          <li><a href="../install/mongodb.html">Use MongoDB</a>: the replica set and role nuna needs</li>
+          <li><a href="../operate/health.html">Health checks</a>: where the start-up self-check shows once the server runs</li>
+          <li><a href="helm-values.html#nuna-catalog">Helm chart values</a>: the <code>databaseTls</code> and <code>secrets</code> values</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code>, <code>catalog-server/src/main/resources/nuna/ui/health.js</code>, <code>catalog-server/src/main/java/nuna/catalog/server/MongodbHasNoDataSource.java</code>, <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/SelfChecks.java</code>, <code>catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java</code>, <code>catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/JournalJob.java</code>, <code>catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java</code> and <code>deploy/helm/nuna-catalog/</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the catalog chart.</p>
+        <p>No server was started against these databases for this page, and the <code>kubectl</code> commands were not run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

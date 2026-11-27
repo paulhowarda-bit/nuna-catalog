@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/branches-and-tags">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Branches and tags page · nuna docs</title>
+  <meta name="description" content="The catalog's branches and tags: listing them, reading through one, making, renewing, merging and deleting them, and the limits and refusals.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Branches and tags page</h1>
+        <p class="lead">The Branches and tags page answers, for engine users and anyone reviewing changes, which catalog branches and tags exist, what each has changed, whether a branch can merge into main, and how to make, renew, merge or delete one.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-refs"><img src="../img/shots/console-refs-light.png" data-dark="../img/shots/console-refs-dark.png" width="1440" height="900" alt="The Branches and tags page of lakehouse: figures for open branches, tags, refs expiring within seven days and tables changed on branches; the timeline with main and branch @dev; and the table listing branch @dev with two changed tables and tag @sample."><figcaption>The Branches and tags page with one branch and one tag.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>Anyone who may see the catalog reads its branches and tags. Making, renewing, merging and deleting need create on the catalog; a merge also needs write on each table it moves (modify for a view). Without create the page says "You can read every branch and tag here. Making, renewing, merging or deleting one needs create on <var>catalog</var>; your groups (<var>groups</var>) don't hold it. Ask a grant admin." <b class="ui">Ended lately</b> and the <b class="ui">Record</b> tab appear only to those who read the audit feed.</p>
+
+      <h2 id="list">The list</h2>
+      <p>The title is <b class="ui">Branches and tags in <var>catalog</var></b>: "A branch is the whole catalog at a point, taking commits of its own until you merge it into main. A tag keeps the catalog as it was, read-only." <b class="ui">Make a branch or tag</b> opens the <a href="#make-branch-or-tag">make dialog</a>.</p>
+      <p>Four figures: <b class="ui">Open branches</b> (of the number allowed), <b class="ui">Tags</b>, <b class="ui">Expiring within <var>N</var> days</b> and <b class="ui">Tables changed on branches</b> ("a merge moves at most <var>N</var>"). <b class="ui">Every ref on one line</b> draws each ref against main, branches running to their expiry.</p>
+      <p>The table <b class="ui">Branches and tags</b>, filtered by <b class="ui">All</b>, <b class="ui">Branches</b> or <b class="ui">Tags</b>, gives each ref's <b class="ui">Ref</b>, <b class="ui">Made</b>, <b class="ui">Expires</b> (<b class="ui">never</b> for a tag) and <b class="ui">Changed tables</b>, with <b class="ui">Read</b>, <b class="ui">Merge…</b>, <b class="ui">Renew</b> and delete.</p>
+      <p>With none: <b class="ui">No branch or tag in <var>catalog</var> yet</b>. "Engines read a ref as a warehouse of its own: <var>catalog</var>@&lt;name&gt;." At the branch limit: "<var>catalog</var> holds <var>N</var> of <var>max</var> open branches. A new branch is refused until one is merged, deleted or expires. Tags are counted apart."</p>
+      <p><b class="ui">Ended lately</b> lists refs that <b class="ui">Expired</b>, were <b class="ui">Merged</b> or <b class="ui">Deleted</b>, from the audit feed. <b class="ui">Limits and expiry</b> gives this deployment's settings: a branch expires a set number of days after its last commit or renewal and never later than a set number after it was made, with a warning on the change stream beforehand; a tag never expires. "Cleanup keeps every file any ref reaches. Maintenance runs on main only."</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The limits and their defaults</caption>
+          <thead><tr><th scope="col">Limit</th><th scope="col">Setting</th><th scope="col">Default</th></tr></thead>
+          <tbody>
+            <tr><td>Open branches per catalog</td><td><code>nuna.refs.max-branches</code></td><td>50</td></tr>
+            <tr><td>Tags per catalog</td><td><code>nuna.refs.max-tags</code></td><td>1000</td></tr>
+            <tr><td>A branch expires after its last commit or renewal</td><td><code>nuna.refs.branch-idle-expiry</code></td><td>30 days</td></tr>
+            <tr><td>A branch's whole life</td><td><code>nuna.refs.branch-max-life</code></td><td>180 days</td></tr>
+            <tr><td>Warning before expiry</td><td><code>nuna.refs.expiry-warning</code></td><td>7 days</td></tr>
+            <tr><td>Tables one merge moves</td><td><code>nuna.refs.max-merge-tables</code></td><td>100</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="reading-through-branch-or-tag">Reading through a branch or tag</h2>
+      <p>The <b class="ui">Reading</b> chip in the header switches the Catalog, namespace, table and view pages to a ref. Its menu lists main (<b class="ui">the catalog as it is now</b>), then <b class="ui">Branches</b> and <b class="ui">Tags</b>, each with <b class="ui">What changed</b> or <b class="ui">Its page</b>. Other pages say <b class="ui">This page shows main only</b>.</p>
+      <p>While you read through a ref, a band says so. For a tag: "Reading the tag @<var>name</var>: <var>catalog</var> as it was at <var>point</var>. Read-only: no engine and no console page can change anything through it." For a branch: how many tables changed on it, that every other table reads as main had it at the point, and when it expires, with <b class="ui">Renew</b>, <b class="ui">Preview the merge</b>, <b class="ui">About @<var>name</var></b> and <b class="ui">Read main instead</b>.</p>
+      <p>Changes that happen on main only are refused through a ref, word for word as the server says: <code><var>operation</var> is refused on tag <var>name</var> of catalog <var>catalog</var>: a tag is read-only</code> and <code><var>operation</var> is refused on branch <var>name</var> of catalog <var>catalog</var>: creates, drops, renames, registrations and namespace changes happen on main only</code>, each a <code>400 BadRequestException</code>.</p>
+
+      <h2 id="make-branch-or-tag">Make a branch or tag</h2>
+      <p>The dialog <b class="ui">Make a branch or tag</b> takes:</p>
+      <dl>
+        <dt><b class="ui">Kind</b></dt><dd><b class="ui">Branch</b> or <b class="ui">Tag</b>.</dd>
+        <dt><b class="ui">Name</b></dt><dd>"Letters, digits, dot, dash, underscore; no @ and no /. Names compare without case."</dd>
+        <dt><b class="ui">From</b></dt><dd><b class="ui">main, as it is now</b> or another ref. "A ref made from a branch takes that branch as it is now."</dd>
+        <dt><b class="ui">Purpose (optional)</b></dt><dd>One line, at most 200 characters. Everyone who can see the catalog's refs reads it, and the audit keeps it.</dd>
+      </dl>
+      <p>It shows how many branches or tags are in use and how an engine reaches the new ref, <code>warehouse=<var>catalog</var>@<var>name</var></code>. Select <b class="ui">Make it</b>. The answer is <b class="ui">Made the branch @<var>name</var></b> (or tag), with <b class="ui">Open @<var>name</var></b> and <b class="ui">Read <var>catalog</var> on @<var>name</var></b>. At the limit the catalog refuses, and the dialog adds "Merge or delete a branch first, or ask an operator to raise the setting." A taken name adds "Names compare without case."</p>
+
+      <h2 id="ref-page">A branch's or tag's page</h2>
+      <p>Each ref has its own page, with <b class="ui">Read <var>catalog</var> on @<var>name</var></b>, <b class="ui">Copy <var>catalog</var>@<var>name</var></b>, <b class="ui">Renew</b> and <b class="ui">Delete</b>, and the figures <b class="ui">Point</b>, <b class="ui">Changed</b>, <b class="ui">Expires</b> and <b class="ui">Warehouse</b>. A missing ref says "No branch or tag has this name in <var>catalog</var>."</p>
+      <figure class="shot" id="fig-console-ref-merge"><img src="../img/shots/console-ref-merge-light.png" data-dark="../img/shots/console-ref-merge-dark.png" width="1440" height="900" alt="The Merge tab of branch @dev: a green panel saying two tables would move to main in one transaction, each table's move drawn against main, and the steps the merge will take, with the Merge @dev into main button."><figcaption>A branch's merge preview.</figcaption></figure>
+
+      <h3 id="changes">Changes</h3>
+      <p>A branch's <b class="ui">Changes</b> tab opens with a verdict, such as <b class="ui">Ready to merge: <var>N</var> tables would move to main in one transaction.</b> or <b class="ui">@<var>name</var> cannot merge: <var>N</var> tables changed on main too.</b> <b class="ui">What the branch changed</b> lists each table at the point, on the branch, its commits there and <b class="ui">Main since</b> (<b class="ui">Main unchanged</b>, <b class="ui">Main maintained <var>N</var> times</b>, <b class="ui">Main moved <var>N</var> times</b> or <b class="ui">Dropped on main</b>).</p>
+
+      <h3 id="merge">Merge</h3>
+      <p>The <b class="ui">Merge</b> tab runs a dry run first: "A dry run: nothing moved, nothing audited." <b class="ui">Table by table</b> shows each table's versions at the point, on main and on the branch, and whether it moves or conflicts. <b class="ui">In one transaction</b> lists what the merge would do: each table's pointer on main moves to the file the branch wrote, the branch ends and its name is free, and the audit records the merge once and one commit per table. "Every table moves or none does."</p>
+      <ul>
+        <li>A conflict (main changed a table too, or dropped it) refuses the merge whole. <b class="ui">What you can do</b> suggests starting again from main (<b class="ui">Make a branch from main</b>) or keeping the branch until it expires.</li>
+        <li>Over the table limit: "@<var>name</var> changed <var>N</var> tables; a merge moves at most <var>M</var>."</li>
+        <li>Without write on a table that moves, the console does not offer the merge.</li>
+      </ul>
+      <p><b class="ui">Merge @<var>name</var> into main</b> opens a confirmation with each table's version on main now and after; its button is <b class="ui">Merge into main</b>, and focus starts on Cancel. If main moved since the preview, the merge is refused: "Not a denial: the merge record is not written." On success: <b class="ui">Merged @<var>name</var> into main at <var>time</var></b>, and <b class="ui">What main has now</b>. A merge cannot be undone, but every earlier version stays in each table's commit journal.</p>
+
+      <h3 id="what-it-keeps">What it keeps</h3>
+      <p>A tag's tab shows the tables and views it keeps, the files it keeps from cleanup, and how engines read it with <code>warehouse=<var>catalog</var>@<var>name</var></code>, read endpoints only.</p>
+
+      <h3 id="record">Record</h3>
+      <p>For those who read the audit feed: <b class="ui">What happened to @<var>name</var></b>, each record in words such as "Renewed the branch @<var>name</var>: it now expires <var>time</var>" or "Merged the branch @<var>name</var> into main: <var>N</var> tables moved in one transaction, and the branch ended".</p>
+
+      <h2 id="renew-and-delete">Renew and delete</h2>
+      <p><b class="ui">Renew</b> opens <b class="ui">Renew @<var>name</var></b>, showing when the branch expires now, after renewal (the idle expiry from now) and its whole life's end. Select <b class="ui">Renew</b>. A branch at the end of its life is unchanged: "A renewal never shortens a branch's life, and this one is at its end. Merge it, or make a new branch."</p>
+      <p>Delete opens <b class="ui">Delete the branch @<var>name</var></b> (or tag). For a branch with changes: "Its changes to <var>N</var> tables were never merged and are lost." "Files only this ref reaches become unreferenced; the orphan scan removes them once they are older than its minimum age. The name is free at once." Focus starts on Cancel; select <b class="ui">Delete @<var>name</var></b> to delete. It cannot be undone.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">In the console</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>The list, limits, Ended lately</td><td><code>GET /management/v1/catalogs/{catalog}/refs</code>, with <code>expired=true</code> for expired ones (<a href="../api/refs.html#endpoints">Branches and tags</a>)</td></tr>
+            <tr><td>A ref's page and Changes</td><td><code>GET …/refs/{name}</code> (<a href="../api/refs.html#endpoints">Branches and tags</a>)</td></tr>
+            <tr><td>Make it</td><td><code>POST …/refs</code> (<a href="../api/refs.html#endpoints">Branches and tags</a>)</td></tr>
+            <tr><td>Renew</td><td><code>POST …/refs/{name}/renew</code> (<a href="../api/refs.html#endpoints">Branches and tags</a>)</td></tr>
+            <tr><td>Merge preview; Merge into main</td><td><code>POST …/refs/{name}/merge?dry-run=true</code>; <code>POST …/refs/{name}/merge</code> (<a href="../api/refs.html#endpoints">Branches and tags</a>)</td></tr>
+            <tr><td>Delete</td><td><code>DELETE …/refs/{name}</code> (<a href="../api/refs.html#endpoints">Branches and tags</a>)</td></tr>
+            <tr><td>Record</td><td><code>GET …/audit/feed?branch={name}</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+            <tr><td>Reading through a ref</td><td>The warehouse <code>{catalog}@{name}</code> (<a href="../api/iceberg-config.html#endpoints">Configuration</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>: how refs of the whole catalog work.</li>
+          <li><a href="../guides/branch-workflow.html">Write, audit and publish with a branch</a>: the task end to end.</li>
+          <li><a href="../start/first-branch.html">Work on a catalog branch</a>: the tutorial.</li>
+          <li><a href="../configure/governance.html">Governance and refs settings</a>: the <code>nuna.refs.*</code> limits.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>refs.js</code> and from <code>RefRoutes.java</code> and <code>RefSettings.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. The demo's refs and limits were read with <code>GET …/refs</code>.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

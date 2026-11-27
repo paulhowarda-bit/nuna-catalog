@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/audit">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Audit page · nuna docs</title>
+  <meta name="description" content="Every audit record in a catalog, newest first: the feed and its filters, one record in full, its place in the hash chain, the archive check, and how current the feed is.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Audit page</h1>
+        <p class="lead">The Audit page answers, for auditors, what happened in a catalog: every read, change, credential, access refusal and file deletion, newest first, with each record's full event, its request id and its place in the hash chain.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-audit"><img src="../img/shots/console-audit-light.png" data-dark="../img/shots/console-audit-dark.png" width="1440" height="900" alt="The Audit page of catalog lakehouse as the demo stands: 0 records in the last day, the filter row and kind chips all at 0, the Hash chain panel saying no archive is configured, and the By kind and Most recorded panels empty."><figcaption>The Audit page as the demo shows it: no records in the last day, and no archive configured, so no record is open.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>The feed, the summary, the archive status and the chain check all need select on the audit tables' catalog (<code>nuna.audit.tables.catalog</code>); a refusal is audited. Where no audit catalog is configured they answer 503: "The audit tables are not configured on this server (nuna.audit.tables.catalog)". The rail also shows <b class="ui">Audit</b> to those who manage the catalog's grants: when the feed refuses them, the page shows the refusal and, under <b class="ui"><var>catalog</var> itself</b>, the catalog's own trail (<b class="ui">Records about <var>catalog</var></b>), which needs manage-grants.</p>
+
+      <h2 id="head-and-figures">The head and figures</h2>
+      <p>The title is <b class="ui"><var>N</var> records in <var>catalog</var> in the last day.</b> "Every read, change, credential, access refusal and file deletion in this catalog, newest first. Open a record for the full event, its request id and its place in the hash chain." <b class="ui">Open a table's audit tab</b> goes to one table's trail.</p>
+      <p>Four figures: <b class="ui">Records in <var>catalog</var></b>, <b class="ui">Refusals</b>, <b class="ui">Changes</b> ("commits, governance, grants and deletions") and <b class="ui">Archive checked</b>, which reads <b class="ui">no archive is configured</b>, <b class="ui">the first check runs a minute after start</b>, <b class="ui">the archive is not intact: see Hash chain</b>, <b class="ui">records are missing: see Hash chain</b> or <b class="ui"><var>N</var> server runs whole</b>.</p>
+
+      <h2 id="every-record">Every record</h2>
+      <p>The feed reads the audit tables. Filter by <b class="ui">Table or namespace</b> (a path, or <code>@<var>ref</var></code>), <b class="ui">Who</b>, <b class="ui">Up to</b> (<b class="ui">Up to now</b>, <b class="ui">Before an hour ago</b>, <b class="ui">Before six hours ago</b>, <b class="ui">Before a day ago</b>, <b class="ui">Before a week ago</b>) and kind. Reads of the audit itself are hidden until you select <b class="ui">Show audit reads</b>. The filters are kept in the page's address, so a link opens the same view.</p>
+      <p>The status line reads "<var>N</var> records shown, newest first, as of the last commit at <var>HH:MM</var>." and "Records arrive here about a minute after they happen." When the audit tables have no commit yet: "<var>N</var> records shown: nothing has been committed to the audit tables." <b class="ui">Show the next 50</b> or <b class="ui">Search further back</b> loads more; at the end, "Every matching record the audit tables hold is shown. Older ones are in your SIEM and the archive." With no match: "No record matches. Try another kind, anyone, or an earlier time."</p>
+
+      <h2 id="record">A record</h2>
+      <p>Each row carries a chain pill: <b class="ui">Chain verified</b>, <b class="ui">Missing from archive</b>, <b class="ui">Earlier record missing</b> or <b class="ui">Not verified yet</b>. Opening it shows the full event, its <b class="ui">Request</b> id, where it was <b class="ui">Read from</b> (a Kafka partition and offset, or "the log nuna.audit, record <var>N</var> of server run <var>R</var>") and its hash chain line, such as "verified by the check at <var>time</var>, with every earlier record of its server run" or "no archive is configured".</p>
+      <p><b class="ui">Check this record</b> asks the server for the record's place in its server run's chain: <b class="ui">Hash matches</b> or <b class="ui">Hash does not match</b>, the previous, this and next hashes, and the archive segment; or <b class="ui">Not archived yet</b>.</p>
+
+      <h2 id="hash-chain">Hash chain</h2>
+      <p>The panel <b class="ui">Hash chain</b>, checked hourly, shows <b class="ui">Not checked yet</b>, <b class="ui">Not intact</b>, <b class="ui">Records missing</b> or <b class="ui">Whole at <var>HH:MM</var></b>, with <b class="ui">Runs</b>, <b class="ui">Each record</b> ("hashes the one before it in its server run, and carries its number in the run"), <b class="ui">Checkpoints</b>, <b class="ui">Archive</b> and <b class="ui">Last check</b>, and any findings. Without an archive: "No archive is configured on this server, so no chain is checked."</p>
+
+      <h2 id="by-kind-and-most-recorded">By kind and Most recorded</h2>
+      <p><b class="ui">By kind</b> counts the last day's records by kind; choose one to show its records in the feed. "Service counts differently, so its figures may not match these." <b class="ui">Most recorded</b> lists the objects with the most records, their reads and who wrote to them most. Empty: "No object has a record in the last day."</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Every record, with its filters</td><td><code>GET /management/v1/catalogs/{catalog}/audit/feed</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+            <tr><td>The figures, By kind, Most recorded</td><td><code>GET /management/v1/catalogs/{catalog}/audit/summary</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+            <tr><td>Archive checked; Hash chain</td><td><code>GET /management/v1/audit/archive</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+            <tr><td>Check this record</td><td><code>GET /management/v1/audit/chains/{run}/records/{number}</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+            <tr><td>Records about the catalog</td><td><code>GET /management/v1/catalogs/{catalog}/audit</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/audit.html">The audit trail</a>: what is recorded and what "verified" means.</li>
+          <li><a href="../guides/query-audit.html">Query the audit trail</a>: the feed over the API and the audit tables from SQL.</li>
+          <li><a href="../guides/verify-audit-chain.html">Verify the audit chain</a>: one record's place in the chain.</li>
+          <li><a href="../reference/audit-records.html">Audit record format</a>: fields and record types.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>audit.js</code> and <code>panels.js</code>, and from <code>AuditReadRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. The demo's summary and archive status were read with GET requests: no archive is configured there.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

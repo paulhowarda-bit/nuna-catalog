@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/security">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security settings · nuna docs</title>
+  <meta name="description" content="Name the token issuers the server trusts, how their claims become principals, the administrative groups and the Trino catalogs that get row and column rules.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Security settings</h1>
+        <p class="lead">Name the token issuers the server trusts, how their claims become principals, the administrative groups and the Trino catalogs that get row and column rules.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>Every request to the server carries a bearer token from a trusted issuer; there is no setting that turns authentication off, and the server issues no tokens of its own. These settings name the trusted issuers, how their claims map to a principal, the two administrative groups, and the maintenance principals. The console's own sign-in is set by <a href="server.html#nuna-ui-oidc-issuer"><code>nuna.ui.oidc.*</code></a> on Server settings; nuna has no <code>nuna.oidc.*</code> settings.</p>
+
+      <h2 id="token-issuers">Token issuers</h2>
+
+      <p>The server takes each issuer's signing keys only from its <code>jwks-uri</code>: it does no OIDC discovery, and never trusts a key a token names. A token is accepted when its <code>iss</code> is one of these issuers exactly, its signature verifies with one of the issuer's keys under an allowed algorithm, its <code>aud</code> names one of the issuer's audiences, and the clock is inside its <code>exp</code> and <code>nbf</code> give or take <code>nuna.security.clock-skew</code>. A token with no <code>exp</code> is refused.</p>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers"><code>nuna.security.issuers</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>list of issuers</dd>
+          <dt>Default</dt><dd>none (required, at least one)</dd>
+          <dt>Environment variable</dt><dd>one variable per field, counting from 0, such as <code>NUNA_SECURITY_ISSUERS_0_ISSUER</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The trusted token issuers. The server refuses to start with none: <code>nuna.security.issuers names no trusted token issuer; the catalog accepts no request without one</code>. The catalog chart refuses to render with none: <code>config.nuna.security.issuers needs at least one trusted token issuer</code>.</p>
+        <p>Each issuer needs every field below; a missing one stops the server with a message naming it, such as <code>nuna.security.issuers[].jwks-uri of <var>issuer</var></code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers-n-issuer"><code>nuna.security.issuers[<var>n</var>].issuer</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_ISSUERS_<var>N</var>_ISSUER</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers[<var>n</var>].issuer</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The exact <code>iss</code> value of the issuer's tokens, such as <code>https://idp.example/realms/data</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers-n-jwks-uri"><code>nuna.security.issuers[<var>n</var>].jwks-uri</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_ISSUERS_<var>N</var>_JWKSURI</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers[<var>n</var>].jwks-uri</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the issuer publishes its signing keys. A malformed URI stops the server with <code>issuer <var>issuer</var> has a malformed JWKS URI</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers-n-audiences"><code>nuna.security.issuers[<var>n</var>].audiences</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>set of strings</dd>
+          <dt>Default</dt><dd>none (required, at least one)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_ISSUERS_<var>N</var>_AUDIENCES_<var>M</var></code>, one per entry</dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers[<var>n</var>].audiences</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A token must name at least one of these in <code>aud</code>. An empty set stops the server with <code>issuer <var>issuer</var> accepts no audience</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers-n-algorithms"><code>nuna.security.issuers[<var>n</var>].algorithms</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>set of signature algorithms</dd>
+          <dt>Default</dt><dd>none (required, at least one)</dd>
+          <dt>Allowed values</dt><dd><code>RS256</code>, <code>RS384</code>, <code>RS512</code>, <code>ES256</code>, <code>ES384</code>, <code>ES512</code>, <code>PS256</code>, <code>PS384</code>, <code>PS512</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_ISSUERS_<var>N</var>_ALGORITHMS_<var>M</var></code>, one per entry</dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers[<var>n</var>].algorithms</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The signature algorithms accepted from this issuer. Only asymmetric algorithms exist to name, so neither <code>none</code> nor an HMAC algorithm can be allowed. An empty set stops the server with <code>issuer <var>issuer</var> allows no signature algorithm</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers-n-user-id-claim"><code>nuna.security.issuers[<var>n</var>].user-id-claim</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a claim name)</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_ISSUERS_<var>N</var>_USERIDCLAIM</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers[<var>n</var>].user-id-claim</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The claim holding the stable user or service id, which becomes the principal id. Every token must carry it. Point each issuer's mapping at a claim that carries the same directory value, so that one person known to two issuers is one principal.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers-n-groups-claim"><code>nuna.security.issuers[<var>n</var>].groups-claim</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a claim name)</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_ISSUERS_<var>N</var>_GROUPSCLAIM</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers[<var>n</var>].groups-claim</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The claim holding the user's groups. A token without it has no groups. A token that signals group overage, too many groups to carry, is refused: the identity provider's application must emit only the groups assigned to it.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-issuers-n-client-id-claim"><code>nuna.security.issuers[<var>n</var>].client-id-claim</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a claim name)</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_ISSUERS_<var>N</var>_CLIENTIDCLAIM</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.issuers[<var>n</var>].client-id-claim</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The claim holding the client (application) id. Every token must carry it; trusted engines are recognised by it.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-clock-skew"><code>nuna.security.clock-skew</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>60s</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_CLOCKSKEW</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.clock-skew</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How far either side of a token's <code>exp</code> and <code>nbf</code> it is still accepted. A negative value stops the server with <code>clock skew must not be negative: <var>value</var></code>.</p>
+      </section>
+
+      <h2 id="administrative-groups">Administrative groups and principals</h2>
+
+      <section class="setting">
+        <h3 id="nuna-security-grant-admin-groups"><code>nuna.security.grant-admin-groups</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>set of strings (group names)</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_GRANTADMINGROUPS_<var>N</var></code>, one per entry, or <code>NUNA_SECURITY_GRANTADMINGROUPS</code> holding a comma-separated list</dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.grant-admin-groups</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Groups that hold <code>manage-grants</code> on every catalog and nothing else: they grant and revoke, and see every catalog in the catalog list, but read no data by being grant admins.</p>
+        <p>No group may be both a grant admin and a platform operator; the server refuses to start with <code>groups [<var>group</var>] are both grant admins and platform operators</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-platform-operator-groups"><code>nuna.security.platform-operator-groups</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>set of strings (group names)</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_PLATFORMOPERATORGROUPS_<var>N</var></code>, or a comma-separated list in <code>NUNA_SECURITY_PLATFORMOPERATORGROUPS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.platform-operator-groups</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Groups that run the deployment: the trusted engine registry and the disaster recovery freeze among it. They hold no data access by being platform operators. Disjoint from <code>grant-admin-groups</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-maintenance-principals"><code>nuna.security.maintenance-principals</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>set of strings (principal ids)</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_MAINTENANCEPRINCIPALS_<var>N</var></code>, or a comma-separated list</dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.maintenance-principals</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The maintenance tier, by principal id: the identity the maintenance worker's token names. Acting as themselves, they alone claim and complete purges, record pending deletions and read the maintenance work list.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-refuse-identity-less-commits"><code>nuna.security.refuse-identity-less-commits</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>boolean</dd>
+          <dt>Default</dt><dd><code>false</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_REFUSEIDENTITYLESSCOMMITS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.refuse-identity-less-commits</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>When on, a trusted engine acting as itself, naming no end user, may not write to regulated areas. Such a write is denied with <code>engine <var>engine</var> named no end user, and writes to regulated areas must name one</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-security-own-group-principals"><code>nuna.security.own-group-principals</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>set of strings (principal ids)</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_OWNGROUPPRINCIPALS_<var>N</var></code>, or a comma-separated list</dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.own-group-principals</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Users who may grant to, and set row and column rules for, groups they themselves belong to, which no one else may. It exists for a demonstration's showcase sign-in; leave it empty in production.</p>
+      </section>
+
+      <h2 id="nuna-opa-group">nuna.opa</h2>
+
+      <section class="setting">
+        <h3 id="nuna-opa-catalogs"><code>nuna.opa.catalogs</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of Trino catalog name to warehouse</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_OPA_CATALOGS_<var>TRINOCATALOG</var></code>; the name is read in lower case and cannot hold a hyphen</dd>
+          <dt>Helm</dt><dd><code>config.nuna.opa.catalogs</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>For Trino's OPA access control: each Trino catalog whose tables carry row filters and column masks, mapped to the warehouse it reads, as that Trino catalog's <code>iceberg.rest-catalog.warehouse</code> says: a catalog, or <code><var>catalog</var>@<var>ref</var></code> for one read through a branch or tag.</p>
+        <p>A Trino catalog not named here gets no rules from nuna: name every Trino catalog that reads nuna.</p>
+      </section>
+
+      <h2 id="example">Example</h2>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    security:
+      issuers:
+        - issuer: https://idp.example/realms/data
+          jwks-uri: https://idp.example/realms/data/protocol/openid-connect/certs
+          audiences: [nuna-catalog]
+          algorithms: [RS256]
+          user-id-claim: sub
+          groups-claim: groups
+          client-id-claim: azp
+      grant-admin-groups: [grant-admins]
+      platform-operator-groups: [platform-operators]
+      maintenance-principals: [nuna-maintenance]
+    opa:
+      catalogs:
+        trading: trading
+        trading_dev: trading@dev</code></pre>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/access.html">Access and privileges</a>: principals, groups, grants and trusted engines</li>
+          <li><a href="../install/identity-provider.html">Set up the identity provider</a>: the clients, claims and groups nuna expects</li>
+          <li><a href="../reference/privileges.html">Privileges</a>: what each privilege allows</li>
+          <li><a href="../api/opa.html">OPA API</a>: the answers Trino's OPA access control reads</li>
+          <li><a href="server.html#nuna-ui-group">Server settings</a>: the console's sign-in</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/SecurityWiring.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/IssuerPolicy.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/ClaimMapping.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Separation.java</code> and <code>catalog-security/src/main/java/nuna/catalog/security/Authorizer.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the catalog chart.</p>
+        <p>No server was started with them for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

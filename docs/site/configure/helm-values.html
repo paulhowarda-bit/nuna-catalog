@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/helm-values">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Helm chart values · nuna docs</title>
+  <meta name="description" content="Every value of the three charts, nuna-catalog, nuna-maintenance and nuna-audit-tables, with its default and what it does.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Helm chart values</h1>
+        <p class="lead">Every value of the three charts, nuna-catalog, nuna-maintenance and nuna-audit-tables, with its default and what it does.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>nuna installs as three Helm charts, each one release per deployment: <code>nuna-catalog</code> (the servers), <code>nuna-maintenance</code> (the maintenance worker) and <code>nuna-audit-tables</code> (the audit tables writer). Each chart is version <code>0.1.0</code> with <code>appVersion</code> <code>0.1.0-SNAPSHOT</code>. Each takes its program's settings under <code>config</code> and its secrets under <code>secrets</code>, and refuses to render without the settings its program cannot start without.</p>
+
+      <p>A change to <code>config</code> or <code>secrets.values</code> restarts the pods, since the chart stamps a checksum of each on the pod. A change inside a Secret named by <code>secrets.existingSecret</code> does not: run <code>kubectl rollout restart</code> on the deployment.</p>
+
+      <h2 id="nuna-catalog">nuna-catalog</h2>
+
+      <p>A Deployment of <code>replicaCount</code> servers, updated one at a time (<code>maxSurge: 1</code>, <code>maxUnavailable: 0</code>), a Service, a headless Service the servers find each other through, a PodDisruptionBudget and optionally an Ingress. The container listens on port 8181, and its start-up, readiness and liveness probes read <code>/ui/config.json</code>. Before it stops, each pod pauses 5 seconds so the Service stops sending it requests. The chart sets <code>nuna.health.peers</code> itself, to the headless Service, as the environment variable <code>NUNA_HEALTH_PEERS</code>.</p>
+
+      <h3 id="nuna-catalog-settings">Image and settings</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-catalog: image and settings</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>replicaCount</code></th><td><code>3</code></td><td>How many servers run: one per zone of three. Any number can run against one database.</td></tr>
+            <tr><th scope="row"><code>image.repository</code></th><td><code>nuna-catalog</code></td><td>The image's repository.</td></tr>
+            <tr><th scope="row"><code>image.tag</code></th><td><code>""</code>: the chart's <code>appVersion</code>, <code>0.1.0-SNAPSHOT</code></td><td>The image's tag.</td></tr>
+            <tr><th scope="row"><code>image.pullPolicy</code></th><td><code>IfNotPresent</code></td><td>The image's pull policy.</td></tr>
+            <tr><th scope="row"><code>imagePullSecrets</code></th><td><code>[]</code></td><td>Secrets for pulling the image from a private registry.</td></tr>
+            <tr><th scope="row"><code>config</code></th><td>see the chart's settings page</td><td>The program's settings, as Spring Boot properties in YAML form. The chart renders them into <code>application.yaml</code> in a ConfigMap mounted at <code>/etc/nuna/config</code>. Nothing secret goes here.</td></tr>
+            <tr><th scope="row"><code>secrets.existingSecret</code></th><td><code>""</code></td><td>A Secret in the release's namespace whose every key is a property name and every value that property's value, read as a config tree from <code>/etc/nuna/secrets</code>. Takes precedence over <code>secrets.values</code>.</td></tr>
+            <tr><th scope="row"><code>secrets.values</code></th><td><code>{}</code></td><td>Otherwise the chart makes that Secret from these keys and values. Pass them in a private values file, never in version control.</td></tr>
+            <tr><th scope="row"><code>javaToolOptions</code></th><td><code>-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError</code></td><td>Set as <code>JAVA_TOOL_OPTIONS</code>: the heap is sized from the container's memory limit, and the JVM exits on running out of memory.</td></tr>
+            <tr><th scope="row"><code>env</code></th><td><code>[]</code></td><td>More environment variables for the container. An environment variable beats <code>config</code> for the same property.</td></tr>
+            <tr><th scope="row"><code>config.spring.datasource.url</code></th><td><code>""</code></td><td>Required unless the backend is <code>mongodb</code>. <a href="database.html#spring-datasource-url">Database settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.spring.datasource.username</code></th><td><code>""</code></td><td>The database role.</td></tr>
+            <tr><th scope="row"><code>config.nuna.database.backend</code></th><td><code>postgresql</code></td><td><a href="database.html#nuna-database-backend">Database settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.database.allow-unsafe</code></th><td><code>[]</code></td><td><a href="database.html#nuna-database-allow-unsafe">Database settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.security.issuers</code></th><td><code>[]</code></td><td>At least one is required. <a href="security.html#nuna-security-issuers">Security settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.security.grant-admin-groups</code></th><td><code>[]</code></td><td><a href="security.html#nuna-security-grant-admin-groups">Security settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.security.platform-operator-groups</code></th><td><code>[]</code></td><td><a href="security.html#nuna-security-platform-operator-groups">Security settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.storage.profiles</code></th><td><code>{}</code></td><td><a href="storage.html#nuna-storage-profiles">Storage settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.storage.catalogs</code></th><td><code>{}</code></td><td><a href="catalogs.html#nuna-storage-catalogs">Catalog settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.audit.kafka-bootstrap-servers</code></th><td><code>""</code></td><td><a href="audit.html#nuna-audit-kafka-bootstrap-servers">Audit settings</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Any other setting on the <a href="index.html">configuration pages</a> goes under <code>config</code> by its full name.</p>
+
+      <h3 id="nuna-catalog-secrets">Secrets and certificates</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-catalog: database certificates</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>databaseTls.secretName</code></th><td><code>""</code></td><td>A Secret holding the database's TLS files, for a database that signs the catalog in by a client certificate. Mounted read-only apart from the config tree; the URL's TLS parameters name its files. A new certificate reaches the servers when they restart.</td></tr>
+            <tr><th scope="row"><code>databaseTls.mountPath</code></th><td><code>/etc/nuna/db-tls</code></td><td>Where those files are mounted.</td></tr>
+            <tr><th scope="row"><code>databaseTls.mode</code></th><td><code>"0440"</code></td><td>The files' mode, as an octal string or a decimal number. The PostgreSQL driver refuses a key file others can read; <code>0440</code> lets the pod's group read them and no one else.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-catalog-storagecaconfigmap">storageCaConfigMap</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-catalog: storage CA bundles</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>storageCaConfigMap.name</code></th><td><code>""</code></td><td>A ConfigMap of CA bundles for stores whose certificates a private CA signed, one PEM file per key, mounted at <code>/etc/nuna/storage-ca</code>. A storage profile names its file as <a href="storage.html#nuna-storage-profiles-name-ca-bundle"><code>ca-bundle</code></a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-catalog-telemetry">Telemetry</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-catalog: telemetry</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>telemetry.endpoint</code></th><td><code>""</code>: nothing is exported</td><td>The collector's OTLP/HTTP base URL (<code>OTEL_EXPORTER_OTLP_ENDPOINT</code>); <code>/v1/metrics</code>, <code>/v1/traces</code> and <code>/v1/logs</code> are added to it. OTLP over gRPC is not supported. JSON log lines go to standard output either way.</td></tr>
+            <tr><th scope="row"><code>telemetry.headers</code></th><td><code>""</code></td><td>Headers sent with every export, as <code>name=value</code> pairs separated by commas (<code>OTEL_EXPORTER_OTLP_HEADERS</code>). Credentials go in <code>headersSecret</code>.</td></tr>
+            <tr><th scope="row"><code>telemetry.headersSecret.name</code></th><td><code>""</code></td><td>A Secret holding the headers in the same form; takes precedence over <code>headers</code>.</td></tr>
+            <tr><th scope="row"><code>telemetry.headersSecret.key</code></th><td><code>headers</code></td><td>The key in that Secret.</td></tr>
+            <tr><th scope="row"><code>telemetry.caConfigMap.name</code></th><td><code>""</code></td><td>A ConfigMap holding the PEM certificate of the CA that signed the collector's, for an <code>https</code> endpoint (<code>OTEL_EXPORTER_OTLP_CERTIFICATE</code>). Mounted at <code>/etc/nuna/otlp-ca</code>.</td></tr>
+            <tr><th scope="row"><code>telemetry.caConfigMap.key</code></th><td><code>ca.crt</code></td><td>The key in that ConfigMap.</td></tr>
+            <tr><th scope="row"><code>telemetry.logsEndpoint</code></th><td><code>""</code></td><td>The logs alone to another OTLP/HTTP endpoint, the full URL with <code>/v1/logs</code> (<code>OTEL_EXPORTER_OTLP_LOGS_ENDPOINT</code>), such as the audit tables writer's receiver. It takes precedence over <code>endpoint</code> for logs.</td></tr>
+            <tr><th scope="row"><code>telemetry.logsTokenSecret.name</code></th><td><code>""</code></td><td>A Secret holding the token the audit tables writer's receiver asks for, sent with every log export as <code>X-Nuna-Audit-Token</code> (<code>OTEL_EXPORTER_OTLP_LOGS_HEADERS</code>). For <code>logsEndpoint</code> only.</td></tr>
+            <tr><th scope="row"><code>telemetry.logsTokenSecret.key</code></th><td><code>token</code></td><td>The key in that Secret.</td></tr>
+            <tr><th scope="row"><code>telemetry.sampling</code></th><td><code>"0.1"</code></td><td>The share of new traces recorded, 0 to 1; a request whose caller's trace is sampled is always recorded (<code>parentbased_traceidratio</code>).</td></tr>
+            <tr><th scope="row"><code>telemetry.resourceAttributes</code></th><td><code>{}</code></td><td>Resource attributes beside those the chart sets (<code>service.name</code>, <code>service.namespace</code>, <code>service.version</code>, <code>service.instance.id</code>, <code>k8s.namespace.name</code>, <code>k8s.pod.name</code>, <code>k8s.node.name</code>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-catalog-service">Service and Ingress</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-catalog: Service and Ingress</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>service.type</code></th><td><code>ClusterIP</code></td><td>The Service's type.</td></tr>
+            <tr><th scope="row"><code>service.port</code></th><td><code>8181</code></td><td>The Service's port. The container's port is 8181 whatever this says.</td></tr>
+            <tr><th scope="row"><code>service.sessionAffinity</code></th><td><code>None</code></td><td>Spreads requests over every server. Any server answers a conditional load with a 304, so ETags need no affinity.</td></tr>
+            <tr><th scope="row"><code>ingress.enabled</code></th><td><code>false</code></td><td>Makes an Ingress for the Service.</td></tr>
+            <tr><th scope="row"><code>ingress.className</code></th><td><code>""</code></td><td>The Ingress class.</td></tr>
+            <tr><th scope="row"><code>ingress.annotations</code></th><td><code>{}</code></td><td>Annotations on the Ingress.</td></tr>
+            <tr><th scope="row"><code>ingress.host</code></th><td><code>catalog.example.internal</code></td><td>The Ingress's host name.</td></tr>
+            <tr><th scope="row"><code>ingress.tls</code></th><td><code>[]</code></td><td>The Ingress's TLS entries, each a <code>secretName</code> and its <code>hosts</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-catalog-serviceaccount">Pods and scheduling</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-catalog: pods and scheduling</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>resources</code></th><td>requests <code>cpu: "1"</code>, <code>memory: 2Gi</code>; limit <code>memory: 2Gi</code></td><td>The container's resources.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.create</code></th><td><code>true</code></td><td>Makes the pod's service account.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.name</code></th><td><code>""</code>: the release's full name</td><td>The service account's name.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.annotations</code></th><td><code>{}</code></td><td>Annotations on the service account, such as <code>eks.amazonaws.com/role-arn</code>: the AWS SDK's default chain then vends from that role. The pod mounts no service account token of its own.</td></tr>
+            <tr><th scope="row"><code>podAnnotations</code></th><td><code>{}</code></td><td>Annotations on each pod.</td></tr>
+            <tr><th scope="row"><code>podLabels</code></th><td><code>{}</code></td><td>Labels on each pod.</td></tr>
+            <tr><th scope="row"><code>podSecurityContext</code></th><td>non-root, user and group <code>10001</code>, <code>fsGroup: 10001</code>, seccomp <code>RuntimeDefault</code></td><td>The pod's security context.</td></tr>
+            <tr><th scope="row"><code>securityContext</code></th><td>no privilege escalation, read-only root file system, every capability dropped</td><td>The container's security context. The chart mounts an empty directory at <code>/tmp</code>, the one place the program writes.</td></tr>
+            <tr><th scope="row"><code>nodeSelector</code></th><td><code>{}</code></td><td>Node labels the pod must run on.</td></tr>
+            <tr><th scope="row"><code>tolerations</code></th><td><code>[]</code></td><td>Taints the pod tolerates.</td></tr>
+            <tr><th scope="row"><code>affinity</code></th><td><code>{}</code></td><td>The pod's affinity rules.</td></tr>
+            <tr><th scope="row"><code>topologySpreadConstraints</code></th><td>zones first, then nodes, each <code>maxSkew: 1</code>, <code>ScheduleAnyway</code></td><td>How servers spread. The chart adds the release's pod selector to each.</td></tr>
+            <tr><th scope="row"><code>podDisruptionBudget.enabled</code></th><td><code>true</code></td><td>Makes the PodDisruptionBudget.</td></tr>
+            <tr><th scope="row"><code>podDisruptionBudget.maxUnavailable</code></th><td><code>1</code></td><td>How many servers a voluntary disruption may take at once.</td></tr>
+            <tr><th scope="row"><code>terminationGracePeriodSeconds</code></th><td><code>45</code></td><td>Long enough for the 5-second pause and Spring's graceful shutdown (30 seconds) to finish requests in flight.</td></tr>
+            <tr><th scope="row"><code>startupProbe.periodSeconds</code></th><td><code>5</code></td><td>How often the start-up probe runs.</td></tr>
+            <tr><th scope="row"><code>startupProbe.failureThreshold</code></th><td><code>120</code></td><td>How many start-up probes may fail: 10 minutes, since the first start of a release migrates the schema.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-catalog-refusals">Refusals</h3>
+
+      <ul>
+        <li><code>config.spring.datasource.url is required: the catalog's database</code>, unless <code>config.nuna.database.backend</code> is <code>mongodb</code>.</li>
+        <li><code>config.nuna.security.issuers needs at least one trusted token issuer</code>.</li>
+      </ul>
+
+      <h2 id="nuna-maintenance">nuna-maintenance</h2>
+
+      <p>A Deployment of one worker, replaced rather than rolled (<code>Recreate</code>), so two workers never run together. With compaction on, the chart also makes, in the Jobs' namespace, a Role letting the worker's service account get and create Jobs and create Secrets (and ConfigMaps, when a store names a <code>ca-bundle</code>), its RoleBinding, and the Jobs' service account; and only then mounts the worker's service account token.</p>
+
+      <h3 id="nuna-maintenance-settings">Image and settings</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-maintenance: image and settings</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>image.repository</code></th><td><code>nuna-maintenance</code></td><td>The image's repository.</td></tr>
+            <tr><th scope="row"><code>image.tag</code></th><td><code>""</code>: the chart's <code>appVersion</code>, <code>0.1.0-SNAPSHOT</code></td><td>The image's tag.</td></tr>
+            <tr><th scope="row"><code>image.pullPolicy</code></th><td><code>IfNotPresent</code></td><td>The image's pull policy.</td></tr>
+            <tr><th scope="row"><code>imagePullSecrets</code></th><td><code>[]</code></td><td>Secrets for pulling the image from a private registry.</td></tr>
+            <tr><th scope="row"><code>config</code></th><td>see the chart's settings page</td><td>The program's settings, as Spring Boot properties in YAML form. The chart renders them into <code>application.yaml</code> in a ConfigMap mounted at <code>/etc/nuna/config</code>. Nothing secret goes here.</td></tr>
+            <tr><th scope="row"><code>secrets.existingSecret</code></th><td><code>""</code></td><td>A Secret in the release's namespace whose every key is a property name and every value that property's value, read as a config tree from <code>/etc/nuna/secrets</code>. Takes precedence over <code>secrets.values</code>.</td></tr>
+            <tr><th scope="row"><code>secrets.values</code></th><td><code>{}</code></td><td>Otherwise the chart makes that Secret from these keys and values. Pass them in a private values file, never in version control.</td></tr>
+            <tr><th scope="row"><code>javaToolOptions</code></th><td><code>-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError</code></td><td>Set as <code>JAVA_TOOL_OPTIONS</code>: the heap is sized from the container's memory limit, and the JVM exits on running out of memory.</td></tr>
+            <tr><th scope="row"><code>env</code></th><td><code>[]</code></td><td>More environment variables for the container. An environment variable beats <code>config</code> for the same property.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.catalog-uri</code></th><td>unset</td><td>Required. <a href="maintenance.html#nuna-maintenance-catalog-uri">Maintenance worker settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.scan-interval</code></th><td><code>PT10M</code></td><td><a href="maintenance.html#nuna-maintenance-scan-interval">Maintenance worker settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.cleanup-window</code></th><td><code>{}</code></td><td>Required: <code>start</code>, <code>end</code>, <code>zone</code>. The chart quotes the times, which YAML 1.1 would otherwise read as numbers.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.orphan-interval</code></th><td><code>P1D</code></td><td><a href="maintenance.html#nuna-maintenance-orphan-interval">Maintenance worker settings</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.token.audience</code></th><td><code>nuna-catalog</code></td><td><a href="maintenance.html#nuna-maintenance-token">The token</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.storage</code></th><td><code>{}</code></td><td>At least one store is required, each with <code>kind</code> and <code>endpoint</code>. <a href="maintenance.html#nuna-maintenance-storage">Storage</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.dr.verify-interval</code></th><td><code>PT1M</code></td><td><a href="maintenance.html#nuna-maintenance-dr">Disaster recovery verifier</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.compaction.image</code></th><td><code>""</code>: compaction off</td><td><a href="maintenance.html#nuna-maintenance-compaction">Compaction</a>.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.compaction.image-pull-policy</code></th><td><code>IfNotPresent</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.compaction.job-service-account</code></th><td><code>nuna-compaction</code></td><td>The chart makes this account, with no rights, in the Jobs' namespace.</td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.compaction.memory</code></th><td><code>2Gi</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.compaction.driver-memory</code></th><td><code>1g</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.maintenance.compaction.max-jobs</code></th><td><code>2</code></td><td></td></tr>
+            <tr><th scope="row"><code>storageCaConfigMap.name</code></th><td><code>""</code></td><td>A ConfigMap of CA bundles, mounted at <code>/etc/nuna/storage-ca</code>. A compaction Job for a table on that store gets a copy in a ConfigMap of its own in the Jobs' namespace.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-maintenance-telemetry">Telemetry</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-maintenance: telemetry</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>telemetry.endpoint</code></th><td><code>""</code>: nothing is exported</td><td>The collector's OTLP/HTTP base URL (<code>OTEL_EXPORTER_OTLP_ENDPOINT</code>); <code>/v1/metrics</code>, <code>/v1/traces</code> and <code>/v1/logs</code> are added to it. OTLP over gRPC is not supported. JSON log lines go to standard output either way.</td></tr>
+            <tr><th scope="row"><code>telemetry.headers</code></th><td><code>""</code></td><td>Headers sent with every export, as <code>name=value</code> pairs separated by commas (<code>OTEL_EXPORTER_OTLP_HEADERS</code>). Credentials go in <code>headersSecret</code>.</td></tr>
+            <tr><th scope="row"><code>telemetry.headersSecret.name</code></th><td><code>""</code></td><td>A Secret holding the headers in the same form; takes precedence over <code>headers</code>.</td></tr>
+            <tr><th scope="row"><code>telemetry.headersSecret.key</code></th><td><code>headers</code></td><td>The key in that Secret.</td></tr>
+            <tr><th scope="row"><code>telemetry.caConfigMap.name</code></th><td><code>""</code></td><td>A ConfigMap holding the PEM certificate of the CA that signed the collector's, for an <code>https</code> endpoint (<code>OTEL_EXPORTER_OTLP_CERTIFICATE</code>). Mounted at <code>/etc/nuna/otlp-ca</code>.</td></tr>
+            <tr><th scope="row"><code>telemetry.caConfigMap.key</code></th><td><code>ca.crt</code></td><td>The key in that ConfigMap.</td></tr>
+            <tr><th scope="row"><code>telemetry.sampling</code></th><td><code>"0.1"</code></td><td>The share of new traces recorded, 0 to 1; a request whose caller's trace is sampled is always recorded (<code>parentbased_traceidratio</code>).</td></tr>
+            <tr><th scope="row"><code>telemetry.resourceAttributes</code></th><td><code>{}</code></td><td>Resource attributes beside those the chart sets (<code>service.name</code>, <code>service.namespace</code>, <code>service.version</code>, <code>service.instance.id</code>, <code>k8s.namespace.name</code>, <code>k8s.pod.name</code>, <code>k8s.node.name</code>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-maintenance-pods">Pods</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-maintenance: pods</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>resources</code></th><td>requests <code>cpu: 500m</code>, <code>memory: 2Gi</code>; limit <code>memory: 2Gi</code></td><td>The container's resources. An orphan scan holds every file a table reaches in memory: size the limit for the largest table.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.create</code></th><td><code>true</code></td><td>Makes the pod's service account.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.name</code></th><td><code>""</code>: the release's full name</td><td>The service account's name.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.annotations</code></th><td><code>{}</code></td><td>Annotations on the service account, such as <code>eks.amazonaws.com/role-arn</code>: the worker's own storage identity on AWS, the role the delete policy names.</td></tr>
+            <tr><th scope="row"><code>podAnnotations</code></th><td><code>{}</code></td><td>Annotations on each pod.</td></tr>
+            <tr><th scope="row"><code>podLabels</code></th><td><code>{}</code></td><td>Labels on each pod.</td></tr>
+            <tr><th scope="row"><code>podSecurityContext</code></th><td>non-root, user and group <code>10001</code>, <code>fsGroup: 10001</code>, seccomp <code>RuntimeDefault</code></td><td>The pod's security context.</td></tr>
+            <tr><th scope="row"><code>securityContext</code></th><td>no privilege escalation, read-only root file system, every capability dropped</td><td>The container's security context. The chart mounts an empty directory at <code>/tmp</code>, the one place the program writes.</td></tr>
+            <tr><th scope="row"><code>nodeSelector</code></th><td><code>{}</code></td><td>Node labels the pod must run on.</td></tr>
+            <tr><th scope="row"><code>tolerations</code></th><td><code>[]</code></td><td>Taints the pod tolerates.</td></tr>
+            <tr><th scope="row"><code>affinity</code></th><td><code>{}</code></td><td>The pod's affinity rules.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-maintenance-refusals">Refusals</h3>
+
+      <ul>
+        <li><code>config.nuna.maintenance.catalog-uri is required: the catalog the worker maintains</code></li>
+        <li><code>config.nuna.maintenance.storage needs at least one store: the worker's own storage identity on it</code></li>
+        <li><code>config.nuna.maintenance.storage.<var>name</var>.prefixes: the worker reads its prefixes from the catalog's storage profiles at each scan; name the store's kind and endpoint instead</code></li>
+        <li><code>config.nuna.maintenance.storage.<var>name</var>.kind is required</code>, and the same for <code>endpoint</code></li>
+        <li><code>config.nuna.maintenance.cleanup-window.start is required</code>, and the same for <code>end</code> and <code>zone</code></li>
+        <li><code>config.nuna.maintenance.compaction.namespace is required when compaction runs: a namespace for the Jobs alone, created beforehand</code></li>
+        <li><code>config.nuna.maintenance.compaction.namespace must not be the release's namespace</code></li>
+        <li><code>config.nuna.maintenance.compaction.job-service-account is required when compaction runs</code></li>
+      </ul>
+
+      <h2 id="nuna-audit-tables">nuna-audit-tables</h2>
+
+      <p>A Deployment of one writer, replaced rather than rolled (<code>Recreate</code>): a second writer would only fail the first's commits. With the source <code>otlp</code>, the chart also makes a Service in front of the receiver (port name <code>otlp-http</code>), and the pod is ready once the port takes connections. The chart has no telemetry values.</p>
+
+      <h3 id="nuna-audit-tables-settings">Image and settings</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-audit-tables: image and settings</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>image.repository</code></th><td><code>nuna-audit-tables</code></td><td>The image's repository.</td></tr>
+            <tr><th scope="row"><code>image.tag</code></th><td><code>""</code>: the chart's <code>appVersion</code>, <code>0.1.0-SNAPSHOT</code></td><td>The image's tag.</td></tr>
+            <tr><th scope="row"><code>image.pullPolicy</code></th><td><code>IfNotPresent</code></td><td>The image's pull policy.</td></tr>
+            <tr><th scope="row"><code>imagePullSecrets</code></th><td><code>[]</code></td><td>Secrets for pulling the image from a private registry.</td></tr>
+            <tr><th scope="row"><code>config</code></th><td>see the chart's settings page</td><td>The program's settings, as Spring Boot properties in YAML form. The chart renders them into <code>application.yaml</code> in a ConfigMap mounted at <code>/etc/nuna/config</code>. Nothing secret goes here.</td></tr>
+            <tr><th scope="row"><code>secrets.existingSecret</code></th><td><code>""</code></td><td>A Secret in the release's namespace whose every key is a property name and every value that property's value, read as a config tree from <code>/etc/nuna/secrets</code>. Takes precedence over <code>secrets.values</code>.</td></tr>
+            <tr><th scope="row"><code>secrets.values</code></th><td><code>{}</code></td><td>Otherwise the chart makes that Secret from these keys and values. Pass them in a private values file, never in version control.</td></tr>
+            <tr><th scope="row"><code>javaToolOptions</code></th><td><code>-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError</code></td><td>Set as <code>JAVA_TOOL_OPTIONS</code>: the heap is sized from the container's memory limit, and the JVM exits on running out of memory.</td></tr>
+            <tr><th scope="row"><code>env</code></th><td><code>[]</code></td><td>More environment variables for the container. An environment variable beats <code>config</code> for the same property.</td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.catalog</code></th><td><code>nuna_audit</code></td><td><a href="audit-tables.html">Audit tables writer settings</a>, as are the rest.</td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.namespace</code></th><td><code>audit</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.commit-interval</code></th><td><code>PT1M</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.source</code></th><td><code>kafka</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.otlp.port</code></th><td><code>4318</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.otlp.dedup-window</code></th><td><code>15m</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.archive.prefix</code></th><td><code>audit</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.archive.region</code></th><td><code>us-east-1</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.archive.retention</code></th><td><code>2557d</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.archive.segment-events</code></th><td><code>10000</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.archive.segment-age</code></th><td><code>1m</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.archive.checkpoint-interval</code></th><td><code>5m</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.archive.max-waiting</code></th><td><code>100000</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.token.audience</code></th><td><code>nuna-catalog</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.kafka.topic</code></th><td><code>nuna.catalog.audit</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.kafka.group</code></th><td><code>nuna-audit-tables</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.kafka.properties</code></th><td><code>{}</code></td><td></td></tr>
+            <tr><th scope="row"><code>config.nuna.audit-tables.client-properties</code></th><td><code>{}</code></td><td></td></tr>
+            <tr><th scope="row"><code>archiveCaConfigMap.name</code></th><td><code>""</code></td><td>A ConfigMap holding the CA bundle of an archive store whose certificate a private CA signed, mounted at <code>/etc/nuna/archive-ca</code>; <code>nuna.audit-tables.archive.ca-bundle</code> names its file.</td></tr>
+            <tr><th scope="row"><code>service.type</code></th><td><code>ClusterIP</code></td><td>The receiver's Service type, for the source <code>otlp</code> only.</td></tr>
+            <tr><th scope="row"><code>service.otlpPort</code></th><td><code>4318</code></td><td>The Service's port. The catalog's <code>telemetry.logsEndpoint</code> names it: <code>http://<var>release</var>:<var>otlpPort</var>/v1/logs</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-audit-tables-pods">Pods</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-audit-tables: pods</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>resources</code></th><td>requests <code>cpu: 250m</code>, <code>memory: 1Gi</code>; limit <code>memory: 1Gi</code></td><td>The container's resources. Rows wait in memory for a commit interval, or until <code>max-rows</code> of them wait; with an archive, records also wait for their segment.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.create</code></th><td><code>true</code></td><td>Makes the pod's service account.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.name</code></th><td><code>""</code>: the release's full name</td><td>The service account's name.</td></tr>
+            <tr><th scope="row"><code>serviceAccount.annotations</code></th><td><code>{}</code></td><td>Annotations on the service account.</td></tr>
+            <tr><th scope="row"><code>podAnnotations</code></th><td><code>{}</code></td><td>Annotations on each pod.</td></tr>
+            <tr><th scope="row"><code>podLabels</code></th><td><code>{}</code></td><td>Labels on each pod.</td></tr>
+            <tr><th scope="row"><code>podSecurityContext</code></th><td>non-root, user and group <code>10001</code>, <code>fsGroup: 10001</code>, seccomp <code>RuntimeDefault</code></td><td>The pod's security context.</td></tr>
+            <tr><th scope="row"><code>securityContext</code></th><td>no privilege escalation, read-only root file system, every capability dropped</td><td>The container's security context. The chart mounts an empty directory at <code>/tmp</code>, the one place the program writes.</td></tr>
+            <tr><th scope="row"><code>nodeSelector</code></th><td><code>{}</code></td><td>Node labels the pod must run on.</td></tr>
+            <tr><th scope="row"><code>tolerations</code></th><td><code>[]</code></td><td>Taints the pod tolerates.</td></tr>
+            <tr><th scope="row"><code>affinity</code></th><td><code>{}</code></td><td>The pod's affinity rules.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-audit-tables-refusals">Refusals</h3>
+
+      <ul>
+        <li><code>config.nuna.audit-tables.catalog-uri is required: the catalog the writer writes to</code></li>
+        <li><code>config.nuna.audit-tables.principal is required: the writer's own principal id, whose records it leaves out</code></li>
+        <li><code>config.nuna.audit-tables.token.endpoint is required: the identity provider's token endpoint</code></li>
+        <li><code>config.nuna.audit-tables.token.client-id is required: the writer's client id there</code></li>
+        <li><code>config.nuna.audit-tables.kafka.bootstrap-servers is required for the source kafka: the Kafka cluster holding the audit topic</code></li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../install/helm-catalog.html">Install the catalog</a>: the catalog chart, step by step</li>
+          <li><a href="../install/helm-maintenance.html">Install the maintenance worker</a>: the worker's chart</li>
+          <li><a href="../install/helm-audit-tables.html">Install the audit tables writer</a>: the writer's chart</li>
+          <li><a href="index.html">Configuration</a>: how settings reach each program</li>
+          <li><a href="../install/telemetry.html">Send telemetry</a>: the collector the <code>telemetry</code> values point at</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-catalog/values.yaml</code>, <code>deploy/helm/nuna-catalog/templates/</code>, <code>deploy/helm/nuna-maintenance/values.yaml</code>, <code>deploy/helm/nuna-maintenance/templates/</code>, <code>deploy/helm/nuna-audit-tables/values.yaml</code> and <code>deploy/helm/nuna-audit-tables/templates/</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Each chart was rendered with <code>helm template</code>, with and without its required values, to see each refusal.</p>
+        <p>No release was installed for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

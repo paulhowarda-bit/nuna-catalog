@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/drop-restore-purge">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drop, restore and purge a table · nuna docs</title>
+  <meta name="description" content="Drop a table or view, restore it within the undrop window with its id, grants and history, and know when and how the maintenance worker purges it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Drop, restore and purge a table</h1>
+        <p class="lead">Drop a table or view, restore it within the undrop window with its id, grants and history, and know when and how the maintenance worker purges it.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data engineers and data stewards</span>
+          <span class="badge needs">Needs <code>modify</code> to drop, <code>create</code> to restore</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>Every drop is soft. A dropped table keeps its id, its files, its grants and its journal, and its name is free at once. Until the undrop window closes, <code>nuna.rest.drop-retention</code> after the drop (default 30 days), it can be restored. After that the maintenance worker purges it: it deletes the table's files with its own storage identity and marks the table purged, keeping its record as history.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Dropping needs <code>modify</code> on the table or view. Restoring needs <code>create</code> on the namespace it was dropped from. Listing dropped tables needs <code>describe</code> on the namespace.</li>
+        <li>Drops happen on main; a branch or tag refuses them.</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="drop-the-table">Drop the table</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Drop equities.orders">
+<pre><code>curl -sS -X DELETE "$NUNA/v1/trading/namespaces/equities/tables/orders" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>The server answers <code>204</code>. <code>purgeRequested=true</code> is ignored: the drop is soft whatever it says. A view is dropped at <code>…/views/&lt;name&gt;</code>.</p>
+        </section>
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <div class="code" data-lang="sql" data-title="Drop from Spark">
+<pre><code>DROP TABLE trading.equities.orders;</code></pre>
+          </div>
+          <p><code>DROP TABLE … PURGE</code> is soft too.</p>
+        </section>
+      </div>
+      <p>A catalog branch or tag made before the drop still reads the table under its old name, and its purge waits until no ref names it.</p>
+
+      <h2 id="restore-the-table">Restore the table</h2>
+      <p>The console has no restore control; restore with the API. First find the table's id among the namespace's dropped tables.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">List the namespace's dropped tables and views.</p>
+          <div class="code" data-lang="bash" data-title="Dropped in equities">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/dropped" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "dropped": [
+    {
+      "id": "9a3e51c7-0d24-4b8f-b6e1-52c7a9f03d18",
+      "catalog": "trading",
+      "kind": "table",
+      "name": "orders",
+      "namespace-id": "…",
+      "state": "dropped",
+      "dropped-at": "2026-11-25T16:20:41.007Z",
+      "purge-after": "2026-12-25T16:20:41.007Z",
+      "location": "s3://lake-trading/tables/9a3e51c7-0d24-4b8f-b6e1-52c7a9f03d18"
+    }
+  ]
+}</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Restore it by its id.</p>
+          <div class="code" data-lang="bash" data-title="Undrop the table">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/objects/9a3e51c7-0d24-4b8f-b6e1-52c7a9f03d18/undrop" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>The server answers <code>200</code> with the table, now <code>"state": "active"</code>. If another table has taken the name, send <code>{"name": "orders_restored"}</code> as the body to restore it under another name. It comes back in the namespace it was dropped from.</p>
+        </li>
+      </ol>
+      <p>Registering the metadata file a dropped table left at also restores it, as an undrop (<a href="register-table.html">Register an existing table</a>).</p>
+
+      <h2 id="purge">Purge</h2>
+      <p>Nobody purges by hand. Once a dropped table's <code>purge-after</code> has passed, the maintenance worker claims its purge, deletes its files and completes the purge. Only a maintenance principal may claim or complete a purge, and each server allows at most a set number of purges a minute. From the claim on, the table cannot be restored.</p>
+      <p>A purge is refused while a legal hold or DR freeze covers the table, a namespace above it or the catalog, and waits while a catalog branch or tag names the table.</p>
+
+      <aside class="callout danger">
+        <p class="callout-title">A purge cannot be undone</p>
+        <p>Once purged, the table's files are gone. To keep a table past the undrop window, restore it before <code>purge-after</code>, or place a legal hold on it (<a href="hold.html">Place and lift a legal hold</a>).</p>
+      </aside>
+
+      <p>Unregistering is different from dropping: <code>POST /v1/trading/namespaces/equities/tables/orders/unregister</code> (needs <code>modify</code>) stops nuna tracking the table and deletes nothing, ever. The table is never purged; registering its metadata file again brings it back.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The table is back</p>
+        <p>After a restore the table reads as it did before the drop, with its grants and history. The audit trail holds a <code>nuna.catalog.drop</code> record for the drop and a <code>nuna.catalog.undrop</code> record for the restore.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>403</code> <code>Table equities.orders is under a legal hold and cannot be dropped</code></td><td>A legal hold covers the table, its namespace or the catalog.</td><td>A data steward must release the hold first.</td></tr>
+            <tr><td><code>409</code> <code>UndropWindowClosedException</code> <code>The undrop window of … closed at …; it is waiting to be purged</code></td><td>The window has passed.</td><td>The table cannot be restored.</td></tr>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>The name orders is taken in its namespace; undrop it under another name</code></td><td>Another table or view has the name now.</td><td>Send <code>{"name": "…"}</code> with a free name.</td></tr>
+            <tr><td><code>409</code> <code>NotDroppedException</code> <code>… is not a dropped table or view</code></td><td>The id is of a live, purging or purged object.</td><td>Check the id in the dropped list.</td></tr>
+            <tr><td><code>404</code> <code>NoSuchNamespaceException</code> <code>The namespace of … no longer exists</code></td><td>The namespace it was dropped from is gone.</td><td>Create the namespace again, then restore.</td></tr>
+            <tr><td><code>403</code> <code>The namespace of … is frozen for DR reconcile: …</code></td><td>A DR freeze covers the table.</td><td>Restore after the freeze is lifted.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>modify</code> or <code>create</code></td><td>Your groups lack the privilege.</td><td>Ask a grant admin (<a href="grant-access.html">Grant and revoke access</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/lifecycle.html">Lifecycle</a>: drop, undrop, purge and unregister.</li>
+          <li><a href="../api/lifecycle.html#endpoints">Lifecycle API</a>: dropped, undrop, purge-claim and purge.</li>
+          <li><a href="hold.html">Place and lift a legal hold</a>: stop a drop or purge.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>docs/storage-design.md</code> and <code>docs/refs.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was dropped or restored on the local demo.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

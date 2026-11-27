@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/mongodb">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Use MongoDB · nuna docs</title>
+  <meta name="description" content="Prepare a MongoDB replica set, database and user for the catalog server, pass the connection string in a Secret, and pass the safety self-check the server runs before it starts.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Use MongoDB</h1>
+        <p class="lead">Prepare a MongoDB replica set, database and user for the catalog server, pass the connection string in a Secret, and pass the safety self-check the server runs before it starts.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators and database administrators</span>
+          <span class="badge tested">Tested nightly</span>
+        </p>
+      </header>
+
+      <p>Set <code>nuna.database.backend: mongodb</code>. The server needs a replica set, since it commits in transactions with majority writes; nuna's tests run on MongoDB 8.0.34. With MongoDB the server has no JDBC database at all, so <code>spring.datasource</code> stays empty and the chart does not ask for its URL.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>A replica set with at least 3 voting, data-bearing members (arbiters do not count).</li>
+        <li>You can create users and change the cluster's default write concern, or you work with someone who can.</li>
+      </ul>
+
+      <h2 id="prepare-replica-set">Prepare the replica set</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Set the default write concern to majority.</p>
+          <div class="code" data-lang="text" data-title="mongosh">
+<pre><code>db.adminCommand({setDefaultRWConcern: 1, defaultWriteConcern: {w: "majority"}})</code></pre>
+          </div>
+          <p>Leave <code>writeConcernMajorityJournalDefault</code> at <code>true</code> in the replica set's configuration, so majority writes are journaled.</p>
+        </li>
+        <li>
+          <p class="step-title">Create the server's user with <code>readWrite</code> on the catalog's database and <code>clusterMonitor</code>.</p>
+          <div class="code" data-lang="text" data-title="mongosh">
+<pre><code>db.getSiblingDB("admin").createUser({
+  user: "nuna_catalog",
+  pwd: passwordPrompt(),
+  roles: [{role: "readWrite", db: "catalog"}, {role: "clusterMonitor", db: "admin"}]
+})</code></pre>
+          </div>
+          <p><code>clusterMonitor</code> lets the self-check read the replica set's configuration and default write concern, and lets the server find a lost commit's outcome. The server creates its collections and records its schema steps in a collection of its own; servers that start at the same moment are safe.</p>
+        </li>
+      </ol>
+
+      <h2 id="connect-server">Connect the server</h2>
+      <p>The connection string carries the password, so it goes in the server's Secret, as <code>nuna.database.mongodb.uri</code>. It must name the database and set <code>socketTimeoutMS</code>, which bounds every wait on the database. Set <code>MONGO_USER</code> and <code>MONGO_PASSWORD</code> in your shell first.</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-catalog-secrets \
+  --from-literal=nuna.database.mongodb.uri="mongodb://$MONGO_USER:$MONGO_PASSWORD@db1.example,db2.example,db3.example/catalog?replicaSet=rs0&amp;socketTimeoutMS=60000&amp;authSource=admin&amp;tls=true"</code></pre>
+      </div>
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    database:
+      backend: mongodb
+secrets:
+  existingSecret: nuna-catalog-secrets</code></pre>
+      </div>
+      <p><code>authSource=admin</code> matches a user created in <code>admin</code>, as above, and <code>tls=true</code> is the driver's standard option for TLS.</p>
+      <p class="gap">Not documented yet: MongoDB with TLS and a private certificate authority. Nothing in the chart or the tests sets it up.</p>
+
+      <h2 id="safety-self-check">The safety self-check</h2>
+      <p>Before it creates or migrates its collections, each server checks these. Any finding stops it with <code>The catalog's database is unsafe, so the server does not start</code>, followed by each <code><var>code</var>: <var>detail</var></code>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>MongoDB findings</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Detail the server logs</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>mongo.not-replica-set</code></td><td><code>the server is not a replica set member; transactions and majority writes need a replica set</code></td><td>Run a replica set and name it in <code>replicaSet</code>.</td></tr>
+            <tr><td><code>mongo.too-few-voters</code></td><td><code>the replica set has <var>n</var> voting data-bearing members; at least 3 are needed for a majority to survive losing one</code></td><td>Add voting, data-bearing members.</td></tr>
+            <tr><td><code>mongo.weak-write-concern</code></td><td><code>the default write concern is <var>concern</var> (<var>source</var>) and writeConcernMajorityJournalDefault is <var>value</var>; the default must be majority and majority writes must be journaled</code></td><td>Set the default write concern to <code>majority</code> and keep <code>writeConcernMajorityJournalDefault</code> true.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>nuna.database.allow-unsafe</code> names findings the server starts despite; leave it empty in production (<a href="../configure/database.html#nuna-database-allow-unsafe">Database settings</a>).</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The server reports MongoDB</p>
+        <p>As a platform operator, <code>GET /management/v1/health/server?store=true</code> shows <code>"configured": "mongodb"</code> and an empty <code>allowed</code> list (<a href="verify.html#read-health-routes">Check the install</a>).</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.database.mongodb.uri is required when nuna.database.backend is mongodb</code></td><td>The Secret has no such key, or the chart does not mount it.</td><td>Check the key's name and <code>secrets.existingSecret</code>.</td></tr>
+            <tr><td><code>nuna.database.mongodb.uri must name the catalog's database, as in mongodb://h1,h2,h3/catalog?replicaSet=rs0&amp;socketTimeoutMS=30000</code></td><td>The string has no database path.</td><td>Add <code>/catalog</code> after the hosts.</td></tr>
+            <tr><td><code>nuna.database.mongodb.uri must set socketTimeoutMS, which bounds every wait on the database</code></td><td>No <code>socketTimeoutMS</code>.</td><td>Add it.</td></tr>
+            <tr><td><code>self-check failed</code></td><td>The user cannot run the self-check's commands.</td><td>Give it <code>clusterMonitor</code>.</td></tr>
+            <tr><td><code>The catalog's database is unsafe, so the server does not start</code> with a <code>mongo.</code> code</td><td>A setting from the table above.</td><td>Change it as the table says.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/databases.html">Choosing a database</a>: how MongoDB compares.</li>
+          <li><a href="../configure/database.html">Database settings</a>: <code>nuna.database.mongodb.uri</code> and the rest.</li>
+          <li><a href="helm-catalog.html">Install the catalog server with Helm</a>: where these values go.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java</code>, <code>catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoSchema.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code>, <code>deploy/helm/nuna-catalog/templates/</code> and <code>deploy/README.md</code> (The database), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The <code>mongosh</code> commands and the connection string's <code>authSource</code> and <code>tls</code> options were not run for this page; they are standard MongoDB. The tests run a one-member replica set, which the self-check refuses unless <code>mongo.too-few-voters</code> is allowed.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

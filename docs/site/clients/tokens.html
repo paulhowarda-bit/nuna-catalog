@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/tokens">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Get a token · nuna docs</title>
+  <meta name="description" content="Get an access token from your identity provider to call nuna, let an engine renew its own, and know how long a token lasts. nuna validates tokens; it never issues them.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Get a token</h1>
+        <p class="lead">Get an access token from your identity provider to call nuna, let an engine renew its own, and know how long a token lasts. The server validates tokens; it never issues them.</p>
+        <p class="doc-meta"><span class="badge for">For engine users and platform operators</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You need a client registered at your organization's identity provider, with its client id and secret, whose tokens the server trusts. Platform operators name each trusted issuer in <code>nuna.security.issuers</code> (<a href="../configure/security.html">Security settings</a>).</li>
+        <li>The token's groups decide what you may do. A grant admin grants privileges to those groups (<a href="../guides/grant-access.html">Grant and revoke access</a>).</li>
+      </ul>
+
+      <h2 id="what-the-server-accepts">What the server accepts</h2>
+      <p>The server accepts a signed JWT as a bearer token when every one of these holds. There is no setting that turns the check off: a server with no trusted issuer refuses to start.</p>
+      <ul>
+        <li>Its <code>iss</code> claim is exactly the <code>issuer</code> of one entry in <code>nuna.security.issuers</code>.</li>
+        <li>Its signature verifies against that issuer's keys, fetched from the entry's <code>jwks-uri</code>, with one of the entry's <code>algorithms</code>. The server does no OpenID Connect discovery.</li>
+        <li>Its <code>aud</code> claim names one of the entry's <code>audiences</code>.</li>
+        <li>It has an <code>exp</code> claim, and the server's clock is inside its <code>exp</code> and <code>nbf</code> window, give or take <code>nuna.security.clock-skew</code> (default <code>60s</code>).</li>
+        <li>It carries the claim the entry's <code>user-id-claim</code> names (the principal) and the claim its <code>client-id-claim</code> names (the client). The claim <code>groups-claim</code> names holds the groups; a token with none has no groups.</li>
+        <li>Its groups are in the token itself. A token whose groups were moved out of it because there were too many (the group overage of Microsoft Entra ID, named in <code>_claim_names</code>) is refused.</li>
+      </ul>
+
+      <h2 id="get-a-token-with-client-credentials">Get a token with client credentials</h2>
+      <p>A program that calls nuna as itself gets its token with the OAuth 2 client-credentials grant, from the identity provider's token endpoint. This example uses Keycloak's token endpoint for realm <code>data</code>; your provider's endpoint, and whether it needs <code>scope</code> or <code>audience</code>, may differ.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Keep the client secret in a variable, not in the command.</p>
+          <div class="code" data-lang="bash">
+<pre><code>read -rs CLIENT_SECRET</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Ask the identity provider for a token.</p>
+          <div class="code" data-lang="bash" data-title="The client-credentials grant">
+<pre><code>curl -sS -X POST "https://idp.example/realms/data/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=client_credentials" \
+  --data-urlencode "client_id=trading-loader" \
+  --data-urlencode "client_secret=$CLIENT_SECRET"</code></pre>
+          </div>
+          <p>The answer is the provider's. The fields nuna's own programs read from it are <code>access_token</code> and <code>expires_in</code>, in seconds; Keycloak's answer holds more fields, cut here.</p>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "access_token": "…",
+  "expires_in": 300,
+  "token_type": "Bearer"
+}</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Put the <code>access_token</code> value in <code>TOKEN</code>.</p>
+          <div class="code" data-lang="bash">
+<pre><code>export TOKEN=…   # the access_token value</code></pre>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The server answers with a catalog's configuration</p>
+        <p>Run <code>curl -sS "$NUNA/v1/config?warehouse=trading" -H "Authorization: Bearer $TOKEN"</code>. A JSON object with <code>"prefix": "trading"</code> means the token was accepted (<a href="curl.html#make-a-first-request">Make a first request</a>).</p>
+      </aside>
+
+      <h2 id="let-an-engine-renew-its-own-token">Let an engine renew its own token</h2>
+      <p>An engine given a fixed token stops working when that token expires. Iceberg's REST client can instead run the client-credentials grant itself and renew the token as it nears expiry. Give it the client's id and secret and the identity provider's token endpoint:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Iceberg REST client properties for a renewing token</caption>
+          <thead><tr><th scope="col">Property</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><td><code>credential</code></td><td>The client id and secret, joined by a colon: <code><var>client-id</var>:<var>secret</var></code>.</td></tr>
+            <tr><td><code>oauth2-server-uri</code></td><td>The identity provider's token endpoint. Without it, the client asks the catalog's own <code>/v1/oauth/tokens</code>, which nuna refuses.</td></tr>
+            <tr><td><code>scope</code></td><td>The scope your provider expects, if it expects one.</td></tr>
+            <tr><td><code>audience</code></td><td>The audience your provider expects, if it expects one.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>nuna's own Iceberg clients sign in this way: the maintenance worker gives its compaction jobs these four properties, and the audit table writer sets them for itself. The engine matrix runs the audit table writer against an identity provider's token endpoint every night code changes. Each engine's page shows where the properties go: <a href="spark.html">Spark</a>, <a href="pyiceberg.html">PyIceberg</a>, <a href="trino.html">Trino</a>.</p>
+      <p class="gap">Not documented yet: Spark, PyIceberg or Trino renewing a token this way against nuna. The engine matrix gives those engines a fixed <code>token</code>.</p>
+
+      <h2 id="the-v1-oauth-tokens-endpoint">The /v1/oauth/tokens endpoint</h2>
+      <p>The Iceberg REST standard describes a token endpoint on the catalog, <code>/v1/oauth/tokens</code>. nuna answers every call to it, with any method and without a token, with <code>400</code> and the same OAuth error, so a client that tries it learns where to go instead. <code>/v1/config</code> does not advertise it.</p>
+      <div class="code" data-lang="json" data-kind="output" data-title="The answer to any call to /v1/oauth/tokens">
+<pre><code>{
+  "error": "unsupported_grant_type",
+  "error_description": "This catalog does not issue tokens. Get an access token from the organisation's identity provider and send it as a bearer token."
+}</code></pre>
+      </div>
+      <p>Platform operators replace the words <code>the organisation's identity provider</code> with the provider's name or address in <code>nuna.rest.identity-provider</code> (<a href="../configure/server.html">Server settings</a>).</p>
+
+      <h2 id="how-long-a-token-lasts">How long a token lasts</h2>
+      <p>The identity provider decides, by the token's <code>exp</code> claim; nuna sets no lifetime of its own. The server checks the token on every request and accepts it until <code>exp</code> plus the clock skew. Storage credentials the server vends with a table are separate: they last <code>nuna.storage.credential-lifetime</code> (default <code>30m</code>) whatever the token's lifetime (<a href="../concepts/storage.html">Storage profiles and credential vending</a>).</p>
+      <aside class="callout demo">
+        <p class="callout-title">The demo's tokens last seven days</p>
+        <p>The demo signs its own tokens, with issuer <code>https://idp.demo/nuna</code> and audience <code>nuna-catalog</code>, one per demo user, valid for seven days. They are in <code>~/.nuna-demo/tokens/<var>user</var>.jwt</code>. <code>demo/demo.sh token</code> prints the demo's addresses and two of the tokens; when the tokens have less than an hour left, it makes new ones first and restarts the demo's services that hold them (<a href="../demo/commands.html">demo.sh reference</a>, <a href="../demo/sign-in.html">Demo users and sign-in</a>).</p>
+      </aside>
+
+      <h2 id="act-for-an-end-user">Act for an end user</h2>
+      <p>An engine that runs queries for many people, such as Trino, can call nuna as each person. The engine's client must be registered as a trusted engine; it then names the person in headers beside its own token, or sends the person's token with its own in <code>X-Nuna-Engine-Authorization</code>. <a href="../api/index.html#authentication">API reference</a> lists the headers, and <a href="../api/engines.html">Engines</a> registers a client.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>401</code>, <code>Not authorized: the bearer token is missing or was not accepted</code></td><td>The token is missing, expired, signed by an issuer the server does not trust, meant for another audience, or lacks a claim the issuer's entry names. The answer never says which; the server's audit record of the failure does.</td><td>Get a new token. If a fresh one is refused, ask a platform operator to compare its claims with <code>nuna.security.issuers</code>.</td></tr>
+            <tr><td><code>503</code>, <code>The token could not be checked: its issuer's signing keys could not be fetched; retry later</code></td><td>The server could not fetch the issuer's keys from its <code>jwks-uri</code>. The token is not known to be bad.</td><td>Send the request again after the <code>Retry-After</code> seconds. If it lasts, a platform operator checks the path from the server to the identity provider.</td></tr>
+            <tr><td><code>403</code>, <code>Forbidden: client … is not a registered trusted engine, so it may not act for another user</code></td><td>The request named an end user, but its client is not a registered trusted engine.</td><td>Register the client (<a href="../api/engines.html">Engines</a>), or send no end-user headers.</td></tr>
+            <tr><td><code>400</code>, <code>unsupported_grant_type</code> from <code>/v1/oauth/tokens</code></td><td>The client asked nuna for a token.</td><td>Set <code>oauth2-server-uri</code> to the identity provider's token endpoint, or give the client a token.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="curl.html">Use the APIs with curl</a>: using the token in requests.</li>
+          <li><a href="../security/authentication.html">Authentication</a>: how the server validates tokens, and service identities.</li>
+          <li><a href="../install/identity-provider.html">Connect an identity provider</a>: setting up issuers, audiences and the groups claim.</li>
+          <li><a href="../configure/security.html">Security settings</a>: every <code>nuna.security.*</code> setting.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/OAuthRoute.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java</code>, <code>catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesApplication.java</code>, <code>catalog-tests-engines/src/test/java/nuna/catalog/engines/EngineMatrixTest.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>demo/Mint.java</code> and <code>demo/demo.sh</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The <code>/v1/oauth/tokens</code> answer and the <code>401</code> were captured from the local demo. The client-credentials request was not run: it needs a client of your own identity provider, and the Keycloak path is that product's form.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

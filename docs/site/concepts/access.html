@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/access">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Identity and access · nuna docs</title>
+  <meta name="description" content="Identity and access is how nuna knows who a request comes from, by a token from your identity provider, and what that principal may do, by grants of privileges to its groups.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Identity and access</h1>
+        <p class="lead">Identity and access is how nuna knows who a request comes from, by a token from your identity provider, and what that principal may do, by grants of privileges to its groups.</p>
+      </header>
+
+      <figure class="diagram" id="fig-grant-tree">
+        <svg viewBox="0 0 720 260" role="img" aria-labelledby="fig-grant-tree-t fig-grant-tree-d">
+          <title id="fig-grant-tree-t">A grant passes down the tree</title>
+          <desc id="fig-grant-tree-d">Catalog trading holds namespace equities, which holds tables fills and orders and namespace equities.daily, which holds table positions. A grant of select to trading-analysts on equities reaches fills, orders, equities.daily and positions.</desc>
+          <rect class="d-node" x="280" y="10" width="160" height="44" rx="10"/>
+          <text class="d-label" x="360" y="37">trading</text>
+          <rect class="d-node d-accent" x="280" y="84" width="160" height="44" rx="10"/>
+          <text class="d-label" x="360" y="111">equities</text>
+          <text class="d-note" x="560" y="111">select to trading-analysts</text>
+          <rect class="d-node" x="40" y="168" width="160" height="44" rx="10"/>
+          <text class="d-label" x="120" y="195">fills</text>
+          <rect class="d-node" x="220" y="168" width="160" height="44" rx="10"/>
+          <text class="d-label" x="300" y="195">orders</text>
+          <rect class="d-node" x="440" y="168" width="200" height="44" rx="10"/>
+          <text class="d-label" x="540" y="195">equities.daily</text>
+          <text class="d-note" x="540" y="236">and positions in it</text>
+          <path class="d-edge" d="M360 54V84"/>
+          <path class="d-edge" d="M330 128L120 168" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M350 128L300 168" marker-end="url(#d-arrow)"/>
+          <path class="d-edge" d="M390 128L540 168" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>A grant on namespace <code>equities</code> reaches every table, view and namespace under it, including those created later.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>A <a class="term" href="../reference/glossary.html#term-principal">principal</a> is who a request acts as: a person signed in to the console, a person using an engine, or a program such as the maintenance worker. The server learns the principal from a bearer token issued by an identity provider you trust. The token also carries the principal's <em>groups</em>, and the groups decide what it may do.</p>
+      <p>What a group may do is a set of <em>grants</em>. A grant gives one <a href="../reference/privileges.html">privilege</a> on one object to one group. There are seven privileges: <code>describe</code>, <code>select</code>, <code>write</code>, <code>modify</code>, <code>create</code>, <code>manage-grants</code> and <code>manage-tags</code>.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="issuers-and-groups">Issuers and groups</h3>
+      <p>Each trusted identity provider is an issuer in <code>nuna.security.issuers</code>, with the claims that carry the user id, the groups and the client id. The server keeps no list of people and no one's password, and it never reads the directory: if the identity provider puts a group in the token, the principal is in that group for that request. See <a href="../security/authentication.html">Authentication</a>.</p>
+
+      <h3 id="grants-and-inheritance">Grants and inheritance</h3>
+      <p>A request needs one privilege on the object it touches. The principal holds it when one of its groups holds that privilege, or one that includes it, on the object or anything above it. <code>modify</code> includes <code>write</code>, <code>write</code> includes <code>select</code>, and every privilege includes <code>describe</code>. Grants only add: there is no DENY.</p>
+
+      <h3 id="separation-of-duties">Separation of duties</h3>
+      <p>In one catalog, one group may not hold duties that conflict. A group that manages grants holds nothing else, and a group that changes data does not also set tags. The server refuses a grant that would break this, and no one may grant to a group they belong to. The rules and their refusals are in <a href="../security/authorization.html#separation-of-duties">Authorization</a>.</p>
+
+      <h3 id="roles-from-settings">Roles from the settings</h3>
+      <p>Three roles come from the server's settings, not from grants:</p>
+      <dl>
+        <dt>Grant admins</dt>
+        <dd>Members of a group in <code>nuna.security.grant-admin-groups</code>. They may grant and revoke in every catalog and hold no other grant.</dd>
+        <dt>Platform operators</dt>
+        <dd>Members of a group in <code>nuna.security.platform-operator-groups</code>. They run the deployment (trusted engines, DR freezes, the worker's storage) and hold no grant at all.</dd>
+        <dt>Maintenance principals</dt>
+        <dd>Principals listed in <code>nuna.security.maintenance-principals</code>, acting as themselves. Only they may call the worker's endpoints.</dd>
+      </dl>
+      <p>No role reads or changes data by itself. There is no superuser.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>Every request is decided for its principal, or for the end user a trusted engine names, and every refusal leaves an audit record.</li>
+        <li>A principal that holds nothing on an object cannot tell whether it exists: the server answers as for a missing name.</li>
+        <li>Who is in a group is the identity provider's business. Removing someone from a group takes effect when their current token expires.</li>
+      </ul>
+
+      <h2 id="what-a-refusal-tells-you">What a refusal tells you</h2>
+      <p>A refusal answers <code>403</code> and names what was missing, for example <code><var>subject</var> holds no privilege that gives select for loadTable</code>, or the rule that refused. A missing name answers <code>404</code>, whether the object is missing or hidden from you. <a href="../reference/errors.html">Error responses</a> lists every status.</p>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <p>In the console, the <b class="ui">Grants</b> page shows a catalog's grants to those who manage them, and every object's <b class="ui">Access</b> tab shows <b class="ui">What you may do</b>. The endpoints are in the <a href="../api/grants.html#endpoints">Grants API</a>.</p>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>Grants go to groups only; a grant cannot name a person.</li>
+        <li>A grant that names a catalog branch can only give <code>write</code> or <code>modify</code>.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/authorization.html">Authorization</a>: every rule of a decision, with its refusal.</li>
+          <li><a href="../reference/privileges.html">Privileges</a>: what each privilege allows.</li>
+          <li><a href="../guides/grant-access.html">Grant and revoke access</a>: making and removing grants.</li>
+          <li><a href="row-column-rules.html">Row filters and column masks</a>: limiting which rows and columns a group sees.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-security/src/main/java/nuna/catalog/security/Privilege.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Authorizer.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/Separation.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

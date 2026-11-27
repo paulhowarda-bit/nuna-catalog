@@ -1,0 +1,17 @@
+Breaks: The documentation site's policy lets its pages connect anywhere.
+Module: catalog-server
+Test: DocsSiteTest#theSiteNeedsNoTokenAndAllowsNoConnections
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+index 2e218070..d30dfdc4 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+@@ -49,7 +49,7 @@ public class UiWiring implements WebMvcConfigurer {
+ 
+     /** The documentation site's Content-Security-Policy: its own files only, and no connections. */
+     static final String DOCS_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+-            + "font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
++            + "font-src 'self'; connect-src *; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+ 
+     /** Each console file's ETag, by the file's description; the jar's files never change while the server runs. */
+     private static final Map<String, String> ETAGS = new ConcurrentHashMap<>();

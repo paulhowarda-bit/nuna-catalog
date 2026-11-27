@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/server">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Server settings · nuna docs</title>
+  <meta name="description" content="Set the REST surface's page sizes, caches and limits, the console's sign-in, the health page's peers and the server's logging.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Server settings</h1>
+        <p class="lead">Set the REST surface's page sizes, caches and limits, the console's sign-in, the health page's peers and the server's logging.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The server's REST surface, the console's sign-in, the health page's peers, and the Spring Boot keys the server sets in its own <code>application.yaml</code>. Telemetry export takes the standard <code>OTEL_*</code> environment variables, which the charts set from their <code>telemetry</code> values (<a href="../install/telemetry.html">Send telemetry</a>); there are no <code>nuna.telemetry.*</code> settings.</p>
+
+      <h2 id="nuna-rest-group">nuna.rest</h2>
+
+      <section class="setting">
+        <h3 id="nuna-rest-default-page-size"><code>nuna.rest.default-page-size</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>100</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_DEFAULTPAGESIZE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.default-page-size</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The listing page size when a client names none. The server refuses to start unless 1 &lt;= default-page-size &lt;= max-page-size: <code>need 1 &lt;= default-page-size &lt;= max-page-size, got <var>a</var> and <var>b</var></code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-max-page-size"><code>nuna.rest.max-page-size</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>1000</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_MAXPAGESIZE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.max-page-size</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The largest listing page served; a client asking for more gets this many.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-alert-metadata-chars"><code>nuna.rest.alert-metadata-chars</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer (characters)</dd>
+          <dt>Default</dt><dd><code>1048576</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_ALERTMETADATACHARS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.alert-metadata-chars</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A loaded table metadata file larger than this is reported, once per file, on the log <code>nuna.alerts</code> and the metric <code>nuna.catalog.alerts.large.metadata</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-alert-snapshots"><code>nuna.rest.alert-snapshots</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>1000</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_ALERTSNAPSHOTS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.alert-snapshots</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A loaded table with more snapshots than this is reported, once per metadata file, on the log <code>nuna.alerts</code> and the same metric, <code>nuna.catalog.alerts.large.metadata</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-metadata-cache-chars"><code>nuna.rest.metadata-cache-chars</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer (characters)</dd>
+          <dt>Default</dt><dd><code>268435456</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_METADATACACHECHARS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.metadata-cache-chars</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The budget of each of the server's in-memory metadata caches, in characters of JSON. Size the container's memory with it.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-drop-retention"><code>nuna.rest.drop-retention</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>30d</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_DROPRETENTION</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.drop-retention</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long a dropped table or view can still be restored before it may be purged. It must be longer than <a href="governance.html#nuna-governance-pitr-window"><code>nuna.governance.pitr-window</code></a>, or the server refuses to start.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-credential-refresh-margin"><code>nuna.rest.credential-refresh-margin</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>5m</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_CREDENTIALREFRESHMARGIN</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.credential-refresh-margin</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A conditional table load gets no 304 when the vended credentials it would reuse expire within this, so the engine gets fresh ones. The Java client keeps a loaded table for 5 minutes.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-identity-provider"><code>nuna.rest.identity-provider</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>the organisation's identity provider</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_IDENTITYPROVIDER</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.identity-provider</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Named in the answer to <code>POST /v1/oauth/tokens</code>, since the catalog issues no tokens: 400 <code>unsupported_grant_type</code> with <code>This catalog does not issue tokens. Get an access token from <var>identity-provider</var> and send it as a bearer token.</code> Name your identity provider here.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-audit-source"><code>nuna.rest.audit-source</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd><code>urn:nuna:deployment:nuna-catalog</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_AUDITSOURCE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.audit-source</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The CloudEvents <code>source</code> of this deployment's audit records and change events. Give each deployment its own.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-max-transaction-tables"><code>nuna.rest.max-transaction-tables</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>100</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_MAXTRANSACTIONTABLES</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.max-transaction-tables</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The most tables one multi-table commit may change. More is refused with 400, <code>A transaction may change at most <var>N</var> tables; this one names <var>M</var></code>. At least 1: <code>max-transaction-tables must be at least 1, got <var>N</var></code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-rest-default-warehouse"><code>nuna.rest.default-warehouse</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string (a catalog name)</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REST_DEFAULTWAREHOUSE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.rest.default-warehouse</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The catalog <code>GET /v1/config</code> answers for when the engine names no warehouse. Unset, such a request is refused with 400, <code>Missing query parameter warehouse, and this server has no default warehouse</code>.</p>
+      </section>
+
+      <h2 id="nuna-ui-group">nuna.ui</h2>
+
+      <p>The console signs in like any other API caller, with a token from the identity provider that the server checks against <a href="security.html#nuna-security-issuers"><code>nuna.security.issuers</code></a>. It is a public OIDC client: authorization code with PKCE, no client secret. Nothing here is secret: all of it reaches the browser through <code>/ui/config.json</code>.</p>
+
+      <section class="setting">
+        <h3 id="nuna-ui-dev-token-login"><code>nuna.ui.dev-token-login</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>boolean</dd>
+          <dt>Default</dt><dd><code>false</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_DEVTOKENLOGIN</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.dev-token-login</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Offers a box to paste a bearer token into, for local development only.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-docs-url"><code>nuna.ui.docs-url</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string: a path on the server, an http(s) URL, or <code>none</code></dd>
+          <dt>Default</dt><dd><code>/docs/</code>: the documentation this server serves</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_DOCSURL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.docs-url</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the console's documentation links go: the Docs button in its header, which opens the documentation of the page shown, the line in its keys dialog, the link on its sign-in screen, and the next step on a page your groups cannot use. The server serves this documentation under <code>/docs/</code> with no sign-in, so the default works on a network with no way out. Set a URL to send readers to a copy hosted elsewhere; a value without a trailing slash gets one. Set <code>none</code> to hide every link. Any other value stops the server from starting.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-oidc-issuer"><code>nuna.ui.oidc.issuer</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none: the console offers no sign-in</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_OIDC_ISSUER</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.oidc.issuer</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The issuer whose <code>/.well-known/openid-configuration</code> the browser reads. Its origin is the only one besides the server the console may call. It must be <code>http</code> or <code>https</code>: <code>nuna.ui.oidc.issuer must be an http(s) URL, not <var>value</var></code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-oidc-client-id"><code>nuna.ui.oidc.client-id</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required with <code>issuer</code>)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_OIDC_CLIENTID</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.oidc.client-id</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The console's client id at the identity provider.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-oidc-scopes"><code>nuna.ui.oidc.scopes</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>list of strings</dd>
+          <dt>Default</dt><dd><code>[openid]</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_OIDC_SCOPES_<var>N</var></code>, or a comma-separated list</dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.oidc.scopes</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>What the console asks for. The access token must be one the catalog accepts: its audience among the issuer's <code>audiences</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-oidc-redirect-uri"><code>nuna.ui.oidc.redirect-uri</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>URI</dd>
+          <dt>Default</dt><dd>none: the console's own <code>/ui/</code> URL</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_OIDC_REDIRECTURI</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.oidc.redirect-uri</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the identity provider sends the browser back, after signing in and after signing out. The client must allow it as a redirect URI and as a post-logout redirect URI.</p>
+      </section>
+
+      <h2 id="nuna-health-group">nuna.health</h2>
+
+      <p>Each server holds only its own meters, so the server a platform operator's browser reaches asks the others for theirs to fill the console's health page.</p>
+
+      <section class="setting">
+        <h3 id="nuna-health-peers"><code>nuna.health.peers</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>list of <code>host:port</code> strings</dd>
+          <dt>Default</dt><dd>empty (the catalog chart sets it)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_HEALTH_PEERS</code>, a comma-separated list</dd>
+          <dt>Helm</dt><dd><code>config.nuna.health.peers</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Where the other servers are, each host resolved to every address it has. Anything but <code>host:port</code> stops the server with <code>nuna.health.peers holds host:port entries, not <var>value</var></code>. The catalog chart sets it to its headless Service through <code>NUNA_HEALTH_PEERS</code>, which beats <code>config</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-health-peer-timeout"><code>nuna.health.peer-timeout</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>3s</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_HEALTH_PEERTIMEOUT</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.health.peer-timeout</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long a peer has to connect and answer before the health page counts it as not answering. Positive.</p>
+      </section>
+
+      <h2 id="spring-boot-keys">Spring Boot keys</h2>
+
+      <p>The server's own <code>application.yaml</code> sets these. Override one only where this says so.</p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Spring Boot keys the server sets</caption>
+          <thead><tr><th scope="col">Key</th><th scope="col">Value</th><th scope="col">Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>server.port</code></td><td><code>8181</code></td><td>The port the server listens on. The catalog chart's container port and probes assume 8181, so leave it.</td></tr>
+            <tr><td><code>spring.threads.virtual.enabled</code></td><td><code>true</code></td><td>Requests run on virtual threads.</td></tr>
+            <tr><td><code>spring.application.name</code></td><td><code>nuna-catalog</code></td><td>The name in logs and telemetry.</td></tr>
+            <tr><td><code>spring.main.banner-mode</code></td><td><code>off</code></td><td></td></tr>
+            <tr><td><code>logging.level.nuna.audit</code></td><td><code>INFO</code></td><td>Must stay <code>INFO</code> or finer: <a href="audit.html#logging-level-nuna-audit">Audit settings</a>.</td></tr>
+            <tr><td><code>logging.structured.format.console</code></td><td><code>ecs</code></td><td>Log lines go to standard output as JSON in Elastic Common Schema.</td></tr>
+            <tr><td><code>logging.level.<var>logger</var></code></td><td>Spring Boot's defaults</td><td>Set any other logger's level, such as <code>nuna.alerts</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="security.html">Security settings</a>: the issuers the console's tokens must come from</li>
+          <li><a href="../install/identity-provider.html">Set up the identity provider</a>: the console's client</li>
+          <li><a href="../operate/health.html">Health checks</a>: the page the peers fill</li>
+          <li><a href="../install/telemetry.html">Send telemetry</a>: metrics, traces and logs over OTLP</li>
+          <li><a href="../reference/limits.html">Limits</a>: page sizes and other limits</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/health/HealthSettings.java</code>, <code>catalog-server/src/main/resources/application.yaml</code> and <code>deploy/helm/nuna-catalog/templates/deployment.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No server was started for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

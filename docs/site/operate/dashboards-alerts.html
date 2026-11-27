@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/dashboards-alerts">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboards and alerts · nuna docs</title>
+  <meta name="description" content="Install the three Grafana dashboards and the 29 Prometheus alert rules that ship with nuna, and read what each watches.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Dashboards and alerts</h1>
+        <p class="lead">Install the three Grafana dashboards and the 29 Prometheus alert rules that ship with nuna, and read what each watches.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The files are in <code>deploy/grafana/</code>. They read nuna's metrics as Prometheus names them when it receives them over OTLP with its default translation (<a href="metrics.html">Metrics</a>).</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The files in deploy/grafana</caption>
+          <thead><tr><th scope="col">File</th><th scope="col">Holds</th></tr></thead>
+          <tbody>
+            <tr><td><code>dashboards/nuna-catalog.json</code></td><td>36 panels: the latency and availability objectives, loads, commits, credential vending, the audit's Kafka acknowledgement and archive, and nuna's alert counters.</td></tr>
+            <tr><td><code>dashboards/nuna-maintenance.json</code></td><td>16 panels: the worker's scans, failures, work done and compaction.</td></tr>
+            <tr><td><code>dashboards/nuna-client-reports.json</code></td><td>13 panels: engines' scan and commit reports, by engine.</td></tr>
+            <tr><td><code>rules/nuna-catalog.rules.yaml</code></td><td>19 rules: two burn-rate rules for each of three latency and three availability objectives, three for the alert counters, four for absent metrics.</td></tr>
+            <tr><td><code>rules/nuna-maintenance.rules.yaml</code></td><td>10 rules for the maintenance worker and its DR verifier.</td></tr>
+            <tr><td><code>tests/nuna-catalog.test.yaml</code></td><td>promtool unit tests of the catalog rules. It is not a rule file: keep it out of the folder Prometheus loads.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Both programs send metrics to a collector (<a href="../install/telemetry.html">Send telemetry</a>), and Prometheus receives them over OTLP with names translated to underscores and suffixes, such as Prometheus' <code>UnderscoreEscapingWithSuffixes</code> strategy.</li>
+        <li>The charts set <code>service.namespace</code>, so each deployment's <code>job</code> label is <code><var>namespace</var>/nuna-catalog</code> or <code><var>namespace</var>/nuna-maintenance</code>.</li>
+        <li>Grafana with a Prometheus data source. The dashboards use core panels only and schema version 39.</li>
+      </ul>
+
+      <h2 id="install-the-dashboards">Install the dashboards</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Import each file.</p>
+          <p>In Grafana, open Dashboards, then New, then Import, and upload each JSON file.</p>
+        </li>
+        <li>
+          <p class="step-title">Pick the data source.</p>
+          <p>Select your Prometheus in the <code>datasource</code> variable at the top. The files name no data source.</p>
+        </li>
+        <li>
+          <p class="step-title">Pick the deployment.</p>
+          <p>Select the deployment in <code>job</code>. The catalog and client-reports dashboards also take <code>catalog</code>, and the reports dashboard <code>engine</code>.</p>
+        </li>
+      </ol>
+
+      <h2 id="load-the-alert-rules">Load the alert rules</h2>
+      <p>Each rule file holds a <code>groups:</code> list. List the two files under <code>rule_files:</code> in Prometheus, or, with the Prometheus Operator, paste a file's <code>groups:</code> list unchanged under a PrometheusRule's <code>spec.groups</code>:</p>
+      <div class="code" data-lang="yaml">
+<pre><code>apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nuna-catalog
+spec:
+  groups:
+    - name: nuna-catalog-slos
+      rules: []   # the file's rules, unchanged</code></pre>
+      </div>
+      <p>Every rule has a <code>severity</code> label, <code>page</code> or <code>warning</code>, for Alertmanager to route on. Each alert's runbook is on <a href="runbooks.html">Alert runbooks</a>.</p>
+      <aside class="callout tip">
+        <p class="callout-title">Name the deployments you expect</p>
+        <p><code>NunaCatalogGone</code> names no deployment, and <code>NunaCatalogSilent</code> forgets a deployment after a day of silence. To always hear about a given deployment, add a rule of your own for its <code>job</code>:</p>
+        <div class="code" data-lang="yaml">
+<pre><code>- alert: NunaCatalogDeploymentGone
+  expr: absent_over_time(nuna_catalog_alerts_metadata_integrity_total{job="prod/nuna-catalog"}[10m])
+  keep_firing_for: 10m
+  labels:
+    severity: page</code></pre>
+        </div>
+      </aside>
+
+      <h2 id="the-objectives">The objectives</h2>
+      <p>The latency objectives read <code>nuna.catalog.requests</code>, whose only buckets are the bounds: 10, 50 and 300 ms. Each is read as a share within its bound, not as an interpolated quantile.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Service level objectives the rules watch</caption>
+          <thead><tr><th scope="col">Objective</th><th scope="col">Counts</th><th scope="col">Budget</th></tr></thead>
+          <tbody>
+            <tr><td>Load latency: p99 under 50 ms</td><td><code>loadTable</code> answered <code>2xx</code></td><td>1% slower</td></tr>
+            <tr><td>Not-modified latency: p99 under 10 ms</td><td><code>loadTable</code> answered <code>3xx</code></td><td>1% slower</td></tr>
+            <tr><td>Commit latency: p99 under 300 ms</td><td><code>updateTable</code> and <code>commitTransaction</code> answered <code>2xx</code></td><td>1% slower</td></tr>
+            <tr><td>Load, commit and all-request availability</td><td>5xx answers against 2xx, 3xx and 5xx; 4xx counts on neither side, 409 conflicts included</td><td>0.1% answered 5xx</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Fast burn rules page when the budget burns at 14.4 times its rate over 1 hour and 5 minutes, or 6 times over 6 hours and 30 minutes. They have no <code>for</code> and keep firing 10 minutes after their condition clears, so they overlap <code>NunaCatalogGone</code> when a server stops sending. Slow burn rules warn when the budget burns at its rate or faster over 3 days and 6 hours, for 15 minutes. Each objective is per deployment, summed over its servers and catalogs.</p>
+      <aside class="callout note">
+        <p class="callout-title">Few calls make big shares</p>
+        <p>With 10 commits an hour at night, one commit answered 5xx is 10% of the hour, past the 1.44% the fast rule fires at. One failure can page.</p>
+      </aside>
+      <p>The dashboard also draws commits per second against a line at 500. No rule watches that rate: it depends on demand.</p>
+
+      <h2 id="the-rules">The rules</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Every alert rule</caption>
+          <thead><tr><th scope="col">Rule</th><th scope="col">Severity</th><th scope="col">Fires when</th></tr></thead>
+          <tbody>
+            <tr><td><a href="runbooks.html#nunaloadsloburnfast"><code>NunaLoadSloBurnFast</code></a>, <a href="runbooks.html#nunanotmodifiedsloburnfast"><code>NunaNotModifiedSloBurnFast</code></a>, <a href="runbooks.html#nunacommitsloburnfast"><code>NunaCommitSloBurnFast</code></a></td><td>page</td><td>A latency objective burns fast.</td></tr>
+            <tr><td><a href="runbooks.html#nunaloadsloburnslow"><code>NunaLoadSloBurnSlow</code></a>, <a href="runbooks.html#nunanotmodifiedsloburnslow"><code>NunaNotModifiedSloBurnSlow</code></a>, <a href="runbooks.html#nunacommitsloburnslow"><code>NunaCommitSloBurnSlow</code></a></td><td>warning</td><td>A latency objective burns slowly.</td></tr>
+            <tr><td><a href="runbooks.html#nunaloadavailabilityburnfast"><code>NunaLoadAvailabilityBurnFast</code></a>, <a href="runbooks.html#nunacommitavailabilityburnfast"><code>NunaCommitAvailabilityBurnFast</code></a>, <a href="runbooks.html#nunarequestavailabilityburnfast"><code>NunaRequestAvailabilityBurnFast</code></a></td><td>page</td><td>An availability objective burns fast.</td></tr>
+            <tr><td><a href="runbooks.html#nunaloadavailabilityburnslow"><code>NunaLoadAvailabilityBurnSlow</code></a>, <a href="runbooks.html#nunacommitavailabilityburnslow"><code>NunaCommitAvailabilityBurnSlow</code></a>, <a href="runbooks.html#nunarequestavailabilityburnslow"><code>NunaRequestAvailabilityBurnSlow</code></a></td><td>warning</td><td>An availability objective burns slowly.</td></tr>
+            <tr><td><a href="runbooks.html#nunametadataintegrity"><code>NunaMetadataIntegrity</code></a></td><td>page</td><td>A metadata file no longer hashes to what its pointer recorded, in the last 15 minutes.</td></tr>
+            <tr><td><a href="runbooks.html#nunaregulatedschemachange"><code>NunaRegulatedSchemaChange</code></a>, <a href="runbooks.html#nunalargemetadata"><code>NunaLargeMetadata</code></a></td><td>warning</td><td>Their counter rose in the last 15 minutes.</td></tr>
+            <tr><td><a href="runbooks.html#nunacataloggone"><code>NunaCatalogGone</code></a></td><td>page</td><td>No catalog server has sent metrics for 10 minutes.</td></tr>
+            <tr><td><a href="runbooks.html#nunacatalogsilent"><code>NunaCatalogSilent</code></a></td><td>page</td><td>One deployment that sent within the last day has not for 10 minutes, while another still does.</td></tr>
+            <tr><td><a href="runbooks.html#nunarequestseriesmissing"><code>NunaRequestSeriesMissing</code></a></td><td>page</td><td>A deployment that has sent for over an hour has had no request series for an hour.</td></tr>
+            <tr><td><a href="runbooks.html#nunaslobucketmissing"><code>NunaSloBucketMissing</code></a></td><td>page</td><td>A latency objective's answers arrive without the bucket at its bound, for 10 minutes.</td></tr>
+            <tr><td><a href="runbooks.html#nunaworkernotscanning"><code>NunaWorkerNotScanning</code></a></td><td>page</td><td>No scan has succeeded for three scan intervals, for an hour.</td></tr>
+            <tr><td><a href="runbooks.html#nunaworkergone"><code>NunaWorkerGone</code></a></td><td>page</td><td>No worker has sent metrics for 15 minutes.</td></tr>
+            <tr><td><a href="runbooks.html#nunapurgesfailing"><code>NunaPurgesFailing</code></a>, <a href="runbooks.html#nunadeletionsfailing"><code>NunaDeletionsFailing</code></a></td><td>warning</td><td>Purges or deletions fail and none succeeds in an hour, for 20 minutes.</td></tr>
+            <tr><td><a href="runbooks.html#nunamaintenancejobfailing"><code>NunaMaintenanceJobFailing</code></a></td><td>warning</td><td>Jobs of one kind fail in every 30 minutes, for 3 hours.</td></tr>
+            <tr><td><a href="runbooks.html#nunascansslowerthaninterval"><code>NunaScansSlowerThanInterval</code></a></td><td>warning</td><td>The mean scan over an hour is longer than the scan interval.</td></tr>
+            <tr><td><a href="runbooks.html#nunacompactionfallingbehind"><code>NunaCompactionFallingBehind</code></a></td><td>warning</td><td>Compaction was left over or cut off each day, for 3 days.</td></tr>
+            <tr><td><a href="runbooks.html#nunafilesoutsidetable"><code>NunaFilesOutsideTable</code></a></td><td>warning</td><td>A table wrote files outside its location in the last day.</td></tr>
+            <tr><td><a href="runbooks.html#nunadrlagging"><code>NunaDrLagging</code></a></td><td>page</td><td>A commit has not reached the DR store whole for 15 minutes, for 5 minutes.</td></tr>
+            <tr><td><a href="runbooks.html#nunadrverifiernotpassing"><code>NunaDrVerifierNotPassing</code></a></td><td>page</td><td>The DR verifier has not finished a pass for 15 minutes.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The maintenance rules compare with <code>600</code>, the default scan interval in seconds, and two wait <code>20m</code>, two intervals. If you change <code>nuna.maintenance.scan-interval</code>, change them to match.</p>
+
+      <h2 id="if-your-prometheus-names-differ">If your Prometheus names differ</h2>
+      <ul>
+        <li><strong>Timers in seconds.</strong> If Prometheus scrapes rather than receives OTLP, timers end <code>_seconds_</code>: change <code>_milliseconds_</code>, the bounds to <code>le</code> 0.01, 0.05 and 0.3, and <code>600 * 1000</code> to <code>600</code> in the worker's scan rule.</li>
+        <li><strong>Names keep their dots.</strong> Under a translation without underscore escaping, every name and dotted label changes.</li>
+        <li><strong>Native histograms.</strong> There are no <code>_bucket</code> series; the objective queries need <code>histogram_fraction</code>. <code>NunaRequestSeriesMissing</code> fires when this happens.</li>
+        <li><strong>A collector scraped through a ServiceMonitor.</strong> Set <code>honorLabels: true</code>, or the series' <code>job</code> and <code>instance</code> arrive as <code>exported_job</code> and <code>exported_instance</code>.</li>
+      </ul>
+      <aside class="callout demo">
+        <p class="callout-title">In the demo</p>
+        <p>The demo runs Prometheus with its OTLP receiver and <code>translation_strategy: UnderscoreEscapingWithSuffixes</code>, fed by an OpenTelemetry collector, and Grafana with the three dashboards and both rule files loaded. Its <code>job</code> labels are <code>nuna-demo/nuna-catalog</code> and <code>nuna-demo/nuna-maintenance</code>. The audit acknowledgement row stays empty there because the demo audits to its log, not to Kafka.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <ul>
+        <li><strong>Panels are empty.</strong> Rates are over 5 minutes and metrics arrive each minute, so wait 5 minutes. Panels of failures stay empty until something fails.</li>
+        <li><strong>Every objective rule is silent.</strong> Check <code>NunaRequestSeriesMissing</code> and <code>NunaSloBucketMissing</code>: the series may arrive under other names.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="runbooks.html">Alert runbooks</a>: what to do for each rule.</li>
+          <li><a href="metrics.html">Metrics</a>: the meters the panels read.</li>
+          <li><a href="health.html">Health checks</a>: the console's view of the same objectives.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/grafana/</code> (the README, both rule files, read with a YAML parser, and the three dashboards) and <code>docs/observability/dashboards-and-alerts.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

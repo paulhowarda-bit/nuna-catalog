@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/lifecycle">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lifecycle · nuna docs</title>
+  <meta name="description" content="List dropped tables and views, restore one inside its window, purge it after, and read any table's or view's export and metadata log, under /management/v1/catalogs/{catalog}.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Lifecycle</h1>
+        <p class="lead">List dropped tables and views, restore one inside its window, purge it after, and read any table's or view's export and metadata log, under <code>/management/v1/catalogs/{catalog}</code>.</p>
+      </header>
+
+      <p>An engine drops a table or view through the Iceberg REST API (<a href="iceberg-tables.html#delete-tables-table">drop a table</a>). The drop removes the name but keeps the object, its id, its grants and its history until its <code>purge-after</code> time, which the server fixes at the drop: the drop time plus <a href="../configure/server.html#nuna-rest-drop-retention"><code>nuna.rest.drop-retention</code></a>. Until then a caller with <code>create</code> on its namespace can restore it; the API calls this <em>undrop</em>. After it, the maintenance worker purges it: it claims the purge, deletes the object's files with its own storage identity, and completes the purge. See <a href="../concepts/lifecycle.html">Dropping, restoring and purging</a> for the whole cycle.</p>
+      <p>The routes on one object name it by its id, <code>{id}</code>, because a dropped object has no name in its namespace. The <code>{namespace}</code> segment joins its levels with the unit separator, <code>%1F</code> in a URL: <code>equities%1Fdaily</code>. A caller who holds nothing in the catalog gets <code>404</code> <code>NoSuchWarehouseException</code> (<code>The given warehouse does not exist: trading</code>), and the refusal is audited. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Lifecycle endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-namespace-dropped"><code>…/namespaces/{namespace}/dropped</code></a></td><td>Lists a namespace's dropped tables and views.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-objects-id-undrop"><code>…/objects/{id}/undrop</code></a></td><td>Restores a dropped table or view.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-purge-eligible"><code>/management/v1/maintenance/purge-eligible</code></a></td><td>Lists the objects the worker may purge now.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-objects-id-purge-claim"><code>…/objects/{id}/purge-claim</code></a></td><td>Claims an object's purge.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-objects-id-purge"><code>…/objects/{id}/purge</code></a></td><td>Completes a claimed purge.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-objects-id-export"><code>…/objects/{id}/export</code></a></td><td>Exports an object's current metadata and whole commit journal.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-objects-id-metadata-log"><code>…/objects/{id}/metadata-log</code></a></td><td>Reads an object's metadata log, a page at a time.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>In the table, <code>…</code> stands for <code>/management/v1/catalogs/{catalog}</code>.</p>
+
+      <h2 id="dropped-objects-and-restore">Dropped objects and restore</h2>
+
+      <section class="endpoint">
+        <h3 id="get-namespace-dropped"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/dropped</code></h3>
+        <p>Lists every dropped table and view directly in the namespace, tables first, each with the time until which it can be restored. The list is not paged. A read writes no audit record.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the namespace</span></p>
+        <h4 id="get-namespace-dropped-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"dropped": [<var>object</var>, …]}</code>, each as in <a href="#lifecycle-object">Lifecycle object</a>.</td></tr>
+              <tr><td><code>400</code></td><td>The namespace segment has an empty level: <code>Invalid namespace: <var>…</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the namespace but not <code>describe</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Namespace does not exist: equities.daily</code> (<code>NoSuchNamespaceException</code>): the namespace is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespace-dropped-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/dropped" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "dropped": [
+    {
+      "id": "3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7",
+      "catalog": "trading",
+      "kind": "table",
+      "name": "orders",
+      "namespace-id": "2c4e6a80-1b3d-4f5a-8c7e-9a0b1c2d3e4f",
+      "state": "dropped",
+      "dropped-at": "2026-11-20T09:15:02.481Z",
+      "purge-after": "2026-12-20T09:15:02.481Z",
+      "location": "s3://trading/tables/3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7"
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-objects-id-undrop"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/undrop</code></h3>
+        <p>Restores a dropped table or view before its <code>purge-after</code> time. It comes back with the same id, grants and history. If its old name has been taken in its namespace since, give it another one in the body.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the object's namespace</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-objects-id-undrop-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code></td><td>path</td><td>string</td><td>Yes</td><td>The object's id.</td></tr>
+              <tr><td><code>name</code></td><td>body</td><td>string</td><td>No</td><td>A new name, at most <code>1000</code> characters. Without it, the object takes its old name. The body may be left out.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-objects-id-undrop-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{"name": "orders_restored"}</code></pre>
+        </div>
+        <h4 id="post-objects-id-undrop-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The object is active again; the answer is its <a href="#lifecycle-object">lifecycle object</a>, with <code>state</code> <code>active</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an object id: <var>x</var></code>, <code>Missing field name: a non-empty string</code>, <code>Field name is longer than 1000 characters</code>, <code>The request body must be a JSON object</code>, or <code>The request body is not JSON: <var>…</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You lack <code>create</code> on the namespace. Or a DR freeze covers the object: <code>The namespace of <var>id</var> is frozen for DR reconcile: <var>reason</var></code>, audited with the reason <code>dr_freeze</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>No table or view <var>id</var> in <var>catalog</var></code> (<code>NoSuchObjectException</code>), or <code>The namespace of <var>id</var> no longer exists</code> (<code>NoSuchNamespaceException</code>).</td></tr>
+              <tr><td><code>409</code></td><td>
+                <ul>
+                  <li><code><var>id</var> is not a dropped table or view</code> (<code>NotDroppedException</code>).</li>
+                  <li><code>The undrop window of <var>id</var> closed at <var>time</var>; it is waiting to be purged</code> (<code>UndropWindowClosedException</code>).</li>
+                  <li><code>The name <var>name</var> is taken in its namespace; undrop it under another name</code> (<code>AlreadyExistsException</code>).</li>
+                </ul>
+              </td></tr>
+              <tr><td><code>500</code></td><td><code>Undropping <var>id</var> may or may not have been applied: <var>…</var></code> (<code>ServiceFailureException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A restore is audited as a <code>nuna.catalog.undrop</code> record.</p>
+        <h4 id="post-objects-id-undrop-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/objects/3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7/undrop" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <h2 id="purge">Purge</h2>
+      <p>Only a maintenance principal may call these three endpoints: a principal in <a href="../configure/security.html#nuna-security-maintenance-principals"><code>nuna.security.maintenance-principals</code></a>, acting as itself. Any other caller gets <code>403</code> <code>ForbiddenException</code> with the message <code>only a maintenance principal may call <var>operation</var></code>, audited with the reason <code>not_maintenance</code>. The maintenance worker calls them; people do not.</p>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-purge-eligible"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/purge-eligible</code></h3>
+        <p>The worker's purge queue, across every catalog, by <code>purge-after</code> and then id. It lists the dropped objects whose <code>purge-after</code> time has passed and that no legal hold, DR freeze or catalog branch or tag covers, and every object already claimed for purge, whatever covers it now, so its claimant can finish.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a maintenance principal</span> <span class="badge internal">Internal</span></p>
+        <h4 id="get-maintenance-purge-eligible-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Objects in one page. Default <code>200</code>; a value outside <code>1</code> to <code>1000</code> is taken as the nearer bound.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-purge-eligible-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"objects": [<var>object</var>, …], "next-page-token"}</code>, each as in <a href="#lifecycle-object">Lifecycle object</a>. <code>next-page-token</code> is there while more may follow.</td></tr>
+              <tr><td><code>400</code></td><td><code>Invalid page token: <var>…</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a maintenance principal.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-purge-eligible-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/purge-eligible?pageSize=50" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-objects-id-purge-claim"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/purge-claim</code></h3>
+        <p>Claims a dropped object's purge for the calling maintenance principal, once its <code>purge-after</code> time has passed. From the claim on, the object can no longer be restored, and a hold placed after the claim does not stop the purge. The same principal asking again gets the same answer, so a worker that stopped part way can resume. Each server accepts at most <a href="../configure/governance.html#nuna-governance-purges-per-minute"><code>nuna.governance.purges-per-minute</code></a> claims a minute from all maintenance principals together; each replica counts its own.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a maintenance principal</span> <span class="badge audited">Audited</span> <span class="badge internal">Internal</span></p>
+        <h4 id="post-objects-id-purge-claim-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The object is claimed; the answer is its <a href="#lifecycle-object">lifecycle object</a>, with <code>state</code> <code>purging</code> and <code>purge-claimant</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an object id: <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>
+                <ul>
+                  <li>You are not a maintenance principal.</li>
+                  <li><code><var>id</var> is under a legal hold and cannot be purged</code>, audited with the reason <code>legal_hold</code>.</li>
+                  <li><code>The namespace of <var>id</var> is frozen for DR reconcile</code>, followed by the freeze's reason when the server finds the freeze before it writes, audited with the reason <code>dr_freeze</code>.</li>
+                </ul>
+              </td></tr>
+              <tr><td><code>404</code></td><td><code>No table or view <var>id</var> in <var>catalog</var></code> (<code>NoSuchObjectException</code>).</td></tr>
+              <tr><td><code>409</code></td><td>
+                <ul>
+                  <li><code><var>id</var> may not be purged before <var>time</var></code> (<code>PurgeNotDueException</code>).</li>
+                  <li><code><var>id</var> is claimed for purge by another maintenance principal</code> (<code>PurgeClaimedException</code>).</li>
+                  <li><code><var>id</var> is not a dropped table or view</code> (<code>NotDroppedException</code>).</li>
+                </ul>
+              </td></tr>
+              <tr><td><code>429</code></td><td><code>More than <var>n</var> purges in a minute; retry later</code> (<code>TooManyRequestsException</code>), with <code>Retry-After: 60</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A claim is audited as a <code>nuna.catalog.purge-claim</code> record.</p>
+        <h4 id="post-objects-id-purge-claim-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/objects/3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7/purge-claim" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-objects-id-purge"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/purge</code></h3>
+        <p>Completes a purge the caller claimed, after it has deleted the object's files. The server marks the object purged, deletes its grants and its pending deletions, and keeps its record as history. Only the maintenance principal that holds the claim may complete it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a maintenance principal</span> <span class="badge audited">Audited</span> <span class="badge internal">Internal</span></p>
+        <h4 id="post-objects-id-purge-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The object is purged.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an object id: <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a maintenance principal.</td></tr>
+              <tr><td><code>404</code></td><td><code>No table or view <var>id</var> in <var>catalog</var></code> (<code>NoSuchObjectException</code>).</td></tr>
+              <tr><td><code>409</code></td><td>
+                <ul>
+                  <li><code><var>id</var> is not claimed for purge; claim it first, then delete its files</code> (<code>PurgeNotClaimedException</code>).</li>
+                  <li><code><var>id</var> is claimed for purge by another maintenance principal</code> (<code>PurgeClaimedException</code>).</li>
+                  <li><code><var>id</var> is not a dropped table or view</code> (<code>NotDroppedException</code>), for an object already purged or never dropped.</li>
+                </ul>
+              </td></tr>
+              <tr><td><code>500</code></td><td><code>Purging <var>id</var> may or may not have been applied: <var>…</var></code> (<code>ServiceFailureException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A completed purge is audited as a <code>nuna.catalog.purge</code> record.</p>
+        <h4 id="post-objects-id-purge-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/objects/3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a6b7/purge" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <h2 id="export-and-metadata-log">Export and metadata log</h2>
+      <p>Both work for an active or a dropped table or view, and both take <code>ref</code> to read the object as a catalog branch or tag reads it. Through a ref, <code>404</code> <code>NoSuchRefException</code> (<code>Ref does not exist: <var>ref</var></code>) means no live ref has the name, and <code>404</code> <code>NoSuchObjectException</code> (<code>No table or view <var>id</var> on ref <var>ref</var> of <var>catalog</var></code>) means the ref's cut does not hold the object. See <a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>.</p>
+
+      <section class="endpoint">
+        <h3 id="get-objects-id-export"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/export</code></h3>
+        <p>Exports the object: its <a href="#lifecycle-object">lifecycle object</a>, its pointer, the metadata file the pointer names, and its whole commit journal, oldest first. The server checks the metadata file against the SHA-256 it recorded and refuses one that does not match. Through <code>ref</code>, the pointer is the ref's: a branch's own where it has one, else the one its cut took; the journal is the metadata log as the ref reads it, oldest first, each entry naming its line in <code>branch</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="get-objects-id-export-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code></td><td>path</td><td>string</td><td>Yes</td><td>The object's id.</td></tr>
+              <tr><td><code>ref</code></td><td>query</td><td>string</td><td>No</td><td>A catalog branch or tag to read the object through.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-objects-id-export-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"object", "pointer", "metadata", "ref", "journal"}</code>. <code>pointer</code> and <code>metadata</code> are left out for an object with no pointer; <code>ref</code> is there only through a ref.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an object id: <var>x</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You lack <code>select</code> on the object.</td></tr>
+              <tr><td><code>404</code></td><td><code>No table or view <var>id</var> in <var>catalog</var></code> (<code>NoSuchObjectException</code>), or a ref that does not serve the object.</td></tr>
+              <tr><td><code>500</code></td><td><code>The metadata file of <var>id</var> does not match its recorded hash</code> (<code>MetadataIntegrityException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>An export that returns metadata is audited as a <code>nuna.catalog.read</code> record, as a table load is.</p>
+        <h4 id="get-objects-id-export-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/objects/9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f/export" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <p>In the response below, <code>metadata</code> is cut to its first three fields, and the journal to its first entry.</p>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "object": {
+    "id": "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "catalog": "trading",
+    "kind": "table",
+    "name": "instruments",
+    "namespace-id": "4b5c6d7e-8f90-4a1b-9c2d-3e4f5a6b7c8d",
+    "state": "active",
+    "location": "s3://trading/tables/9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+  },
+  "pointer": {
+    "metadata-location": "s3://trading/tables/9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f/metadata/00002-5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d.metadata.json",
+    "version": 2,
+    "sha256": "b7e1c0a94f2d6e8b3a5c7d9e1f2a4b6c8d0e2f4a6b8c0d2e4f6a8b0c2d4e6f8a"
+  },
+  "metadata": {
+    "format-version": 2,
+    "table-uuid": "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+    "location": "s3://trading/tables/9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f"
+  },
+  "journal": [
+    {
+      "commit-id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "committed-at": "2026-11-25T15:17:12.904211Z",
+      "principal": "ingest",
+      "engine": "spark-batch",
+      "new-location": "s3://trading/tables/9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f/metadata/00001-0f1e2d3c-4b5a-4968-8776-655443322110.metadata.json",
+      "new-version": 1,
+      "requirements": [],
+      "updates": []
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-objects-id-metadata-log"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/metadata-log</code></h3>
+        <p>Reads the object's metadata log, newest first, a page at a time: its commit journal entries in the export's form, each the metadata file one commit wrote, and the pointer the newest leads to. A page's token names the version it stopped before, so commits made meanwhile never shift the pages after the first. A page holds fewer entries only where versions are missing; keep reading while <code>next-page-token</code> is there. A read writes no audit record.</p>
+        <p>Through <code>ref</code>, the log first holds the versions a branch committed of its own, numbered from <code>1</code> whatever the cut's version, then the log of what the ref was made from, at and below the cut. Each entry names its line in <code>branch</code>: the ref's name, or <code>main</code>. The answer's <code>ref</code> gives the ref's name, kind and the cut's version, and <code>log-stops-at-cut</code> is <code>true</code> when the versions below the cut came from a ref that has ended.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the object</span></p>
+        <h4 id="get-objects-id-metadata-log-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code></td><td>path</td><td>string</td><td>Yes</td><td>The object's id.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Entries in one page. Default <code>25</code>; a value outside <code>1</code> to <code>100</code> is taken as the nearer bound.</td></tr>
+              <tr><td><code>ref</code></td><td>query</td><td>string</td><td>No</td><td>A catalog branch or tag to read the log through.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-objects-id-metadata-log-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"pointer", "ref", "journal": [<var>entry</var>, …], "next-page-token"}</code>, each entry as in <a href="#journal-entry">Journal entry</a>. <code>pointer</code> is left out for an object with no pointer; <code>ref</code> is there only through a ref.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an object id: <var>x</var></code>, or <code>Invalid page token: <var>…</var></code>.</td></tr>
+              <tr><td><code>403</code></td><td>You lack <code>select</code> on the object.</td></tr>
+              <tr><td><code>404</code></td><td><code>No table or view <var>id</var> in <var>catalog</var></code> (<code>NoSuchObjectException</code>), or a ref that does not serve the object.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-objects-id-metadata-log-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/objects/7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d/metadata-log?pageSize=1" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "pointer": {
+    "metadata-location": "s3://trading/tables/7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d/metadata/00014-2b3c4d5e-6f70-4a81-9b2c-3d4e5f607182.metadata.json",
+    "version": 14,
+    "sha256": "4c9e2a7b1d3f5e8a0b2c4d6e8f0a1b3c5d7e9f1a3b5c7d9e1f3a5b7c9d1e3f5a"
+  },
+  "journal": [
+    {
+      "commit-id": "6d7e8f90-a1b2-4c3d-8e4f-5a6b7c8d9e0f",
+      "committed-at": "2026-11-25T22:07:00.947643Z",
+      "principal": "service-account-maintenance",
+      "engine": "nuna-maintenance",
+      "old-location": "s3://trading/tables/7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d/metadata/00013-1a2b3c4d-5e6f-4708-9a1b-2c3d4e5f6071.metadata.json",
+      "new-location": "s3://trading/tables/7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d/metadata/00014-2b3c4d5e-6f70-4a81-9b2c-3d4e5f607182.metadata.json",
+      "new-version": 14,
+      "requirements": [{"type": "assert-table-uuid", "uuid": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d"}],
+      "updates": [{"action": "remove-snapshots", "snapshot-ids": [3084574991624539880]}]
+    }
+  ],
+  "next-page-token": "AAAAAjEz"
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="lifecycle-object">Lifecycle object</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code></td><td>string</td><td>The object's id.</td></tr>
+            <tr><td><code>catalog</code></td><td>string</td><td>Its catalog's name.</td></tr>
+            <tr><td><code>kind</code></td><td>string</td><td><code>table</code> or <code>view</code>.</td></tr>
+            <tr><td><code>name</code></td><td>string</td><td>Its name; for a dropped object, the name it had.</td></tr>
+            <tr><td><code>namespace-id</code></td><td>string</td><td>The id of its namespace.</td></tr>
+            <tr><td><code>state</code></td><td>string</td><td><code>active</code>, <code>dropped</code>, <code>purging</code> (claimed for purge), <code>purged</code> or <code>unregistered</code>.</td></tr>
+            <tr><td><code>dropped-at</code></td><td>string</td><td>When it was dropped. Left out for an active object.</td></tr>
+            <tr><td><code>purge-after</code></td><td>string</td><td>The end of its undrop window, fixed at the drop. Left out for an active object.</td></tr>
+            <tr><td><code>purge-claimant</code></td><td>string</td><td>The maintenance principal that claimed its purge. Left out until a claim.</td></tr>
+            <tr><td><code>location</code></td><td>string</td><td>The root of its files in the object store.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="journal-entry">Journal entry</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>commit-id</code></td><td>string</td><td>The commit's id.</td></tr>
+            <tr><td><code>committed-at</code></td><td>string</td><td>When the server applied it.</td></tr>
+            <tr><td><code>principal</code></td><td>string</td><td>The principal that committed it.</td></tr>
+            <tr><td><code>end-user</code></td><td>string</td><td>The end user a trusted engine acted for. Left out when there was none.</td></tr>
+            <tr><td><code>engine</code></td><td>string</td><td>The engine's client id. Left out when there was none.</td></tr>
+            <tr><td><code>old-location</code></td><td>string</td><td>The metadata file before the commit. Left out for the first version.</td></tr>
+            <tr><td><code>new-location</code></td><td>string</td><td>The metadata file the commit wrote.</td></tr>
+            <tr><td><code>new-version</code></td><td>integer</td><td>The pointer's version after the commit.</td></tr>
+            <tr><td><code>requirements</code>, <code>updates</code></td><td>array</td><td>The commit's Iceberg requirements and updates, as the engine sent them.</td></tr>
+            <tr><td><code>branch</code></td><td>string</td><td>Through a ref only: the line the entry is on, the ref's name or <code>main</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/lifecycle.html">Dropping, restoring and purging</a>: the cycle these endpoints serve.</li>
+          <li><a href="../guides/drop-restore-purge.html">Drop, restore and purge a table</a>: the task, step by step.</li>
+          <li><a href="governance.html">Governance</a>: the holds and freezes that stop a purge or a restore.</li>
+          <li><a href="worker.html">Worker endpoints</a>: the other endpoints the maintenance worker calls.</li>
+          <li><a href="refs.html">Branches and tags</a>: the refs <code>ref</code> names.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java</code>, <code>Management.java</code>, <code>ManagementGuard.java</code> and <code>GovernanceSettings.java</code> in the same folder, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java</code> and <code>RestSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java</code>, <code>catalog-store-api/src/main/java/nuna/catalog/store/CatalogObjectStore.java</code> and <code>catalog-server/src/test/java/nuna/catalog/server/governance/LifecycleTest.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The dropped list, the export and the metadata log (on main and through a branch) were read from the demo and their responses rewritten to the fictional estate; the demo had no dropped objects, so the dropped list's entry is built from the code's fields. The <code>POST</code> examples and the purge queue were not run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

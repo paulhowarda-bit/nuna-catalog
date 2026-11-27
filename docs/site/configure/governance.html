@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/governance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Governance and refs settings · nuna docs</title>
+  <meta name="description" content="Bound purges and audit reads, name retention classes, declare the recovery window, set default maintenance and limit branches and tags.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Governance and refs settings</h1>
+        <p class="lead">Bound purges and audit reads, name retention classes, declare the recovery window, set default maintenance and limit branches and tags.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>These settings bound how fast purges and audit reads run on each server, name the retention classes, declare the database's point-in-time recovery window, set the maintenance policy every catalog starts from, and limit each catalog's branches and tags.</p>
+
+      <h2 id="nuna-governance-group">nuna.governance</h2>
+
+      <section class="setting">
+        <h3 id="nuna-governance-purges-per-minute"><code>nuna.governance.purges-per-minute</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>10</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_GOVERNANCE_PURGESPERMINUTE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.governance.purges-per-minute</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Purges this server accepts per minute, from all maintenance principals together. One more is refused with 429, <code>Retry-After: 60</code> and <code>More than <var>N</var> purges in a minute; retry later</code>. At least 1: <code>nuna.governance.purges-per-minute must be at least 1</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-governance-audit-reads-per-minute"><code>nuna.governance.audit-reads-per-minute</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>60</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_GOVERNANCE_AUDITREADSPERMINUTE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.governance.audit-reads-per-minute</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Reads of an object's audit records this server accepts per minute from one caller: the principal its token names, or the end user a trusted engine acts for. One more is refused with 429, <code>Retry-After: 60</code> and <code>More than <var>N</var> audit reads in a minute by <var>caller</var>; retry later</code>.</p>
+        <p>The console reads once each time an object's Audit tab opens, its count changes or Refresh is pressed, so the default, one a second, never holds a person back. At least 1.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-governance-retention-classes"><code>nuna.governance.retention-classes</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of class name to its retention class</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd>set in YAML: a map key in an environment variable is read in lower case</dd>
+          <dt>Helm</dt><dd><code>config.nuna.governance.retention-classes</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The retention classes by name. Setting a table's or namespace's retention class to any other name is refused: <code>Unknown retention class <var>name</var>; configured classes: [<var>names</var>]</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-governance-retention-classes-name-minimum-snapshot-age"><code>nuna.governance.retention-classes.<var>name</var>.minimum-snapshot-age</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd>none</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_GOVERNANCE_RETENTIONCLASSES_<var>NAME</var>_MINIMUMSNAPSHOTAGE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.governance.retention-classes.<var>name</var>.minimum-snapshot-age</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Snapshots younger than this cannot be removed from a table of the class, at commit or by maintenance.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-governance-pitr-window"><code>nuna.governance.pitr-window</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>7d</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_GOVERNANCE_PITRWINDOW</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.governance.pitr-window</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The database's point-in-time recovery window, as the deployment declares it: the server cannot read it from the database. Orphan removal touches only files older than it, so a database restored within it never names a removed file. Keep the database's own backups at least this long.</p>
+        <a href="server.html#nuna-rest-drop-retention"><code>nuna.rest.drop-retention</code></a> must be longer, or the server stops with <code>nuna.rest.drop-retention (<var>value</var>) must be longer than nuna.governance.pitr-window (<var>value</var>), so a database restored within its PITR window never holds a live table whose files were purged</code>.
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-governance-minimum-snapshot-age"><code>nuna.governance.minimum-snapshot-age</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>1h</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_GOVERNANCE_MINIMUMSNAPSHOTAGE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.governance.minimum-snapshot-age</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>No maintenance policy expires snapshots younger than this. A policy whose <code>snapshot-expiry.max-snapshot-age</code> is shorter is refused.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-governance-maintenance-defaults"><code>nuna.governance.maintenance-defaults</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of policy key to value</dd>
+          <dt>Default</dt><dd>empty: the built-in values below</dd>
+          <dt>Environment variable</dt><dd>set in YAML: the keys hold dots and hyphens</dd>
+          <dt>Helm</dt><dd><code>config.nuna.governance.maintenance-defaults</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The maintenance policy every catalog starts from, over the built-in values. Catalogs, namespaces and tables may set their own over it. The server checks the defaults at start-up as it checks a policy pushed through the API, and refuses to start on an unknown key (<code>Unknown maintenance policy key <var>key</var>; known keys: </code>…), on a <code>snapshot-expiry.max-snapshot-age</code> below <code>minimum-snapshot-age</code>, and on an <code>orphan-removal.older-than</code> not longer than <code>pitr-window</code>.</p>
+        <p class="gap">No test binds these dotted keys from YAML. Spring Boot drops the dots of a map key unless it is written in brackets, so write each key as <code>"[snapshot-expiry.enabled]"</code>, as in the example below; the plain form has not been checked.</p>
+      </section>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Maintenance policy keys</caption>
+          <thead><tr><th scope="col">Key</th><th scope="col">Built-in value</th><th scope="col">What it sets</th></tr></thead>
+          <tbody>
+            <tr><td><code>snapshot-expiry.enabled</code></td><td><code>false</code></td><td>Whether old snapshots expire.</td></tr>
+            <tr><td><code>snapshot-expiry.max-snapshot-age</code></td><td><code>P5D</code></td><td>Snapshots older than this expire.</td></tr>
+            <tr><td><code>snapshot-expiry.min-snapshots-to-keep</code></td><td><code>1</code></td><td>Snapshots kept whatever their age.</td></tr>
+            <tr><td><code>orphan-removal.enabled</code></td><td><code>false</code></td><td>Whether files no snapshot reaches are removed.</td></tr>
+            <tr><td><code>orphan-removal.older-than</code></td><td><code>P14D</code></td><td>Only files older than this are removed.</td></tr>
+            <tr><td><code>compaction.enabled</code></td><td><code>false</code></td><td>Whether small data files are compacted.</td></tr>
+            <tr><td><code>compaction.target-file-size-bytes</code></td><td><code>536870912</code></td><td>The size compaction writes to.</td></tr>
+            <tr><td><code>compaction.min-input-files</code></td><td><code>5</code></td><td>A table needs at least this many small files to be compacted.</td></tr>
+            <tr><td><code>compaction.delete-file-ratio</code></td><td><code>0.3</code></td><td>Or this share of delete files.</td></tr>
+            <tr><td><code>manifest-rewrite.enabled</code></td><td><code>false</code></td><td>Whether manifests are rewritten.</td></tr>
+            <tr><td><code>manifest-rewrite.min-manifests</code></td><td><code>100</code></td><td>A table needs at least this many manifests.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>A freeze turns off all four kinds of maintenance on what it covers; a hold turns off snapshot expiry and orphan removal.</p>
+
+      <h2 id="nuna-refs-group">nuna.refs</h2>
+
+      <p>Limits and expiry for each catalog's branches and tags. A branch's creation, each commit on it and each renewal set its expiry <code>branch-idle-expiry</code> ahead, never past <code>branch-max-life</code> from its creation. Tags never expire.</p>
+
+      <section class="setting">
+        <h3 id="nuna-refs-max-branches"><code>nuna.refs.max-branches</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>50</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REFS_MAXBRANCHES</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.refs.max-branches</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The open branches one catalog may hold; a branch past its expiry no longer counts. One more is refused with 409, <code>Catalog <var>catalog</var> holds <var>N</var> open branches, as many as nuna.refs.max-branches allows</code>. 0 or more.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-refs-max-tags"><code>nuna.refs.max-tags</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>1000</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REFS_MAXTAGS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.refs.max-tags</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The tags one catalog may hold. One more is refused with 409, <code>Catalog <var>catalog</var> holds <var>N</var> tags, as many as nuna.refs.max-tags allows</code>. 0 or more.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-refs-branch-idle-expiry"><code>nuna.refs.branch-idle-expiry</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>30d</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REFS_BRANCHIDLEEXPIRY</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.refs.branch-idle-expiry</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long a branch lives after it is made, last committed to or renewed. Longer than zero.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-refs-branch-max-life"><code>nuna.refs.branch-max-life</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>180d</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REFS_BRANCHMAXLIFE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.refs.branch-max-life</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long a branch can live in all, from its creation. Longer than zero.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-refs-expiry-warning"><code>nuna.refs.expiry-warning</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>duration</dd>
+          <dt>Default</dt><dd><code>7d</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REFS_EXPIRYWARNING</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.refs.expiry-warning</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>How long before a branch's expiry the catalog warns of it once, on the change stream, and the console marks it. Not negative.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-refs-max-merge-tables"><code>nuna.refs.max-merge-tables</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>integer</dd>
+          <dt>Default</dt><dd><code>100</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_REFS_MAXMERGETABLES</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.refs.max-merge-tables</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The most tables and views one branch may change, so that a merge moves them in one transaction. A commit that would take a branch past it is refused with 400, and a merge of more with 409. At least 1.</p>
+      </section>
+
+      <h2 id="example">Example</h2>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    governance:
+      pitr-window: 14d
+      retention-classes:
+        regulatory:
+          minimum-snapshot-age: 30d
+      maintenance-defaults:
+        "[snapshot-expiry.enabled]": "true"
+        "[orphan-removal.enabled]": "true"
+        "[orphan-removal.older-than]": P21D
+    rest:
+      drop-retention: 30d
+    refs:
+      max-branches: 20</code></pre>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/governance.html">Governance</a>: regulated tables, retention classes, holds and freezes</li>
+          <li><a href="../guides/maintenance-policy.html">Set a maintenance policy</a>: policies per catalog, namespace and table</li>
+          <li><a href="../concepts/branches-and-tags.html">Branches and tags</a>: how branches expire and merge</li>
+          <li><a href="../reference/limits.html">Limits</a>: every limit in one place</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenancePolicy.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the catalog chart.</p>
+        <p>No server was started with them for this page, so the bracketed keys were not seen bound.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

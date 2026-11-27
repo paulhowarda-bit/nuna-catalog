@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/images">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Container images · nuna docs</title>
+  <meta name="description" content="Build the catalog server, maintenance worker and audit tables writer images from source, and push them to the registry your cluster pulls from.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Container images</h1>
+        <p class="lead">Build the catalog server, maintenance worker and audit tables writer images from source, and push them to the registry your cluster pulls from.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <p>nuna publishes no images. Each image holds one program's runnable jar, unpacked into Spring Boot's layers, so a code change re-ships only the small application layers: the 111 libraries make one layer of about 70 MB, and nuna's own code about 1 MB.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The images</caption>
+          <thead><tr><th scope="col">Image</th><th scope="col">Program</th><th scope="col">Dockerfile</th><th scope="col">Build context</th><th scope="col">Chart</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna-catalog</code></td><td>the catalog server</td><td><code>deploy/image/Dockerfile</code></td><td><code>catalog-server/build/libs</code></td><td><code>deploy/helm/nuna-catalog</code></td></tr>
+            <tr><td><code>nuna-maintenance</code></td><td>the maintenance worker</td><td><code>deploy/image/maintenance.Dockerfile</code></td><td><code>catalog-maintenance/build/libs</code></td><td><code>deploy/helm/nuna-maintenance</code></td></tr>
+            <tr><td><code>nuna-audit-tables</code></td><td>the audit tables writer</td><td><code>deploy/image/audit-tables.Dockerfile</code></td><td><code>catalog-audit-tables/build/libs</code></td><td><code>deploy/helm/nuna-audit-tables</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>All three run as user and group <code>10001</code>, write only to <code>/tmp</code>, and start with <code>java org.springframework.boot.loader.launch.JarLauncher</code> in <code>/app</code>. Only <code>nuna-catalog</code> exposes a port, <code>8181</code>. The maintenance worker's compaction Jobs run a fourth image, a Spark image, which you build too if you want compaction.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You have a checkout of the nuna repository, JDK 25, and Docker or Podman (<a href="requirements.html#programs-to-build-images">Requirements</a>).</li>
+        <li>You can push to the registry your cluster pulls from. The examples call it <code>registry.example</code> and tag the images <code>0.1.0</code>.</li>
+        <li>On a network with no outbound access, mirror the base images and Maven repositories first (<a href="locked-down.html">Install on a locked-down network</a>).</li>
+      </ul>
+
+      <h2 id="build-java-images">Build the Java images</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Build the three runnable jars.</p>
+          <div class="code" data-lang="bash">
+<pre><code>./gradlew :catalog-server:bootJar :catalog-maintenance:bootJar :catalog-audit-tables:bootJar</code></pre>
+          </div>
+          <p>Each lands in its module's <code>build/libs</code> folder as <code>*-exec.jar</code>. The Dockerfiles copy only that file, so the build context sends nothing else.</p>
+        </li>
+        <li>
+          <p class="step-title">Build the catalog server's image.</p>
+          <div class="code" data-lang="bash">
+<pre><code>docker build -f deploy/image/Dockerfile \
+  -t registry.example/nuna-catalog:0.1.0 catalog-server/build/libs</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Build the maintenance worker's image.</p>
+          <div class="code" data-lang="bash">
+<pre><code>docker build -f deploy/image/maintenance.Dockerfile \
+  -t registry.example/nuna-maintenance:0.1.0 catalog-maintenance/build/libs</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Build the audit tables writer's image, if you will run it.</p>
+          <div class="code" data-lang="bash">
+<pre><code>docker build -f deploy/image/audit-tables.Dockerfile \
+  -t registry.example/nuna-audit-tables:0.1.0 catalog-audit-tables/build/libs</code></pre>
+          </div>
+        </li>
+      </ol>
+
+      <h3 id="choose-base-image">Choose the base image</h3>
+      <p>Every Dockerfile starts from <code>ARG BASE_IMAGE=eclipse-temurin:25.0.5_8-jre-noble</code>. To use another Java 25 runtime, such as one your organization approves, pass it to each build:</p>
+      <div class="code" data-lang="bash">
+<pre><code>docker build -f deploy/image/Dockerfile \
+  --build-arg BASE_IMAGE=registry.example/java-runtime:25 \
+  -t registry.example/nuna-catalog:0.1.0 catalog-server/build/libs</code></pre>
+      </div>
+      <p>The base image must have <code>java</code> on the path, which both build stages run, and <code>sleep</code>, which the catalog chart's 5 s pause before shutdown runs.</p>
+
+      <h2 id="build-spark-image">Build the Spark image for compaction</h2>
+      <p>The worker launches each compaction as a Kubernetes Job that runs the repository's Spark image with <code>rewrite_data_files</code>. Its Dockerfile is <code>catalog-tests-engines/images/spark/Dockerfile</code>: it starts from <code>apache/spark:4.1.4-scala2.13-java21-python3-ubuntu</code> and downloads the Iceberg 1.12.0 Spark runtime and AWS bundle from Maven Central.</p>
+      <div class="code" data-lang="bash">
+<pre><code>docker build -t registry.example/nuna-spark:0.1.0 catalog-tests-engines/images/spark</code></pre>
+      </div>
+      <p>The image must keep <code>JAVA_HOME</code> and <code>keytool</code>, as the <code>apache/spark</code> images have: a Job for a table on a store with a private certificate authority builds its trust store with them. Its user id is <code>185</code>, which the worker's <code>compaction.run-as-user</code> setting assumes by default.</p>
+
+      <h2 id="push-images">Push the images</h2>
+      <div class="code" data-lang="bash">
+<pre><code>docker push registry.example/nuna-catalog:0.1.0
+docker push registry.example/nuna-maintenance:0.1.0
+docker push registry.example/nuna-audit-tables:0.1.0
+docker push registry.example/nuna-spark:0.1.0</code></pre>
+      </div>
+      <p>Then name them in each chart's values. The charts' <code>image.tag</code> defaults to the chart's <code>appVersion</code>, <code>0.1.0-SNAPSHOT</code>, so set it. If the registry needs credentials, name a pull Secret in <code>imagePullSecrets</code>.</p>
+      <div class="code" data-lang="yaml" data-title="values.yaml (catalog server)">
+<pre><code>image:
+  repository: registry.example/nuna-catalog
+  tag: "0.1.0"
+imagePullSecrets:
+  - name: registry-pull</code></pre>
+      </div>
+      <p>The worker takes the Spark image in its settings, not as a chart image: <code>config.nuna.maintenance.compaction.image</code> (<a href="helm-maintenance.html">Install the maintenance worker</a>).</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The image runs as user 10001</p>
+        <p>Inspect the image you built. It prints the user, the entry point and the exposed port:</p>
+        <div class="code" data-lang="bash">
+<pre><code>docker image inspect registry.example/nuna-catalog:0.1.0 \
+  --format '{{.Config.User}} | {{.Config.Entrypoint}} | {{.Config.ExposedPorts}}'</code></pre>
+        </div>
+        <div class="code" data-lang="text" data-kind="output">
+<pre><code>10001:10001 | [java org.springframework.boot.loader.launch.JarLauncher] | map[8181/tcp:{}]</code></pre>
+        </div>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>The build's <code>COPY *-exec.jar</code> step finds no file.</td><td>The jar was not built, or the build context is not its <code>build/libs</code> folder.</td><td>Run the <code>bootJar</code> task for the module and pass its <code>build/libs</code> folder as the context.</td></tr>
+            <tr><td>Gradle cannot find a Java 25 toolchain.</td><td>The build never downloads a JDK.</td><td>Install JDK 25 on the build machine.</td></tr>
+            <tr><td>A pod stays in <code>ErrImagePull</code> or <code>ImagePullBackOff</code>.</td><td>The cluster cannot pull the image: a wrong name or tag, or a registry that needs credentials.</td><td>Check <code>image.repository</code> and <code>image.tag</code>, and set <code>imagePullSecrets</code>.</td></tr>
+            <tr><td>The pod is refused with a message about running as root.</td><td>A base image or security context that overrides the user.</td><td>Keep the Dockerfile's <code>USER 10001:10001</code> and the chart's <code>podSecurityContext</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="helm-catalog.html">Install the catalog server with Helm</a>: the next step.</li>
+          <li><a href="locked-down.html">Install on a locked-down network</a>: mirroring the base images and Maven repositories.</li>
+          <li><a href="../develop/index.html">Build nuna from source</a>: the build and its tests.</li>
+          <li><a href="../configure/helm-values.html">Helm chart values</a>: <code>image</code> and <code>imagePullSecrets</code> in each chart.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/image/Dockerfile</code>, <code>deploy/image/maintenance.Dockerfile</code>, <code>deploy/image/audit-tables.Dockerfile</code>, <code>catalog-tests-engines/images/spark/Dockerfile</code>, <code>deploy/README.md</code> (The image), <code>catalog-maintenance/README.md</code> and the three charts' <code>values.yaml</code> and <code>Chart.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The inspect output is from the demo's own <code>nuna-catalog</code> image, built from the same Dockerfile, read with <code>podman image inspect</code>. The build and push commands were not run for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

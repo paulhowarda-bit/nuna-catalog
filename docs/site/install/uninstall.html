@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/uninstall">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uninstall nuna · nuna docs</title>
+  <meta name="description" content="Remove the three Helm releases, and know what stays behind: the database, the table files and audit archive in the object store, the bucket policies, and the Secrets and namespaces you made.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Uninstall nuna</h1>
+        <p class="lead">Remove the three Helm releases, and know what stays behind: the database, the table files and audit archive in the object store, the bucket policies, and the Secrets and namespaces you made.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <p>Uninstalling a release removes only the Kubernetes objects its chart made. The catalogs, tables and audit records live in the database and the object store, which nuna never deletes on its way out, so a new install pointed at them carries on where the old one stopped.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Engines and people have stopped using the catalog.</li>
+        <li>If the audit trail must be kept, check that the audit tables and any Object Lock archive are complete (<a href="../operate/audit-pipeline.html">Run the audit pipeline</a>).</li>
+      </ul>
+
+      <h2 id="remove-releases">Remove the releases</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Uninstall the audit tables writer, if you run it.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm uninstall nuna-audit-tables -n nuna --wait</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Uninstall the maintenance worker.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm uninstall nuna-maintenance -n nuna --wait</code></pre>
+          </div>
+          <p>This also removes the Role, RoleBinding and Jobs' service account the chart made in the Jobs' namespace. Jobs the worker launched are not part of the release: each finished Job deletes itself a day after it ends, with its Secret and ConfigMap.</p>
+        </li>
+        <li>
+          <p class="step-title">Uninstall the catalog server.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm uninstall nuna-catalog -n nuna --wait</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Delete the Secrets, ConfigMaps and namespaces you made yourself.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl delete namespace nuna-compaction nuna</code></pre>
+          </div>
+          <p>Deleting a namespace deletes everything left in it, including Secrets you made with <code>secrets.existingSecret</code> in mind and any Job still there.</p>
+        </li>
+      </ol>
+
+      <aside class="callout check">
+        <p class="callout-title">No nuna release remains</p>
+        <p><code>helm list -A</code> shows none of <code>nuna-catalog</code>, <code>nuna-maintenance</code> and <code>nuna-audit-tables</code>.</p>
+      </aside>
+
+      <h2 id="what-stays">What stays</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What uninstalling leaves</caption>
+          <thead><tr><th scope="col">Where</th><th scope="col">What</th></tr></thead>
+          <tbody>
+            <tr><td>The database</td><td>The schema and every catalog, namespace, table pointer, grant, ref and audit outbox row. Drop the database or the user's schema to remove them.</td></tr>
+            <tr><td>The object store</td><td>Every table's data and metadata files beneath the profiles' prefixes, including dropped tables not yet purged, and the audit tables' files.</td></tr>
+            <tr><td>The audit archive</td><td>An Object Lock bucket keeps each object until its retention ends; no one can delete it sooner.</td></tr>
+            <tr><td>Bucket and user policies</td><td>The delete policies you applied. While they stand, only the worker's identity can delete beneath the prefixes, and only it can change lifecycle rules (and, on AWS S3 and MinIO, the bucket policy).</td></tr>
+            <tr><td>The identity provider and store identities</td><td>The clients, groups, roles and users you made for nuna.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="callout danger">
+        <p class="callout-title">Deleting the database and the files cannot be undone</p>
+        <p>Once the database is dropped, nothing knows which files belong to which table. Remove the files only when no table or audit record in them must be kept, and the delete policies first, as the identity that applied them.</p>
+      </aside>
+      <p class="gap">Not documented yet: an ordered teardown of the store's data that respects legal holds and retention. nuna has no command for it, so an uninstall that must honour holds needs the holds' records read first (<a href="../guides/hold.html">Place and lift a legal hold</a>).</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>A namespace stays <code>Terminating</code>.</td><td>An object in it has a finalizer that has not finished.</td><td>Read <code>kubectl get namespace <var>name</var> -o yaml</code> for what it waits on.</td></tr>
+            <tr><td>Deleting files beneath a prefix is refused.</td><td>The delete policies are still applied.</td><td>Remove the policies first, as the identity that applied them, or delete as the worker's identity.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/lifecycle.html">Dropping, restoring and purging</a>: how files leave the store while nuna runs.</li>
+          <li><a href="../operate/backup-dr.html">Back up and recover</a>: keeping a copy before you remove anything.</li>
+          <li><a href="object-storage.html#protect-deletes">Set up object storage</a>: the delete policies.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the three charts' templates in <code>deploy/helm/</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java</code>, <code>deploy/README.md</code> (Delete rights, Audit) and <code>deploy/local/run.sh</code> (<code>down</code>), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No uninstall was run for this page; <code>deploy/local/run.sh down</code> runs the same <code>helm uninstall</code> and namespace deletions on the local cluster.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

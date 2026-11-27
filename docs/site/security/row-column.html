@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/row-column">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Row-level security and column masking · nuna docs</title>
+  <meta name="description" content="Row-level security and column masking is the path by which a group's row filter and column masks on a flagged table reach the trusted engine that applies them, and the storage access the server withholds from every other caller.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Row-level security and column masking</h1>
+        <p class="lead">Row-level security and column masking is the path by which a group's row filter and column masks on a flagged table reach the trusted engine that applies them, and the storage access the server withholds from every other caller.</p>
+      </header>
+
+      <figure class="diagram" id="fig-row-column-path">
+        <svg viewBox="0 0 720 350" role="img" aria-labelledby="fig-row-column-path-t fig-row-column-path-d">
+          <title id="fig-row-column-path-t">How row filters and column masks reach Trino</title>
+          <desc id="fig-row-column-path-d">A person queries Trino with their own token. Trino calls the Iceberg REST API with the person's token in Authorization and its own in X-Nuna-Engine-Authorization, and receives the table and vended credentials because it is a trusted engine. Trino's OPA access control posts to the row-filters and column-masks routes with the person's token as an extra credential, receives the expressions, and applies them while reading the files from the object store. Another engine that is not registered is refused at the load with 403.</desc>
+          <rect class="d-node d-bad" x="20" y="20" width="130" height="56" rx="10"/><text class="d-label" x="85" y="45">Another engine</text><text class="d-note" x="85" y="63">not registered</text>
+          <path class="d-edge" d="M150 48H518" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="335" y="40">load refused: 403</text>
+          <rect class="d-group" x="505" y="30" width="210" height="225" rx="14"/>
+          <text class="d-note" x="610" y="272">nuna server</text>
+          <rect class="d-node" x="520" y="50" width="180" height="66" rx="10"/><text class="d-label" x="610" y="80">Iceberg REST API</text><text class="d-note" x="610" y="98">table + vended credentials</text>
+          <rect class="d-node" x="520" y="170" width="180" height="66" rx="10"/><text class="d-label" x="610" y="200">OPA decision routes</text><text class="d-note" x="610" y="218">row filters, column masks</text>
+          <rect class="d-node" x="20" y="140" width="130" height="60" rx="10"/><text class="d-label" x="85" y="167">Person</text><text class="d-note" x="85" y="185">own token</text>
+          <rect class="d-node" x="240" y="130" width="150" height="80" rx="10"/><text class="d-label" x="315" y="167">Trino</text><text class="d-note" x="315" y="185">applies filter and masks</text>
+          <rect class="d-node d-store" x="240" y="280" width="150" height="56" rx="10"/><text class="d-label" x="315" y="305">Object store</text><text class="d-note" x="315" y="323">the table's files</text>
+          <path class="d-edge" d="M150 170H238" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="195" y="162">query + token</text>
+          <path class="d-edge" d="M390 145C440 145 470 106 518 106" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="445" y="70">person's token</text>
+          <text class="d-note" x="445" y="86">+ Trino's token</text>
+          <path class="d-edge d-accent" d="M390 190C450 190 460 203 518 203" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="450" y="226">asks for filter and masks</text>
+          <text class="d-note" x="450" y="242">with the person's token</text>
+          <path class="d-edge" d="M315 210V278" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="480" y="312">reads with vended credentials</text>
+        </svg>
+        <figcaption>The rules travel to Trino through its OPA calls; the files travel only to a trusted engine.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>The model, who sets what and how rules combine, is in <a href="../concepts/row-column-rules.html">Row filters and column masks</a>. This page follows the enforcement: what the server checks on each request to a flagged table, which engines enforce the rules, and what is withheld from the rest.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="storage-access">Storage access to a flagged table</h3>
+      <p>A table whose own <code>row-column-policy</code> attribute is <code>true</code> is flagged. The operations that hand out or use its files are <code>loadTable</code>, <code>loadCredentials</code>, <code>updateTable</code> and <code>commitTransaction</code>. The server allows them only to:</p>
+      <ul>
+        <li>a trusted engine, whether it acts for an end user or as itself, which must still hold the privilege through its groups or the end user's;</li>
+        <li>a maintenance principal acting as itself, for maintenance. Each such access is first audited as a <code>nuna.catalog.maintenance-exemption</code> record; if that record cannot be written, the access is refused with <code>503</code> <code>Storage access under the maintenance exemption cannot be audited now; retry later</code>.</li>
+      </ul>
+      <p>Everyone else, the console included, is refused with <code>403</code> <code>table <var>name</var> has a row/column policy; only a trusted engine that enforces it gets storage access</code>, audited as a denial with reason <code>flagged_table</code>. <code>describe</code> operations, such as listing the table or reading its schema in the console, are not withheld.</p>
+
+      <h3 id="enforcing-engines">Which engines enforce the rules</h3>
+      <p>Trino enforces them, through its OPA access control pointed at the server's decision endpoints. No other engine applies them. Register an engine as trusted only when it applies the rules: a trusted engine that ignores them reads every row.</p>
+      <p class="gap">Not documented yet: whether any engine other than Trino has been tested against the decision endpoints. No test outside the Trino set-up in the demo says.</p>
+
+      <h3 id="trino-request">One Trino query, step by step</h3>
+      <ol>
+        <li>Trino, with <code>iceberg.rest-catalog.session=USER</code>, calls the Iceberg REST API with the person's own token in <code>Authorization</code> and its own token in <code>X-Nuna-Engine-Authorization</code>. The server checks both, decides the load for the person, and hands Trino the table and its vended credentials because Trino is a trusted engine.</li>
+        <li>Trino's OPA access control posts to <code>/opa/v1/allow</code>, which always answers <code>{"result":true}</code>: the catalog has already decided access.</li>
+        <li>It posts to <code>/opa/v1/row-filters</code> and <code>/opa/v1/column-masks</code>, passing the person's token as the extra credential <code>token</code>. The server verifies that token itself and ignores the user and groups Trino names. It answers with the combined filter and the masks for the person's groups.</li>
+        <li>Trino reads the files and applies the filter and masks before it returns rows.</li>
+      </ol>
+
+      <h3 id="failing-closed">Failing closed</h3>
+      <p>The decision endpoints answer so that a fault shows less, never more. For a Trino catalog that <code>nuna.opa.catalogs</code> maps to a nuna catalog, a missing or refused token, a table the server cannot find, or one the person holds nothing on answers the filter <code>false</code> and masks every column with <code>NULL</code>. If Trino asks about only some of a table's masked columns in one call, every column in the call reads <code>NULL</code>. When the identity provider's keys cannot be fetched, the endpoints answer <code>503</code> <code>The user's token could not be checked; retry later</code>. A Trino catalog that is not mapped gets no rules at all, so map every Trino catalog that reaches nuna.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>No caller other than a trusted engine or a maintenance principal receives a flagged table's metadata location or vended credentials from the server.</li>
+        <li>The server does not stop someone who already has other access to the object store from reading the files. Restrict the bucket to the server's vending role and the maintenance worker; see <a href="hardening.html">Hardening checklist</a>.</li>
+        <li>A rule is only as strong as the engine that applies it.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <p>A table's <b class="ui">Access</b> tab in the console shows the rules to grant admins, and to a reader the panel <b class="ui">Your view of this table</b>, which says <b class="ui">Read through Trino only.</b> The endpoints are in the <a href="../api/row-column-rules.html#endpoints">Row and column rules API</a> and the <a href="../api/opa.html#endpoints">OPA decisions API</a>. The trusted engines are listed at <code>GET /management/v1/engines</code>, for platform operators.</p>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>Expressions are Trino SQL, checked by Trino's parser; another engine's dialect is not accepted.</li>
+        <li>The flag is a table's own; flags set on catalogs, namespaces or views are removed when the server starts.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/row-column-rules.html">Row filters and column masks</a>: the model and how rules combine.</li>
+          <li><a href="opa.html">Use OPA</a>: wiring Trino's access control to the server.</li>
+          <li><a href="../guides/row-column-rules.html">Add a row filter or column mask</a>: the steps, with every refusal.</li>
+          <li><a href="authentication.html#engines-acting-for-people">Authentication</a>: how a trusted engine names its end user.</li>
+          <li><a href="credential-vending.html">Credential vending</a>: what the withheld credentials would allow.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-security/src/main/java/nuna/catalog/security/Authorizer.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/OpaSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/FlagsAboveTables.java</code>, <code>catalog-server/src/main/resources/nuna/ui/rules.js</code> and the demo's Trino configuration under <code>demo/k8s/</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The refusal of a flagged table's load to an untrusted caller was read from the local demo with a GET request. The OPA endpoints take POST and were not called.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

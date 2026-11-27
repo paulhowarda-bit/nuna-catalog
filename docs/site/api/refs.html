@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/refs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Branches and tags · nuna docs</title>
+  <meta name="description" content="Make, list, renew, merge and delete catalog branches and tags, and take a table or view out of the refs that keep it, under /management/v1/catalogs/{catalog}/refs.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Branches and tags</h1>
+        <p class="lead">Make, list, renew, merge and delete catalog branches and tags, and take a table or view out of the refs that keep it, under <code>/management/v1/catalogs/{catalog}/refs</code>.</p>
+      </header>
+
+      <p>A ref covers the whole catalog: a <em>catalog branch</em> takes commits of its own and merges back into <code>main</code>, and a <em>tag</em> is fixed. Engines reach a ref through the Iceberg REST prefix <code>trading@dev</code>. See <a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+      <p>Creating, renewing, deleting and merging a ref, and taking an object out of refs, accept an <code>Idempotency-Key</code> header of 1 to 128 characters. The server keeps the first answer for that key, your identity, the route and the body: a repeat gets the same answer, and a repeat sent while the first still runs waits for it. A key used with a different request is answered <code>400</code> <code>Idempotency key <var>key</var> was used for a different request</code>. A <code>5xx</code> answer frees the key for a retry.</p>
+      <p>The two endpoints the maintenance worker calls to warn of and end an expired branch are on <a href="worker.html#ref-expiry">Worker endpoints</a>.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Ref endpoints, under <code>/management/v1/catalogs/{catalog}</code></caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-refs"><code>/refs</code></a></td><td>Lists the catalog's branches and tags, with the limits.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-refs-ref"><code>/refs/{ref}</code></a></td><td>Reads one ref, and what a branch changed.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-refs"><code>/refs</code></a></td><td>Makes a branch or tag.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-refs-ref-renew"><code>/refs/{ref}/renew</code></a></td><td>Moves a branch's expiry later.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-refs-ref"><code>/refs/{ref}</code></a></td><td>Deletes a ref.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-refs-ref-merge"><code>/refs/{ref}/merge</code></a></td><td>Merges a branch into <code>main</code>, or tries it with <code>dry-run</code>.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-namespace-objects-name-refs"><code>/namespaces/{namespace}/objects/{name}/refs</code></a></td><td>Lists the refs that keep a table or view, by its name.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-objects-id-refs"><code>/objects/{id}/refs</code></a></td><td>Lists the refs that keep a table or view, by its id.</td></tr>
+            <tr><td><code>POST</code></td><td><a href="#post-objects-id-refs-remove"><code>/objects/{id}/refs/remove</code></a></td><td>Takes a table or view out of refs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="refs">Refs</h2>
+
+      <section class="endpoint">
+        <h3 id="get-refs"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/refs</code></h3>
+        <p>Lists the catalog's refs, with the deployment's limits and whether you may make one.</p>
+        <p class="doc-meta"><span class="badge needs">Needs any grant in the catalog</span></p>
+        <h4 id="get-refs-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>expired</code></td><td>query</td><td>boolean</td><td>No</td><td><code>true</code> to list branches past their expiry too: such a branch holds its name until the worker ends it. Default <code>false</code>.</td></tr>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Default <code>100</code>, held between <code>1</code> and <code>1000</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-refs-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"refs": [<var>ref</var>, …], "next-page-token", "limits", "may": {"create"}}</code>. Each branch also has <code>changed-count</code>, the tables and views it changed.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-refs-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/refs" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "refs": [
+    {
+      "id": "738f98ad-37ba-4e50-b472-d6ba96857ccb",
+      "name": "dev",
+      "kind": "branch",
+      "from": "main",
+      "created-at": "2026-11-25T15:17:22.587Z",
+      "created-by": "ana",
+      "expires-at": "2026-12-25T15:17:22.587Z",
+      "max-expires-at": "2027-05-24T15:17:22.587Z",
+      "expiring": false,
+      "cut-at": "2026-11-25T15:17:22.587Z",
+      "changed-count": 2
+    },
+    {
+      "id": "82dae882-ca9c-461e-a684-52ecb2aadfc7",
+      "name": "eod-2026-11-25",
+      "kind": "tag",
+      "from": "main",
+      "created-at": "2026-11-25T22:00:03.490Z",
+      "created-by": "ana",
+      "cut-at": "2026-11-25T22:00:03.490Z"
+    }
+  ],
+  "limits": {
+    "max-branches": 50,
+    "max-tags": 1000,
+    "max-merge-tables": 100,
+    "branch-idle-expiry": "PT720H",
+    "branch-max-life": "PT4320H",
+    "expiry-warning": "PT168H",
+    "max-description": 200
+  },
+  "may": {"create": true}
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-refs-ref"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/refs/{ref}</code></h3>
+        <p>Reads one ref. A branch also lists what it changed: each table and view, the version it was cut at and the version it holds now.</p>
+        <p class="doc-meta"><span class="badge needs">Needs any grant in the catalog</span></p>
+        <h4 id="get-refs-ref-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#ref">ref</a>, with <code>changed</code> (<code>[{"namespace", "name", "kind", "cut-version", "version"}]</code>) for a branch, and <code>may</code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>Ref does not exist: <var>name</var></code> (<code>NoSuchRefException</code>), or the catalog is not there.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-refs-ref-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/refs/dev" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-refs"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/refs</code></h3>
+        <p>Makes a branch or a tag, cut from <code>main</code> or from another ref. A branch expires <code>nuna.refs.branch-idle-expiry</code> (default 30 days) after it is made, unless renewed, and never lives longer than <code>nuna.refs.branch-max-life</code> (default 180 days). A tag never expires.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the catalog</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-refs-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>Idempotency-Key</code></td><td>header</td><td>string</td><td>No</td><td>1 to 128 characters.</td></tr>
+              <tr><td><code>name</code></td><td>body</td><td>string</td><td>Yes</td><td>The ref's name, with no <code>@</code> and no <code>/</code>, and not <code>main</code>.</td></tr>
+              <tr><td><code>kind</code></td><td>body</td><td>string</td><td>Yes</td><td><code>branch</code> or <code>tag</code>.</td></tr>
+              <tr><td><code>from</code></td><td>body</td><td>string</td><td>No</td><td><code>main</code> (the default) or another ref's name.</td></tr>
+              <tr><td><code>description</code></td><td>body</td><td>string</td><td>No</td><td>One line of plain text, at most <code>200</code> characters.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-refs-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{"name": "dev", "kind": "branch", "from": "main", "description": "Rework of the fills schema"}</code></pre>
+        </div>
+        <h4 id="post-refs-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>201</code></td><td>The new <a href="#ref">ref</a>.</td></tr>
+              <tr><td><code>400</code></td><td>
+                <ul>
+                  <li><code>Invalid ref name: a ref's name holds no @ and no /: <var>x</var></code>, or <code>Invalid ref name: main is the catalog's main line, not a ref's name</code></li>
+                  <li><code>Field kind must be branch or tag</code></li>
+                  <li><code>Field description must be a string</code>, <code>Field description is longer than 200 characters (<var>n</var>)</code>, or <code>Field description must be one line of plain text: character <var>n</var> is U+<var>xxxx</var>, a control, line-breaking or bidirectional formatting character</code></li>
+                  <li><code>Invalid Idempotency-Key: must be 1 to 128 characters</code></li>
+                </ul>
+              </td></tr>
+              <tr><td><code>403</code></td><td>You hold something in the catalog but not <code>create</code> on it.</td></tr>
+              <tr><td><code>404</code></td><td>The <code>from</code> ref does not exist: <code>Ref does not exist: <var>name</var></code>.</td></tr>
+              <tr><td><code>409</code></td><td><code>Ref already exists: <var>name</var></code> (<code>AlreadyExistsException</code>); a branch past its expiry keeps its name until the worker ends it, and the message says so. Or the catalog is at its limit: <code>Catalog trading holds 50 open branches, as many as nuna.refs.max-branches allows</code>, or the same for tags and <code>nuna.refs.max-tags</code> (<code>RefLimitException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-refs-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/refs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: make-dev-1" \
+  -d '{"name": "dev", "kind": "branch"}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-refs-ref-renew"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/refs/{ref}/renew</code></h3>
+        <p>Moves a branch's expiry to <code>nuna.refs.branch-idle-expiry</code> from now, never past <code>branch-max-life</code> from its creation and never earlier than it was.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the catalog</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-refs-ref-renew-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The branch, with its new <code>expires-at</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Ref <var>name</var> is a tag, which never expires</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>create</code> on the catalog.</td></tr>
+              <tr><td><code>404</code></td><td>The ref does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-refs-ref-renew-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/refs/dev/renew" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-refs-ref"><span class="method" data-method="DELETE">DELETE</span> <code>/management/v1/catalogs/{catalog}/refs/{ref}</code></h3>
+        <p>Deletes a branch or tag.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the catalog</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-refs-ref-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The ref is deleted.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>create</code> on the catalog.</td></tr>
+              <tr><td><code>404</code></td><td>The ref does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-refs-ref-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/refs/dev" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-refs-ref-merge"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/refs/{ref}/merge</code></h3>
+        <p>Moves every table and view the branch changed onto <code>main</code>, all or nothing, and ends the branch. A table whose <code>main</code> moved since the cut is rebased when the changes do not conflict; when any table conflicts, nothing moves. With <code>dry-run=true</code>, the server works out the same answer and writes nothing.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>create</code> on the catalog, and <code>write</code> or <code>modify</code> on each table on <code>main</code></span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-refs-ref-merge-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>ref</code></td><td>path</td><td>string</td><td>Yes</td><td>The branch's name.</td></tr>
+              <tr><td><code>dry-run</code></td><td>query</td><td>boolean</td><td>No</td><td><code>true</code> to try the merge without moving anything. A dry run needs only a grant in the catalog.</td></tr>
+              <tr><td><code>Idempotency-Key</code></td><td>header</td><td>string</td><td>No</td><td>1 to 128 characters.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-refs-ref-merge-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>Merged: <code>{"ref", "tables": [<var>merged table</var>, …]}</code>. A dry run: <code>{"dry-run": true, "ref", "changed", "max-tables", "answer": {"code", "type", "message"}, "tables", "hidden", "may-merge"}</code>, where <code>answer</code> is what the real merge would answer.</td></tr>
+              <tr><td><code>400</code></td><td><code>Ref <var>name</var> is a tag; only a branch merges</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You lack a privilege the merge needs. A table with a row and column policy can be merged only by a trusted engine that enforces it.</td></tr>
+              <tr><td><code>404</code></td><td>The ref does not exist.</td></tr>
+              <tr><td><code>409</code></td><td>A conflict: <code>Branch dev conflicts with main in 1 of the 2 tables and views it changed, so nothing moved: …</code> (<code>RefMergeConflictException</code>); the body adds <code>ref</code> and <code>conflicts</code>. Or too many tables: <code>Branch dev changed <var>n</var> tables and views, and one merge moves at most 100 (nuna.refs.max-merge-tables)</code> (<code>RefLimitException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-refs-ref-merge-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/refs/dev/merge?dry-run=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <p class="gap">Not documented yet: a captured merge or dry-run response. Neither was run, because the demo is shared and only read requests were allowed; the field lists above come from the code.</p>
+      </section>
+
+      <h2 id="objects-kept-by-refs">Objects kept by refs</h2>
+      <p>A table or view dropped on <code>main</code> stays readable through every ref that still names it, and its files stay until no ref does. These routes show which refs keep it and take it out of them.</p>
+
+      <section class="endpoint">
+        <h3 id="get-namespace-objects-name-refs"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/objects/{name}/refs</code></h3>
+        <p>Lists every table or view of that name in the namespace, live or dropped, with the refs that keep each. The walk looks at 10,000 objects at most; <code>cut-short</code> says when it stopped. Who dropped an object is looked up for the 5 newest dropped objects only.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the object</span></p>
+        <h4 id="get-namespace-objects-name-refs-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"objects": [<var>kept object</var>, …], "cut-short"}</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The namespace is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-namespace-objects-name-refs-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/objects/orders/refs" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-objects-id-refs"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/refs</code></h3>
+        <p>The same, for one table or view by its id.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the object</span></p>
+        <h4 id="get-objects-id-refs-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"objects": [<var>kept object</var>], "cut-short"}</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an object id: <var>x</var></code>.</td></tr>
+              <tr><td><code>404</code></td><td><code>No table or view <var>id</var> in trading</code> (<code>NoSuchObjectException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-objects-id-refs-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/objects/3d4e5f60-7a8b-4c9d-8e0f-1a2b3c4d5e6f/refs" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="post-objects-id-refs-remove"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/objects/{id}/refs/remove</code></h3>
+        <p>Takes a table or view out of the named refs, or out of every ref that names it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-tags</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-objects-id-refs-remove-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code></td><td>path</td><td>string</td><td>Yes</td><td>The table's or view's id.</td></tr>
+              <tr><td><code>Idempotency-Key</code></td><td>header</td><td>string</td><td>No</td><td>1 to 128 characters.</td></tr>
+              <tr><td><code>refs</code></td><td>body</td><td>array of strings</td><td>No</td><td>1 to 1000 ref names, each at most 1000 characters.</td></tr>
+              <tr><td><code>all-refs</code></td><td>body</td><td>boolean</td><td>No</td><td><code>true</code> for every ref that names the object. Send this or <code>refs</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-objects-id-refs-remove-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"object": {"id", "namespace", "name", "kind", "state"}, "refs": [<var>ref</var>, …]}</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Not an object id: <var>x</var></code>, <code>Field all-refs must be true or absent</code>, <code>Name the refs to take the table or view out of, {"refs": [name, ...]}, or ask for every ref that names it, {"all-refs": true}</code>, <code>Field refs must be an array of 1 to 1000 ref names</code>, or <code>Field refs must hold ref names, each a non-empty string of at most 1000 characters</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>manage-tags</code> on the object; or it is under a legal hold (<code><var>what</var> is under a legal hold, so its refs keep it</code>) or a DR freeze.</td></tr>
+              <tr><td><code>404</code></td><td><code>No table or view <var>id</var> in trading</code>, or <code>No table or view <var>id</var> on ref <var>r</var> of trading</code> (<code>NoSuchObjectException</code>).</td></tr>
+              <tr><td><code>409</code></td><td><code>The refs naming <var>x</var> kept changing while it was being taken out of them; ask again</code> (<code>RefsChangedException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-objects-id-refs-remove-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/objects/3d4e5f60-7a8b-4c9d-8e0f-1a2b3c4d5e6f/refs/remove" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"refs": ["dev"]}'</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="ref">Ref</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code>, <code>name</code></td><td>string</td><td>The ref's id and name.</td></tr>
+            <tr><td><code>kind</code></td><td>string</td><td><code>branch</code> or <code>tag</code>.</td></tr>
+            <tr><td><code>from</code></td><td>string</td><td>What it was cut from: <code>main</code> or a ref's name.</td></tr>
+            <tr><td><code>created-at</code></td><td>string</td><td>When it was made.</td></tr>
+            <tr><td><code>created-by</code></td><td>string</td><td>Who made it; only for a caller with <code>create</code> on the catalog.</td></tr>
+            <tr><td><code>description</code></td><td>string</td><td>Its description, when it has one.</td></tr>
+            <tr><td><code>expires-at</code>, <code>max-expires-at</code></td><td>string</td><td>A branch's expiry, and the latest a renewal can move it to.</td></tr>
+            <tr><td><code>expiring</code></td><td>boolean</td><td>True within <code>nuna.refs.expiry-warning</code> (default 7 days) of the expiry.</td></tr>
+            <tr><td><code>cut-at</code></td><td>string</td><td>When its contents were cut.</td></tr>
+            <tr><td><code>cut-from-ended</code>, <code>branch-changes</code></td><td></td><td>A ref made from another ref takes that ref's cut. When a ref in that chain has been deleted or merged, <code>cut-at</code> is left out and <code>cut-from-ended</code> names the ended ref. <code>branch-changes</code> names each branch whose own changes the ref took when it was made, nearest first, each <code>{"branch", "as-of"}</code>.</td></tr>
+            <tr><td><code>expired</code></td><td>boolean</td><td>In a list with <code>expired=true</code>: whether the branch is past its expiry.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="merged-table">Merged table</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>namespace</code>, <code>name</code>, <code>kind</code></td><td></td><td>The table or view.</td></tr>
+            <tr><td><code>cut-version</code>, <code>main-version</code>, <code>branch-version</code></td><td>integer</td><td>Its version at the cut, on <code>main</code> now, and on the branch.</td></tr>
+            <tr><td><code>moves</code></td><td>boolean</td><td>Whether the merge moves it.</td></tr>
+            <tr><td><code>version</code>, <code>rebased</code></td><td></td><td>The version <code>main</code> holds after the merge, and whether the branch's changes were rebased onto a newer <code>main</code>.</td></tr>
+            <tr><td><code>definition-change</code>, <code>conflict</code>, <code>dropped-at</code></td><td></td><td>A view's definition change, the conflict found, and when it was dropped on <code>main</code>.</td></tr>
+            <tr><td><code>metadata-location</code></td><td>string</td><td>Its metadata file.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="kept-object">Kept object</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code>, <code>kind</code>, <code>namespace</code>, <code>name</code></td><td></td><td>The table or view.</td></tr>
+            <tr><td><code>state</code></td><td>string</td><td><code>active</code>, <code>dropped</code> or <code>purging</code>.</td></tr>
+            <tr><td><code>made-at</code>, <code>dropped-at</code>, <code>purge-after</code></td><td>string</td><td>When it was made, dropped, and may be purged.</td></tr>
+            <tr><td><code>dropped-by</code>, <code>dropped-by-left-out</code></td><td></td><td><code>{"principal", "end-user"}</code> for the 5 newest dropped objects; <code>dropped-by-left-out</code> marks the others.</td></tr>
+            <tr><td><code>refs</code></td><td>array</td><td>Each ref that keeps it: <code>name</code>, <code>kind</code>, <code>created-at</code>, <code>expires-at</code>, <code>expired</code>, and <code>own-version</code>, a branch's own version where one of its commits changed the object.</td></tr>
+            <tr><td><code>may</code></td><td>object</td><td><code>remove</code>: whether you may take it out of refs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>: how refs work.</li>
+          <li><a href="worker.html#ref-expiry">Worker endpoints</a>: how the worker warns of and ends expired branches.</li>
+          <li><a href="grants.html#post-grants">Grants</a>: granting <code>write</code> on one branch.</li>
+          <li><a href="../console/branches-and-tags.html">The Branches and tags page</a>: refs in the console.</li>
+          <li><a href="../reference/audit-records.html#record-types">Audit record format</a>: the ref record.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java</code>, <code>RefSettings.java</code> and <code>ManagementIdempotency.java</code> in the same folder, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The ref list, one ref and the refs keeping an object were read from the demo; the list's response is rewritten to the fictional estate. No <code>POST</code> or <code>DELETE</code> was run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

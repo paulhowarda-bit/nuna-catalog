@@ -3,14 +3,15 @@ Module: catalog-server
 Test: ConsoleTest#devTokenLoginIsOffByDefaultAndConfigHoldsNoSecret
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java
+index 33807b98..0f33222b 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java
-@@ -15,7 +15,7 @@
-  * @param oidc          the IdP the console signs people in with (authorization code with PKCE), or null
+@@ -18,7 +18,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
+  *                      documentation link
   */
  @ConfigurationProperties("nuna.ui")
--public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc) {
-+public record UiSettings(@DefaultValue("true") boolean devTokenLogin, Oidc oidc) {
+-public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc,
++public record UiSettings(@DefaultValue("true") boolean devTokenLogin, Oidc oidc,
+                          @DefaultValue(UiSettings.OWN_DOCS) String docsUrl) {
  
-     /**
-      * A public OIDC client: no client secret, PKCE instead.
+     /** The documentation site this server serves (UiWiring). */

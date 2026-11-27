@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/maintenance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maintenance · nuna docs</title>
+  <meta name="description" content="Ask for a table's compaction or orphan scan, read the maintenance nights, the estate, the neediest tables and the worker's scans, check readiness and storage setup, and set the maintenance policy.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Maintenance</h1>
+        <p class="lead">Ask for a table's compaction or orphan scan, read the maintenance nights, the estate, the neediest tables and the worker's scans, check readiness and storage setup, and set the maintenance policy, under <code>/management/v1/maintenance</code> and each catalog's paths.</p>
+      </header>
+
+      <p>The maintenance worker does the work; these routes let you ask for it, see what it did and decide what it may do (see <a href="../concepts/maintenance.html">Maintenance</a>). The routes only the worker calls, to claim work and report jobs, scans and assessments, are on <a href="worker.html">Worker endpoints</a>. Table health is on <a href="health.html">Health</a>. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Maintenance endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>POST</code></td><td><a href="#post-table-maintenance-requests"><code>…/tables/{table}/maintenance/requests</code></a></td><td>Asks for a compaction or orphan scan of one table tonight.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-nights"><code>/management/v1/maintenance/nights</code></a></td><td>Reads the figures of recent maintenance nights.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-estate"><code>/management/v1/maintenance/estate</code></a></td><td>Lists every table you may read with its assessment and state.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-tables"><code>/management/v1/maintenance/tables</code></a></td><td>Lists the neediest tables you may read.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-scans"><code>/management/v1/maintenance/scans</code></a></td><td>Lists the worker's recent scans.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-maintenance-readiness"><code>/management/v1/catalogs/{catalog}/maintenance/readiness</code></a></td><td>Says, step by step, whether the worker can maintain a catalog.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-storage-setup"><code>/management/v1/maintenance/storage-setup</code></a></td><td>Says what to set up outside the catalog for each storage profile.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-delete-policies"><code>/management/v1/maintenance/delete-policies</code></a></td><td>Gives the object store policies that leave deletes to the worker alone.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-storage-prefixes"><code>/management/v1/maintenance/storage-prefixes</code></a></td><td>Gives the worker the prefixes it lists and deletes beneath.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-maintenance-policy"><code><var>object</var>/maintenance-policy</code></a></td><td>Reads an object's maintenance policy and the values that apply.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-maintenance-policy"><code><var>object</var>/maintenance-policy</code></a></td><td>Sets an object's maintenance policy.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-maintenance-policy"><code><var>object</var>/maintenance-policy</code></a></td><td>Removes an object's maintenance policy.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="requests-and-figures">Requests and figures</h2>
+
+      <section class="endpoint">
+        <h3 id="post-table-maintenance-requests"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests</code></h3>
+        <p>Asks the worker to compact a table, or to scan it for orphan files, in its next window. Asking again while a request waits returns the waiting request.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the table</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-table-maintenance-requests-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>namespace</code></td><td>path</td><td>string</td><td>Yes</td><td>The namespace levels joined by <code>%1F</code>.</td></tr>
+              <tr><td><code>job</code></td><td>body</td><td>string</td><td>Yes</td><td><code>compaction</code> or <code>orphan-scan</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-table-maintenance-requests-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>202</code></td><td><code>{"job", "requested-by", "requested-at", "state", "started-at"}</code>; <code>state</code> is <code>waiting</code> or <code>started</code>. The request is audited as a governance record with the attribute <code>maintenance-request</code>.</td></tr>
+              <tr><td><code>400</code></td><td><code>Field job is compaction or orphan-scan</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold no <code>modify</code> on the table, or it is frozen: <code>Table equities.fills is frozen for DR reconcile: <var>reason</var></code>.</td></tr>
+              <tr><td><code>404</code></td><td>The table is not there, or you hold nothing on it.</td></tr>
+              <tr><td><code>409</code></td><td><code>Table equities.fills is under legal hold: nothing may be removed, so no compaction runs</code>, or <code>The maintenance policy of table equities.fills does not run compaction: compaction.enabled is false, set by built-in</code> (<code>MaintenanceNotAllowedException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-table-maintenance-requests-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/maintenance/requests" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"job": "compaction"}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-nights"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/nights</code></h3>
+        <p>Reads the figures of recent maintenance nights, newest first. The catalog keeps 32 nights. A job's table is named only when you may <code>select</code> it.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a signed-in caller</span></p>
+        <h4 id="get-maintenance-nights-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>days</code></td><td>query</td><td>integer</td><td>No</td><td>Nights to read. Default <code>30</code>, held between <code>1</code> and <code>32</code>.</td></tr>
+              <tr><td><code>jobs</code></td><td>query</td><td>integer</td><td>No</td><td>How many of the newest nights list their jobs. Default <code>1</code>, held between <code>0</code> and <code>days</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-nights-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#night">nights</a> follow.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-nights-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/nights?days=7&amp;jobs=1" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-estate"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/estate</code></h3>
+        <p>Lists the tables you may read across every catalog, each with its last assessment, whether it is held, frozen or closed, and whether last night fixed it. A page looks at 2,000 rows at most.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a signed-in caller</span></p>
+        <h4 id="get-maintenance-estate-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Default <code>200</code>, held between <code>1</code> and <code>500</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-estate-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"night", "tables": [{"id", "catalog", "namespace", "name", "assessment": {"assessed-at", "needs-compaction", "reasons", "score", "data-files"}, "held", "frozen", "closed", "fixed-last-night"}], "next-page-token"}</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-estate-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/estate?pageSize=50" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-tables"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/tables</code></h3>
+        <p>Lists the neediest tables you may <code>select</code>, highest health score first, each as <a href="health.html#table-health">table health</a>. A page looks at 2,000 rows at most.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a signed-in caller</span></p>
+        <h4 id="get-maintenance-tables-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>pageToken</code></td><td>query</td><td>string</td><td>No</td><td>The <code>next-page-token</code> of the page before.</td></tr>
+              <tr><td><code>pageSize</code></td><td>query</td><td>integer</td><td>No</td><td>Default <code>50</code>, at most <code>200</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-tables-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"tables": [<var>table health</var>, …], "next-page-token"}</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-tables-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/tables" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-scans"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/scans</code></h3>
+        <p>Lists the worker's 50 newest scans, newest first, with what it reached on each store, and the last scan that succeeded.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-maintenance-scans-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"scans": [<var>scan</var>, …], "last-success"}</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-scans-example">Example</h4>
+        <p>The response below is cut to one scan.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/scans" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "scans": [
+    {
+      "id": "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d",
+      "worker": "service-account-nuna-maintenance",
+      "started-at": "2026-11-26T02:00:01.204Z",
+      "ended-at": "2026-11-26T02:00:04.871Z",
+      "outcome": "succeeded",
+      "failures": {},
+      "groups": ["platform-maintenance"],
+      "storage": [
+        {
+          "kind": "ceph",
+          "endpoint": "https://s3.example",
+          "prefixes": [
+            {"prefix": "s3://trading-lake/tables", "listed": "ok", "deleted": 0, "delete-refused": 0, "delete-failed": 0}
+          ]
+        }
+      ]
+    }
+  ],
+  "last-success": {"id": "a0b1c2d3-e4f5-4a6b-8c7d-9e0f1a2b3c4d", "worker": "service-account-nuna-maintenance", "outcome": "succeeded"}
+}</code></pre>
+        </div>
+        <p>In the response above, <code>last-success</code> is cut short: it is the newest scan that succeeded, in full, with the same fields as each scan.</p>
+      </section>
+
+      <h2 id="setup">Setup</h2>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-maintenance-readiness"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/maintenance/readiness</code></h3>
+        <p>Says whether the worker can maintain the catalog, in four steps, each <code>done</code>, <code>missing</code>, <code>refused</code> or <code>unknown</code>:</p>
+        <ul>
+          <li><code>grant</code>: a group the worker's token last carried holds <code>write</code> on the catalog.</li>
+          <li><code>storage</code>: the worker's own storage identity covers every allowed prefix of the catalog's storage profile.</li>
+          <li><code>store</code>: the store let the worker list beneath every prefix and refused none of its deletes.</li>
+          <li><code>policy</code>: the catalog's maintenance policy turns at least one job on.</li>
+        </ul>
+        <p>The first three come from the newest scan the worker reported. Before any scan, or while the newest reported no storage, they are <code>unknown</code>. Names (groups, profile, prefixes) go only to callers who may <code>modify</code> the catalog or manage its grants, and to platform operators; <code>names</code> says whether you got them. A read writes no audit record.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the catalog, or a platform operator</span></p>
+        <h4 id="get-catalog-maintenance-readiness-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalog", "names", "scanned-at", "reported-at", "grant", "storage", "store", "policy"}</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something in the catalog but not <code>describe</code>.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-maintenance-readiness-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/maintenance/readiness" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "names": true,
+  "scanned-at": "2026-11-26T02:00:04.871Z",
+  "reported-at": "2026-11-26T02:00:04.871Z",
+  "grant": {"state": "done", "groups": [{"group": "platform-maintenance", "write": true}]},
+  "storage": {
+    "state": "done",
+    "profile": "onprem",
+    "endpoint": "https://s3.example",
+    "prefixes": [
+      {"prefix": "s3://trading-lake/tables", "covered-by": {"kind": "ceph", "endpoint": "https://s3.example", "prefix": "s3://trading-lake/tables"}}
+    ]
+  },
+  "store": {
+    "state": "done",
+    "deletes-since": "2026-11-26T02:00:01.204Z",
+    "prefixes": [
+      {"prefix": "s3://trading-lake/tables", "listed": "ok", "deleted": 0, "delete-refused": 0, "delete-failed": 0}
+    ]
+  },
+  "policy": {"state": "done", "jobs": ["snapshot-expiry", "orphan-removal", "compaction", "manifest-rewrite"]}
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-storage-setup"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/storage-setup</code></h3>
+        <p>Says what a platform operator sets up outside the catalog so the worker can maintain each storage profile's catalogs: the profile's catalogs and prefixes, what the worker last reported reaching there, the worker's settings for the store when it reported no identity there, and the delete policies with the commands that apply them. The catalog applies none of it and never holds or gives a key of the worker's: the settings mark where the key goes. Catalogs are named, never a namespace, table or view. A read writes no audit record.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-maintenance-storage-setup-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"scanned-at", "reported-at", "profiles": [{"name", "catalogs", "kind", "endpoint", "prefixes", "maintenance-principal", "worker", "store"}]}</code>. <code>worker.state</code> is <code>reported</code> with the prefixes reached, or gives the worker's settings for the store (<code>store</code>, <code>yaml</code>, <code>secret</code>). <code>store.state</code> is <code>generated</code>, with <code>policies</code> each holding <code>apply-as</code>, the policy and its <code>commands</code>, or <code>unprotected</code>, with the <code>setting</code> to add: <code>nuna.storage.profiles.<var>name</var>.maintenance-principal</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-storage-setup-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/storage-setup" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <p class="gap">Not documented yet: every field of the <code>worker</code> settings block (<code>store</code>, <code>yaml</code>, <code>secret</code>, <code>note</code>) and when each appears. The demo's worker reached its store, so the block was not shown.</p>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-delete-policies"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/delete-policies</code></h3>
+        <p>Gives the object store policies that leave deleting to the worker alone, for a platform operator to apply once per store. The catalog never applies them itself: its own credentials would then need the right to undo them. On AWS S3 and Ceph, one bucket policy per bucket holds every profile's prefixes there. On MinIO, which enforces no bucket policy on signed requests, each profile gets two user policies: one for every user but the worker (<code>except</code>), the catalog's own included, and one for the worker (<code>to</code>). A profile with no <code>maintenance-principal</code> is listed in <code>unprotected</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-maintenance-delete-policies-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"policies": [{"apply-as": "bucket-policy" | "user-policy", "endpoint", "bucket", "profiles", "except" | "to", "policy"}], "unprotected": [<var>profile</var>, …]}</code>. <code>policy</code> is the policy document, as a JSON string.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-delete-policies-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/delete-policies" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-storage-prefixes"><span class="method" data-method="GET">GET</span> <code>/management/v1/maintenance/storage-prefixes</code></h3>
+        <p>Gives the worker, at each scan, the prefixes of every storage profile that names a <code>maintenance-principal</code>: each profile's name, kind, endpoint and allowed prefixes, never a credential. The worker matches a profile to one of its own store identities by kind and endpoint.</p>
+        <p class="doc-meta"><span class="badge internal">Internal</span> <span class="badge needs">Needs a maintenance principal</span></p>
+        <h4 id="get-maintenance-storage-prefixes-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"profiles": [{"name", "kind", "endpoint", "prefixes"}]}</code>, with <code>kind</code> in lower case.</td></tr>
+              <tr><td><code>403</code></td><td><code>only a maintenance principal may call listMaintenanceStoragePrefixes</code>, audited.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-storage-prefixes-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/maintenance/storage-prefixes" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{"profiles": [{"name": "onprem", "kind": "ceph", "endpoint": "https://s3.example", "prefixes": ["s3://trading-lake/tables"]}]}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="maintenance-policy">Maintenance policy</h2>
+      <p>A maintenance policy turns the worker's jobs on and sets their limits. It may be set on a catalog, namespace, table or view; the nearest level that sets a key wins, then <code>nuna.governance.maintenance-defaults</code>, then the built-in value. Guardrails override all of them: a legal hold turns snapshot expiry and orphan removal off, a DR freeze turns every job off, and snapshot ages are raised to the minimum snapshot age. The policy routes are served on all four paths; <var>object</var> stands for any of them.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Maintenance policy keys, in the code's order</caption>
+          <thead><tr><th scope="col">Key</th><th scope="col">Built-in value</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><td><code>snapshot-expiry.enabled</code></td><td><code>false</code></td><td><code>true</code> or <code>false</code></td></tr>
+            <tr><td><code>snapshot-expiry.max-snapshot-age</code></td><td><code>P5D</code></td><td>ISO-8601 duration, at least the minimum snapshot age</td></tr>
+            <tr><td><code>snapshot-expiry.min-snapshots-to-keep</code></td><td><code>1</code></td><td>whole number, at least 1</td></tr>
+            <tr><td><code>orphan-removal.enabled</code></td><td><code>false</code></td><td><code>true</code> or <code>false</code></td></tr>
+            <tr><td><code>orphan-removal.older-than</code></td><td><code>P14D</code></td><td>ISO-8601 duration, longer than the database PITR window (<code>nuna.governance.pitr-window</code>, default 7 days)</td></tr>
+            <tr><td><code>compaction.enabled</code></td><td><code>false</code></td><td><code>true</code> or <code>false</code></td></tr>
+            <tr><td><code>compaction.target-file-size-bytes</code></td><td><code>536870912</code></td><td>whole number, at least 1</td></tr>
+            <tr><td><code>compaction.min-input-files</code></td><td><code>5</code></td><td>whole number, at least 1</td></tr>
+            <tr><td><code>compaction.delete-file-ratio</code></td><td><code>0.3</code></td><td>decimal number above 0</td></tr>
+            <tr><td><code>manifest-rewrite.enabled</code></td><td><code>false</code></td><td><code>true</code> or <code>false</code></td></tr>
+            <tr><td><code>manifest-rewrite.min-manifests</code></td><td><code>100</code></td><td>whole number, at least 1</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-maintenance-policy"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/maintenance-policy</code></h3>
+        <p>Also served on the namespace, table and view paths. Reads the keys the object sets itself, the value that applies for every key with where it came from, and the configured retention classes.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>describe</code> on the object</span></p>
+        <h4 id="get-maintenance-policy-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"target", "policy": {<var>own keys</var>}, "resolved": {<var>key</var>: {"value", "source", "reason"}}, "retention-classes": [{"name", "minimum-snapshot-age"}]}</code>. <code>source</code> is <code>built-in</code>, <code>default</code>, <code><var>kind</var>:<var>id</var></code> of the level that sets it, or <code>guardrail</code>, which gives a <code>reason</code> such as <code>under legal hold: nothing may be removed</code> or <code>frozen for DR reconcile</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The object is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-maintenance-policy-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities/maintenance-policy" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="put-maintenance-policy"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/catalogs/{catalog}/maintenance-policy</code></h3>
+        <p>Also served on the namespace, table and view paths. Replaces the object's own policy with the keys in the body: keys it leaves out are inherited. Values the guardrails forbid outright are refused.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="put-maintenance-policy-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{"compaction.enabled": true, "snapshot-expiry.enabled": true, "snapshot-expiry.max-snapshot-age": "P7D"}</code></pre>
+        </div>
+        <h4 id="put-maintenance-policy-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The policy is set; the answer is the attribute, with provenance <code>management-api</code>.</td></tr>
+              <tr><td><code>400</code></td><td>
+                <ul>
+                  <li><code>A maintenance policy sets at least one key; DELETE removes the policy</code></li>
+                  <li><code>Unknown maintenance policy key <var>x</var>; known keys: […]</code>, <code>Maintenance policy key <var>x</var> needs a plain value</code></li>
+                  <li><code><var>key</var> is true or false, not <var>y</var></code>, <code><var>key</var> is an ISO-8601 duration such as P7D or PT12H, not <var>y</var></code>, <code><var>key</var> is a whole number, not <var>y</var></code>, <code><var>key</var> is a decimal number such as 0.3, not <var>y</var></code>, and the bounds (<code>must be positive</code>, <code>must be at least 1</code>, <code>must be above 0</code>)</li>
+                  <li><code>snapshot-expiry.max-snapshot-age must be at least <var>d</var>, the minimum snapshot age</code></li>
+                  <li><code>orphan-removal.older-than must be longer than the database PITR window <var>w</var>, so a restore never needs a removed file</code></li>
+                </ul>
+              </td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the object but not <code>modify</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The object is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="put-maintenance-policy-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/namespaces/equities/maintenance-policy" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"compaction.enabled": true}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-maintenance-policy"><span class="method" data-method="DELETE">DELETE</span> <code>/management/v1/catalogs/{catalog}/maintenance-policy</code></h3>
+        <p>Also served on the namespace, table and view paths. Removes the object's own policy; the levels above then apply.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>modify</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-maintenance-policy-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The policy is removed.</td></tr>
+              <tr><td><code>404</code></td><td><code>maintenance-policy is not set on this <var>kind</var></code>, or the object is not there.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-maintenance-policy-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/namespaces/equities/maintenance-policy" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="night">Night</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>night</code>, <code>opens</code>, <code>closes</code></td><td>string</td><td>The night's date and its window.</td></tr>
+            <tr><td><code>tables-compacted</code>, <code>files-compacted</code>, <code>files-written</code></td><td>integer</td><td>What compaction did.</td></tr>
+            <tr><td><code>snapshots-expired</code>, <code>files-deleted</code>, <code>bytes-deleted</code></td><td>integer</td><td>What expiry and deletion removed.</td></tr>
+            <tr><td><code>jobs-running</code>, <code>jobs-succeeded</code>, <code>jobs-cut-off</code>, <code>jobs-failed</code></td><td>integer</td><td>Jobs by outcome.</td></tr>
+            <tr><td><code>jobs</code></td><td>array</td><td>For the newest <code>jobs</code> nights: <code>id</code>, <code>kind</code> (<code>compaction</code>, <code>orphan-scan</code>, <code>snapshot-expiry</code>, <code>manifest-rewrite</code>, <code>purge</code>, <code>deletion</code>), <code>slot</code>, <code>started-at</code>, <code>ended-at</code>, <code>outcome</code> (<code>running</code>, <code>succeeded</code>, <code>failed</code>, <code>cut-off</code>), <code>files-in</code>, <code>files-out</code>, and <code>table</code> (<code>id</code>, <code>catalog</code>, <code>namespace</code>, <code>name</code>) when you may <code>select</code> it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="scan">Scan</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code>, <code>worker</code></td><td>string</td><td>The scan and the worker's principal.</td></tr>
+            <tr><td><code>started-at</code>, <code>ended-at</code>, <code>outcome</code></td><td>string</td><td>When it ran and how it ended.</td></tr>
+            <tr><td><code>failures</code>, <code>error</code></td><td></td><td>What failed.</td></tr>
+            <tr><td><code>groups</code></td><td>array</td><td>The groups the worker's token carried.</td></tr>
+            <tr><td><code>storage</code></td><td>array</td><td>Each store: <code>kind</code>, <code>endpoint</code>, and <code>prefixes</code>, each with <code>listed</code> (<code>ok</code>, <code>refused</code> or <code>failed</code>), <code>list-code</code>, <code>deleted</code>, <code>delete-refused</code>, <code>delete-failed</code> and <code>delete-code</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: scans, the health score and the jobs.</li>
+          <li><a href="../operate/maintenance-nights.html">Maintenance nights</a>: reading a night's figures.</li>
+          <li><a href="health.html">Health</a>: table health.</li>
+          <li><a href="worker.html">Worker endpoints</a>: what the worker calls.</li>
+          <li><a href="../console/maintenance.html">The Maintenance page</a>: the same in the console.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java</code>, <code>MaintenanceRequests.java</code>, <code>MaintenanceNights.java</code>, <code>MaintenanceEstate.java</code>, <code>HealthRoutes.java</code>, <code>ReadinessRoutes.java</code>, <code>StorageSetupRoutes.java</code>, <code>StoragePrefixRoutes.java</code>, <code>DeletePolicyRoutes.java</code>, <code>GovernanceRoutes.java</code>, <code>MaintenancePolicy.java</code> and <code>GovernanceSettings.java</code> in the same folder, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The scans, readiness, storage setup, delete policies, storage prefixes, nights and estate reads were run against the demo; the responses shown are rewritten to the fictional estate. No <code>POST</code>, <code>PUT</code> or <code>DELETE</code> was run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

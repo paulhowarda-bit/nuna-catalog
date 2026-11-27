@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/troubleshooting">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Troubleshooting · nuna docs</title>
+  <meta name="description" content="Symptoms, their causes and their fixes, grouped by the part that fails, with each message as nuna prints it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Troubleshooting</h1>
+        <p class="lead">Symptoms, their causes and their fixes, grouped by the part that fails, with each message as nuna prints it.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>Find the message you see, or the symptom, under the part that fails. Each error answer from the server is JSON with an <code>error</code> object holding <code>message</code>, <code>type</code> and <code>code</code>, and every answer carries <code>X-Request-ID</code>: search the logs and the audit records for it (<a href="traces-and-logs.html#the-request-id">The request id</a>). When an alert fired, start from its <a href="runbooks.html">runbook</a>.</p>
+
+      <h2 id="server-start-up">Server start-up</h2>
+      <h3 id="database-is-unsafe">The server refuses an unsafe database</h3>
+      <p>The log's last lines read <code>The catalog's database is unsafe, so the server does not start</code>, followed by the findings.</p>
+      <p><strong>Cause:</strong> the start-up self-check found the database unsafe for a catalog. The message lists each finding as <code><var>code</var>: <var>detail</var></code>, and ends <code>Make the database safe. Only a test or demo database may run so, by naming each code in nuna.database.allow-unsafe.</code></p>
+      <p><strong>Fix:</strong> fix each finding in the database (<a href="health.html#the-database-self-check">the codes</a>). Name a code in <a href="../configure/database.html#nuna-database-allow-unsafe"><code>nuna.database.allow-unsafe</code></a> only for a test or demo database; each allowed finding is then logged at WARN as <code>The catalog's database is unsafe, allowed by nuna.database.allow-unsafe: …</code>.</p>
+      <h3 id="ca-bundle-setting-fails">A <code>ca-bundle</code> setting stops the server or the worker</h3>
+      <p><strong>Cause:</strong> a CA bundle file is missing or not a PEM certificate. The message starts with the setting's name, such as <code>nuna.storage.profiles.<var>name</var>.ca-bundle: </code>, <code>nuna.maintenance.storage.<var>name</var>.ca-bundle: </code>, <code>nuna.maintenance.dr.replicas.<var>name</var>.ca-bundle: </code> or <code>nuna.audit-tables.archive.ca-bundle: </code>, followed by the reason.</p>
+      <p><strong>Fix:</strong> check that the ConfigMap holding the bundle is mounted (<code>storageCaConfigMap</code> in the charts, at <code>/etc/nuna/storage-ca</code>) and that the setting names the file inside it.</p>
+      <h3 id="pods-never-become-ready">Pods never become ready</h3>
+      <p><strong>Cause:</strong> the readiness probe reads <code>GET /ui/config.json</code> on port 8181. A server still migrating the database, or waiting for it, does not answer yet; the start-up probe allows about 10 minutes.</p>
+      <p><strong>Fix:</strong> read the pod's log: <code>kubectl -n "$NS" logs <var>pod</var></code>. If the pod restarted, add <code>--previous</code> to read the run that failed (<a href="health.html#liveness-and-readiness">Health checks</a>).</p>
+      <h3 id="actuator-health-answers-404">A load balancer's check of <code>/actuator/health</code> fails</h3>
+      <p><strong>Cause:</strong> nuna has no Actuator endpoints. <code>/actuator/health</code> answers <code>404</code> <code>No static resource actuator/health.</code></p>
+      <p><strong>Fix:</strong> point the check at <code>/ui/config.json</code>, as the chart's probes do.</p>
+
+      <h2 id="database">Database</h2>
+      <h3 id="catalog-store-unavailable">Calls answer <code>503</code> Catalog store unavailable</h3>
+      <p><strong>Cause:</strong> the server cannot reach its database. The answer is <code>503</code> <code>ServiceUnavailableException</code> with <code>Retry-After: 2</code> and the message <code>Catalog store unavailable; nothing was applied: …</code>; the server logs <code>catalog store unavailable: …</code> at WARN.</p>
+      <p><strong>Fix:</strong> restore the database or the network path to it. Nothing was applied, so clients may retry. The servers recover by themselves once the database answers.</p>
+      <h3 id="commit-state-unknown">A commit answers <code>CommitStateUnknownException</code></h3>
+      <p><strong>Cause:</strong> the database's answer to the commit was lost, so the server cannot tell whether it happened.</p>
+      <p><strong>Fix:</strong> load the table and check its current snapshot before retrying. A client that sent an <code>Idempotency-Key</code> can send the same request with the same key: if the commit happened, it gets the first answer again.</p>
+
+      <h2 id="identity-provider">Identity provider and tokens</h2>
+      <h3 id="token-not-accepted">Calls answer <code>401</code> Not authorized</h3>
+      <p><strong>Cause:</strong> the token is missing, expired, signed by an issuer the server does not trust, or for another audience. The answer says only <code>Not authorized: the bearer token is missing or was not accepted</code>; the reason stays in the audit record of the failure.</p>
+      <p><strong>Fix:</strong> find the audit record for the request's id (<code>AuthFailure</code>) and read its reason. Then fix the token or the issuer settings (<a href="../install/identity-provider.html">Connect an identity provider</a>).</p>
+      <h3 id="token-could-not-be-checked">Calls answer <code>503</code> The token could not be checked</h3>
+      <p><strong>Cause:</strong> the server could not fetch the issuer's signing keys, so it does not know whether the token is good. The answer is <code>The token could not be checked: its issuer's signing keys could not be fetched; retry later</code>, with <code>Retry-After: 2</code>; the server logs the reason at WARN, such as <code>Couldn't retrieve JWK set from URL: Read timed out</code>.</p>
+      <p><strong>Fix:</strong> check that the server reaches the issuer's JWKS URL, and that the identity provider answers quickly. Clients may send the same token again.</p>
+      <h3 id="holds-no-privilege">Calls answer <code>403</code> … holds no privilege that gives …</h3>
+      <p><strong>Cause:</strong> the caller is signed in but has no grant that gives the privilege the call needs. The message names the principal, the privilege and the operation, such as <code>nuna-audit-tables holds no privilege that gives modify for updateTable</code>.</p>
+      <p><strong>Fix:</strong> grant the privilege to one of the caller's groups (<a href="../security/authorization.html">Authorization</a>).</p>
+
+      <h2 id="object-store">Object store and credentials</h2>
+      <h3 id="unknown-host">A store's endpoint gives <code>UnknownHostException</code></h3>
+      <p><strong>Cause:</strong> the endpoint names a host the pod cannot resolve, such as a Service name from another namespace written without its namespace.</p>
+      <p><strong>Fix:</strong> write the endpoint as the pod resolves it, such as <code>http://<var>service</var>.<var>namespace</var>.svc:<var>port</var></code>. The worker's store endpoints must be written exactly as the catalog's storage profiles write them.</p>
+      <h3 id="pkix-path-building-failed">TLS to the store fails with <code>PKIX path building failed</code></h3>
+      <p><strong>Cause:</strong> a private CA signed the store's certificate and the client does not trust it.</p>
+      <p><strong>Fix:</strong> give the profile or store a <code>ca-bundle</code> from the mounted CA ConfigMap. Compaction Jobs get a copy of their store's CA when the worker's store names one.</p>
+      <h3 id="input-not-an-x509-certificate"><code>keytool</code> says <code>Input not an X.509 certificate</code></h3>
+      <p><strong>Cause:</strong> the file given is not a PEM or DER certificate: often a whole chain with text before it, or a private key.</p>
+      <p><strong>Fix:</strong> give one certificate per file, starting at its <code>BEGIN CERTIFICATE</code> line.</p>
+
+      <h2 id="maintenance-worker">Maintenance worker</h2>
+      <h3 id="cleanup-window-read-as-a-number">The worker does not start, or the window is wrong</h3>
+      <p><strong>Cause:</strong> <code>cleanup-window</code> lacks <code>start</code>, <code>end</code> or <code>zone</code>, which have no default, or a time is unquoted: YAML 1.1 reads <code>22:30</code> as the number 1350.</p>
+      <p><strong>Fix:</strong> quote the times: <code>start: "22:30"</code> (<a href="maintenance-nights.html#set-the-cleanup-window">Set the cleanup window</a>).</p>
+      <h3 id="console-no-worker-has-reported">The console says no maintenance worker has reported</h3>
+      <p>The console shows <code>No maintenance worker has reported, so the catalog can't check this.</code></p>
+      <p><strong>Cause:</strong> no worker has finished a scan since the catalog's records began, or the worker cannot reach the catalog.</p>
+      <p><strong>Fix:</strong> see <a href="runbooks.html#nunaworkernotscanning"><code>NunaWorkerNotScanning</code></a>.</p>
+      <h3 id="deletions-fail">Deletions or purges fail</h3>
+      <p><strong>Cause:</strong> most often the worker's storage identity or the bucket's delete policy. See <a href="runbooks.html#nunadeletionsfailing"><code>NunaDeletionsFailing</code></a>.</p>
+      <p><strong>Fix:</strong> give the worker's identity list and delete rights on the catalog's prefixes (<a href="../install/helm-maintenance.html">Install the maintenance worker</a>).</p>
+
+      <h2 id="compaction-jobs">Compaction Jobs</h2>
+      <h3 id="job-network-is-unreachable">A Job cannot reach the network</h3>
+      <p>The Job's log reads <code>Unable to execute HTTP request: Network is unreachable</code>.</p>
+      <p><strong>Cause:</strong> the Job's pod cannot reach the store or the catalog, often because a network policy in the Jobs' namespace blocks it.</p>
+      <p><strong>Fix:</strong> allow egress from the Jobs' namespace to the store and to the catalog's address (<code>compaction.catalog-uri</code>). If the error is <code>PKIX path building failed</code> instead, it is the store's CA (above).</p>
+      <h3 id="jobs-cut-off-every-night">Jobs are cut off every night</h3>
+      <p><strong>Cause and fix:</strong> see <a href="runbooks.html#nunacompactionfallingbehind"><code>NunaCompactionFallingBehind</code></a>.</p>
+
+      <h2 id="audit">Audit</h2>
+      <h3 id="audit-is-unavailable">Reads or vends answer <code>503</code> Audit is unavailable</h3>
+      <p><strong>Cause:</strong> a record that must be audited before the answer was not acknowledged. The answer is <code>Audit is unavailable, so nothing that must be audited first is handed out; retry later</code>; the server logs <code>refused a request whose audit record was not acknowledged</code>.</p>
+      <p><strong>Fix:</strong> restore the audit destination named in the log line (<a href="audit-pipeline.html">Run the audit pipeline</a>).</p>
+      <h3 id="relay-stuck">The outbox relay stops on <code>is not a catalog event</code></h3>
+      <p><strong>Cause:</strong> an outbox entry cannot be read as a catalog event. The log line reads <code>outbox entry <var>id</var> of change <var>id</var> is not a catalog event: …</code>.</p>
+      <p><strong>Fix:</strong> the entry was written by another release of nuna or by hand. Raise it with the team that runs nuna, with the entry's id.</p>
+      <h3 id="writer-not-a-catalog-event">The audit tables writer stops at a record</h3>
+      <p><strong>Cause:</strong> a record it cannot map. From Kafka it logs <code>… is not a catalog event this writer can map; the audit table stops here</code>; from the log it writes the others and logs <code>A log record of … is not a catalog event; it is not written to the audit table: …</code>.</p>
+      <p><strong>Fix:</strong> check that the writer reads the right topic or log, and that it runs the same release as the servers.</p>
+      <h3 id="writer-no-privilege">The writer may not commit to the audit tables</h3>
+      <p>The writer logs <code>nuna-audit-tables holds no privilege that gives modify for updateTable</code>.</p>
+      <p><strong>Cause:</strong> the writer's principal has no grant that gives <code>modify</code> on the audit tables.</p>
+      <p><strong>Fix:</strong> grant <code>modify</code> on the audit tables, or the namespace that holds them, to the writer's group.</p>
+
+      <h2 id="telemetry">Telemetry</h2>
+      <h3 id="nothing-arrives-at-the-collector">Nothing arrives at the collector</h3>
+      <p><strong>Cause:</strong> no endpoint is set, or the endpoint is gRPC on port 4317, which nuna does not support.</p>
+      <p><strong>Fix:</strong> set <code>telemetry.endpoint</code> to the collector's OTLP/HTTP base URL, such as <code>http://otel-collector.observability:4318</code> (<a href="../install/telemetry.html">Send telemetry</a>).</p>
+
+      <h2 id="helm">Helm and rollouts</h2>
+      <h3 id="secret-change-not-picked-up">A changed Secret is not picked up</h3>
+      <p><strong>Cause:</strong> a Secret you manage yourself (<code>existingSecret</code>) is not part of the chart, so changing it does not roll the pods.</p>
+      <p><strong>Fix:</strong> <code>kubectl -n "$NS" rollout restart deployment/nuna-catalog</code> (<a href="kubectl.html">Helm and kubectl recipes</a>). A Secret the chart makes rolls the pods on <code>helm upgrade</code>.</p>
+      <h3 id="requests-fail-during-a-rollout">A few requests fail during a rollout</h3>
+      <p><strong>Cause:</strong> without the chart's <code>preStop</code> wait, a pod stops before the Service stops sending it requests.</p>
+      <p><strong>Fix:</strong> keep the chart's <code>preStop</code> <code>sleep 5</code> and its 45-second grace period. Without them, a rolling restart failed 3 of 583 requests in a test.</p>
+
+      <h2 id="console">Console</h2>
+      <h3 id="audit-page-answers-503">The Audit page shows nothing and its reads answer <code>503</code></h3>
+      <p><strong>Cause:</strong> the Audit page reads the audit tables, which the audit tables writer fills. Without the writer and its tables, its reads cannot be answered.</p>
+      <p><strong>Fix:</strong> install the writer (<a href="../install/helm-audit-tables.html">Install the audit tables writer</a>).</p>
+      <p class="gap">Not documented yet: the exact message the Audit page's reads give when the audit tables are not configured.</p>
+      <h3 id="nights-route-answers-500">The nights route answers <code>500</code></h3>
+      <p><strong>Cause:</strong> <code>jobs</code> in <code>/management/v1/maintenance/nights</code> was not a number. That is answered <code>500</code> where <code>400</code> belongs.</p>
+      <p><strong>Fix:</strong> send whole numbers for <code>days</code> and <code>jobs</code>.</p>
+
+      <h2 id="engines">Engines</h2>
+      <h3 id="pyiceberg-cannot-write-v3">PyIceberg says <code>Cannot write manifest for table version: 3</code></h3>
+      <p><strong>Cause:</strong> PyIceberg 0.12 cannot write format version 3 tables.</p>
+      <p><strong>Fix:</strong> write version 3 tables with an engine that supports it, or create the table as version 2.</p>
+      <h3 id="writes-refused-frozen">Writes answer <code>403</code> … is frozen for DR reconcile</h3>
+      <p><strong>Cause:</strong> a platform operator froze the table, its namespace or its catalog for disaster recovery.</p>
+      <p><strong>Fix:</strong> wait for the freeze to be lifted (<a href="../guides/freeze.html">Freeze and unfreeze for disaster recovery</a>).</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="runbooks.html">Alert runbooks</a>.</li>
+          <li><a href="health.html">Health checks</a>.</li>
+          <li><a href="../reference/errors.html">Error responses</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Messages were taken from the code: <code>StoreWiring.java</code>, <code>StoreOutage.java</code>, <code>ErrorResponses.java</code>, <code>security/Authentication.java</code>, <code>governance/AuditUnavailableResponses.java</code>, <code>catalog-security/…/Authorizer.java</code>, <code>catalog-audit/…/OutboxRelay.java</code>, <code>catalog-audit-tables/…/TableWriter.java</code> and <code>OtlpLogsReceiver.java</code>, <code>CatalogStorage.java</code>, <code>TrustedS3Clients.java</code>, <code>nuna/ui/readiness.js</code>, and the charts, checked against commit <code>b3e8582f</code> on 2026-11-26. Symptoms come from failures recorded while nuna was built and tested.</p>
+        <p>The <code>/actuator/health</code> answer was seen in the demo.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

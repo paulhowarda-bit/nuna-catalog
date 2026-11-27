@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/engines">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Engines · nuna docs</title>
+  <meta name="description" content="Register, list and remove trusted engines: the shared engines whose clients may act for the people who run queries through them, under /management/v1/engines.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Engines</h1>
+        <p class="lead">Register, list and remove trusted engines: the shared engines whose clients may act for the people who run queries through them, under <code>/management/v1/engines</code>.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The registry names an engine by the issuer of its tokens and its client id. A registered engine is a <em>trusted engine</em>, and the server lets it do three things an ordinary client cannot:</p>
+      <ul>
+        <li>It may name the person it acts for in the <code>X-Nuna-End-User</code> and <code>X-Nuna-End-User-Groups</code> headers, beside its own token.</li>
+        <li>It may vouch for a person's own token with its own in <code>X-Nuna-Engine-Authorization</code>, as Trino does when it forwards each user's token.</li>
+        <li>Acting as itself, it sees every catalog, so it can read a catalog's configuration with its own token.</li>
+      </ul>
+      <p>A client that is not registered and names an end user is refused with <code>403</code>. See <a href="../security/authentication.html#engines-acting-for-people">Authentication</a> for how the server checks each header. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+      <p>Only a platform operator may call these endpoints: a member of a group in <a href="../configure/security.html#nuna-security-platform-operator-groups"><code>nuna.security.platform-operator-groups</code></a>. Any other caller gets <code>403</code> <code>ForbiddenException</code> with the message <code>only platform operators run the trusted-engine registry</code>, and the refusal is audited as a denial with the reason <code>no_privilege</code>.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Engine registry endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-engines"><code>/management/v1/engines</code></a></td><td>Lists every registered engine.</td></tr>
+            <tr><td><code>PUT</code></td><td><a href="#put-engines"><code>/management/v1/engines</code></a></td><td>Registers an engine, or replaces its registration.</td></tr>
+            <tr><td><code>DELETE</code></td><td><a href="#delete-engines"><code>/management/v1/engines</code></a></td><td>Removes an engine from the registry.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-engines"><span class="method" data-method="GET">GET</span> <code>/management/v1/engines</code></h3>
+        <p>Lists every registered engine, sorted by issuer and then by client id. A read writes no audit record.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-engines-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"engines": [<var>engine</var>, …]}</code>, each as in <a href="#engine">Engine</a>.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-engines-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/engines" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "engines": [
+    {
+      "issuer": "https://idp.example/realms/data",
+      "client-id": "trino-prod",
+      "end-user-claim": "sub",
+      "flags": []
+    }
+  ]
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="put-engines"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/engines</code></h3>
+        <p>Registers an engine. Sending the same issuer and client id again replaces the registration's <code>end-user-claim</code> and <code>flags</code>; sending it unchanged also answers <code>204</code>. The issuer must be one the server trusts, listed in <a href="../configure/security.html#nuna-security-issuers"><code>nuna.security.issuers</code></a>. The client id is matched against the claim that issuer's <code>client-id-claim</code> setting names in the engine's token.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span> <span class="badge audited">Audited</span></p>
+        <h4 id="put-engines-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>issuer</code></td><td>body</td><td>string</td><td>Yes</td><td>The exact <code>iss</code> value of the engine's tokens.</td></tr>
+              <tr><td><code>client-id</code></td><td>body</td><td>string</td><td>Yes</td><td>The engine's client id at that issuer. Not blank.</td></tr>
+              <tr><td><code>end-user-claim</code></td><td>body</td><td>string</td><td>No</td><td>The token claim the engine names its end users by. Default <code>sub</code>.</td></tr>
+              <tr><td><code>flags</code></td><td>body</td><td>array of strings</td><td>No</td><td>Single words, each without a comma or white space. Default none.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The server stores <code>end-user-claim</code> and <code>flags</code>, lists them and puts them in the audit record. In this version no authorization decision reads either of them: the end user comes from the <code>X-Nuna-End-User</code> header or from the token in <code>Authorization</code>, as <a href="../security/authentication.html#engines-acting-for-people">Authentication</a> describes.</p>
+        <h4 id="put-engines-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{
+  "issuer": "https://idp.example/realms/data",
+  "client-id": "trino-prod",
+  "end-user-claim": "sub",
+  "flags": []
+}</code></pre>
+        </div>
+        <h4 id="put-engines-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The engine is registered.</td></tr>
+              <tr><td><code>400</code></td><td>
+                <ul>
+                  <li><code>An engine is named by its issuer and client-id</code>: <code>issuer</code> is missing, or <code>client-id</code> is missing or blank.</li>
+                  <li><code>Not a trusted issuer: <var>issuer</var></code>.</li>
+                  <li><code>a flag is one word, got '<var>flag</var>'</code>.</li>
+                  <li><code>A JSON body is needed</code>, or <code>Invalid JSON body: <var>…</var></code>.</li>
+                </ul>
+              </td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+              <tr><td><code>500</code></td><td><code>The change may or may not have been applied; repeat it: <var>…</var></code> (<code>ServiceFailureException</code>): the database's answer was lost. Send the same request again.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A registration is audited as a <code>nuna.catalog.engine</code> record with the action <code>REGISTERED</code>.</p>
+        <h4 id="put-engines-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/engines" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"issuer": "https://idp.example/realms/data", "client-id": "trino-prod"}'</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="delete-engines"><span class="method" data-method="DELETE">DELETE</span> <code>/management/v1/engines</code></h3>
+        <p>Removes an engine. From then on its clients may no longer name an end user, and a request that tries is refused with <code>403</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span> <span class="badge audited">Audited</span></p>
+        <h4 id="delete-engines-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>issuer</code></td><td>query</td><td>string</td><td>Yes</td><td>The engine's issuer, URL-encoded.</td></tr>
+              <tr><td><code>client-id</code></td><td>query</td><td>string</td><td>Yes</td><td>The engine's client id.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="delete-engines-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>204</code></td><td>The engine is removed.</td></tr>
+              <tr><td><code>400</code></td><td>A parameter is missing: <code>Required parameter 'issuer' is not present.</code></td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+              <tr><td><code>404</code></td><td><code>No such engine: <var>client-id</var> of <var>issuer</var></code> (<code>NotFoundException</code>).</td></tr>
+              <tr><td><code>500</code></td><td><code>The change may or may not have been applied; repeat it: <var>…</var></code> (<code>ServiceFailureException</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A removal is audited as a <code>nuna.catalog.engine</code> record with the action <code>REMOVED</code>.</p>
+        <h4 id="delete-engines-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X DELETE \
+  "$NUNA/management/v1/engines?issuer=https%3A%2F%2Fidp.example%2Frealms%2Fdata&amp;client-id=trino-prod" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="engine">Engine</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>issuer</code></td><td>string</td><td>The exact <code>iss</code> of the engine's tokens.</td></tr>
+            <tr><td><code>client-id</code></td><td>string</td><td>The engine's client id at that issuer.</td></tr>
+            <tr><td><code>end-user-claim</code></td><td>string</td><td>The claim recorded for the engine's end users; <code>sub</code> unless set.</td></tr>
+            <tr><td><code>flags</code></td><td>array of strings</td><td>The flags recorded for the engine, sorted.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/authentication.html#engines-acting-for-people">Authentication</a>: how an engine names the person it acts for, and what the server checks.</li>
+          <li><a href="../concepts/row-column-rules.html#why-files-are-withheld">Row filters and column masks</a>: why only a trusted engine reaches a flagged table's files.</li>
+          <li><a href="opa.html">OPA decisions</a>: the endpoints Trino asks for each user's filter and masks.</li>
+          <li><a href="../configure/security.html#nuna-security-issuers">Security settings</a>: the issuers an engine's tokens must come from.</li>
+          <li><a href="../reference/audit-records.html#record-types">Audit record format</a>: the <code>nuna.catalog.engine</code> record.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/EngineRoutes.java</code>, <code>Authentication.java</code> and <code>Holdings.java</code> in the same folder, <code>catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java</code>, <code>catalog-store-api/src/main/java/nuna/catalog/store/TrustedEngine.java</code> and <code>catalog-server/src/test/java/nuna/catalog/server/SecurityGateTest.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26. That no decision reads <code>end-user-claim</code> or <code>flags</code> was checked by searching every main source folder for their use.</p>
+        <p>The <code>GET</code> example was run against the demo and its response rewritten to the fictional estate. The <code>PUT</code> and <code>DELETE</code> examples were not run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

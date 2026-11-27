@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/health">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Health checks · nuna docs</title>
+  <meta name="description" content="Check that each nuna server is up, read the whole deployment&#x27;s health over the last day, and read the database self-check the server ran at start-up.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Health checks</h1>
+        <p class="lead">Check that each nuna server is up, read the whole deployment's health over the last day, and read the database self-check the server ran at start-up.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span> <span class="badge needs">Needs a platform operator</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The probes need nothing: Kubernetes calls them without a token.</li>
+        <li>The health routes answer only a platform operator: a member of a group in <a href="../configure/security.html#nuna-security-platform-operator-groups"><code>nuna.security.platform-operator-groups</code></a>.</li>
+        <li>The curl examples use <code>NUNA</code> and <code>TOKEN</code> as <a href="../clients/curl.html">Use the APIs with curl</a> sets them.</li>
+      </ul>
+
+      <h2 id="liveness-and-readiness">Liveness and readiness</h2>
+      <p>The server has no separate health endpoint for Kubernetes and no Spring Boot Actuator: <code>/actuator/health</code> answers <code>404</code>. The catalog chart's three probes read the console's settings file, <code>/ui/config.json</code>. The server answers it without a token and without reading the database, so a <code>200</code> says only that the server is up and answering HTTP.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The catalog chart's probes, all <code>GET /ui/config.json</code> on port <code>http</code> (8181)</caption>
+          <thead><tr><th scope="col">Probe</th><th scope="col">Period</th><th scope="col">Timeout</th><th scope="col">Failures allowed</th><th scope="col">Why</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Start-up</th><td><code>startupProbe.periodSeconds</code>, default 5 s</td><td>Kubernetes' default</td><td><code>startupProbe.failureThreshold</code>, default 120</td><td>The first start of a release runs the database migrations, so the chart allows 10 minutes.</td></tr>
+            <tr><th scope="row">Readiness</th><td>5 s</td><td>3 s</td><td>3</td><td>Takes a server that stops answering out of the Service.</td></tr>
+            <tr><th scope="row">Liveness</th><td>10 s</td><td>5 s</td><td>6</td><td>Restarts a server that has stopped answering for about a minute.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The probes do not read the database on purpose. When the database cannot be reached, every server answers loads and commits with <code>503</code> <code>ServiceUnavailableException</code> and <code>Retry-After: 2</code>; taking servers out of the Service would not help. Watch the availability alerts for that instead (<a href="runbooks.html#nunarequestavailabilityburnfast"><code>NunaRequestAvailabilityBurnFast</code></a>).</p>
+      <p>Check one server by hand:</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS -o /dev/null -w '%{http_code}\n' "$NUNA/ui/config.json"</code></pre>
+      </div>
+      <div class="code" data-lang="text" data-kind="output">
+<pre><code>200</code></pre>
+      </div>
+      <p>The other two programs: the maintenance worker has no HTTP port and no probe; its health is its metrics (<a href="runbooks.html#nunaworkernotscanning"><code>NunaWorkerNotScanning</code></a>). The audit tables writer has a readiness probe only with the source <code>otlp</code>: a TCP check of its <code>otlp-http</code> port every 5 s.</p>
+
+      <h2 id="the-servers-health-over-the-last-day">The server's health over the last day</h2>
+      <p><code>GET /management/v1/health/server</code> answers the figures of the one server that answers it, over its last day: the day up to now, or since the server started if that is later. A restarted server counts again from zero.</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>This answer came from the demo's server, a few hours after it started:</p>
+      <div class="code" data-lang="json" data-kind="output">
+<pre><code>{
+  "server": {"id": "bb06eee7-159b-493c-a12b-918371ef3622", "name": "nuna-catalog-6c65d6c9dd-lw69w",
+             "started-at": "2026-11-26T23:42:24.801033892Z"},
+  "from": "2026-11-26T23:42:24.801033892Z",
+  "to": "2026-11-27T03:26:44.876729242Z",
+  "figures": {"alerts.large-metadata": 0.0, "alerts.metadata-integrity": 0.0,
+              "alerts.regulated-schema-change": 0.0, "commit": 2.0, "commit.le.10": 0.0,
+              "commit.le.300": 1.0, "commit.le.50": 0.0, "load": 2965.0, "load.le.10": 819.0,
+              "load.le.300": 2962.0, "load.le.50": 2841.0, "not-modified": 1281.0,
+              "not-modified.le.10": 694.0, "not-modified.le.300": 1277.0,
+              "not-modified.le.50": 1257.0, "vends.cached": 3845.0, "vends.issued": 403.0}
+}</code></pre>
+      </div>
+      <p>Each figure is a count over the window. <code>load</code> counts loads answered <code>200</code>, <code>not-modified</code> loads answered <code>304</code>, and <code>commit</code> commits (<code>updateTable</code> and <code>commitTransaction</code>) answered <code>200</code>; <code>.le.<var>n</var></code> counts those that took <var>n</var> ms or less. <code>vends.*</code> counts credential vends by outcome and <code>alerts.*</code> nuna's three alert kinds.</p>
+      <p class="gap">Not documented yet: the full list of figure names <code>Figures</code> can give and when one is absent from the answer. The demo's answer above holds no audit figures.</p>
+
+      <h2 id="the-whole-deployments-health">The whole deployment's health</h2>
+      <p><code>GET /management/v1/health/catalog</code> adds every other server's figures to this server's and judges them against the latency objectives. The server finds the others through <a href="../configure/server.html#nuna-health-peers"><code>nuna.health.peers</code></a>, which the chart sets to its headless Service, and asks each with your own token. A server that does not answer within <a href="../configure/server.html#nuna-health-peer-timeout"><code>nuna.health.peer-timeout</code></a> (3 s by default) is listed with why, and its figures are missing.</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/catalog" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <div class="code" data-lang="json" data-kind="output">
+<pre><code>{
+  "alerts": {"metadata-integrity": 0, "regulated-schema-change": 0, "large-metadata": 0},
+  "audit": {"acknowledged": 0, "failed": 0},
+  "credential-vends": {"issued": 403, "cached": 3846, "none": 0, "failed": 0, "failures": {}},
+  "slos": {
+    "load": {"objective-ms": 50, "count": 2965, "within": 2841, "met": false, "p99": {"at-most-ms": 300}},
+    "not-modified": {"objective-ms": 10, "count": 1282, "within": 694, "met": false, "p99": {"at-most-ms": 300}},
+    "commit": {"objective-ms": 300, "count": 2, "within": 1, "met": false, "p99": {"over-ms": 300}}
+  },
+  "to": "2026-11-27T03:26:51.245590684Z",
+  "answered": 1,
+  "silent": 0,
+  "servers": [{"id": "bb06eee7-159b-493c-a12b-918371ef3622", "name": "nuna-catalog-6c65d6c9dd-lw69w",
+               "answered": true, "started-at": "2026-11-26T23:42:24.801033892Z",
+               "from": "2026-11-26T23:42:24.801033892Z", "this-server": true}]
+}</code></pre>
+      </div>
+      <p>An objective is <code>met</code> when at least 99 in 100 answers finished within <code>objective-ms</code>; <code>p99</code> names the histogram bucket the 99th percentile falls in. The demo above misses all three because its host was short of memory. <code>audit</code> counts the audit records Kafka acknowledged; it stays at 0 where the server audits to its log alone. The console shows the same figures on <a href="../console/service.html">the Service page</a>.</p>
+
+      <h2 id="the-database-self-check">The database self-check</h2>
+      <p>Before it migrates the schema, every server checks that the database keeps a committed change through the loss of a node. A finding stops the start, unless <a href="../configure/database.html#nuna-database-allow-unsafe"><code>nuna.database.allow-unsafe</code></a> names its code. A server that refuses has changed nothing in the database. A self-check that cannot run refuses the start too.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>What each database is checked for</caption>
+          <thead><tr><th scope="col">Code</th><th scope="col">Database</th><th scope="col">What it found</th></tr></thead>
+          <tbody>
+            <tr><td><code>pg.sync-commit-off</code></td><td>PostgreSQL</td><td><code>synchronous_commit</code> is neither <code>on</code> nor <code>remote_apply</code>.</td></tr>
+            <tr><td><code>pg.no-sync-standby</code></td><td>PostgreSQL</td><td><code>synchronous_standby_names</code> is empty, or no standby streams in <code>sync</code> or <code>quorum</code> state. The catalog's role needs <code>pg_monitor</code> to see the standbys.</td></tr>
+            <tr><td><code>pg.fsync-off</code></td><td>PostgreSQL</td><td><code>fsync</code> or <code>full_page_writes</code> is off.</td></tr>
+            <tr><td><code>pg.commit-cancel-timeout</code></td><td>PostgreSQL</td><td><code>statement_timeout</code> or <code>idle_in_transaction_session_timeout</code> is not <code>0</code>: a timeout can cancel a commit's wait for the standby.</td></tr>
+            <tr><td><code>crdb.replicas</code></td><td>CockroachDB</td><td>A zone holding catalog data has fewer than 3 voting replicas.</td></tr>
+            <tr><td><code>crdb.fsync-off</code></td><td>CockroachDB</td><td><code>kv.raft_log.synchronization.unsafe.disabled</code> is not false, or cannot be read (the role needs <code>VIEWCLUSTERSETTING</code>).</td></tr>
+            <tr><td><code>crdb.read-committed-off</code></td><td>CockroachDB</td><td>A READ COMMITTED transaction runs at another isolation: set <code>sql.txn.read_committed_isolation.enabled</code> to true.</td></tr>
+            <tr><td><code>ora.no-data-guard</code></td><td>Oracle</td><td>No synchronized Data Guard standby in MAXIMUM AVAILABILITY or MAXIMUM PROTECTION.</td></tr>
+            <tr><td><code>ora.no-transaction-guard</code></td><td>Oracle</td><td>The service does not have <code>COMMIT_OUTCOME</code> true.</td></tr>
+            <tr><td><code>ora.commit-replay</code></td><td>Oracle</td><td>The service's <code>FAILOVER_TYPE</code> replays transactions (Application Continuity).</td></tr>
+            <tr><td><code>ora.commit-nowait</code></td><td>Oracle</td><td>COMMIT does not wait for its redo to be written.</td></tr>
+            <tr><td><code>ora.linguistic-sort</code></td><td>Oracle</td><td><code>NLS_SORT</code> is not <code>BINARY</code>.</td></tr>
+            <tr><td><code>ora.journal-job-down</code></td><td>Oracle</td><td>The job that makes the journal's partitions ahead of time cannot run.</td></tr>
+            <tr><td><code>mongo.not-replica-set</code></td><td>MongoDB</td><td>The server is not a replica set member.</td></tr>
+            <tr><td><code>mongo.too-few-voters</code></td><td>MongoDB</td><td>Fewer than 3 voting data-bearing members.</td></tr>
+            <tr><td><code>mongo.weak-write-concern</code></td><td>MongoDB</td><td>The default write concern is not majority, or majority writes are not journaled.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A refused start ends with an exception whose message starts <code>The catalog's database is unsafe, so the server does not start</code>, lists each finding as its code and detail, and ends <code>Make the database safe. Only a test or demo database may run so, by naming each code in nuna.database.allow-unsafe.</code> Each finding allowed is logged at WARN as <code>The catalog's database is unsafe, allowed by nuna.database.allow-unsafe: <var>code</var>: <var>detail</var></code>.</p>
+      <p>Read what a running server found with <code>?store=true</code>, which also asks the database for its product and version on this server's own connection:</p>
+      <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>The answer carries the figures above and a <code>store</code> object. This one is the demo's, whose single-node PostgreSQL is allowed one finding:</p>
+      <div class="code" data-lang="json" data-kind="output">
+<pre><code>{
+  "store": {
+    "configured": "postgresql",
+    "backend": "PostgreSQL",
+    "version": "18.7",
+    "pitr-window-seconds": 604800,
+    "self-check": {
+      "at": "2026-11-26T23:42:22.744177875Z",
+      "allowed": [{"code": "pg.no-sync-standby",
+                   "detail": "synchronous_standby_names is '' and 0 standbys stream in sync or quorum state (the catalog role needs pg_monitor to see them)"}]
+    }
+  }
+}</code></pre>
+      </div>
+      <p><code>configured</code> is <code>nuna.database.backend</code> (CockroachDB runs as <code>postgresql</code> and is told apart by its version). When the database does not answer, <code>unreadable</code> holds why in place of <code>backend</code> and <code>version</code>. <code>pitr-window-seconds</code> is <a href="../configure/governance.html#nuna-governance-pitr-window"><code>nuna.governance.pitr-window</code></a> as declared; the server cannot read the database's own backup setting.</p>
+      <aside class="callout check">
+        <p class="callout-title">A healthy deployment answers every server and allows no finding</p>
+        <p><code>/ui/config.json</code> answers <code>200</code> on every pod, <code>/management/v1/health/catalog</code> shows <code>"silent": 0</code>, and <code>self-check.allowed</code> is empty on every server.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>403</code> <code>ForbiddenException</code>: <code>only platform operators may call readCatalogHealth</code></td><td>Your token's groups include no platform operator group. The refusal is audited.</td><td>Use a platform operator's token.</td></tr>
+            <tr><td><code>401</code> <code>NotAuthorizedException</code>: <code>Not authorized: the bearer token is missing or was not accepted</code></td><td>No token, or one the server does not accept.</td><td>Get a new token (<a href="../clients/tokens.html">Get a token</a>).</td></tr>
+            <tr><td>A server listed with <code>"answered": false</code> and a reason such as <code>could not connect</code> or <code>no answer in time</code></td><td>That server did not answer within the peer timeout.</td><td>Check that pod (<a href="kubectl.html">Helm and kubectl recipes</a>).</td></tr>
+            <tr><td>The pod restarts in a loop at start-up</td><td>The self-check found an unsafe setting, or the migrations ran past the start-up probe.</td><td>Read the pod's log (<a href="troubleshooting.html#server-start-up">Troubleshooting</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../api/health.html#endpoints">Health API</a>: every health endpoint, with table health.</li>
+          <li><a href="../console/service.html">The Service page</a>: the same figures in the console.</li>
+          <li><a href="metrics.html">Metrics</a>: the meters these figures are read from.</li>
+          <li><a href="../install/verify.html">Check the install</a>: the first checks after installing.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-catalog/templates/deployment.yaml</code>, <code>deploy/helm/nuna-catalog/values.yaml</code>, <code>deploy/helm/nuna-audit-tables/templates/deployment.yaml</code>, <code>catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java</code>, <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/SelfChecks.java</code>, <code>catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java</code> and <code>catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The three health requests, <code>/ui/config.json</code> and <code>/actuator/health</code> were run against the demo; the outputs are the demo's answers, cut to the fields shown. The refused start was not run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

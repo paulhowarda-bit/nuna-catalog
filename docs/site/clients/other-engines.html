@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/other-engines">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Other engines · nuna docs</title>
+  <meta name="description" content="Connect an engine nuna has not tested, such as DuckDB, StarRocks, Flink or Spice, with the standard Iceberg REST catalog settings, and know the problems seen when some were tried.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Other engines</h1>
+        <p class="lead">Connect an engine nuna has not tested, such as DuckDB, StarRocks, Flink or Spice, with the standard Iceberg REST catalog settings, and know the problems seen when some were tried.</p>
+        <p class="doc-meta"><span class="badge for">For engine users</span> <span class="badge untested">Not tested by nuna</span></p>
+      </header>
+
+      <aside class="callout warning">
+        <p class="callout-title">No nuna test runs these engines</p>
+        <p>nuna serves the standard Iceberg REST API, so an engine that speaks it correctly can connect. But nothing on this page is checked on each change. The notes for DuckDB, StarRocks and Spice come from one trial of each against nuna's demo; versions differ, and your result may too. The tested engines are on <a href="../reference/engines.html">Engine compatibility</a>.</p>
+      </aside>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>An access token (<a href="tokens.html">Get a token</a>). The engine must take a bearer token, or run the client-credentials grant against your identity provider: nuna issues no tokens itself, so an engine that can only ask the catalog for one cannot connect.</li>
+        <li>Grants for the token's groups on the catalog (<a href="../reference/privileges.html">Privileges</a>).</li>
+      </ul>
+
+      <h2 id="what-every-engine-needs">What every engine needs</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><td>Catalog type</td><td>Iceberg REST.</td></tr>
+            <tr><td>URI</td><td>The server's address, <code>https://nuna.example</code>. The client adds <code>/v1/…</code>.</td></tr>
+            <tr><td>Warehouse</td><td>The nuna catalog's name, or <code><var>catalog</var>@<var>ref</var></code> for a branch or tag. Required: the server answers <code>400</code> to a configuration request without one, unless a default is set.</td></tr>
+            <tr><td>Token</td><td>A bearer token, or the client id, secret and token endpoint of your identity provider.</td></tr>
+            <tr><td>Storage access</td><td>Vended credentials. nuna sends them, with the object store's address (<code>s3.endpoint</code>, for any store but AWS) and <code>s3.path-style-access</code>, in each table's load answer, whether or not the engine sends <code>X-Iceberg-Access-Delegation</code>.</td></tr>
+            <tr><td>Nested namespaces</td><td>Turn them on if the engine has a switch for it; many show only top-level namespaces otherwise.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Engines built on Iceberg's Java library or iceberg-rust take the object store's address from the load answer. Engines with their own storage layer may ignore it and send the credentials to AWS instead; give them the object store's address in their own settings.</p>
+
+      <h2 id="duckdb">DuckDB</h2>
+      <p>Tried with DuckDB 2.0.0 and its <code>iceberg</code> extension.</p>
+      <div class="code" data-lang="sql">
+<pre><code>CREATE SECRET nuna (TYPE iceberg, TOKEN '…');
+ATTACH 'trading' AS trading (TYPE iceberg, SECRET nuna, URI 'https://nuna.example', SUPPORT_NESTED_NAMESPACES true);
+SELECT * FROM trading."equities.daily".positions;</code></pre>
+      </div>
+      <ul>
+        <li>Without <code>SUPPORT_NESTED_NAMESPACES true</code>, only top-level namespaces' tables show. With it, each namespace is a schema named with dots, which must be quoted.</li>
+        <li>Vended credentials are the default, and DuckDB used the vended object store address with no S3 secret of its own.</li>
+        <li>Reads of v2 position deletes and v3 deletion vectors matched the data. <code>CREATE SCHEMA</code>, <code>CREATE TABLE</code>, <code>INSERT</code> and <code>DELETE</code> worked.</li>
+        <li>DuckDB asks for format version 2 when it creates a table; add <code>WITH ('format-version' = 3)</code> for v3.</li>
+        <li>A table you may not read fails only the query that reads it.</li>
+      </ul>
+
+      <h2 id="starrocks">StarRocks</h2>
+      <p>Tried with StarRocks 4.1.7.</p>
+      <div class="code" data-lang="sql">
+<pre><code>CREATE EXTERNAL CATALOG trading PROPERTIES (
+  "type" = "iceberg",
+  "iceberg.catalog.type" = "rest",
+  "iceberg.catalog.uri" = "https://nuna.example",
+  "iceberg.catalog.warehouse" = "trading",
+  "iceberg.catalog.security" = "oauth2",
+  "iceberg.catalog.oauth2.token" = "…",
+  "iceberg.catalog.vended-credentials-enabled" = "true",
+  "iceberg.catalog.rest.nested-namespace-enabled" = "true",
+  "aws.s3.region" = "us-east-1",
+  "aws.s3.endpoint" = "https://s3.example",
+  "aws.s3.enable_path_style_access" = "true"
+);</code></pre>
+      </div>
+      <ul>
+        <li>StarRocks ignores the vended object store address: without <code>aws.s3.endpoint</code>, it sent the credentials to AWS and every read failed with an S3 <code>400</code>.</li>
+        <li><code>CREATE</code>, <code>INSERT</code> and <code>ADD COLUMN</code> worked on v2 and v3 tables, and <code>DELETE</code> on v2. <code>DELETE</code> on a v3 table fails inside StarRocks (<code>Must use DVs for position deletes in V3</code>): nothing reaches nuna.</li>
+        <li>Nested namespaces appear as databases named with dots, which must be backquoted.</li>
+      </ul>
+
+      <h2 id="spice">Spice</h2>
+      <p>Tried with Spice.ai OSS 2.4.2. Give the catalog only <code>iceberg_token</code> and <code>iceberg_warehouse</code> in its parameters.</p>
+      <ul>
+        <li>Spice refuses a vended object store address on a private network unless <code>SPICE_URL_TABLE_ALLOW_PRIVATE_HOSTS=true</code> is set for the runtime. Setting <code>iceberg_s3_endpoint</code> instead makes Spice drop the vended credentials.</li>
+        <li>A Spice catalog shows only the tables one level below its <code>from</code> namespace; deeper tables need one catalog per parent namespace.</li>
+        <li>One table you may not read keeps the whole catalog from loading; leave it out with <code>exclude</code>.</li>
+        <li>Spice reaches nuna under one identity per catalog: nuna's audit trail shows no end user.</li>
+      </ul>
+
+      <h2 id="flink-and-the-rest">Flink and the rest</h2>
+      <p>Flink's Iceberg connector uses Iceberg's Java REST catalog, the same client Spark uses, so <a href="spark.html">Spark's catalog settings</a> carry over with Flink's <code>'catalog-type'='rest'</code> form. For any other engine, use the settings in <a href="#what-every-engine-needs">What every engine needs</a> and the engine's own documentation.</p>
+      <p class="gap">Not documented yet: Flink's settings against nuna. Flink is not in the engine matrix, and no Flink run is recorded with its settings.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>unsupported_grant_type</code>, <code>This catalog does not issue tokens</code></td><td>The engine asked nuna for a token.</td><td>Give it a token, or your identity provider's token endpoint.</td></tr>
+            <tr><td><code>Missing query parameter warehouse, and this server has no default warehouse</code></td><td>The engine sent no warehouse.</td><td>Set the warehouse to the catalog's name.</td></tr>
+            <tr><td>S3 errors from <code>amazonaws.com</code> on reads</td><td>The engine ignored the vended object store address.</td><td>Set the object store's address and path-style access in the engine.</td></tr>
+            <tr><td>Only some namespaces' tables are listed</td><td>Nested namespaces are off in the engine.</td><td>Turn them on.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../reference/engines.html">Engine compatibility</a>: the engines nuna tests.</li>
+          <li><a href="../reference/iceberg-support.html">Iceberg support</a>: what the server serves.</li>
+          <li><a href="../api/iceberg-tables.html#load-table-result">Load table result</a>: what an engine gets with each table.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>reports/Other Iceberg query engines.md</code>, the notes of one trial each of DuckDB 2.0.0, StarRocks 4.1.7 and Spice.ai OSS 2.4.2 against the demo, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/rest/OAuthRoute.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No engine on this page was run for it. The StarRocks statement is assembled from the trial's notes, not copied from a run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

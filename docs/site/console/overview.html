@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/overview">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Overview page · nuna docs</title>
+  <meta name="description" content="How the tables you may read in a catalog stand, what last night's maintenance did, and the last day's service, audit and governance figures, panel by panel.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Overview page</h1>
+        <p class="lead">The Overview answers, for anyone who reads data in a catalog, whether its tables are in shape, what is queued for tonight's maintenance and what last night's did, with the last day's service, audit and governance figures for those who may see them.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-overview"><img src="../img/shots/console-overview-light.png" data-dark="../img/shots/console-overview-dark.png" width="1440" height="900" alt="The Overview of catalog lakehouse: 31 of 32 assessed tables in shape and one queued for tonight, a mark for every table grouped by namespace, and figure cards for maintenance last night, latency objectives, servers, audit and governance."><figcaption>The Overview of a catalog.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>The rail shows <b class="ui">Overview</b> when your groups may read data (select) somewhere in the catalog. Every figure about tables counts only the tables you may read. The panels for latency and servers appear only to platform operators, the audit figures only to those who read the audit feed, and the governance figures to anyone who may see the catalog's governance summary. A panel the server refuses is left out.</p>
+
+      <h2 id="head">The head</h2>
+      <p>The eyebrow names the catalog and the date and time. The title says how the catalog stands, in one of these forms:</p>
+      <ul>
+        <li><b class="ui">Nothing in <var>catalog</var> you may read.</b>, with a link to another catalog where you may (<b class="ui"><var>other</var> has <var>N</var> tables →</b>).</li>
+        <li>The setup words when the maintenance worker cannot yet maintain the catalog, such as <b class="ui">The worker can't maintain <var>catalog</var> yet: <var>N</var> of 4 steps left.</b> <a href="maintenance.html#what-worker-needs">The Maintenance page</a> lists the steps.</li>
+        <li><b class="ui">Maintenance is off in <var>catalog</var>'s policy: nothing will be compacted or expired.</b></li>
+        <li>How many tables are in shape, such as <b class="ui"><var>x</var> of <var>N</var> tables in shape.</b> or <b class="ui"><var>x</var> of <var>N</var> assessed tables in shape; <var>M</var> not assessed yet.</b>, followed by <b class="ui"><var>N</var> queued for tonight.</b> or <b class="ui">Nothing queued for tonight.</b></li>
+      </ul>
+      <p>The line beneath reads "Of the tables you may read, as the maintenance worker last assessed them. Each table's Maintenance tab has the detail." A pill gives <b class="ui">Last assessed <var>HH:MM</var></b>.</p>
+
+      <h2 id="every-table-one-mark">Every table, one mark</h2>
+      <p>One mark for each table you may read. Above the line are the tables in shape, taller for more data files on a log scale, with a reference line at <b class="ui">1,000 files</b>. Below are the tables queued for tonight, deeper for a higher score. The legend's colours are <b class="ui">in shape</b>, <b class="ui">small files or deletes</b>, <b class="ui">equality deletes, compacted first</b>, <b class="ui">fixed last night</b>, <b class="ui">held</b> and <b class="ui">frozen</b>, with <b class="ui"><var>N</var> not assessed yet</b>. Select a namespace or a queued table to open it.</p>
+
+      <h2 id="figures">The figures</h2>
+      <dl>
+        <dt><b class="ui">In shape</b></dt><dd><b class="ui"><var>x</var> of <var>assessed</var></b> tables, and how many are queued for tonight and not assessed yet. With none assessed it shows <b class="ui">–</b> and <b class="ui">none assessed yet</b>, saying why: <b class="ui">maintenance is off in the catalog's policy</b> or <b class="ui">the maintenance worker has not reported</b>.</dd>
+        <dt><b class="ui">Maintenance, last night</b></dt><dd>How many tables were compacted, then <b class="ui">Small files merged</b> (before and after), <b class="ui">Snapshots expired</b>, <b class="ui">Unreferenced files deleted</b> and, if the night ran out, <b class="ui">Cut off at <var>HH:MM</var>, progress kept</b>. These are the whole deployment's figures, every catalog. With no night: "The worker has reported no job in the last 30 nights."</dd>
+        <dt><b class="ui">Latency objectives, last day</b></dt><dd>Platform operators only. <b class="ui"><var>met</var> of <var>judged</var></b> objectives met: <b class="ui">Loads within <var>N</var> ms</b>, <b class="ui">Unchanged loads within <var>N</var> ms</b> and <b class="ui">Commits within <var>N</var> ms</b>. With no traffic: <b class="ui">no requests in the last day</b>.</dd>
+        <dt><b class="ui">Servers</b></dt><dd>Platform operators only. How many servers answered, and any that <b class="ui">Did not answer</b>.</dd>
+        <dt><b class="ui">Audit, last day</b></dt><dd>For those who read the audit feed: the number of records, the <b class="ui">Refusals</b>, the count <b class="ui">Across all catalogs</b>, and the <b class="ui">Archive chain</b>: <b class="ui">no archive</b>, <b class="ui">intact at <var>HH:MM</var></b>, <b class="ui">broken</b> or <b class="ui">not checked yet</b>.</dd>
+        <dt><b class="ui">Governance</b></dt><dd>The share of tables classified, with <b class="ui">Tables classified</b>, <b class="ui">Legal holds</b>, <b class="ui">DR freezes</b> and <b class="ui">Closed until classified</b>.</dd>
+      </dl>
+
+      <h2 id="queued-for-tonight">Queued for tonight</h2>
+      <p>The first eight tables of tonight's queue, <b class="ui">neediest first, as the worker will start them</b>, with <b class="ui">Table</b>, <b class="ui">Why</b> and <b class="ui">Score</b>. A longer queue ends with <b class="ui"><var>N</var> more in the queue.</b> and <b class="ui">Open the maintenance queue</b>. The reasons are:</p>
+      <ul>
+        <li><b class="ui">Equality deletes</b>: every reader must join against them; such a table is compacted first.</li>
+        <li><b class="ui">Small files</b>: a partition holds enough small data files to rewrite them into fewer, larger ones.</li>
+        <li><b class="ui">Deletes</b>: more delete files than its policy allows for its data files; every read has to apply them.</li>
+      </ul>
+      <p>When the queue is empty, the panel says why:</p>
+      <ul>
+        <li>The setup steps left, with <b class="ui">What the worker needs to maintain <var>catalog</var> →</b>.</li>
+        <li><b class="ui">Nothing queued: maintenance is off in <var>catalog</var>'s policy.</b>, with <b class="ui">Edit the catalog's policy</b> if you may modify the catalog.</li>
+        <li><b class="ui">Nothing queued: the maintenance worker has not assessed any table you may read yet.</b></li>
+        <li><b class="ui">No assessed table you may read needs compaction; <var>N</var> not assessed yet.</b></li>
+        <li><b class="ui">No table you may read needs compaction.</b></li>
+      </ul>
+
+      <h2 id="last-night">Last night</h2>
+      <p>A chart of last night's jobs: one lane per compaction slot (<b class="ui">Slot <var>N</var></b>) and one for <b class="ui">Orphans</b>, from the opening of the cleanup window. A night is one opening of the cleanup window and the day after it. "Dashed line: the end of the cleanup window. A job cut off there keeps the work it finished. Jobs on tables you may not read are drawn without a name." Beneath are <b class="ui">Compaction jobs finished</b>, <b class="ui">Cut off at <var>HH:MM</var></b>, <b class="ui">Failed</b> and <b class="ui">Still running</b>. With no job: "No compaction or orphan scan ran that night. Work done at other hours is counted below."</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Every table, one mark; In shape</td><td><code>GET /management/v1/maintenance/estate</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Queued for tonight</td><td><code>GET /management/v1/maintenance/tables</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Last night; Maintenance, last night</td><td><code>GET /management/v1/maintenance/nights?days=30&amp;jobs=1</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>The setup steps</td><td><code>GET /management/v1/catalogs/{catalog}/maintenance/readiness</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Latency objectives; Servers</td><td><code>GET /management/v1/health/catalog</code> (<a href="../api/health.html#endpoints">Health</a>)</td></tr>
+            <tr><td>Audit, last day</td><td><code>GET /management/v1/catalogs/{catalog}/audit/summary</code>, <code>GET /management/v1/audit/archive</code> (<a href="../api/audit.html#endpoints">Audit</a>)</td></tr>
+            <tr><td>Governance</td><td><code>GET /management/v1/catalogs/{catalog}/governance/summary</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="maintenance.html">The Maintenance page</a>: the whole queue, the nights and the policy.</li>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: scans, the health score and the cleanup window.</li>
+          <li><a href="../operate/maintenance-nights.html">Maintenance nights</a>: reading a night's figures.</li>
+          <li><a href="service.html">The Service page</a>: the full latency and server figures.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>overview.js</code>, <code>nights.js</code> and <code>queue.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. The queue was read from the running demo with <code>GET /management/v1/maintenance/tables</code>.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/maintenance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maintenance · nuna docs</title>
+  <meta name="description" content="Maintenance is the work the maintenance worker does on tables by the policy the server keeps: snapshot expiry, manifest rewrites, compaction on need, orphan scans, pending deletions and purges.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Maintenance</h1>
+        <p class="lead">Maintenance is the work the maintenance worker does on tables by the policy the server keeps: snapshot expiry, manifest rewrites, compaction on need, orphan scans, pending deletions and purges.</p>
+      </header>
+
+      <figure class="diagram" id="fig-maintenance">
+        <svg viewBox="0 0 720 200" role="img" aria-labelledby="fig-maintenance-t fig-maintenance-d">
+          <title id="fig-maintenance-t">A maintenance scan</title>
+          <desc id="fig-maintenance-d">Every 10 minutes the worker asks the server for its work list, commits expiry and manifest rewrites through the server, starts compaction Jobs inside the cleanup window, and deletes files with its own storage identity once they are due.</desc>
+          <rect class="d-node d-accent" x="20" y="74" width="150" height="52" rx="10"/>
+          <text class="d-label" x="95" y="105">Worker</text>
+          <rect class="d-node" x="285" y="14" width="150" height="52" rx="10"/>
+          <text class="d-label" x="360" y="45">The server</text>
+          <rect class="d-node" x="285" y="134" width="150" height="52" rx="10"/>
+          <text class="d-label" x="360" y="165">Compaction Job</text>
+          <rect class="d-node d-store" x="550" y="74" width="150" height="52" rx="10"/>
+          <text class="d-label" x="625" y="105">Object store</text>
+          <path class="d-edge" d="M170 90L285 44" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="210" y="54">work list, commits</text>
+          <path class="d-edge-dash" d="M170 112L285 160" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="210" y="156">in the window</text>
+          <path class="d-edge" d="M170 100H550" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="460" y="92">deletes when due</text>
+        </svg>
+        <figcaption>The worker decides nothing alone: the server gives it the work and judges every commit it makes.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>Iceberg tables gather snapshots, small files and files no snapshot reaches any more. Maintenance keeps them in shape. The server keeps a maintenance policy for each catalog, namespace and table, and the <a class="term" href="../reference/glossary.html#term-maintenance-worker">maintenance worker</a> carries it out. The worker is an Iceberg REST client signed in as a <a class="term" href="../reference/glossary.html#term-maintenance-principal">maintenance principal</a>, listed in <code>nuna.security.maintenance-principals</code>, whose group needs <code>write</code> on each catalog.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="scans">Scans</h3>
+      <p>Every 10 minutes by default (<code>nuna.maintenance.scan-interval</code>), the worker reads its work list from <code>GET /management/v1/maintenance/work</code>. A scan reads the storage prefixes it may act in, then the refs to warn of or end, then each table, then the purges and deletions that are due, then the requests made by people. For each table the scan gives a <a class="term" href="../reference/glossary.html#term-health-score">health score</a>: 1 when a figure reaches its threshold, 2 when it reaches twice the threshold.</p>
+
+      <h3 id="jobs">The jobs</h3>
+      <dl>
+        <dt>Snapshot expiry</dt>
+        <dd>Removes snapshots older than <code>snapshot-expiry.max-snapshot-age</code>, keeping at least <code>snapshot-expiry.min-snapshots-to-keep</code>. Runs at any hour.</dd>
+        <dt>Manifest rewrite</dt>
+        <dd>Rewrites a table's manifests once it has <code>manifest-rewrite.min-manifests</code> of them. Runs at any hour.</dd>
+        <dt>Compaction</dt>
+        <dd>Runs when a table needs it, for one of three reasons: small files (a partition holds at least <code>compaction.min-input-files</code> files under 75% of the target size), deletes (more delete files than <code>compaction.delete-file-ratio</code> of the data files), or any equality deletes. Tables with equality deletes go first, then the highest score. Each compaction is a Kubernetes Job, <code>nuna-compact-<var>uuid</var>-<var>date</var></code>, that runs Spark's <code>rewrite_data_files</code> with partial progress, and must end by the end of the cleanup window. At most 2 run at once. Compaction is off until the worker is given a compaction image.</dd>
+        <dt>Orphan scan</dt>
+        <dd>Finds files under a table's location that no snapshot reaches and that are older than <code>orphan-removal.older-than</code>. Runs at most once a day per table, inside the cleanup window.</dd>
+        <dt>Pending deletions</dt>
+        <dd>Files the worker will delete are recorded first, with a not-before time of now plus the database's point-in-time recovery window (<code>nuna.governance.pitr-window</code>, 7 days by default), and deleted when due, so a database restored to any point in that window still finds its files.</dd>
+        <dt>Purges</dt>
+        <dd>A dropped table past its restore window is claimed, its files deleted in batches of 1,000, and the purge completed. <a href="lifecycle.html">Dropping, restoring and purging</a> explains this.</dd>
+      </dl>
+
+      <h3 id="cleanup-window">The cleanup window</h3>
+      <p>Compaction and orphan scans run only inside the cleanup window, <code>nuna.maintenance.cleanup-window.start</code>, <code>.end</code> and <code>.zone</code>. The window has no default: the worker refuses to start without it. Quote the times in YAML so they are read as text.</p>
+
+      <h3 id="policy">The policy</h3>
+      <p>Every job is off until a policy turns it on. A table's policy is resolved from the built-in defaults, then <code>nuna.governance.maintenance-defaults</code>, then the catalog's, the namespaces' above the table, and the table's own, the nearest winning.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Policy keys and their built-in defaults</caption>
+          <thead><tr><th scope="col">Key</th><th scope="col">Default</th></tr></thead>
+          <tbody>
+            <tr><td><code>snapshot-expiry.enabled</code></td><td><code>false</code></td></tr>
+            <tr><td><code>snapshot-expiry.max-snapshot-age</code></td><td><code>P5D</code></td></tr>
+            <tr><td><code>snapshot-expiry.min-snapshots-to-keep</code></td><td><code>1</code></td></tr>
+            <tr><td><code>orphan-removal.enabled</code></td><td><code>false</code></td></tr>
+            <tr><td><code>orphan-removal.older-than</code></td><td><code>P14D</code></td></tr>
+            <tr><td><code>compaction.enabled</code></td><td><code>false</code></td></tr>
+            <tr><td><code>compaction.target-file-size-bytes</code></td><td><code>536870912</code></td></tr>
+            <tr><td><code>compaction.min-input-files</code></td><td><code>5</code></td></tr>
+            <tr><td><code>compaction.delete-file-ratio</code></td><td><code>0.3</code></td></tr>
+            <tr><td><code>manifest-rewrite.enabled</code></td><td><code>false</code></td></tr>
+            <tr><td><code>manifest-rewrite.min-manifests</code></td><td><code>100</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Guardrails bound every policy. A maximum snapshot age below the minimum snapshot age is raised to it. An orphan age must be longer than the point-in-time recovery window plus a day; a policy that sets less is refused with <code>400</code> "orphan-removal.older-than must be longer than the database PITR window …". A DR freeze turns all four jobs off for the frozen tables, and a legal hold turns off expiry and orphan removal.</p>
+
+      <h3 id="on-request">Maintenance on request</h3>
+      <p>A principal with <code>modify</code> on a table can ask for a compaction or an orphan scan now: <code>POST …/tables/<var>table</var>/maintenance/requests</code> with <code>{"job": "compaction"}</code> or <code>{"job": "orphan-scan"}</code> answers <code>202</code>. The worker starts it at its next scan, even outside the cleanup window, and stops it 2 hours after it starts if it has not finished (<code>request-deadline</code>).</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>Every change the worker makes to a table is a commit through the server, judged by the same rules as any engine's.</li>
+        <li>No file is deleted before the point-in-time recovery window has passed, and only the worker's own storage identity deletes.</li>
+        <li>Files a catalog branch or tag reaches are kept. Maintenance runs on main only.</li>
+        <li>Maintenance does nothing a policy has not turned on.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li>The console's <a href="../console/maintenance.html">Maintenance page</a> and a table's Maintenance tab.</li>
+        <li><a href="../api/maintenance.html#endpoints">Maintenance API</a> and <a href="../api/worker.html#endpoints">Worker endpoints</a>.</li>
+        <li><a href="../configure/maintenance.html">Maintenance worker settings</a> and <a href="../operate/maintenance-nights.html">Maintenance nights</a>.</li>
+      </ul>
+      <figure class="shot" id="fig-maintenance-page"><img src="../img/shots/concepts-maintenance-page-light.png" data-dark="../img/shots/concepts-maintenance-page-dark.png" width="1440" height="900" alt="The Maintenance page of catalog lakehouse: one table queued for tonight, last night's figures (one table compacted, five small files merged into two, sixteen snapshots expired), tonight's queue with markets.equities.eu.xetra.orders, last night's slot timeline and the policy panel."><figcaption>The Maintenance page lists each table's health score and the work done last night.</figcaption></figure>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>At most 2 compaction Jobs at once by default.</li>
+        <li>One orphan scan per table per day.</li>
+        <li>A job asked for on request runs for at most 2 hours.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/maintenance-policy.html">Set a catalog's maintenance policy</a>: turn the jobs on.</li>
+          <li><a href="../guides/compact-now.html">Compact a table or scan for orphans now</a>: maintenance on request.</li>
+          <li><a href="../operate/table-health.html">Table health</a>: what each figure of the score means.</li>
+          <li><a href="../install/helm-maintenance.html">Install the maintenance worker</a>: its chart and grants.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-maintenance/README.md</code>, <code>catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenancePolicy.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSettings.java</code>, and <code>docs/observability/table-health.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

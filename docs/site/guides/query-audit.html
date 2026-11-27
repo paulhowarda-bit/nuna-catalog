@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/query-audit">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Query the audit trail · nuna docs</title>
+  <meta name="description" content="Find who did what, to which object, and when, from the console's Audit page, the audit feed API, or SQL on the audit table.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Query the audit trail</h1>
+        <p class="lead">Find who did what, to which object, and when, from the console's Audit page, the audit feed API, or SQL on the audit table.</p>
+        <p class="doc-meta">
+          <span class="badge for">For auditors and data stewards</span>
+          <span class="badge needs">Needs <code>select</code> on the audit catalog</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>Every commit, grant, read, refusal, credential issued and governance change is an audit record. The records land in an Iceberg table, by default <code>nuna_audit.audit.events</code>, which the console's Audit page and the audit feed API read, and which any engine can query. This guide answers one question three ways: <em>who changed <code>equities.fills</code> yesterday?</em></p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The audit tables are configured on the server (<code>nuna.audit.tables.catalog</code>; <a href="../configure/audit.html">Audit settings</a>).</li>
+        <li>Your groups hold <code>select</code> on the audit catalog. Groups listed in <code>nuna.audit.tables.readers</code> are given it at startup.</li>
+        <li>Every read of the feed is itself audited, as a <code>nuna.catalog.audit-read</code> record.</li>
+      </ul>
+
+      <h2 id="filter-the-records">Filter the records</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Select <b class="ui">Audit</b> in the rail.</p>
+              <p>The page opens on <b class="ui">Every record</b>, newest first, for the catalog in the header.</p>
+            </li>
+            <li>
+              <p class="step-title">Enter <code>equities.fills</code> under <b class="ui">Table or namespace</b>.</p>
+              <p>The field also takes a namespace, or <code>@</code> and a branch's name for the records made through that branch.</p>
+            </li>
+            <li>
+              <p class="step-title">Under <b class="ui">Filter by kind</b>, choose <b class="ui">Commits</b>.</p>
+              <p>The other kinds are <b class="ui">Grants</b>, <b class="ui">Row and column rules</b>, <b class="ui">Governance</b>, <b class="ui">Branches and tags</b>, <b class="ui">Other changes</b>, <b class="ui">Reads</b>, <b class="ui">Credentials</b> and <b class="ui">Refusals</b>. Audit reads are hidden until you tick <b class="ui">Show audit reads</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Narrow by <b class="ui">Who</b> and <b class="ui">Up to</b> if you need to.</p>
+              <p><b class="ui">Up to</b> ends the list at <b class="ui">Up to now</b>, <b class="ui">Before an hour ago</b>, <b class="ui">Before six hours ago</b>, <b class="ui">Before a day ago</b> or <b class="ui">Before a week ago</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Show record</b> on a line to read it whole.</p>
+              <p>The record shows its request id, where it was read from, its place in the hash chain and its reason.</p>
+            </li>
+          </ol>
+          <figure class="shot pending" id="fig-audit-filtered"
+                  data-shot="guides-audit-filtered"
+                  data-shot-route="#p=audit&amp;c=lakehouse"
+                  data-shot-user="gary"
+                  data-shot-width="1440"
+                  data-shot-state="The audit table holds records; the Commits kind is chosen and one record is open.">
+            <figcaption>The Audit page filtered to commits, with one record open.</figcaption>
+          </figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Commits to equities.fills on 25 November">
+<pre><code>curl -sS -G "$NUNA/management/v1/catalogs/trading/audit/feed" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode "type=nuna.catalog.commit" \
+  --data-urlencode "path=equities$(printf '\037')fills" \
+  --data-urlencode "from=2026-11-25T00:00:00Z" \
+  --data-urlencode "to=2026-11-26T00:00:00Z" \
+  --data-urlencode "limit=50"</code></pre>
+          </div>
+          <p><code>path</code> is the namespace levels and the table's name, joined by the character 0x1F. <code>from</code> is included, <code>to</code> is not. Other filters: <code>principal</code>, <code>branch</code> (a branch's or tag's name without its <code>@</code>, or <code>main</code>), <code>subject</code> (a UUID) and <code>type</code> as a comma-separated list.</p>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response (one record shown)">
+<pre><code>{
+  "catalog": "trading",
+  "records": [
+    {
+      "event-id": "0b7e5d1c-6a2f-4e39-8c41-5f2a9d7e3b10",
+      "time": "2026-11-25T17:42:08.913Z",
+      "type": "nuna.catalog.commit",
+      "principal": "trading-etl",
+      "engine": "spark",
+      "request-id": "…",
+      "branch": "main",
+      "object": {"kind": "table", "id": "…", "catalog": "trading", "path": ["equities", "fills"]},
+      "operation": "updateTable",
+      "chain": {"status": "verified", "checked-at": "2026-11-25T18:00:00Z"},
+      "event": {…}
+    }
+  ],
+  "next-page-token": "…",
+  "table": {"name": "nuna_audit.audit.events", "snapshot-id": 7210934412873551003, "committed-at": "2026-11-25T23:59:31Z"}
+}</code></pre>
+          </div>
+          <p>Pass <code>next-page-token</code> back as <code>pageToken</code> for the next page. <code>table</code> names the audit table snapshot the answer was read from. A caller may read the feed at most <code>nuna.governance.audit-reads-per-minute</code> times a minute (default <code>60</code>).</p>
+          <p class="gap">The record above was not read from a running server: the local demo's audit table held no records when this page was checked. Its field names come from the route's code; the values are illustrative, and which of the record's fields are empty for a commit was not confirmed.</p>
+        </section>
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <p>The audit table is an Iceberg table in its own catalog. Point an engine catalog at the warehouse <code>nuna_audit</code> and query it with SQL.</p>
+          <div class="code" data-lang="sql" data-title="Who committed to equities.fills on 25 November">
+<pre><code>SELECT time, principal, engine, operation, request_id
+FROM audit.audit.events
+WHERE type = 'nuna.catalog.commit'
+  AND catalog = 'trading'
+  AND object_path = array('equities', 'fills')
+  AND time &gt;= TIMESTAMP '2026-11-25 00:00:00 UTC'
+  AND time &lt;  TIMESTAMP '2026-11-26 00:00:00 UTC'
+ORDER BY time;</code></pre>
+          </div>
+          <p>The table is partitioned by day of <code>time</code>, so a range on <code>time</code> reads only those days.</p>
+        </section>
+      </div>
+
+      <h2 id="audit-table-columns">The audit table's columns</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Columns of the audit table</caption>
+          <thead><tr><th scope="col">Column</th><th scope="col">What it holds</th></tr></thead>
+          <tbody>
+            <tr><td><code>event_id</code></td><td>The record's id.</td></tr>
+            <tr><td><code>time</code></td><td>When it happened (timestamp with time zone).</td></tr>
+            <tr><td><code>type</code></td><td>The record type, such as <code>nuna.catalog.commit</code>.</td></tr>
+            <tr><td><code>source</code></td><td>The deployment that recorded it.</td></tr>
+            <tr><td><code>principal</code>, <code>end_user</code>, <code>engine</code></td><td>Who asked, for whom, and through which engine. An authentication failure has only a request id.</td></tr>
+            <tr><td><code>request_id</code></td><td>The request's id, shared by every record one request made.</td></tr>
+            <tr><td><code>catalog</code>, <code>object_kind</code>, <code>object_id</code>, <code>object_path</code></td><td>The object acted on; <code>object_path</code> is a list of the namespace levels and the name.</td></tr>
+            <tr><td><code>operation</code>, <code>privilege</code>, <code>reason</code></td><td>The operation, the privilege it needed, and the reason given or the refusal's reason.</td></tr>
+            <tr><td><code>data</code></td><td>The whole event as a JSON string.</td></tr>
+            <tr><td><code>topic_partition</code>, <code>topic_offset</code></td><td>Where the record sat in the audit topic. A row written from the catalog's log has <code>topic_partition</code> <code>-1</code> and the writer's own number in <code>topic_offset</code>.</td></tr>
+            <tr><td><code>log_run</code>, <code>log_seq</code></td><td>The record's run and number in the hash chain.</td></tr>
+            <tr><td><code>branch</code></td><td>For a commit or a read, the ref it went through: <code>main</code> or the ref's name. For a ref record, the ref's name; for a grant, the branch it names. Empty for every other type.</td></tr>
+            <tr><td><code>subject_ids</code></td><td>For a ref record, the ref's id, then the ids of the tables and views it concerns (those a merge moved onto main, for instance). Empty for every other type.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Record types are <code>nuna.catalog.</code> followed by one of: <code>commit</code>, <code>grant</code>, <code>drop</code>, <code>break-glass</code>, <code>read</code>, <code>denial</code>, <code>auth-failure</code>, <code>credential-issue</code>, <code>namespace</code>, <code>rename</code>, <code>engine</code>, <code>storage-setup</code>, <code>governance</code>, <code>hold</code>, <code>undrop</code>, <code>purge</code>, <code>audit-read</code>, <code>unregister</code>, <code>label</code>, <code>purge-claim</code>, <code>file-deletion</code>, <code>maintenance-exemption</code>, <code>ref</code>, <code>row-column-rule</code>, <code>run-end</code>. <a href="../reference/audit-records.html">Audit record reference</a> describes each.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">You have your answer</p>
+        <p>Each line names the principal, the engine and the time. To see everything one request did (a merge and its commits, for instance), filter by its <code>request_id</code> in SQL, or open the record in the console.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>503</code> <code>The audit tables are not configured on this server (nuna.audit.tables.catalog)</code></td><td>The server writes no audit table.</td><td>Ask an operator to configure it (<a href="../configure/audit.html">Audit settings</a>).</td></tr>
+            <tr><td><code>503</code> <code>The audit table cannot be read now; retry later</code></td><td>The audit table or its storage did not answer.</td><td>Retry.</td></tr>
+            <tr><td><code>429</code> <code>More than 60 audit reads in a minute by …; retry later</code></td><td>You passed the per-minute limit. The answer carries <code>Retry-After: 60</code>.</td><td>Wait a minute, or query the table with SQL for large reads.</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>select</code></td><td>Your groups lack <code>select</code> on the audit catalog.</td><td>Ask a grant admin, or have the group added to <code>nuna.audit.tables.readers</code>.</td></tr>
+            <tr><td><code>400</code> <code>path must be namespace levels, and a table or view name, separated by 0x1F, none of them empty</code></td><td>The path was sent with dots or slashes.</td><td>Join the levels with the character 0x1F.</td></tr>
+            <tr><td><code>400</code> <code>from must be an instant such as 2026-11-22T00:00:00Z, not …</code></td><td>A time is not in ISO-8601 UTC form.</td><td>Send an instant with its <code>Z</code>.</td></tr>
+            <tr><td><code>400</code> <code>from must be before to</code></td><td>The range is empty.</td><td>Swap or widen the times.</td></tr>
+            <tr><td><code>400</code> <code>type must be audit record types such as nuna.catalog.read, separated by commas, not …</code></td><td>A type is not a <code>nuna.catalog.*</code> record type.</td><td>Use the full type name.</td></tr>
+            <tr><td><code>400</code> <code>pageToken is not one this feed gave: …</code></td><td>The token came from another query.</td><td>Repeat the first query, then page with its token.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="verify-audit-chain.html">Verify the audit chain</a>: check that a record was not altered or removed.</li>
+          <li><a href="../console/audit.html">The Audit page</a>: every element of the console's audit view.</li>
+          <li><a href="../api/audit.html#endpoints">Audit API</a>: the feed, summary, archive and chain endpoints.</li>
+          <li><a href="../reference/audit-records.html">Audit record reference</a>: each record type and its fields.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java</code>, <code>catalog-audit-tables/README.md</code>, <code>catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java</code>, <code>catalog-audit/src/main/java/nuna/catalog/audit/EventType.java</code>, <code>catalog-server/src/main/resources/nuna/ui/audit.js</code> and <code>catalog-tests-engines/images/spark/audit_tables_matrix.py</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The feed was read from the local demo with a GET request; it answered with no records.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

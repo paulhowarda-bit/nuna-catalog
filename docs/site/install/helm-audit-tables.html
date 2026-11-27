@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/helm-audit-tables">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install the audit tables writer · nuna docs</title>
+  <meta name="description" content="Install the audit tables writer with the nuna-audit-tables chart, so every audit record lands in the audit catalog's events table, read from the Kafka audit topic or from the server's log over OTLP.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Install the audit tables writer</h1>
+        <p class="lead">Install the audit tables writer with the <code>nuna-audit-tables</code> chart, so every audit record lands in the audit catalog's <code>events</code> table, read from the Kafka audit topic or from the server's log over OTLP.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <p>The writer is optional. It writes each <a href="../concepts/audit.html">audit record</a> as a row of an Iceberg table, <code>nuna_audit.audit.events</code> by default, about a minute behind, so auditors can query the audit trail with any engine, and the console's <b class="ui">Audit</b> page reads it back. Its source is <code>kafka</code>, the server's audit topic, or <code>otlp</code>, the server's <code>nuna.audit</code> log sent to it over OTLP, which needs no Kafka.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The catalog server and the maintenance worker are installed, and the <code>nuna-audit-tables</code> image is in your registry (<a href="images.html">Container images</a>).</li>
+        <li>For the source <code>kafka</code>, the server sends to Kafka (<code>nuna.audit.kafka-bootstrap-servers</code>).</li>
+        <li>You can create a client at the identity provider and change the catalog server's release.</li>
+      </ul>
+
+      <h2 id="prepare-audit-catalog">Prepare the audit catalog</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Declare the audit catalog on the catalog server.</p>
+          <p>Add <code>nuna_audit</code> under <code>config.nuna.storage.catalogs</code> with a profile, a KMS key set and a legal entity, as for any catalog (<a href="../guides/create-catalog.html">Create a catalog</a>).</p>
+        </li>
+        <li>
+          <p class="step-title">Give the writer a client and a group of its own at the identity provider.</p>
+          <p>A confidential client with the client-credentials grant, whose service account is in a group that holds nothing anywhere else. The token's user id is the writer's principal.</p>
+        </li>
+        <li>
+          <p class="step-title">Name the audit catalog and its groups on the catalog server.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml (catalog server)">
+<pre><code>config:
+  nuna:
+    audit:
+      tables:
+        catalog: nuna_audit
+        readers: auditors
+        writers: audit-writers</code></pre>
+          </div>
+          <p>At start-up the server grants the readers' group (one group) <code>select</code> on the audit catalog, and the writers' group <code>create</code> and <code>write</code>, each recorded as granted by <code>nuna-configuration</code>. It refuses to start if the catalog is not declared or a grant would break the separation of duties. Readers see every record of the deployment, so keep their group narrow.</p>
+        </li>
+        <li>
+          <p class="step-title">Grant the maintenance worker's group <code>write</code> on <code>nuna_audit</code>.</p>
+          <p>Its expiry and compaction then keep the table tidy.</p>
+        </li>
+      </ol>
+
+      <h2 id="install-release">Install the release</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create the writer's Secret.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-audit-tables-secrets \
+  --from-literal=nuna.audit-tables.token.client-secret=… \
+  --from-literal=nuna.audit-tables.otlp.token="$(openssl rand -hex 32)"</code></pre>
+          </div>
+          <p>Leave out <code>otlp.token</code> for the source <code>kafka</code>. For the source <code>otlp</code> it must be at least 32 characters, and the catalog server sends the same token: put it in a second Secret the catalog release reads, as below.</p>
+        </li>
+        <li>
+          <p class="step-title">Write the values file.</p>
+          <div class="code" data-lang="yaml" data-title="audit-tables-values.yaml">
+<pre><code>image:
+  repository: registry.example/nuna-audit-tables
+  tag: "0.1.0"
+config:
+  nuna:
+    audit-tables:
+      catalog-uri: http://nuna-catalog.nuna.svc:8181/
+      principal: service-account-nuna-audit-tables
+      token:
+        endpoint: https://idp.example/realms/data/protocol/openid-connect/token
+        client-id: nuna-audit-tables
+        scope: openid
+      source: otlp
+secrets:
+  existingSecret: nuna-audit-tables-secrets</code></pre>
+          </div>
+          <p>For the source <code>kafka</code>, set <code>source: kafka</code> and <code>kafka.bootstrap-servers</code>; the topic defaults to <code>nuna.catalog.audit</code> and the consumer group to <code>nuna-audit-tables</code>. Set <code>token.scope</code> to a scope the identity provider knows: Iceberg's client asks for <code>catalog</code> when none is set.</p>
+        </li>
+        <li>
+          <p class="step-title">Install the release.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm install nuna-audit-tables deploy/helm/nuna-audit-tables -n nuna -f audit-tables-values.yaml</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">For the source <code>otlp</code>, send the catalog server's log to the writer.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna create secret generic nuna-audit-token --from-literal=token=…</code></pre>
+          </div>
+          <div class="code" data-lang="yaml" data-title="values.yaml (catalog server)">
+<pre><code>telemetry:
+  logsEndpoint: http://nuna-audit-tables.nuna.svc:4318/v1/logs
+  logsTokenSecret: {name: nuna-audit-token, key: token}</code></pre>
+          </div>
+          <p>The token value is the writer's <code>otlp.token</code>. The server's logs then go to the writer, while metrics and traces go to <code>telemetry.endpoint</code> or nowhere. The writer keeps only the <code>nuna.audit</code> records.</p>
+        </li>
+      </ol>
+
+      <aside class="callout check">
+        <p class="callout-title">Rows appear in the events table</p>
+        <p>About a minute after any audited action, a member of the readers' group can query <code>nuna_audit.audit.events</code> from an engine, and the console's <b class="ui">Audit</b> page shows the record.</p>
+      </aside>
+
+      <h2 id="what-chart-creates">What the chart creates</h2>
+      <ul>
+        <li>A Deployment of one replica, <code>Recreate</code>, with a grace period of 70 s; a ConfigMap; a ServiceAccount; and a Secret when <code>secrets.values</code> is set and <code>secrets.existingSecret</code> is not.</li>
+        <li>For the source <code>otlp</code> only: a container port and a Service port, both named <code>otlp-http</code>, on <code>4318</code>, with a TCP readiness probe on it.</li>
+      </ul>
+      <p>The archive, an Object Lock bucket the writer can fill from the log, is set under <code>config.nuna.audit-tables.archive</code>; see <a href="../configure/audit-tables.html">Audit tables writer settings</a> and <a href="../operate/audit-pipeline.html">Run the audit pipeline</a>.</p>
+
+      <h2 id="what-chart-refuses">What the chart refuses</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>The chart's refusals</caption>
+          <thead><tr><th scope="col">Error</th></tr></thead>
+          <tbody>
+            <tr><td><code>config.nuna.audit-tables.catalog-uri is required: the catalog the writer writes to</code></td></tr>
+            <tr><td><code>config.nuna.audit-tables.principal is required: the writer's own principal id, whose records it leaves out</code></td></tr>
+            <tr><td><code>config.nuna.audit-tables.token.endpoint is required: the identity provider's token endpoint</code></td></tr>
+            <tr><td><code>config.nuna.audit-tables.token.client-id is required: the writer's client id there</code></td></tr>
+            <tr><td><code>config.nuna.audit-tables.kafka.bootstrap-servers is required for the source kafka: the Kafka cluster holding the audit topic</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td>A chart error from the table above.</td><td>A required value is missing.</td><td>Set it.</td></tr>
+            <tr><td>The catalog server refuses to start after you set <code>nuna.audit.tables</code>.</td><td>The audit catalog is not declared, or a grant would break the separation of duties.</td><td>Declare <code>nuna_audit</code>, and keep the readers' and writers' groups apart from every other role.</td></tr>
+            <tr><td>The writer refuses to start for the source <code>otlp</code>.</td><td>No <code>nuna.audit-tables.otlp.token</code>, or one shorter than 32 characters.</td><td>Put a token of at least 32 characters in its Secret.</td></tr>
+            <tr><td>The token request fails with an unknown scope.</td><td>No <code>token.scope</code>, so Iceberg's client asked for <code>catalog</code>.</td><td>Set a scope the identity provider knows.</td></tr>
+            <tr><td>The console's Audit page answers <code>503</code>.</td><td><code>nuna.audit.tables.catalog</code> is not set on the catalog server.</td><td>Set it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/audit.html">The audit trail</a>: where records go and what can be lost.</li>
+          <li><a href="../configure/audit-tables.html">Audit tables writer settings</a>: every <code>nuna.audit-tables.*</code> setting.</li>
+          <li><a href="../operate/audit-pipeline.html">Run the audit pipeline</a>: running it day to day.</li>
+          <li><a href="../guides/query-audit.html">Query the audit trail</a>: reading the table.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-audit-tables/</code> (<code>values.yaml</code> and every template), <code>catalog-audit-tables/README.md</code> (Settings, Deploying it), <code>catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/AuditCatalogSettings.java</code>, <code>deploy/README.md</code> (Audit) and <code>demo/k8s/audit-tables-values.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The chart's refusals and objects were read by running <code>helm template</code>. The install was not run for this page; the demo installs the same chart with the source <code>otlp</code>.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

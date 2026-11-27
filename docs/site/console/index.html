@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/index">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The console · nuna docs</title>
+  <meta name="description" content="How the console is laid out: the header, the rail of pages, Go to a path, the keys, the phone layout, and which pages each person sees.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The console</h1>
+        <p class="lead">The console is the web interface the server serves at <code>/ui/</code>. This page answers, for anyone who signs in to it, how it is laid out: the header, the rail of pages, Go to a path, the keys and the phone layout, and which pages your groups let you see.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-layout"><img src="../img/shots/console-layout-light.png" data-dark="../img/shots/console-layout-dark.png" width="1440" height="900" alt="The console signed in as presenter: the header with the catalog picker on lakehouse, reading main, Go to a path and the theme switch; the rail with Overview, Catalog, Branches and tags, Maintenance, Governance, Grants, Audit and Service; and the Overview page."><figcaption>The console's header, its rail and the Overview page.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>Anyone the server accepts a token from can sign in. The console draws only the pages, tabs and buttons your groups can use, from what <code>GET /management/v1/catalogs</code> says your groups hold in each catalog. The server still decides every request itself: a page you reach by a link and may not use shows the server's refusal.</p>
+      <p>The catalog picker lists only the catalogs where one of your groups holds a grant on the catalog or on anything in it. A grant admin and a platform operator see every catalog. A person who holds nothing sees no catalog, and the console shows <b class="ui">No catalog to show</b> with <b class="ui">Your groups hold nothing in any catalog</b>.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Which rail pages each person sees</caption>
+          <thead><tr><th scope="col">Rail page</th><th scope="col">Shown when</th></tr></thead>
+          <tbody>
+            <tr><td><b class="ui">Overview</b></td><td>Your groups may read data (select) somewhere in the catalog.</td></tr>
+            <tr><td><b class="ui">Catalog</b></td><td>Always.</td></tr>
+            <tr><td><b class="ui">Branches and tags</b></td><td>A catalog is picked.</td></tr>
+            <tr><td><b class="ui">Maintenance</b></td><td>Your groups may read data somewhere in the catalog. Its badge counts the tables queued for tonight.</td></tr>
+            <tr><td><b class="ui">Governance</b></td><td>Always.</td></tr>
+            <tr><td><b class="ui">Grants</b></td><td>Your groups manage grants in the catalog.</td></tr>
+            <tr><td><b class="ui">Audit</b></td><td>You read the audit feed (select on the audit tables' catalog), or your groups manage the catalog's grants.</td></tr>
+            <tr><td><b class="ui">Service</b></td><td>You are a platform operator.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A page opened by a link that your groups cannot use shows why instead of its content:</p>
+      <ul>
+        <li><b class="ui">Grants in <var>catalog</var> are open to those who manage its grants.</b></li>
+        <li><b class="ui">Audit is open to auditors and to those who manage <var>catalog</var>'s grants.</b></li>
+        <li><b class="ui">Service health is open to platform operators.</b></li>
+      </ul>
+      <p>Each is followed by <b class="ui">Your groups: <var>groups</var>. Ask a grant admin if your work needs it.</b></p>
+      <p>The first page in the rail is your home, and the console opens on it. It is the Overview for a person who reads the audit feed, operates the platform and reads data. Otherwise it is the Audit page for an auditor, the Service page for a platform operator, the Overview for someone who reads data, and the Catalog page for everyone else.</p>
+
+      <h2 id="header">The header</h2>
+      <p>The header runs across the top of every page, from left to right:</p>
+      <dl>
+        <dt>The menu button</dt><dd>Folds the rail to icons and back (<b class="ui">Fold the menu to icons</b>, <b class="ui">Show the menu labels</b>). On a phone it opens and closes the drawer (<b class="ui">Open the menu</b>, <b class="ui">Close the menu</b>).</dd>
+        <dt><b class="ui">nuna</b></dt><dd>Goes to your home page.</dd>
+        <dt><b class="ui">Catalog</b></dt><dd>The catalog picker, showing the catalog you are in. Its menu, <b class="ui">Catalogs</b>, lists the catalogs you may see. Switching keeps you on the same page in the other catalog; from a table or namespace page it opens the other catalog's page, and from Service it opens the Overview. The picker is hidden on the Service page, which covers every catalog.</dd>
+        <dt><b class="ui">Reading</b></dt><dd>Which branch or tag of the catalog you read through, or main. <a href="branches-and-tags.html#reading-through-branch-or-tag">The Branches and tags page</a> describes it. Off the pages that can read through a ref it says <b class="ui">This page shows main only</b>.</dd>
+        <dt><b class="ui">Go to a path</b></dt><dd>Opens the search for a namespace, table or view. Its key is <kbd>/</kbd>.</dd>
+        <dt>Who you are</dt><dd>Your initials, then <b class="ui"><var>name</var> · <var>N</var> groups · until <var>HH:MM</var></b>: your name, how many groups your token names, and when your sign-in ends. The name is the token's <code>preferred_username</code>, else its <code>sub</code>, else its <code>oid</code>. Its title reads "The catalog checks what you may do on every request."</dd>
+        <dt>The theme switch</dt><dd><b class="ui">Light</b>, <b class="ui">Dark</b> or <b class="ui">Auto</b> (follows your system setting). This browser remembers the choice.</dd>
+        <dt><b class="ui">Sign out</b></dt><dd>Signs you out. <a href="sign-in.html#sign-out">Signing in to the console</a> says what it ends.</dd>
+      </dl>
+      <p>The window title is the page's title, then the catalog (or "all catalogs") with <code>@<var>ref</var></code> when reading through one, then "nuna".</p>
+
+      <h2 id="rail">The rail</h2>
+      <p>The rail, labelled <b class="ui">Console</b>, lists <b class="ui">Overview</b>, <b class="ui">Catalog</b>, <b class="ui">Branches and tags</b>, <b class="ui">Maintenance</b>, <b class="ui">Governance</b>, <b class="ui">Grants</b>, <b class="ui">Audit</b> and <b class="ui">Service</b>, each shown only as <a href="#who-sees-it">Who sees it</a> says. Its foot reads <b class="ui">Press / to go to a path, ? for keys.</b></p>
+      <ul>
+        <li><a href="overview.html">The Overview page</a>: how the catalog's tables stand, last night's maintenance and the day's figures.</li>
+        <li><a href="catalog.html">The Catalog page</a>: the catalog's contents and its declared properties. From it you open <a href="namespace.html">namespace</a>, <a href="table.html">table</a> and <a href="view.html">view</a> pages.</li>
+        <li><a href="branches-and-tags.html">The Branches and tags page</a>: the catalog's refs.</li>
+        <li><a href="maintenance.html">The Maintenance page</a>: tonight's queue, the nights, the policy.</li>
+        <li><a href="governance.html">The Governance page</a>: classification, holds, freezes, regulated areas.</li>
+        <li><a href="grants.html">The Grants page</a>: who holds what, granting and revoking.</li>
+        <li><a href="audit.html">The Audit page</a>: every record in the catalog.</li>
+        <li><a href="service.html">The Service page</a>: the deployment's health.</li>
+      </ul>
+      <p>When the console starts, it lands you in the catalog you last used in this browser. Otherwise it picks, for an auditor, the catalog with the most audit records in the last day; then the catalog with the most tables you may read; then the first. It lands you in the audit tables' own catalog only when that is the only one.</p>
+
+      <h2 id="go-to-path">Go to a path</h2>
+      <p><b class="ui">Go to a path</b> finds a namespace, table or view in any catalog you may see. Its field reads <b class="ui">Part of a name in any catalog, or a full dotted path</b>, and its foot says <b class="ui">↑ ↓ to move, Enter to open. Matches every word you type, in any order, across every catalog you may see: what you opened lately first. A full dotted path opens in the catalog shown.</b></p>
+      <ul>
+        <li>With the field empty, it lists what you opened lately (eight per person, kept in this browser) and the tables queued for tonight, under <b class="ui">Opened lately, then queued for tonight</b>, <b class="ui">Opened lately</b> or <b class="ui">Queued for tonight, neediest first</b>.</li>
+        <li>As you type, it searches every catalog's names and shows at most nine matches (<b class="ui">First 9 matches</b>). Every word you type must appear in the path. Each match is marked <b class="ui">namespace</b>, <b class="ui">view</b> or with its queue position, and <b class="ui">in <var>catalog</var></b> when it is in another catalog.</li>
+        <li>A full dotted path that is not listed shows <b class="ui">Open <var>path</var></b>, marked <b class="ui">look up</b>; <kbd>Enter</kbd> looks it up in the catalog shown.</li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <caption>What Go to a path can say</caption>
+          <thead><tr><th scope="col">Message</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><b class="ui">No match in any catalog</b></td><td>"No namespace, table or view you may see has a name like that, in any catalog. Check the spelling, or type fewer letters."</td></tr>
+            <tr><td><b class="ui">Matches among the names listed so far; the catalog's search did not answer</b></td><td>The search failed, so only names the console had already loaded are matched.</td></tr>
+            <tr><td><b class="ui">No namespace, table or view <var>path</var> in <var>catalog</var></b></td><td>The looked-up path does not exist, or your groups may not see it: "<var>catalog</var> has no namespace, table or view at <var>path</var> that your groups may see."</td></tr>
+            <tr><td><b class="ui">Could not look up <var>path</var></b></td><td>The lookup itself failed; the server's answer follows.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="keys">Keys</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>The console's keys, as its Keys dialog lists them</caption>
+          <thead><tr><th scope="col">Key</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>/</kbd></td><td>Go to a path: a table, view or namespace</td></tr>
+            <tr><td><kbd>?</kbd></td><td>These keys</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close a menu or dialog</td></tr>
+            <tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Move and open, in Go to a path</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><kbd>/</kbd> and <kbd>?</kbd> do nothing while you type in a field, while a dialog is open, or with a modifier key held.</p>
+
+      <h2 id="phone-layout">The phone layout</h2>
+      <p>At 760 px wide or less, the rail becomes a drawer that the menu button opens. The drawer adds <b class="ui">Go to a path</b>, the theme switch, a <b class="ui">Signed in as …</b> line and <b class="ui">Sign out</b>. Wider than that, the rail stays on the left and folds to icons.</p>
+
+      <h2 id="answers-and-refusals">Answers and refusals</h2>
+      <p>Every change and every refusal shows the server's answer. A refusal (403) is titled <b class="ui">Refused by the catalog</b>; any other error <b class="ui">The catalog answered with an error</b>. The server's message follows word for word, and for a refusal <b class="ui">The refusal is recorded in the audit.</b> Under <b class="ui">Technical details</b> are the status and error type, the <code>X-Request-ID</code> (or <b class="ui">No request id came back</b>), the time and <b class="ui">Copy request id</b>. A request that never reached the server shows <b class="ui">The request did not reach the catalog</b>; a fault in the console itself shows <b class="ui">The console failed to show this</b>.</p>
+      <p>A link to a page that does not exist shows <b class="ui">Nothing at this path</b>: "It may have been renamed or dropped, or the link was cut short." Old links to pages that have moved still open their new place.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">In the console</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>The console's sign-in settings</td><td><code>GET /ui/config.json</code> (<a href="../api/catalogs.html#endpoints">Catalogs</a>)</td></tr>
+            <tr><td>The catalog picker and what the rail shows</td><td><code>GET /management/v1/catalogs</code> (<a href="../api/catalogs.html#endpoints">Catalogs</a>)</td></tr>
+            <tr><td>Go to a path, searching</td><td><code>GET /management/v1/names?q=</code> (<a href="../api/search.html#endpoints">Name search</a>)</td></tr>
+            <tr><td>Go to a path, looking up a path</td><td><code>GET /v1/{prefix}/namespaces/{ns}</code>, <code>…/tables/{t}</code> (<a href="../api/iceberg-namespaces.html#endpoints">Namespaces</a>, <a href="../api/iceberg-tables.html#endpoints">Tables</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="sign-in.html">Signing in to the console</a>: the identity provider, developer tokens and signing out.</li>
+          <li><a href="../start/console-tour.html">Tour the console</a>: every page once, on the demo.</li>
+          <li><a href="../concepts/access.html">Identity and access</a>: the groups and grants that decide what you see.</li>
+          <li><a href="../security/authorization.html">Authorization</a>: grant admins, platform operators and separation of duties.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>index.html</code>, <code>app.js</code>, <code>access.js</code>, <code>dom.js</code> and <code>browse.js</code> in <code>catalog-server/src/main/resources/nuna/ui/</code>, and from <code>UiRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. <code>GET /management/v1/catalogs</code> was read from the running demo as <code>presenter</code>.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

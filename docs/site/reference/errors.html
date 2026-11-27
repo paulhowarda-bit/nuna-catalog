@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/errors">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Error responses · nuna docs</title>
+  <meta name="description" content="Every HTTP status and error type the server answers, when each comes, and what to do about it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Error responses</h1>
+        <p class="lead">Every HTTP status and error type the server answers, when each comes, and what to do about it.</p>
+      </header>
+
+      <h2 id="the-error-body">The error body</h2>
+      <p>Both APIs answer every error with the Iceberg REST standard's error body. <code>type</code> names the error; Iceberg clients turn it into the exception of the same name. Messages are for people and may change; match on <code>code</code> and <code>type</code>.</p>
+      <div class="code" data-lang="json" data-kind="output">
+<pre><code>{"error": {"message": "Table does not exist: equities.fills", "type": "NoSuchTableException", "code": 404}}</code></pre>
+      </div>
+      <p>Exceptions: <code>/v1/oauth/tokens</code> answers the OAuth error form (<code>{"error": "unsupported_grant_type", "error_description": "…"}</code>); <code>HEAD</code> requests and <code>304</code> answers have no body; and a few <code>409</code> answers add fields beside <code>error</code>, listed below. Every answer carries <code>X-Request-ID</code>: quote it when you report a problem.</p>
+      <p>Two rules hold for every endpoint. A caller who holds nothing on an object gets <code>404</code>, worded as for a missing object, so the answer does not say the object exists. A caller who holds something on it, but not what the endpoint needs, gets <code>403</code>. Both are written to the audit trail.</p>
+
+      <h2 id="400-405-and-422">400, 405 and 422: the request is wrong</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>BadRequestException</code></td><td>The body or a parameter is not valid (<code>Missing request body</code>, <code>Malformed request: …</code>, <code>Invalid namespace: …</code>, <code>Invalid page size: …</code>, <code>Invalid page token: …</code>, <code>Invalid snapshot mode: …</code>, <code>Invalid Idempotency-Key: must be 1 to 128 characters</code>); a write through a branch or tag that happens on main only, or any write through a tag (<code>… is refused on tag … of catalog …: a tag is read-only</code>); a commit that breaks a catalog rule (<code>Location is assigned by the catalog: …</code>, a write path outside the table's location, a change to <code>encryption.key-id</code>, a snapshot stamped too far ahead of the catalog's clock); a location outside the storage profile; a register with <code>overwrite</code>; an idempotency key reused for another request; an unsupported format version. A wrong method on a route answers status <code>405</code> with this type and a message such as <code>Method 'GET' is not supported.</code></td><td>Correct the request. The message names what is wrong.</td></tr>
+            <tr><td><code>UnprocessableEntityException</code> (422)</td><td>A namespace properties update both sets and removes one key: <code>Invalid namespace update, cannot simultaneously set and remove keys: …</code>; or the request is well formed but its content cannot be applied.</td><td>Send each key in one list only.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="401">401: not signed in</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>NotAuthorizedException</code></td><td><code>Not authorized: the bearer token is missing or was not accepted</code>. No token; a token that is expired, not yet valid, from an issuer the server does not trust, for another audience, or missing a claim the server needs; end-user headers that contradict each other. <code>WWW-Authenticate</code> says <code>Bearer</code>, <code>Bearer error="invalid_token"</code> or <code>Bearer error="invalid_request"</code>.</td><td>Get a new token (<a href="../clients/tokens.html">Get a token</a>). If a fresh token is refused, a platform operator compares it with <code>nuna.security.issuers</code>; the audit record of the failure says why.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="403">403: not allowed</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>ForbiddenException</code></td><td>You hold something on the object but not the privilege the endpoint needs: <code><var>you</var> holds no privilege that gives <var>privilege</var> for <var>operation</var></code>. Also a governance refusal: a legal hold (<code>… is under a legal hold and cannot be dropped</code>), a freeze for DR reconcile, a regulated table with no classification, a table with a row/column policy loaded by an engine that is not trusted, a snapshot younger than the minimum snapshot age, a regulated write by an engine that named no end user; or <code>Forbidden: client … is not a registered trusted engine, so it may not act for another user</code>.</td><td>Ask a grant admin for the privilege (<a href="privileges.html">Privileges</a>), or a data steward about the hold, freeze or classification the message names.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="404">404: not found</h2>
+      <p>Each of these also answers when you hold nothing on the object.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>NoSuchWarehouseException</code></td><td>The catalog or prefix names nothing you can see: <code>The given warehouse does not exist: …</code>; the branch or tag does not exist or is past its expiry; <code>Branch … is gone: merged, deleted or past its expiry</code>.</td><td>Check the catalog's name with <code>GET /management/v1/catalogs</code>, and the ref's with the refs listing.</td></tr>
+            <tr><td><code>NoSuchNamespaceException</code></td><td><code>Namespace does not exist: …</code>.</td><td>Check the name; create each level of a nested namespace in turn.</td></tr>
+            <tr><td><code>NoSuchTableException</code></td><td><code>Table does not exist: …</code>; through a branch, also a table the branch does not hold.</td><td>Check the name and the prefix.</td></tr>
+            <tr><td><code>NoSuchViewException</code></td><td><code>View does not exist: …</code>.</td><td>Check the name and the prefix.</td></tr>
+            <tr><td><code>NoSuchObjectException</code></td><td>A management route names a table or view, by id or name, that no longer exists.</td><td>List the objects again.</td></tr>
+            <tr><td><code>NoSuchRefException</code></td><td><code>Ref does not exist: …</code>.</td><td>List the refs again.</td></tr>
+            <tr><td><code>NoSuchBranchException</code></td><td>A grant names a branch that does not exist: <code>Branch does not exist: …</code>, <code>The branch no longer exists: …</code>.</td><td>List the refs again.</td></tr>
+            <tr><td><code>NoSuchHoldException</code></td><td><code>No hold … on this …</code>: the hold was released or never existed.</td><td>List the object's holds.</td></tr>
+            <tr><td><code>NoSuchAttributeException</code></td><td><code>Unknown governance attribute …; known attributes: …</code>, or the attribute is not set on the object.</td><td>Use one of the attributes the message lists.</td></tr>
+            <tr><td><code>NotFoundException</code></td><td>No such route (<code>No static resource …</code>); a metadata file that is not in the object store; a securable that no longer exists.</td><td>Check the path against <a href="../api/index.html#endpoints">the endpoint index</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="409">409: conflict</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>AlreadyExistsException</code></td><td>The name is taken: <code>Namespace already exists: …</code>, <code>Table already exists: …</code>, <code>View with same name already exists: …</code>, <code>Ref already exists: …</code>; or a registered file's UUID belongs to another table or view.</td><td>Pick another name, or drop the one that holds it.</td></tr>
+            <tr><td><code>CommitFailedException</code></td><td>A commit's requirement failed because the table changed, or <code>Commit lost to concurrent commits <var>n</var> times; the table changed too often to apply it</code>. In a transaction, the message starts with the table's name.</td><td>Load the table again and redo the change. Engines do this themselves.</td></tr>
+            <tr><td><code>NamespaceNotEmptyException</code></td><td><code>Namespace … is not empty</code>, or a branch or tag still names a table or view in it.</td><td>Drop what it holds first, or remove the object from the refs.</td></tr>
+            <tr><td><code>UndropWindowClosedException</code></td><td><code>The undrop window of … closed at …; it is waiting to be purged</code>.</td><td>The object can no longer be restored.</td></tr>
+            <tr><td><code>RefLimitException</code></td><td>The catalog holds as many branches or tags as <code>nuna.refs.max-branches</code> or <code>nuna.refs.max-tags</code> allow; or a merge would move more tables and views than <code>nuna.refs.max-merge-tables</code>.</td><td>Delete refs you no longer need, or merge a smaller branch.</td></tr>
+            <tr><td><code>RefMergeConflictException</code></td><td><code>Branch … conflicts with main in …, so nothing moved: …</code>. The body adds <code>ref</code> and <code>conflicts</code>, one entry per table or view in conflict.</td><td>Settle the conflicts on the branch and merge again (<a href="../guides/branch-workflow.html">Work on a branch</a>).</td></tr>
+            <tr><td><code>RefsChangedException</code></td><td>The refs naming an object kept changing while the request ran. The maintenance worker's form adds <code>refs</code> to the body.</td><td>Send it again.</td></tr>
+            <tr><td><code>RefNotExpiredException</code>, <code>RefNotExpiringException</code>, <code>RefWarningInFlightException</code></td><td>The maintenance worker tried to end a ref that has not expired, or warn about one not yet within <code>nuna.refs.expiry-warning</code> of its expiry, or another call is sending the warning.</td><td>None: the worker tries again later.</td></tr>
+            <tr><td><code>MaintenanceNotAllowedException</code></td><td>A maintenance request the table's policy or legal hold does not allow: <code>The maintenance policy of table … does not run …</code>, <code>Table … is under legal hold: nothing may be removed, so no … runs</code>.</td><td>Change the maintenance policy, or wait for the hold to be released.</td></tr>
+            <tr><td><code>NotDroppedException</code></td><td><code>… is not a dropped table or view</code>: restore or purge of an object that is not dropped.</td><td>Check the object's state.</td></tr>
+            <tr><td><code>PurgeNotDueException</code>, <code>PurgeClaimedException</code>, <code>PurgeNotClaimedException</code></td><td>A purge before the object's purge time (<code>… may not be purged before …</code>), one another maintenance principal has claimed, or one not claimed first.</td><td>None for people: these are the maintenance worker's.</td></tr>
+            <tr><td><code>NotDeletableException</code></td><td>Files recorded for deletion for an object that is not active or dropped.</td><td>None: the maintenance worker's.</td></tr>
+            <tr><td><code>NotFlaggedException</code></td><td>A row filter or column mask on a table that does not carry the row/column-policy flag.</td><td>A data steward sets the flag first.</td></tr>
+            <tr><td><code>RowColumnRulesExistException</code></td><td>Removing a table's row/column-policy flag while it has row filters or column masks.</td><td>A grant admin removes the rules first.</td></tr>
+            <tr><td><code>TableReplacedException</code></td><td>A table health request names an id that the name now belongs to another table.</td><td>Ask again with the current table.</td></tr>
+            <tr><td><code>ArchiveNotConfiguredException</code></td><td>A DR reconcile asked to accept archived commits, and <code>nuna.audit.archive.bucket</code> is not set.</td><td>Configure the archive, or reconcile without it.</td></tr>
+            <tr><td><code>WatermarkAheadException</code>, <code>WatermarkBehindException</code>, <code>WatermarkMismatchException</code>, <code>UnknownVersionException</code></td><td>A DR watermark above the table's version, below one already kept, naming a different metadata file than the journal, or naming a version the journal does not hold.</td><td>None for people: these are the maintenance worker's DR runs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="412">412: precondition failed</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>PreconditionFailedException</code></td><td>A row filter or column mask has moved past the version <code>If-Match</code> named, or was removed: <code>… another change came first: list the rules again</code>.</td><td>List the rules, then repeat with the new version.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="429">429: too many requests</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>TooManyRequestsException</code></td><td>More audit reads in a minute than one caller is allowed (<code>More than … audit reads in a minute by …; retry later</code>), or more purges in a minute than the deployment allows. <code>Retry-After: 60</code>.</td><td>Wait the <code>Retry-After</code> seconds.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="500">500: server failure</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>CommitStateUnknownException</code></td><td><code>Commit … may or may not have been applied: …</code>: the database did not answer whether the commit landed.</td><td>Load the table to see, or repeat with the same <code>Idempotency-Key</code>, which answers the first outcome if it landed.</td></tr>
+            <tr><td><code>ServiceFailureException</code></td><td><code>Internal server error</code>; a write whose outcome is unknown (<code>… may or may not have been applied: …</code>); <code>Namespace … changed 5 times while its properties were updated; nothing was applied</code>.</td><td>Repeat with the same <code>Idempotency-Key</code>. If <code>Internal server error</code> repeats, report it with the <code>X-Request-ID</code>.</td></tr>
+            <tr><td><code>MetadataIntegrityException</code></td><td>A metadata file does not match the hash the catalog recorded for it.</td><td>Report it to a platform operator: the file was changed outside the catalog.</td></tr>
+            <tr><td><code>ArchiveIntegrityException</code></td><td><code>The audit archive does not verify, so it proves no tip: …</code>.</td><td>Report it to a platform operator.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="503">503: try again</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Type</th><th scope="col">When</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>ServiceUnavailableException</code></td><td>Nothing was applied, and the request can be sent again: <code>Catalog store unavailable; nothing was applied: …</code> (<code>Retry-After: 2</code>); <code>Storage credentials cannot be issued now; retry later</code>; <code>Could not claim idempotency key …: catalog store unavailable</code>; <code>The token could not be checked: its issuer's signing keys could not be fetched; retry later</code> (<code>Retry-After: 2</code>); another service the route needs is unreachable.</td><td>Send the request again after <code>Retry-After</code>, with the same <code>Idempotency-Key</code>. If it lasts, see <a href="../operate/troubleshooting.html">Troubleshooting</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../api/index.html#errors">API reference</a>: the error body and retry headers.</li>
+          <li><a href="../clients/curl.html#read-an-error">Use the APIs with curl</a>: reading an error answer.</li>
+          <li><a href="privileges.html">Privileges</a>: what each <code>403</code> asks for.</li>
+          <li><a href="../operate/troubleshooting.html">Troubleshooting</a>: when errors come from the deployment.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from every <code>CatalogError</code> and error type in the server's code: <code>catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/StoreOutage.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/CatalogError.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java</code>, the route classes under <code>catalog-server/src/main/java/nuna/catalog/server/rest/</code>, <code>…/governance/</code> and <code>…/security/</code>, and <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The <code>400</code>, <code>401</code>, <code>404</code> and <code>405</code> answers were captured from the local demo with read-only requests.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

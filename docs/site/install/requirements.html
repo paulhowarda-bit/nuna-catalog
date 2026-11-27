@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/requirements">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Requirements · nuna docs</title>
+  <meta name="description" content="What must exist before you install nuna: a Kubernetes cluster and Helm, one database, an object store, an identity provider, the network paths between them, and the resources each program asks for.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Requirements</h1>
+        <p class="lead">What must exist before you install nuna: a Kubernetes cluster and Helm, one database, an object store, an identity provider, the network paths between them, and the resources each program asks for.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <p>The three Helm charts run nuna's own programs only: the catalog server, the maintenance worker and the audit tables writer. The database, the object store, the identity provider, Kafka and any telemetry collector run elsewhere, and the charts' values name them.</p>
+
+      <h2 id="kubernetes-and-helm">Kubernetes and Helm</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What the charts ask of the cluster</caption>
+          <thead><tr><th scope="col">Need</th><th scope="col">Detail</th></tr></thead>
+          <tbody>
+            <tr><td>Helm</td><td>The charts are <code>apiVersion: v2</code> charts, which Helm 3 and later install.</td></tr>
+            <tr><td>Kubernetes API groups</td><td>The charts create objects of <code>v1</code>, <code>apps/v1</code>, <code>policy/v1</code> (the PodDisruptionBudget), <code>networking.k8s.io/v1</code> (the Ingress, when on) and <code>rbac.authorization.k8s.io/v1</code> (the worker's Role, when compaction is on). The cluster must serve them.</td></tr>
+            <tr><td>Pod security</td><td>Every pod runs as user and group <code>10001</code> with <code>runAsNonRoot</code>, a read-only root filesystem, every capability dropped and the <code>RuntimeDefault</code> seccomp profile.</td></tr>
+            <tr><td>Zones</td><td>The catalog server's three replicas spread over <code>topology.kubernetes.io/zone</code>, then over nodes, with <code>ScheduleAnyway</code>: a cluster with fewer zones still schedules them.</td></tr>
+            <tr><td>A namespace for compaction Jobs</td><td>Only if the worker compacts tables: a namespace for the Jobs alone, created before you install the worker, never the catalog server's or the worker's own.</td></tr>
+            <tr><td>A way in</td><td>An Ingress controller or a load balancer for the engines and browsers outside the cluster. The chart's Ingress is off by default, and TLS from clients ends there.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">Not documented yet: the oldest Kubernetes and Helm versions the charts work on. The charts declare no <code>kubeVersion</code>, and nuna's own installs run on a one-node kind cluster, which ran Kubernetes 1.37.0 with Helm 4.3.1 when this page was checked.</p>
+
+      <h2 id="programs-to-build-images">Programs to build the images</h2>
+      <p>nuna ships as source. You build the three images yourself (<a href="images.html">Container images</a>) on a machine with these:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Build tools</caption>
+          <thead><tr><th scope="col">Tool</th><th scope="col">Version</th><th scope="col">Note</th></tr></thead>
+          <tbody>
+            <tr><td>JDK</td><td>25</td><td>Installed on the machine. The build never downloads one (<code>org.gradle.java.installations.auto-download=false</code>).</td></tr>
+            <tr><td>Gradle</td><td>9.9.1</td><td>The repository's wrapper (<code>./gradlew</code>) fetches it and checks its SHA-256 sum.</td></tr>
+            <tr><td>Docker or Podman</td><td>any recent</td><td>Builds the images. The local scripts call <code>podman</code>.</td></tr>
+            <tr><td><code>kubectl</code> and <code>helm</code></td><td>see above</td><td>Install the releases.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="database">A database</h2>
+      <p>One database per deployment, which every catalog server of the release shares. <code>nuna.database.backend</code> names its kind (<a href="../configure/database.html#nuna-database-backend">Database settings</a>). The first server of a release creates or migrates the schema, so the server's role needs the right to create tables in it. Before it migrates, each server checks the database's safety settings and refuses to start on a finding, so a production database needs a synchronous standby or its equivalent (<a href="../concepts/databases.html">Choosing a database</a>).</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The databases and the versions nuna's tests run against</caption>
+          <thead><tr><th scope="col">Database</th><th scope="col"><code>nuna.database.backend</code></th><th scope="col">Tests run on</th><th scope="col">Setup</th></tr></thead>
+          <tbody>
+            <tr><td>PostgreSQL</td><td><code>postgresql</code> (the default)</td><td><code>postgres:18.7</code></td><td><a href="postgresql.html">Use PostgreSQL</a></td></tr>
+            <tr><td>CockroachDB</td><td><code>postgresql</code></td><td><code>cockroachdb/cockroach:v25.4.20</code></td><td><a href="cockroachdb.html">Use CockroachDB</a></td></tr>
+            <tr><td>Oracle</td><td><code>oracle</code></td><td><code>gvenzl/oracle-free:23.26.3-slim-faststart</code></td><td><a href="oracle.html">Use Oracle</a></td></tr>
+            <tr><td>MongoDB</td><td><code>mongodb</code></td><td><code>mongo:8.0.34</code></td><td><a href="mongodb.html">Use MongoDB</a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The server tells PostgreSQL and CockroachDB apart by the version the database reports, so both use <code>postgresql</code>. It refuses YugabyteDB by name.</p>
+
+      <h2 id="object-store">An object store</h2>
+      <p>Tables' data and metadata files live in an S3-compatible object store, which <a href="object-storage.html">Set up object storage</a> prepares. Each storage profile names one of three kinds:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Store kinds</caption>
+          <thead><tr><th scope="col">Kind</th><th scope="col">Store</th><th scope="col">The server vends credentials from</th><th scope="col">Tests run on</th></tr></thead>
+          <tbody>
+            <tr><td><code>S3</code></td><td>AWS S3</td><td>an IAM role it assumes through AWS STS</td><td>real AWS S3, when a run selects it</td></tr>
+            <tr><td><code>CEPH</code></td><td>Ceph's RADOS Gateway</td><td>a role it assumes through the gateway's STS</td><td><code>ghcr.io/clyso/ceph-test:v20.2.5</code></td></tr>
+            <tr><td><code>MINIO</code></td><td>MinIO and stores that answer as MinIO does, such as Silo</td><td>its own keys, through the store's STS</td><td><code>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Besides the buckets, the store must hold two identities: the server's own, which never deletes, and the worker's, which alone may delete. Endpoints must use <code>https</code> unless <code>nuna.storage.require-tls</code> is turned off.</p>
+
+      <h2 id="identity-provider">An identity provider</h2>
+      <p>Every request to the server carries a bearer token (a JWT) from an OpenID Connect identity provider that the server trusts. <a href="identity-provider.html">Connect an identity provider</a> sets it up. You need:</p>
+      <ul>
+        <li>For each trusted issuer, its <code>iss</code>, its JWKS URL, the audience its tokens carry for nuna, and the claims that hold the user id, the groups and the client id.</li>
+        <li>A group for platform operators and a group for grant admins.</li>
+        <li>A confidential client for the maintenance worker, with the client-credentials grant and a scope.</li>
+        <li>A public client for the console, with the authorization code flow and PKCE.</li>
+        <li>For the audit tables writer, a client of its own with the client-credentials grant.</li>
+      </ul>
+      <p>nuna's tests use Keycloak <code>26.8.2</code>.</p>
+
+      <h2 id="kafka">Kafka, if you want it</h2>
+      <p>Kafka is optional. Without it, every audit record goes to the server's <code>nuna.audit</code> log only, and there is no audit topic or change stream. With <code>nuna.audit.kafka-bootstrap-servers</code> set, the server also sends each record to the audit topic and each change to the change stream (<a href="../configure/audit.html">Audit settings</a>). The audit tables writer reads either the topic or the server's log (<a href="helm-audit-tables.html">Install the audit tables writer</a>). nuna's tests use <code>apache/kafka:4.2.2</code>.</p>
+
+      <h2 id="network-paths">Network paths</h2>
+      <p>Open these paths. A port in the table is a default; the values you set decide the rest.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Who must reach whom</caption>
+          <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Port</th><th scope="col">What for</th></tr></thead>
+          <tbody>
+            <tr><td>Engines, scripts and browsers</td><td>the catalog server, through the Ingress or a load balancer</td><td><code>8181</code> on the Service</td><td>The Iceberg REST API, the management API and the console at <code>/ui/</code>.</td></tr>
+            <tr><td>Browsers</td><td>the console's identity provider</td><td>its HTTPS port</td><td>Sign-in. The identity provider's token endpoint must allow the console's origin (CORS).</td></tr>
+            <tr><td>Engines</td><td>the object store's S3 endpoint</td><td>its HTTPS port</td><td>Reading and writing table files with vended credentials.</td></tr>
+            <tr><td>Catalog server</td><td>the database</td><td>the database's port</td><td>Every catalog read and commit.</td></tr>
+            <tr><td>Catalog server</td><td>the object store's S3 endpoint and its STS</td><td>its HTTPS port</td><td>Writing metadata files and vending credentials. Ceph and MinIO answer STS on the S3 endpoint; AWS answers on the region's STS endpoint.</td></tr>
+            <tr><td>Catalog server</td><td>each trusted issuer's JWKS URL</td><td>its HTTPS port</td><td>Checking token signatures.</td></tr>
+            <tr><td>Catalog server</td><td>the other catalog servers, through the headless Service <code><var>release</var>-peers</code></td><td><code>8181</code></td><td>The health page, which gathers every server's figures.</td></tr>
+            <tr><td>Catalog server</td><td>Kafka</td><td>the brokers' port</td><td>Only with <code>nuna.audit.kafka-bootstrap-servers</code> set.</td></tr>
+            <tr><td>Catalog server and worker</td><td>an OpenTelemetry collector</td><td><code>4318</code></td><td>Only with <code>telemetry.endpoint</code> set; OTLP over HTTP (<a href="telemetry.html">Send telemetry</a>).</td></tr>
+            <tr><td>Maintenance worker</td><td>the catalog server</td><td><code>8181</code></td><td><code>nuna.maintenance.catalog-uri</code>.</td></tr>
+            <tr><td>Maintenance worker</td><td>the worker's identity provider's token endpoint</td><td>its HTTPS port</td><td>The client-credentials grant.</td></tr>
+            <tr><td>Maintenance worker</td><td>each object store's S3 endpoint</td><td>its HTTPS port</td><td>Listing and deleting files, and reading tables.</td></tr>
+            <tr><td>Maintenance worker</td><td>the Kubernetes API server</td><td><code>443</code> on <code>kubernetes.default.svc</code></td><td>Only with compaction on: creating and watching Jobs.</td></tr>
+            <tr><td>Compaction Jobs</td><td>the catalog server, the token endpoint and the object store</td><td>as above</td><td>Each Job signs in and reads and writes the table itself. Name in-cluster services as <code><var>service</var>.<var>namespace</var>.svc</code>, since the Jobs run in a namespace of their own.</td></tr>
+            <tr><td>Audit tables writer</td><td>the catalog server, the token endpoint and the object store</td><td>as above</td><td>Writing the audit tables.</td></tr>
+            <tr><td>Audit tables writer</td><td>Kafka</td><td>the brokers' port</td><td>Only with its source <code>kafka</code>.</td></tr>
+            <tr><td>Catalog server</td><td>the audit tables writer</td><td><code>4318</code></td><td>Only with the writer's source <code>otlp</code>: the server's log, over OTLP.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="sizes">Sizes</h2>
+      <p>Each chart asks for these by default. They are starting points, not measurements: size them on your own hardware.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Default replicas and resources</caption>
+          <thead><tr><th scope="col">Program</th><th scope="col">Replicas</th><th scope="col">CPU request</th><th scope="col">Memory request and limit</th></tr></thead>
+          <tbody>
+            <tr><td>Catalog server</td><td>3</td><td>1</td><td>2 GiB</td></tr>
+            <tr><td>Maintenance worker</td><td>1</td><td>500m</td><td>2 GiB</td></tr>
+            <tr><td>Each compaction Job</td><td>up to 2 at once</td><td>none set</td><td>a 2 GiB limit, with 1 GB of it for Spark's driver</td></tr>
+            <tr><td>Audit tables writer</td><td>1</td><td>250m</td><td>1 GiB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Each Java program's heap is 75 % of its memory limit (<code>-XX:MaxRAMPercentage=75</code>), and it exits on running out of memory (<code>-XX:+ExitOnOutOfMemoryError</code>), so Kubernetes restarts it. Each of the server's metadata caches holds up to <code>nuna.rest.metadata-cache-chars</code> characters (<a href="../configure/server.html">Server settings</a>).</p>
+      <p class="gap">Not documented yet: how large the database and the object store grow per table or per commit. No measurement records it.</p>
+
+      <h2 id="clocks">Clocks</h2>
+      <p>Keep the catalog servers' clocks in sync, within well under an hour. Before it deletes a file, the maintenance worker allows a one-hour margin for refs made around the time the deletion was recorded; servers further apart than that could let it delete a file a new ref still names. Token checks allow <code>nuna.security.clock-skew</code> (60 s by default) between the servers and the identity provider.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/architecture.html">How nuna fits together</a>: what each program does and what it talks to.</li>
+          <li><a href="../concepts/databases.html">Choosing a database</a>: what each database guarantees and what it costs to run.</li>
+          <li><a href="images.html">Container images</a>: the next step, building the images.</li>
+          <li><a href="locked-down.html">Install on a locked-down network</a>: what to mirror when the cluster and the build machine have no outbound access.</li>
+          <li><a href="../configure/helm-values.html">Helm chart values</a>: every value of the three charts.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/README.md</code>, <code>deploy/helm/nuna-catalog/</code>, <code>deploy/helm/nuna-maintenance/</code>, <code>deploy/helm/nuna-audit-tables/</code> (their <code>Chart.yaml</code>, <code>values.yaml</code> and templates), <code>gradle.properties</code>, <code>gradle/wrapper/gradle-wrapper.properties</code>, <code>build.gradle.kts</code>, <code>catalog-server/src/main/java/nuna/catalog/server/health/Peers.java</code>, <code>catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java</code>, <code>catalog-maintenance/README.md</code> and <code>docs/install-at-work.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The API groups were read from the charts' templates. The Kubernetes and Helm versions were read from the local kind cluster with <code>kubectl version</code> and <code>helm version</code>. Nothing on this page was installed for the check.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

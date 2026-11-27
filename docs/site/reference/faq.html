@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="reference/faq">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Questions and answers · nuna docs</title>
+  <meta name="description" content="Short answers to the questions engineers ask first about nuna, each linked to the page that explains it.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Questions and answers</h1>
+        <p class="lead">Short answers to the questions engineers ask first about nuna, each linked to the page that explains it.</p>
+      </header>
+
+      <h2 id="does-nuna-hold-my-data">Does nuna hold my data?</h2>
+      <p>No. Data files stay in your object store, and engines read and write them directly. The server holds each table's pointer in its database and writes only metadata files. See <a href="../concepts/architecture.html">How nuna fits together</a>.</p>
+
+      <h2 id="how-do-i-create-a-catalog">How do I create a catalog?</h2>
+      <p>You declare it in the server's settings under <code>nuna.storage.catalogs</code>; the server creates it at start-up. No API creates one. See <a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>.</p>
+
+      <h2 id="what-happens-when-two-engines-commit-at-once">What happens when two engines commit to one table at once?</h2>
+      <p>The database lets one move the table's pointer. The server tries the other again against the new metadata; if its requirements no longer hold, the engine gets <code>409</code> and retries by its own setting. See <a href="../concepts/commits.html">How a commit works</a>.</p>
+
+      <h2 id="can-an-engine-delete-files">Can an engine delete files?</h2>
+      <p>No. Vended credentials cannot delete. Only the maintenance worker deletes, with its own storage identity, after the point-in-time recovery window. See <a href="../concepts/storage.html">Storage profiles and credential vending</a>.</p>
+
+      <h2 id="can-i-undo-a-drop">Can I undo a drop?</h2>
+      <p>Yes, for 30 days by default: every drop is soft, and a restore brings the object back with its id, history and grants. A purge after that cannot be undone. See <a href="../concepts/lifecycle.html">Dropping, restoring and purging</a>.</p>
+
+      <h2 id="is-a-catalog-branch-an-iceberg-branch">Is a catalog branch the same as an Iceberg branch?</h2>
+      <p>No. A catalog branch spans every table of a catalog and is named in the warehouse as <code>catalog@branch</code>. An Iceberg table branch lives in one table's metadata. See <a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>.</p>
+
+      <h2 id="do-i-need-kafka">Do I need Kafka?</h2>
+      <p>No. The server's log is the record of audit, and the audit tables writer can take records over OTLP. Kafka, where configured, gets a copy. See <a href="../concepts/audit.html">The audit trail</a>.</p>
+
+      <h2 id="which-databases-are-supported">Which databases can the server use?</h2>
+      <p>PostgreSQL, CockroachDB, Oracle and MongoDB. The server checks each one's durability settings at start-up and refuses to start on a finding you have not allowed. See <a href="../concepts/databases.html">Choosing a database</a>.</p>
+
+      <h2 id="does-maintenance-run-by-itself">Does maintenance run by itself?</h2>
+      <p>Only what a policy turns on: every job is off by default. See <a href="../concepts/maintenance.html">Maintenance</a>.</p>
+
+      <h2 id="does-nuna-issue-tokens">Does nuna issue tokens?</h2>
+      <p>No. Tokens come from your identity provider; <code>/v1/oauth/tokens</code> answers with an error that names it. See <a href="../clients/tokens.html">Get a token</a>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="glossary.html">Glossary</a>: every term these answers use.</li>
+          <li><a href="../concepts/index.html">Concepts</a>: the mechanisms in full.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Each answer restates a concept page, which names its own sources; checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

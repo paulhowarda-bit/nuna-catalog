@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/service">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Service page · nuna docs</title>
+  <meta name="description" content="The whole deployment's last day: latency objectives, audit copying, credential vending, alerts, servers, the worker's scans and storage, DR replication and the store.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Service page</h1>
+        <p class="lead">The Service page answers, for platform operators, how the whole deployment did over the last day: whether its latency objectives were met, whether every server answered, how audit copying and credential vending went, what alerts fired, and how the maintenance worker, DR replication and the database stand.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-service"><img src="../img/shots/console-service-light.png" data-dark="../img/shots/console-service-dark.png" width="1440" height="900" alt="The Service page as oscar sees it: one server answered and three latency objectives missed, each objective with its count and share within, then audit, credential vending, alerts fired, the server list and the worker's scans."><figcaption>The Service page.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>Platform operators only: the rail shows <b class="ui">Service</b> to them alone, and every route behind it refuses anyone else with <code>only platform operators may call <var>operation</var></code>, audited as a denial. Anyone else who opens it sees "Service is shown to platform operators only, and your groups include none. The catalog answered:" and the refusal. The page covers every catalog, so the catalog picker is hidden.</p>
+
+      <h2 id="head">The head</h2>
+      <p>The title says <b class="ui">All <var>N</var> servers answered.</b> or <b class="ui"><var>a</var> of <var>t</var> servers answered.</b>, then <b class="ui">Every latency objective was met.</b>, <b class="ui"><var>N</var> latency objectives were missed.</b> or <b class="ui">No request was timed in the window.</b> "Each server counts its own last day; this page adds them up. A server that does not answer is named here and its figures are left out, never guessed."</p>
+
+      <h2 id="latency-objectives">Latency objectives</h2>
+      <p>Met when 99 in 100 requests finish within the objective. Rows <b class="ui">Table loads and exports</b>, <b class="ui">Loads that found no change</b> and <b class="ui">Commits</b>, each with its <b class="ui">Objective</b>, <b class="ui">Count</b>, <b class="ui">Within it</b>, the share on a 97 to 100% scale, <b class="ui">p99</b> and <b class="ui">Verdict</b>: <b class="ui">met</b>, <b class="ui">missed</b> or <b class="ui">no requests in the last day</b>.</p>
+
+      <h2 id="audit">Audit</h2>
+      <p>"Each request's audit record is written to the log nuna.audit before the catalog answers it." <b class="ui">Copied to Kafka</b>, <b class="ui">Mean time to copy</b>, <b class="ui">p99</b> and <b class="ui">Copies failed</b>. "A copy that fails blocks nothing: the log already holds the record."</p>
+
+      <h2 id="credential-vending">Credential vending</h2>
+      <p><b class="ui">Issued</b>, <b class="ui">Served from the cache</b>, <b class="ui">Declined by the caller</b> and <b class="ui">Failed</b>, with each kind of failure and how many vends it hit.</p>
+
+      <h2 id="alerts-fired">Alerts fired</h2>
+      <p>The last day's counts of three alerts: <b class="ui">Metadata integrity</b> ("A metadata file no longer hashes to what its pointer recorded. Pages."), <b class="ui">Regulated schema change</b> ("A commit changed a regulated table's schema or partition spec.") and <b class="ui">Large metadata</b> ("A loaded table's metadata is over the size or snapshot limit."). "Paging stays in your alerting; these are the last day's counts."</p>
+
+      <h2 id="servers">Servers</h2>
+      <p>Each server the figures came from, marked <b class="ui">this server</b>, <b class="ui">answered</b> or <b class="ui">no answer</b> with why, and since when it has run.</p>
+
+      <h2 id="worker-scans">Worker scans</h2>
+      <p><b class="ui">Last successful scan</b>, <b class="ui">Scans in the last day</b>, <b class="ui">Failed jobs in the last day</b> and <b class="ui">Latest failed scan</b>, then each scan's <b class="ui">Started</b>, <b class="ui">Took</b>, <b class="ui">Outcome</b> (<b class="ui">Succeeded</b>, <b class="ui">Succeeded, some jobs failed</b> or <b class="ui">Failed</b>) and <b class="ui">Failures</b>. <b class="ui">Show the last <var>N</var> scans</b> shows up to 50. "A failure on one table never stops the scan; the next scan retries that table." With none: "The maintenance worker has not reported a scan. Check that it is running."</p>
+
+      <h2 id="worker-storage">Worker storage</h2>
+      <p>One row per storage profile: its <b class="ui">Catalogs</b>, <b class="ui">Prefixes</b>, the <b class="ui">Worker's identity</b> (<b class="ui">Has an identity</b>, <b class="ui">No identity</b>, <b class="ui">No report yet</b>), the <b class="ui">Store</b> as the worker found it (<b class="ui">Listed <var>time</var></b>, <b class="ui">Listing refused</b>, <b class="ui">Deletes refused</b>, <b class="ui">No answer</b>, <b class="ui">Not checked</b>) and the <b class="ui">Delete policy</b>.</p>
+      <p><b class="ui">What to set up</b> opens <b class="ui">Set up the worker's storage for <var>profile</var></b>: first the worker's settings as YAML (<b class="ui">Copy the settings</b>), then the store's policy (<b class="ui">Copy the policy</b> or the commands). "The catalog writes these policies but never applies them: its own keys would then need the right to undo them."</p>
+
+      <h2 id="dr-replication">DR replication</h2>
+      <p><b class="ui">Tables behind their watermark</b>, <b class="ui">Never verified</b>, <b class="ui">Most versions behind</b> and <b class="ui">Longest lag</b>, against each table's DR watermark. "No table or view is behind its DR watermark: the verifier found each whole in the DR store at its current version." With no verifier report: "No DR verifier has reported on them." Only the first 1,000 tables are checked. This panel and the next are hidden on phones.</p>
+
+      <h2 id="store">Store</h2>
+      <p>The database as this server finds it: <b class="ui">Backend</b> (PostgreSQL or CockroachDB, Oracle, MongoDB), <b class="ui">Self-check at start</b> (passed, or started despite findings) and <b class="ui">Point-in-time recovery window</b> as declared. "The database did not answer: …" when it does not.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Head, latency, audit, vending, alerts, servers</td><td><code>GET /management/v1/health/catalog</code> (<a href="../api/health.html#endpoints">Health</a>)</td></tr>
+            <tr><td>Store</td><td><code>GET /management/v1/health/server?store=true</code> (<a href="../api/health.html#endpoints">Health</a>)</td></tr>
+            <tr><td>Worker scans</td><td><code>GET /management/v1/maintenance/scans</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>Worker storage; What to set up</td><td><code>GET /management/v1/maintenance/storage-setup</code> (<a href="../api/maintenance.html#endpoints">Maintenance</a>)</td></tr>
+            <tr><td>DR replication</td><td><code>GET /management/v1/dr/watermarks</code> (<a href="../api/dr.html#endpoints">Disaster recovery</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../operate/health.html">Health checks</a>: the health routes and the self-check.</li>
+          <li><a href="../operate/dashboards-alerts.html">Dashboards and alerts</a>: the same figures in Grafana.</li>
+          <li><a href="../install/helm-maintenance.html">Install the maintenance worker</a>: its storage access.</li>
+          <li><a href="../concepts/disaster-recovery.html">Disaster recovery</a>: the watermark and the verifier.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>health.js</code> and <code>storage.js</code>, and from <code>CatalogHealthRoutes.java</code>, <code>HealthRoutes.java</code>, <code>StorageSetupRoutes.java</code>, <code>DrRoutes.java</code> and <code>ManagementGuard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

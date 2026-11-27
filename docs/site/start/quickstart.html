@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="start/quickstart">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Run nuna on your laptop · nuna docs</title>
+  <meta name="description" content="Start the local demo, sign in to the console as presenter, look at one table and stop the demo again. The first start builds everything and takes longest.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="tutorial">
+      <header class="doc-head">
+        <h1>Run nuna on your laptop</h1>
+        <p class="lead">Start the local demo, sign in to the console as <code>presenter</code>, look at one table and stop the demo again. At the end you have a working nuna on your laptop that keeps its data between starts. The first start builds everything and takes longest.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For engine users, data stewards, grant admins, platform operators and auditors</span></p>
+      </header>
+
+      <h2 id="what-you-need">What you need</h2>
+      <ul>
+        <li>A Windows machine with Git Bash. The demo's script, <code>demo/demo.sh</code>, is a bash script.</li>
+        <li>Podman Desktop with its Podman machine. The demo runs on a one-node <code>kind</code> cluster inside it and is sized for a machine with 8 GB of memory.</li>
+        <li>The programs <code>kind</code>, <code>kubectl</code>, <code>helm</code>, <code>curl</code>, <code>unzip</code> and <code>openssl</code> on your path. Git Bash brings <code>curl</code>, <code>unzip</code> and <code>openssl</code>.</li>
+        <li>JDK 25, either as <code>JAVA_HOME</code> or as <code>java</code> on your path. The script builds nuna from your checkout with it.</li>
+        <li>A checkout of the nuna repository.</li>
+        <li>Ports 8180 to 8188 free on your machine. The cluster publishes the demo on them.</li>
+      </ul>
+      <p class="gap">Not documented yet: whether the demo runs on Linux or macOS. nuna has run it only on Windows with Git Bash and Podman Desktop.</p>
+
+      <h2 id="start-the-demo">Start the demo</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Open Git Bash in the root folder of your checkout.</p>
+        </li>
+        <li>
+          <p class="step-title">Run <code>demo/demo.sh up</code>.</p>
+          <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh up</code></pre>
+          </div>
+          <p>The script prints a line starting with <code>==</code> for each stage. It starts the Podman machine and the cluster's node if they are stopped, and makes the <code>kind</code> cluster <code>nuna</code> the first time. Then it builds the server, the maintenance worker and the audit tables writer from your checkout with Gradle (no tests run), builds the demo's container images with Podman, pulls the public images and puts them all on the cluster's node. Then it starts the stack in namespace <code>nuna-demo</code>, writes the sample tables and prints how to sign in.</p>
+          <p>A start that found the cluster made and the images built took under 5 minutes where nuna measured it. The first start takes longer, because it creates the cluster, builds every image and pulls every public one; later starts rebuild only what changed in your checkout.</p>
+          <p class="gap">Not documented yet: how long the first <code>up</code> takes on a new machine. nuna has not measured it.</p>
+        </li>
+        <li>
+          <p class="step-title">Read the end of what it printed.</p>
+          <p>The last lines name the commit the demo runs, where the certificate is, who can sign in and the console's address. The beginning looks like this:</p>
+          <div class="code" data-lang="text" data-kind="output">
+<pre><code>The demo runs commit <var>commit</var> <var>subject</var>
+
+Every page is HTTPS, with the certificate in /c/Users/<var>you</var>/.nuna-demo/tls.
+It is the demo's own: a browser trusts it once you trust the demo's CA, which vouches only for localhost,
+in this user's Windows trust store (Windows asks you to confirm): certutil -user -addstore Root "/c/Users/<var>you</var>/.nuna-demo/tls/ca.crt"</code></pre>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The console's address is printed near the end</p>
+        <p>You see a line starting <code>The console:  https://localhost:8181/ui/</code>, followed by tokens for the demo users <code>ana</code> and <code>gary</code>. If the script stopped earlier, read its last message and see <a href="../demo/start-stop.html#if-it-fails">Start, stop and reset the demo</a>.</p>
+      </aside>
+
+      <h2 id="trust-the-demos-certificate">Trust the demo's certificate</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Add the demo's certificate authority to your Windows user's trust store.</p>
+          <div class="code" data-lang="bash">
+<pre><code>certutil -user -addstore Root ~/.nuna-demo/tls/ca.crt</code></pre>
+          </div>
+          <p>Windows asks you to confirm. The script made this certificate authority on your machine the first time it ran. It can vouch only for <code>localhost</code> and the addresses <code>127.0.0.0/8</code>, so trusting it trusts no other site. You do this once; later starts keep the same authority.</p>
+        </li>
+        <li>
+          <p class="step-title">Open <code>https://localhost:8181/ui/</code> in your browser.</p>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">The browser opens the console without a warning</p>
+        <p>You see the console's sign-in page, headed <b class="ui">Sign in to nuna</b>. If the browser still warns about the certificate, close it and open it again, so it reads the trust store afresh.</p>
+      </aside>
+
+      <h2 id="sign-in-as-presenter">Sign in as presenter</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Print the demo users' passwords.</p>
+          <div class="code" data-lang="bash">
+<pre><code>cat ~/.nuna-demo/people</code></pre>
+          </div>
+          <p>The script made a password for each person on your machine the first time it ran, and keeps them. No password is in the repository. Each is three groups of four lower-case letters.</p>
+        </li>
+        <li>
+          <p class="step-title">Select <b class="ui">Sign in with localhost:8180</b>.</p>
+          <p>The console sends you to the demo's Keycloak, which stands in for your organization's identity provider.</p>
+        </li>
+        <li>
+          <p class="step-title">Sign in to Keycloak as <code>presenter</code> with the password from the file.</p>
+          <p><code>presenter</code> is in every demo group at once, so one sign-in shows every page of the console. <a href="../demo/sign-in.html">Demo users and sign-in</a> lists the other users, who each hold one duty.</p>
+        </li>
+      </ol>
+      <figure class="shot" id="fig-quickstart-overview"><img src="../img/shots/start-quickstart-overview-light.png" data-dark="../img/shots/start-quickstart-overview-dark.png" width="1440" height="900" alt="The console's Overview page for presenter: 31 of 32 assessed tables in shape and one queued for tonight, every table as one mark, and figure cards below."><figcaption>The console's Overview page, where <code>presenter</code> lands after signing in.</figcaption></figure>
+      <aside class="callout check">
+        <p class="callout-title">The console opens on its Overview page</p>
+        <p>The rail on the left lists <b class="ui">Overview</b>, <b class="ui">Catalog</b>, <b class="ui">Branches and tags</b>, <b class="ui">Maintenance</b>, <b class="ui">Governance</b>, <b class="ui">Grants</b>, <b class="ui">Audit</b> and <b class="ui">Service</b>, and the catalog picker shows one of the demo's catalogs.</p>
+      </aside>
+
+      <h2 id="look-at-one-table">Look at one table</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Press <kbd>/</kbd> to open <b class="ui">Go to a path</b>.</p>
+        </li>
+        <li>
+          <p class="step-title">Enter <code>markets.fx.rates</code> and press <kbd>Enter</kbd>.</p>
+          <p>The table page of <code>markets.fx.rates</code> in catalog <code>lakehouse</code> opens, on its <b class="ui">Overview</b> tab. The demo wrote this table when it started: foreign exchange rates, in format version 3, partitioned by the month of <code>as_of</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Select the <b class="ui">Schema</b> tab.</p>
+          <p>It lists the columns <code>pair</code>, <code>rate</code>, <code>as_of</code> and <code>source</code>. The demo added <code>source</code> after the first two appends, so the table's schema has changed once.</p>
+        </li>
+        <li>
+          <p class="step-title">Select the <b class="ui">History</b> tab.</p>
+          <p>It lists the table's versions, newest first: each commit, when it was made, what it changed, the snapshot it added and who made it. Select <b class="ui">Show</b> on a row to see the commit's updates as JSON.</p>
+        </li>
+      </ol>
+      <figure class="shot" id="fig-quickstart-history"><img src="../img/shots/start-quickstart-rates-history-light.png" data-dark="../img/shots/start-quickstart-rates-history-dark.png" width="1440" height="900" alt="The History tab of markets.fx.rates: the snapshot timeline, the list of commits with version, time, change, snapshot, rows and who wrote it, and the selected snapshot's summary with Copy time-travel SQL."><figcaption>The History tab of <code>markets.fx.rates</code>: one row per version of the table.</figcaption></figure>
+      <aside class="callout check">
+        <p class="callout-title">The History tab lists the sample data's commits</p>
+        <p>You see the appends that wrote the rates and the commit that added the column <code>source</code>, made by the demo's user <code>lake</code>, and any commits the maintenance worker has made since. The <a href="../console/table.html">table page</a> explains every tab.</p>
+      </aside>
+
+      <h2 id="stop-the-demo">Stop the demo</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Run <code>demo/demo.sh down</code>.</p>
+          <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh down</code></pre>
+          </div>
+          <p>The script stops and deletes everything in namespace <code>nuna-demo</code> except the data: the volumes of the catalog's database, the object store and the other services stay. The next <code>demo/demo.sh up</code> carries on from them, with your tables, grants and history as you left them.</p>
+        </li>
+        <li>
+          <p class="step-title">Run <code>demo/demo.sh status</code>.</p>
+          <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh status</code></pre>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">No deployment or pod is left</p>
+        <p>The status lists no deployments, pods or services, then a <code>Switches:</code> line and the line <code>Kafka Connect is off (it runs while gen or cdc is on)</code>. To delete the data as well, run <code>demo/demo.sh wipe</code> instead; <a href="../demo/start-stop.html">Start, stop and reset the demo</a> says what each command keeps.</p>
+      </aside>
+
+      <h2 id="what-you-did">What you did</h2>
+      <p>You built nuna from your checkout and ran it on a local <code>kind</code> cluster with its console, an identity provider, an object store and a query engine. You trusted the demo's own certificate authority, signed in through Keycloak as the demo's all-duties user and read a table's schema and history. You stopped the demo, keeping its data for the next start. Next, <a href="first-table.html">create your first table</a> and write to it from an engine.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../demo/index.html">The local demo</a>: what the demo runs and on which ports.</li>
+          <li><a href="../demo/commands.html">demo.sh reference</a>: every subcommand of the script.</li>
+          <li><a href="../demo/sign-in.html">Demo users and sign-in</a>: who can sign in and what each may do.</li>
+          <li><a href="console-tour.html">Tour the console</a>: every page of the console, with the demo's data.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/demo.sh</code> (<code>up</code>, <code>build</code>, <code>publish_tls</code>, <code>demo_secrets</code>, <code>print_access</code>, <code>down</code> and the <code>status</code> subcommand), <code>deploy/kind/kind.sh</code>, <code>deploy/kind/cluster.yaml</code>, <code>demo/k8s/keycloak-realm.json</code>, <code>demo/LakeWriter.java</code>, and the console's <code>app.js</code>, <code>index.html</code> and <code>table.js</code> in <code>catalog-server/src/main/resources/nuna/ui/</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The demo was already running and shared, so <code>up</code>, <code>down</code> and the sign-in were not run for this page. The start time comes from a recorded start on Podman. <code>demo/demo.sh status</code> was run against the running demo; the ports were checked to answer.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

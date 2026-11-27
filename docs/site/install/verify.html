@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/verify">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Check the install · nuna docs</title>
+  <meta name="description" content="Check a new install end to end: the servers answer, the health routes show the database and its self-check, a token is accepted, a first table can be created, loaded with vended credentials and dropped, and the worker scans.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Check the install</h1>
+        <p class="lead">Check a new install end to end: the servers answer, the health routes show the database and its self-check, a token is accepted, a first table can be created, loaded with vended credentials and dropped, and the worker scans.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+          <span class="badge needs">Needs a platform operator</span>
+        </p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>The catalog server and the maintenance worker are installed (<a href="helm-catalog.html">Install the catalog server with Helm</a>, <a href="helm-maintenance.html">Install the maintenance worker</a>).</li>
+        <li>You have two tokens from the identity provider: one for a platform operator, and one for a group that holds <code>create</code> on the catalog (<a href="../clients/tokens.html">Get a token</a>, <a href="../guides/grant-access.html">Grant and revoke access</a>).</li>
+        <li><code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes. The steps say which token <code>TOKEN</code> holds.</li>
+      </ul>
+
+      <h2 id="check-servers-answer">Check that the servers answer</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">See that every server is ready.</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+          </div>
+          <p>Each pod is <code>Running</code> and <code>1/1</code> ready. The probes read <code>/ui/config.json</code>, so ready means the server is up and answering, not that the database is.</p>
+        </li>
+        <li>
+          <p class="step-title">Call the API without a token.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -i "$NUNA/v1/config"</code></pre>
+          </div>
+          <div class="code" data-lang="http" data-kind="output">
+<pre><code>HTTP/1.1 401
+WWW-Authenticate: Bearer
+Content-Type: application/json
+
+{"error":{"message":"Not authorized: the bearer token is missing or was not accepted","type":"NotAuthorizedException","code":401}}</code></pre>
+          </div>
+        </li>
+      </ol>
+
+      <h2 id="read-health-routes">Read the health routes</h2>
+      <p>Two routes answer platform operators only; anyone else gets <code>403</code>. Set <code>TOKEN</code> to the platform operator's token.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Read one server's health, with its database.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>The answer comes from whichever server the balancer picked. The <code>figures</code> object holds many more counts than the two shown here.</p>
+          <div class="code" data-lang="json" data-kind="output">
+<pre><code>{
+  "server": {
+    "id": "bb06eee7-159b-493c-a12b-918371ef3622",
+    "name": "nuna-catalog-6c65d6c9dd-lw69w",
+    "started-at": "2026-11-26T23:42:24.801033892Z"
+  },
+  "from": "2026-11-26T23:42:24.801033892Z",
+  "to": "2026-11-27T03:35:03.069525959Z",
+  "figures": {
+    "commit": 3.0,
+    "load": 3101.0
+  },
+  "store": {
+    "configured": "postgresql",
+    "backend": "PostgreSQL",
+    "version": "18.7",
+    "pitr-window-seconds": 604800,
+    "self-check": {
+      "at": "2026-11-26T23:42:22.744177875Z",
+      "allowed": []
+    }
+  }
+}</code></pre>
+          </div>
+          <p><code>store.backend</code> and <code>version</code> are what the database reports, <code>pitr-window-seconds</code> is <code>nuna.governance.pitr-window</code>, and <code>self-check.allowed</code> lists each finding the server started despite because <code>nuna.database.allow-unsafe</code> named it. In production it is empty.</p>
+        </li>
+        <li>
+          <p class="step-title">Read the whole deployment's health.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/catalog" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>The server that answers asks every other server through the headless Service. <code>answered</code> counts the servers that replied and <code>silent</code> those that did not; with three replicas, expect <code>"answered":3,"silent":0</code>. <a href="../api/health.html">Health</a> describes every field.</p>
+        </li>
+      </ol>
+
+      <h2 id="create-and-drop-first-table">Create and drop a first table</h2>
+      <p>Set <code>TOKEN</code> to the token whose group holds <code>create</code> on <code>trading</code>. The steps follow the local install's own smoke test.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Read the catalog's configuration.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/config?warehouse=trading" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>It answers <code>200</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Create a namespace.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"namespace": ["install_check"]}'</code></pre>
+          </div>
+        </li>
+        <li>
+          <p class="step-title">Create a table in it.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces/install_check/tables" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "events", "schema": {"type": "struct", "schema-id": 0, "fields": [
+        {"id": 1, "name": "id", "required": true, "type": "long"},
+        {"id": 2, "name": "at", "required": false, "type": "timestamptz"}]}}'</code></pre>
+          </div>
+          <p>The server writes the table's first metadata file to the object store with its own identity, so this step also checks the server's access to the store.</p>
+        </li>
+        <li>
+          <p class="step-title">Load the table with vended credentials.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces/install_check/tables/events" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Iceberg-Access-Delegation: vended-credentials"</code></pre>
+          </div>
+          <p>The answer's <code>config</code> holds <code>s3.access-key-id</code>, <code>s3.secret-access-key</code> and <code>s3.session-token</code>. This checks the STS role and its trust policy.</p>
+        </li>
+        <li>
+          <p class="step-title">Drop the table.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE \
+  "$NUNA/v1/trading/namespaces/install_check/tables/events" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>It prints <code>204</code>. The table can be restored until its drop retention passes, and then the worker purges its files.</p>
+        </li>
+        <li>
+          <p class="step-title">Drop the namespace.</p>
+          <div class="code" data-lang="bash">
+<pre><code>curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE \
+  "$NUNA/v1/trading/namespaces/install_check" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>It prints <code>204</code>.</p>
+        </li>
+      </ol>
+      <p>To be sure every server works, not only the one the balancer picked, run the steps against each pod in turn with <code>kubectl -n nuna port-forward pod/<var>pod</var> 8181:8181</code> and <code>NUNA=http://localhost:8181</code>.</p>
+
+      <h2 id="check-worker-scans">Check that the worker scans</h2>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna logs deployment/nuna-maintenance --since=30m</code></pre>
+      </div>
+      <p>The worker logs the prefixes it read from the server when it starts, then a line for each scan, every <code>scan-interval</code> (10 minutes by default), and a warning for each failed job. Compaction and orphan scans wait for the cleanup window.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The install is working</p>
+        <p>Every server is ready, the health route shows your database with no allowed findings, a token is accepted, a table was created, loaded with vended credentials and dropped, and the worker logs its scans with no failed jobs.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>{"error":{"message":"only platform operators may call readServerHealth","type":"ForbiddenException","code":403}}</code></td><td>The token's groups hold none of <code>platform-operator-groups</code>.</td><td>Use a platform operator's token, or fix the setting (<a href="identity-provider.html">Connect an identity provider</a>).</td></tr>
+            <tr><td><code>401</code> with a token</td><td>The token was not accepted.</td><td>See <a href="identity-provider.html#if-it-fails">Connect an identity provider</a>.</td></tr>
+            <tr><td><code>400</code> on <code>/v1/config</code> without <code>warehouse</code></td><td><code>nuna.rest.default-warehouse</code> is not set.</td><td>Name the catalog with <code>?warehouse=</code>, or set the default.</td></tr>
+            <tr><td><code>403</code> on creating the namespace</td><td>The token's groups hold no <code>create</code> on the catalog.</td><td>Grant it (<a href="../guides/grant-access.html">Grant and revoke access</a>).</td></tr>
+            <tr><td>The load answers without <code>s3.access-key-id</code>, or an error about the store</td><td>The server could not assume the STS role.</td><td>Check <code>sts-role</code> and its trust policy (<a href="object-storage.html#if-it-fails">Set up object storage</a>).</td></tr>
+            <tr><td>Fewer servers answered than run</td><td>A server cannot reach another on port <code>8181</code> through the <code>-peers</code> Service.</td><td>Check network policies between the pods.</td></tr>
+            <tr><td>The worker logs failed scans with <code>403</code></td><td>Its principal or grant is missing.</td><td>See <a href="helm-maintenance.html#if-it-fails">Install the maintenance worker</a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../operate/health.html">Health checks</a>: what to watch once it runs.</li>
+          <li><a href="../api/health.html">Health</a>: every field of the health routes.</li>
+          <li><a href="../start/first-table.html">Create your first table</a>: the same steps with an engine.</li>
+          <li><a href="../operate/troubleshooting.html">Troubleshooting</a>: problems after the install.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/health/Peers.java</code>, <code>deploy/local/run.sh</code> (<code>smoke</code>), <code>deploy/helm/nuna-catalog/templates/</code>, <code>catalog-maintenance/README.md</code> and <code>docs/install-at-work.md</code> (Check the install), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The <code>401</code>, <code>403</code> and health responses were read from the running demo with its tokens; the health output is trimmed, and its <code>allowed</code> list emptied to show a production database (the demo allows <code>pg.no-sync-standby</code>). The table steps follow <code>run.sh smoke</code> but were not run against the demo for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

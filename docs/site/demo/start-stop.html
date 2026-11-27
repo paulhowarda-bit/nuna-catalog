@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="demo/start-stop">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Start, stop and reset the demo · nuna docs</title>
+  <meta name="description" content="Start the demo with up, stop it with down keeping its data, or delete its data with wipe; trust its certificate, know which commit it runs and what memory it needs.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Start, stop and reset the demo</h1>
+        <p class="lead">Start the demo with <code>up</code>, stop it with <code>down</code> keeping its data, or delete its data with <code>wipe</code>. This page also covers the demo's certificate, the commit it runs and the memory it needs.</p>
+        <p class="doc-meta"><span class="badge demo">Demo only</span> <span class="badge for">For developers</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <p>You need the programs <a href="../start/quickstart.html#what-you-need">Run nuna on your laptop</a> lists, and Git Bash open in the root folder of your checkout. The script has no separate <code>stop</code> or <code>reset</code> command: <code>down</code> stops the demo, <code>wipe</code> resets it, and each switch has its own <code>stop</code> (<a href="commands.html">demo.sh reference</a>).</p>
+
+      <h2 id="start-the-demo">Start the demo</h2>
+      <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh up</code></pre>
+      </div>
+      <p><code>up</code> does these things, in order, and prints a line starting with <code>==</code> for each:</p>
+      <ol>
+        <li>It starts the Podman machine and the <code>kind</code> cluster <code>nuna</code>, creating the cluster from <code>deploy/kind/cluster.yaml</code> the first time. Creating it fails if another program holds one of the ports 8180 to 8188.</li>
+        <li>It builds the server, maintenance worker, audit tables writer, change-feed connector and brokerage world from the checkout with Gradle, without running tests, and builds the demo's images with Podman. When nothing changed, Gradle and Podman do nothing. It puts each image on the cluster's node unless the node has it; the cluster never pulls an image itself.</li>
+        <li>It mints the demo users' tokens if they expire within an hour, and makes once per machine the passwords, keys and certificates it keeps in <code>~/.nuna-demo</code>.</li>
+        <li>It starts PostgreSQL, Keycloak and Silo, installs the server with the Helm chart <code>deploy/helm/nuna-catalog</code>, and checks that the server signs in to its database only by client certificate over TLS.</li>
+        <li>It grants the demo groups their privileges, registers Trino as a trusted engine and starts the audit tables writer.</li>
+        <li>On a new lake only, it writes the sample tables, sets their governance, and makes the catalog's branch <code>dev</code> and tag <code>sample</code>. It turns maintenance on in catalog <code>lakehouse</code>'s policy and sets the row filters and column masks of <code>markets.desks.positions</code> on every start.</li>
+        <li>It turns the switches <code>ss</code>, <code>kafka</code>, <code>gen</code> and <code>metrics</code> back on if they were on, starts Trino and CloudBeaver, then the maintenance worker last, and prints how to sign in.</li>
+      </ol>
+      <p>A step that sets data up (the branch and tag, the maintenance policy, the row and column rules) never stops <code>up</code> when it fails: <code>up</code> says so and the next <code>up</code> tries again.</p>
+
+      <h2 id="stop-the-demo">Stop the demo</h2>
+      <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh down</code></pre>
+      </div>
+      <p><code>down</code> uninstalls the Helm releases and deletes everything in namespace <code>nuna-demo</code> except the data: its volume claims, the configmaps <code>demo-seeded</code> and <code>cdc-begun</code>, and the namespace itself. It deletes the compaction Jobs' namespace <code>nuna-demo-compaction</code>. A running CDC leg is paused, as <code>demo/demo.sh cdc stop</code> pauses it. The next <code>up</code> carries on from the data: the lake, its branch and tag, the governance, the audit table, SingleStore's databases and the brokerage world as they were.</p>
+
+      <h2 id="reset-the-demo">Reset the demo</h2>
+      <aside class="callout danger">
+        <p class="callout-title">wipe deletes all the demo's data</p>
+        <p>It deletes the namespace <code>nuna-demo</code> with its volumes: every table, grant, audit record and metric the demo held. It cannot be undone.</p>
+      </aside>
+      <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh wipe</code></pre>
+      </div>
+      <p><code>wipe</code> runs <code>down</code>, then deletes the namespace with its volumes. The next <code>up</code> writes fresh sample data. Deleting the cluster with <code>kind delete cluster --name nuna</code> deletes the data too.</p>
+
+      <h2 id="what-each-command-keeps">What each command keeps</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What</th><th scope="col"><code>down</code></th><th scope="col"><code>wipe</code></th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Pods, Services, Secrets, Helm releases</th><td>Deleted</td><td>Deleted</td></tr>
+            <tr><th scope="row">Volumes: PostgreSQL, Silo, Kafka, SingleStore, CloudBeaver's workspace, the CDC databases, the metrics stack</th><td>Kept</td><td>Deleted</td></tr>
+            <tr><th scope="row">The switches' settings, <code>~/.nuna-demo/switches</code></th><td>Kept</td><td>Kept</td></tr>
+            <tr><th scope="row">Tokens, signing key, passwords, Keycloak's keys and the certificates in <code>~/.nuna-demo</code></th><td>Kept</td><td>Kept</td></tr>
+            <tr><th scope="row">Keycloak's users and sessions</th><td>Reset: Keycloak imports its realm from the repository at every start</td><td>Reset</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A restart of the cluster's node, the Podman machine or Windows keeps the volumes too: the node keeps them under its <code>/var</code>, on a Podman volume.</p>
+
+      <h2 id="https-and-the-certificate">HTTPS and the certificate</h2>
+      <p>Every port is HTTPS. The front door, an nginx pod, ends TLS with one certificate and passes each request on inside the cluster. The certificate is in <code>~/.nuna-demo/tls</code>:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">File</th><th scope="col">What it is</th></tr></thead>
+          <tbody>
+            <tr><td><code>tls.crt</code></td><td>The server certificate, then any intermediate certificates (PEM).</td></tr>
+            <tr><td><code>tls.key</code></td><td>Its private key (PEM, not encrypted).</td></tr>
+            <tr><td><code>ca.crt</code></td><td>The certificates of the authority that issued it (PEM), which the script's own calls trust.</td></tr>
+            <tr><td><code>ca.key</code></td><td>The demo authority's key, when the script made the authority.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>When the folder is empty, <code>up</code> makes a certificate authority of the demo's own, which can vouch only for <code>localhost</code> and <code>127.0.0.0/8</code>, and a certificate from it for <code>localhost</code>, valid for 397 days and made again a month before it ends. Trust the authority once in your Windows user's trust store:</p>
+      <div class="code" data-lang="bash">
+<pre><code>certutil -user -addstore Root ~/.nuna-demo/tls/ca.crt</code></pre>
+      </div>
+      <p>To serve the demo under another name, put that name's certificate, key and issuing authority in the folder and set <code>NUNA_DEMO_HOST</code> to the name; every address the demo prints then uses it. With curl in Git Bash, add <code>--ssl-revoke-best-effort</code> beside <code>--cacert ~/.nuna-demo/tls/ca.crt</code>: Git Bash's curl checks certificates with Windows, which refuses an authority that names no revocation list.</p>
+
+      <h2 id="the-commit-the-demo-runs">The commit the demo runs</h2>
+      <p>Run in the repository's main checkout, <code>up</code> builds one commit: the checkout's <code>HEAD</code> when it starts. It runs from <code>~/.nuna-demo/checkout</code>, a second checkout of the repository that it keeps at that commit and locks, so commits made in the main checkout during the run change nothing in it. <code>engines</code>, <code>gen</code>, <code>ss</code>, <code>kafka</code>, <code>cdc</code>, <code>metrics</code>, <code>token</code> and <code>rate</code> do the same. One of them at a time holds that checkout; another is refused until it ends. Run from any other checkout, the script runs from that checkout's files as they are.</p>
+      <p><code>up</code> prints <code>building commit <var>commit</var> <var>subject</var></code> as it starts, and its last lines, like <code>demo/demo.sh token</code>'s, start with <code>The demo runs commit <var>commit</var> <var>subject</var></code>.</p>
+
+      <h2 id="resources">Resources</h2>
+      <p>The demo is sized for a Podman machine with 8 GB of memory, whose <code>kind</code> node offers about 7.6 GB to pods. With the core running and no switch on, the pods asked for 4,210 MiB. The switches add their own: SingleStore asks for 1,536 MiB, the metrics stack 704 MiB, and Kafka, kafbat, Kafka Connect and the brokerage world's generator 1,792 MiB together. The script refuses <code>metrics</code> and <code>ss</code> when the node lacks the room, and stops services for the commands that need theirs: <code>up</code>, <code>rate</code> and <code>engines</code> stop Kafka Connect and the generator while they run, and <code>cdc</code> stops Trino, the maintenance worker and the generator.</p>
+      <aside class="callout check">
+        <p class="callout-title">demo.sh status shows what runs</p>
+        <p><code>demo/demo.sh status</code> lists the deployments, pods and services in <code>nuna-demo</code>, a <code>Switches:</code> line such as <code>gen off, ss off, kafka on, metrics off, cdc off</code>, and the state of Kafka Connect's connectors.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>another demo.sh (pid <var>n</var>) is running from …/checkout: wait for it to end</code></td><td>Another command holds the demo's checkout.</td><td>Wait for it to end, then run yours again.</td></tr>
+            <tr><td><code>the catalog did not answer on https://localhost:8181; see: kubectl --context kind-nuna -n nuna-demo logs deployment/nuna-catalog</code></td><td>The server did not serve its console within 4 minutes.</td><td>Read the server's log with the command shown.</td></tr>
+            <tr><td><code>…/tls/tls.crt is not for <var>host</var> (NUNA_DEMO_HOST); it names: …</code></td><td>The certificate does not name the host the demo serves.</td><td>Put a certificate for that host in the folder, or set <code>NUNA_DEMO_HOST</code> to a name it holds.</td></tr>
+            <tr><td><code>…/tls/tls.crt has expired</code></td><td>A certificate you supplied has expired; the script renews only its own.</td><td>Replace it.</td></tr>
+            <tr><td><code>…/tls/ca.crt did not issue tls.crt: it needs the CA's certificates, from tls.crt's issuer to the root</code></td><td><code>ca.crt</code> lacks the issuing chain.</td><td>Put every certificate from the issuer to the root in <code>ca.crt</code>.</td></tr>
+            <tr><td><code>no certificate for <var>host</var>: put tls.crt, tls.key and ca.crt in …/tls (docs/install-at-work.md)</code></td><td><code>NUNA_DEMO_HOST</code> is not <code>localhost</code> and the folder is empty.</td><td>Supply the three files.</td></tr>
+            <tr><td><code>WARNING: the catalog's database does not sign in as … sets it (see above); the demo carries on</code></td><td>The database check found a connection without a client certificate, or a role with a password.</td><td>Read the message above it. The demo runs on.</td></tr>
+            <tr><td>The browser warns about the certificate.</td><td>The demo's authority is not in your trust store.</td><td>Run the <code>certutil</code> command above, then restart the browser.</td></tr>
+            <tr><td>A page on 8182, 8183 or 8188 answers <code>502</code>.</td><td>Its switch is off.</td><td>Turn on <code>kafka</code> with <code>gen</code>, <code>ss</code> or <code>metrics</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="commands.html">demo.sh reference</a>: every subcommand, its options and messages.</li>
+          <li><a href="sign-in.html">Demo users and sign-in</a>: the passwords and tokens the script makes.</li>
+          <li><a href="../install/kind.html">Run nuna on a local kind cluster</a>: the cluster script the demo uses.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>demo/demo.sh</code> (the checkout pinning at its top, <code>build</code>, <code>publish_tls</code>, <code>db_tls</code>, <code>db_check</code>, <code>wait_for_console</code>, <code>up</code>, <code>down</code>, <code>wipe</code>, <code>room_for</code>), <code>deploy/kind/kind.sh</code>, <code>deploy/kind/cluster.yaml</code>, <code>demo/k8s/ports.yaml</code> and <code>demo/README.md</code> (Start, HTTPS, Stop), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The demo is shared, so <code>up</code>, <code>down</code> and <code>wipe</code> were not run. <code>demo/demo.sh status</code> was run, every port was requested, and the node's allocatable and requested memory were read with <code>kubectl</code>.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

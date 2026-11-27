@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/identity-provider">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect an identity provider · nuna docs</title>
+  <meta name="description" content="Tell the catalog server which token issuers to trust and which claims hold the user, the groups and the client, name the platform operator and grant admin groups, and register the console's sign-in client, with a Keycloak example.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Connect an identity provider</h1>
+        <p class="lead">Tell the catalog server which token issuers to trust and which claims hold the user, the groups and the client, name the platform operator and grant admin groups, and register the console's sign-in client, with a Keycloak example.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+        </p>
+      </header>
+
+      <p>The server accepts only bearer tokens, JWTs signed by an issuer on its allow-list. It never signs anyone in itself: engines and scripts bring a token, and the console gets one from the identity provider with the authorization code flow and PKCE. Who may do what then follows from the token's groups (<a href="../concepts/access.html">Identity and access</a>).</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You can create clients, scopes and groups at the identity provider, or you work with someone who can.</li>
+        <li>You can change the catalog server's Helm release (<a href="helm-catalog.html">Install the catalog server with Helm</a>).</li>
+      </ul>
+
+      <h2 id="trust-issuer">Trust an issuer</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Make the identity provider put nuna's audience and the groups in its access tokens.</p>
+          <p>Each token must carry an <code>aud</code> the server accepts (the examples use <code>nuna-catalog</code>), an <code>exp</code>, a claim with the user's id, a claim with the client's id, and a groups claim that is a list of group names as strings. A token that sends its groups elsewhere because there are too many (<code>_claim_names</code>, as Entra ID does) is refused.</p>
+        </li>
+        <li>
+          <p class="step-title">Add the issuer to <code>config.nuna.security.issuers</code>.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    security:
+      issuers:
+        - issuer: https://idp.example/realms/data
+          jwks-uri: https://idp.example/realms/data/protocol/openid-connect/certs
+          audiences: [nuna-catalog]
+          algorithms: [RS256]
+          user-id-claim: preferred_username
+          groups-claim: groups
+          client-id-claim: azp
+      grant-admin-groups: [grant-admins]
+      platform-operator-groups: [platform-operators]</code></pre>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <caption>An issuer's fields, all required</caption>
+              <thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+              <tbody>
+                <tr><td><code>issuer</code></td><td>The token's <code>iss</code>, exactly.</td></tr>
+                <tr><td><code>jwks-uri</code></td><td>Where the server fetches the issuer's signing keys. The server does not read the discovery document, so name this URL itself.</td></tr>
+                <tr><td><code>audiences</code></td><td>The <code>aud</code> values the server accepts from this issuer.</td></tr>
+                <tr><td><code>algorithms</code></td><td>The signature algorithms it accepts, such as <code>RS256</code> or <code>ES256</code>.</td></tr>
+                <tr><td><code>user-id-claim</code></td><td>The claim that holds the principal's id, which audit records and <code>maintenance-principals</code> use.</td></tr>
+                <tr><td><code>groups-claim</code></td><td>The claim that holds the groups.</td></tr>
+                <tr><td><code>client-id-claim</code></td><td>The claim that holds the client's id, such as <code>azp</code>.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>List more than one issuer to trust several identity providers.</p>
+        </li>
+        <li>
+          <p class="step-title">Name the groups that hold the server-wide roles.</p>
+          <p>Members of <code>grant-admin-groups</code> may grant and revoke in every catalog. Members of <code>platform-operator-groups</code> may read the health routes and the operator's management routes. The worker's principal goes in <code>maintenance-principals</code> (<a href="helm-maintenance.html">Install the maintenance worker</a>). Every setting is on <a href="../configure/security.html">Security settings</a>.</p>
+        </li>
+      </ol>
+      <p>The server checks each token's issuer against the list, its signature against the issuer's keys with an allowed algorithm, its audience, and its <code>exp</code> and any <code>nbf</code> within <code>nuna.security.clock-skew</code> (60 s by default). It caches an issuer's keys for 5 minutes, waits at most 5 s for them, and fetches them at most twice in 30 s.</p>
+
+      <h2 id="register-console-client">Register the console's client</h2>
+      <p>The console signs people in through the identity provider's discovery document, at <code><var>issuer</var>/.well-known/openid-configuration</code>, from the browser.</p>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Create a public client for the console.</p>
+          <p>It has no secret, uses the authorization code flow with PKCE (<code>S256</code>), and its access tokens carry the audience and groups the server expects.</p>
+        </li>
+        <li>
+          <p class="step-title">Allow the console's page as a redirect URI and as a post-logout redirect URI.</p>
+          <p>The page is <code>https://nuna.example/ui/</code>. Open the token endpoint to the console's origin, <code>https://nuna.example</code> (CORS). On sign-out the console sends the browser to the identity provider's <code>end_session_endpoint</code> with <code>client_id</code> and <code>post_logout_redirect_uri</code>; it keeps no ID token, so it sends no <code>id_token_hint</code>, and some identity providers then ask the person to confirm.</p>
+        </li>
+        <li>
+          <p class="step-title">Name the client in <code>config.nuna.ui.oidc</code>.</p>
+          <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    ui:
+      oidc:
+        issuer: https://idp.example/realms/data
+        client-id: nuna-console</code></pre>
+          </div>
+          <p><code>scopes</code> defaults to <code>[openid]</code>. <code>redirect-uri</code> defaults to the console's own <code>/ui/</code> address; set it if the browser reaches the console at another address. Leave <code>nuna.ui.dev-token-login</code> off: it adds a box for pasting a token, for local use only.</p>
+        </li>
+      </ol>
+
+      <h2 id="keycloak-example">A Keycloak example</h2>
+      <p>These clients come from the realm files the local kind install and the demo import into Keycloak 26.8.2. With them, the issuer is <code><var>keycloak</var>/realms/<var>realm</var></code>, the JWKS URL is the issuer plus <code>/protocol/openid-connect/certs</code>, and <code>user-id-claim</code> is <code>preferred_username</code>.</p>
+      <h3 id="client-for-console">The console's client</h3>
+      <div class="code" data-lang="json" data-title="Realm file: the console's client">
+<pre><code>{
+  "clientId": "nuna-console",
+  "publicClient": true,
+  "standardFlowEnabled": true,
+  "attributes": {
+    "pkce.code.challenge.method": "S256",
+    "post.logout.redirect.uris": "https://nuna.example/ui/*"
+  },
+  "redirectUris": ["https://nuna.example/ui/*"],
+  "webOrigins": ["https://nuna.example"],
+  "protocolMappers": [
+    {
+      "name": "nuna-audience",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "config": {"included.custom.audience": "nuna-catalog", "access.token.claim": "true"}
+    },
+    {
+      "name": "groups",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-group-membership-mapper",
+      "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true"}
+    }
+  ]
+}</code></pre>
+      </div>
+      <p><code>full.path: false</code> puts plain group names in the claim, such as <code>trading-analysts</code>, not <code>/trading-analysts</code>.</p>
+      <h3 id="client-for-maintenance-worker">The maintenance worker's client</h3>
+      <p>A confidential client with only the client-credentials grant (<code>serviceAccountsEnabled</code>), an optional scope <code>nuna-catalog</code> that the worker asks for, and the same audience and groups mappers. Keycloak fills the secret from an environment variable when it imports the realm.</p>
+      <div class="code" data-lang="json" data-title="Realm file: the worker's client">
+<pre><code>{
+  "clientId": "nuna-maintenance",
+  "publicClient": false,
+  "clientAuthenticatorType": "client-secret",
+  "secret": "${NUNA_MAINTENANCE_CLIENT_SECRET}",
+  "serviceAccountsEnabled": true,
+  "standardFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "defaultClientScopes": [],
+  "optionalClientScopes": ["nuna-catalog"]
+}</code></pre>
+      </div>
+      <p>Its service account signs in as <code>service-account-nuna-maintenance</code>; put that user in the worker's group. The audit tables writer needs a client of the same shape.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The server answers 401 without a token and 200 with one</p>
+        <p><code>curl -sS -i "$NUNA/v1/config"</code> answers <code>401</code> with <code>WWW-Authenticate: Bearer</code>. With a token from the issuer, <code>curl -sS "$NUNA/v1/config?warehouse=trading" -H "Authorization: Bearer $TOKEN"</code> answers <code>200</code>. The console's <code>/ui/config.json</code>, which needs no token, shows the <code>oidc</code> settings it signs in with.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <p>A refused token always gets the same <code>401</code> body; the reason goes only to the audit record.</p>
+      <div class="code" data-lang="json" data-kind="output" data-title="401 response">
+<pre><code>{"error":{"message":"Not authorized: the bearer token is missing or was not accepted","type":"NotAuthorizedException","code":401}}</code></pre>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>401</code> with <code>WWW-Authenticate: Bearer error="invalid_token"</code></td><td>The token's issuer, signature, algorithm, audience, expiry or groups claim was not accepted.</td><td>Decode the token and compare <code>iss</code>, <code>aud</code>, <code>alg</code> and the groups claim with the issuer's settings. Read the denial's audit record for the reason.</td></tr>
+            <tr><td><code>503</code> with <code>The token could not be checked: its issuer's signing keys could not be fetched; retry later</code></td><td>The server cannot reach <code>jwks-uri</code>.</td><td>Check the network path and the URL. The answer carries <code>Retry-After</code>.</td></tr>
+            <tr><td><code>403</code> on a route for platform operators</td><td>The token's groups hold none of <code>platform-operator-groups</code>.</td><td>Check the groups claim's values against the setting.</td></tr>
+            <tr><td><code>nuna.security.issuers names no trusted token issuer; the catalog accepts no request without one</code> at start-up</td><td>No issuer is configured.</td><td>Add one.</td></tr>
+            <tr><td><code>nuna.security.issuers[].jwks-uri of <var>issuer</var></code> at start-up</td><td>A required field of that issuer is missing; the message names it.</td><td>Set the field.</td></tr>
+            <tr><td><code>nuna.ui.oidc.issuer must be an http(s) URL, not …</code></td><td>The console's issuer is not a URL.</td><td>Use the issuer's URL.</td></tr>
+            <tr><td>The console's sign-in fails with a redirect error at the identity provider.</td><td>The console's page is not an allowed redirect URI.</td><td>Allow <code>https://nuna.example/ui/</code> as a redirect URI and as a post-logout redirect URI.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../security/authentication.html">Authentication</a>: how a token is checked, in full.</li>
+          <li><a href="../configure/security.html">Security settings</a>: every <code>nuna.security.*</code> setting.</li>
+          <li><a href="../clients/tokens.html">Get a token</a>: tokens for engines and scripts.</li>
+          <li><a href="../console/sign-in.html">Signing in to the console</a>: what people see.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code>, <code>catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java</code>, <code>deploy/local/keycloak.yaml</code>, <code>deploy/local/values.yaml</code>, <code>demo/k8s/keycloak-realm.json</code> and <code>docs/install-at-work.md</code> (What must exist before the install), checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The <code>401</code> response and <code>/ui/config.json</code> were read from the running demo. The Keycloak JSON is cut from the two realm files, with the demo's host replaced by <code>nuna.example</code> and some mappers left out; it was not imported for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

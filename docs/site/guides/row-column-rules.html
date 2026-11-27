@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/row-column-rules">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add a row filter or column mask · nuna docs</title>
+  <meta name="description" content="Flag a table for row and column rules, add a rule for each group that reads it, and check what a reader in each group sees.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Add a row filter or column mask</h1>
+        <p class="lead">Flag a table for row and column rules, add a rule for each group that reads it, and check what a reader in each group sees.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data stewards and grant admins</span>
+          <span class="badge needs">Needs <code>manage-tags</code> and <code>manage-grants</code> on the table</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Two people do this task. A data steward, whose group holds <code>manage-tags</code> on the table or above it, flags the table. A grant admin, whose group holds <code>manage-grants</code> there, sets the rules. Separation of duties keeps the two in different groups.</li>
+        <li>The grant admin is not in the group a rule is for.</li>
+        <li>Readers query the table through Trino, set up as <a href="../security/opa.html">Use OPA</a> describes and registered as a trusted engine. Once flagged, the table's files go to no other engine.</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes. The examples use table <code>equities.daily.positions</code>, whose namespace levels are joined by <code>%1F</code> in a path.</li>
+      </ul>
+
+      <aside class="callout warning">
+        <p class="callout-title">Flagging stops every engine but Trino at once</p>
+        <p>From the moment the flag is set, Spark, PyIceberg and every other untrusted engine get <code>403</code> on the table. Until the first rule is set, Trino shows every row to anyone who may select.</p>
+      </aside>
+
+      <h2 id="flag-table">Flag the table</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Open the table and select its <b class="ui">Access</b> tab.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Flag for row and column rules</b> in the <b class="ui">Governance</b> panel.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Flag for row and column rules</b> in the dialog.</p>
+              <p>The dialog <b class="ui">Flag positions for row and column rules</b> warns that only a trusted engine reads or writes the files once it is flagged. The console records the attribute with the provenance <code>console</code>, and the dialog then says the table is flagged for row and column rules.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Set the attribute <code>row-column-policy</code> to <code>true</code>. <code>provenance</code> is required: say where the decision comes from.</p>
+          <div class="code" data-lang="bash" data-title="Flag equities.daily.positions">
+<pre><code>curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/namespaces/equities%1Fdaily/tables/positions/attributes/row-column-policy" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"value": "true", "provenance": "Data classification review"}'</code></pre>
+          </div>
+        </section>
+      </div>
+
+      <h2 id="add-rule-for-each-group">Add a rule for each group</h2>
+      <p>Add a rule for every group that reads the table. Once the first rule exists, a reader in no rule's group sees no rows.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Open the table's <b class="ui">Access</b> tab and find <b class="ui">Row filters and column masks</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Add a rule for a group</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Enter the group in <b class="ui">Group</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Choose <b class="ui">Every row</b> or <b class="ui">Only rows where</b> under <b class="ui">Rows</b>.</p>
+              <p>For <b class="ui">Only rows where</b>, enter a Trino SQL expression over the table's columns, such as <code>desk = 'EQ'</code>.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Mask a column</b> for each column to hide, and choose its mask.</p>
+              <p>The choices are <code>NULL</code>, <code>'***'</code> and <b class="ui">A custom expression</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Save the rule</b>.</p>
+              <p>The dialog says <b class="ui">Saved the rule for trading-analysts</b>.</p>
+            </li>
+          </ol>
+          <figure class="shot" id="fig-rules-panel"><img src="../img/shots/guides-row-column-rules-panel-light.png" data-dark="../img/shots/guides-row-column-rules-panel-dark.png" width="1440" height="900" alt="The Row filters and column masks panel of markets.desks.positions with two rules: demo-analysts see only rows where desk is EQ with trader masked, and demo-stewards see every row with pnl set to NULL, each with Edit and Remove."><figcaption>The Row filters and column masks panel, with one rule per group.</figcaption></figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <p>Set a rule. It answers <code>204</code>; setting a rule for a group that has one replaces it.</p>
+          <div class="code" data-lang="bash" data-title="Let trading-analysts see only the EQ desk, with trader masked">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/row-column-rules" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"table": {"type": "table", "namespace": ["equities", "daily"], "name": "positions"}, "group": "trading-analysts", "row-filter": "desk = '"'"'EQ'"'"'", "column-masks": {"trader": "'"'"'***'"'"'"}}'</code></pre>
+          </div>
+          <p>List the table's rules to see each one's version:</p>
+          <div class="code" data-lang="bash" data-title="List the rules on equities.daily.positions">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/row-column-rules?namespace=equities&amp;namespace=daily&amp;name=positions" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "table": {"type": "table", "id": "…", "namespace": ["equities", "daily"], "name": "positions", "state": "active"},
+  "rules": [
+    {
+      "group": "trading-analysts",
+      "row-filter": "desk = 'EQ'",
+      "column-masks": {"trader": "'***'"},
+      "set-by": "…",
+      "set-at": "2026-11-26T15:18:50.054677Z",
+      "version": 1795706330054677
+    }
+  ]
+}</code></pre>
+          </div>
+          <p>To change a rule only if no one else changed it since you read it, send <code>If-Match: "<var>version</var>"</code> with the new rule. To remove a rule, post <code>{"table": …, "group": …}</code> to <code>/row-column-rules/remove</code>.</p>
+        </section>
+      </div>
+
+      <aside class="callout check">
+        <p class="callout-title">Each reader sees their own outcome</p>
+        <p>A reader in the group sees, in the panel <b class="ui">Your view of this table</b>, <b class="ui">Your rows are filtered.</b> and the columns masked for them. From the API, the reader's own answer is <code>"rows": "filtered"</code> with <code>"masked-columns": ["trader"]</code>:</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities%1Fdaily/tables/positions/row-column-rules/mine" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>409</code> <code>The table does not carry the row/column-policy flag; a steward sets it first, so that only trusted engines read its files …</code></td><td>The table is not flagged.</td><td>Ask a data steward to flag it.</td></tr>
+            <tr><td><code>403</code> <code>no one sets row filters or column masks for a group they belong to: trading-analysts</code></td><td>You are in the group. The console says <b class="ui">Another grant admin sets this group's rule.</b></td><td>Ask another grant admin.</td></tr>
+            <tr><td><code>400</code> <code>A rule filters rows (row-filter), masks columns (column-masks), or both; to give a group every row, set row-filter to true</code></td><td>The rule has neither.</td><td>Add a filter or a mask.</td></tr>
+            <tr><td><code>400</code> <code>… is not a Trino SQL expression: at line 1, column …, …</code></td><td>Trino's parser rejected the expression.</td><td>Correct it at the place named.</td></tr>
+            <tr><td><code>400</code> <code>column-masks names …, which the table's current schema does not have; …</code></td><td>A mask names a column the table does not have now.</td><td>Use the column's current name.</td></tr>
+            <tr><td><code>412</code> <code>The rule for trading-analysts is at version …, not the one named in If-Match; another change came first: list the rules again</code></td><td>Someone changed the rule after you read it. The console says <b class="ui">Another grant admin changed this rule since you opened it. Close this; the list shows theirs.</b></td><td>List the rules and decide again.</td></tr>
+            <tr><td><code>404</code> <code>No row filter or column masks for trading-analysts on the table</code></td><td>A remove named a group without a rule.</td><td>List the rules.</td></tr>
+            <tr><td><code>409</code> <code>The table has row filters or column masks; the grant admin removes them before its row/column-policy flag can be removed or set false</code></td><td>The steward tried to remove the flag while rules stand. The console says <b class="ui">Rules stand: the grant admin removes them first.</b></td><td>Remove every rule first.</td></tr>
+            <tr><td><code>400</code> <code>The row-column-policy flag goes on a table, not on a namespace: only a table's own flag is enforced, so set it on each table to protect</code></td><td>The flag was set on a namespace, catalog or view.</td><td>Flag each table.</td></tr>
+            <tr><td><code>403</code> <code>The change renames or drops a column a row filter or column mask names: …</code></td><td>An engine tried to rename or drop a column a rule names.</td><td>Change or remove the rule first, then change the schema.</td></tr>
+            <tr><td><code>403</code> <code>table positions has a row/column policy; only a trusted engine that enforces it gets storage access</code></td><td>A reader used Spark, PyIceberg or another untrusted engine.</td><td>Read the table through Trino.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/row-column-rules.html">Row filters and column masks</a>: how rules combine for a reader in several groups.</li>
+          <li><a href="../security/row-column.html">Row-level security and column masking</a>: how the rules reach Trino.</li>
+          <li><a href="../security/opa.html">Use OPA</a>: setting up Trino's access control.</li>
+          <li><a href="../api/row-column-rules.html#endpoints">Row and column rules API</a>: every rule endpoint.</li>
+          <li><a href="../console/table.html">The table page</a>: the Access tab's panels.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleColumnGuard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RowColumnReadRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java</code>, <code>catalog-server/src/main/resources/nuna/ui/rules.js</code> and <code>catalog-server/src/main/resources/nuna/ui/panels.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The rules listing and each reader's own answer were read from the local demo with GET requests on its flagged table. Flagging and setting rules were not run: the demo is shared.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

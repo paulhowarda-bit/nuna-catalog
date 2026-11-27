@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/compact-now">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Compact a table or scan for orphans now · nuna docs</title>
+  <meta name="description" content="Ask the maintenance worker to compact one table, or scan it for orphan files, at its next scan instead of waiting for the cleanup window.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Compact a table or scan for orphans now</h1>
+        <p class="lead">Ask the maintenance worker to compact one table, or scan it for orphan files, at its next scan instead of waiting for the cleanup window.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data engineers</span>
+          <span class="badge needs">Needs <code>modify</code> on the table</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>The maintenance worker compacts tables and scans for orphan files on its own, inside the cleanup window. A request puts one table at the front: the worker takes it at its next scan, in or out of the window. A request is one job, <code>compaction</code> or <code>orphan-scan</code>, for one table on main.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Your groups hold <code>modify</code> on the table, or on its namespace or catalog.</li>
+        <li>The maintenance worker runs for the catalog (<a href="../install/helm-maintenance.html">Install the maintenance worker</a>).</li>
+        <li>For the curl example, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="ask-for-the-job">Ask for the job</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Open the table and select its <b class="ui">Maintenance</b> tab.</p>
+              <p>Read main in the header's <b class="ui">Reading</b> control: the buttons are not offered while you read through a branch or tag.</p>
+            </li>
+            <li>
+              <p class="step-title">Under <b class="ui">Assessment</b>, select <b class="ui">Compact now</b> or <b class="ui">Scan for orphans now</b>.</p>
+              <p>The panel says: Runs at the worker's next scan, even outside the cleanup window.</p>
+            </li>
+            <li>
+              <p class="step-title">Confirm with the same button in the dialog.</p>
+              <p>The dialog, <b class="ui">Compact fills now</b> for a table named <code>fills</code>, shows the answer: <b class="ui">Compaction of fills requested</b>, with when and by whom it was asked.</p>
+            </li>
+          </ol>
+          <p>From the catalog's <b class="ui">Maintenance</b> page, <b class="ui">Compact a table now</b> asks for the same job: choose the table under <b class="ui">Choose a table</b>, from <b class="ui">Queued for tonight</b>, <b class="ui">Other tables you may compact</b>, or <b class="ui">Another table, by its path…</b>, then select <b class="ui">Next</b>.</p>
+          <figure class="shot" id="fig-compact-now"><img src="../img/shots/guides-compact-now-light.png" data-dark="../img/shots/guides-compact-now-dark.png" width="1440" height="900" alt="A table's Maintenance tab, with the Compact now and Scan for orphans now buttons under Assessment."><figcaption>A table's Maintenance tab, with Compact now and Scan for orphans now under Assessment.</figcaption></figure>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Ask for compaction of equities.fills">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables/fills/maintenance/requests" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"job": "compaction"}'</code></pre>
+          </div>
+          <p>The server answers <code>202</code>. For a scan, send <code>{"job": "orphan-scan"}</code>.</p>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "job": "compaction",
+  "requested-by": "trading-etl",
+  "requested-at": "2026-11-26T10:04:12.381Z",
+  "state": "waiting"
+}</code></pre>
+          </div>
+          <p>Asking again while a request waits answers with the waiting request; it does not queue a second. Once the worker has taken it, <code>state</code> is <code>started</code> and <code>started-at</code> says when.</p>
+        </section>
+      </div>
+
+      <h2 id="what-the-worker-does">What the worker does</h2>
+      <ul>
+        <li>For compaction, the worker starts a Kubernetes Job named <code>nuna-compact-</code> followed by the table's id and the request's time. It takes one of the worker's compaction slots (<code>compaction.max-jobs</code>) and must finish within <code>request-deadline</code>, by default two hours.</li>
+        <li>For an orphan scan, the worker scans the table's location and removes files no snapshot of any ref names, older than its minimum age. A scan that reaches the deadline stops and records nothing.</li>
+        <li>The table's policy still applies: a table whose policy turns compaction off, or a table under legal hold for an orphan scan, refuses the request.</li>
+      </ul>
+
+      <aside class="callout check">
+        <p class="callout-title">The request shows on the table</p>
+        <p>The table's <b class="ui">Maintenance</b> tab shows <b class="ui">Compaction requested at</b> the time, by you, with the state <b class="ui">waiting</b> and then <b class="ui">started</b>. With curl, <code>GET …/tables/fills/health</code> lists it under <code>requests</code>, and after the run <code>last-compaction</code> moves on. The audit feed holds a <code>nuna.catalog.governance</code> record for the request.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>409</code> <code>MaintenanceNotAllowedException</code> <code>The maintenance policy of table equities.fills does not run compaction: compaction.enabled is false, set by …</code></td><td>The table's policy, or one it inherits, turns the job off. The message names where it was set.</td><td>Change the policy where it was set (<a href="maintenance-policy.html">Set a catalog's maintenance policy</a>), or leave the table as it is.</td></tr>
+            <tr><td><code>409</code> <code>MaintenanceNotAllowedException</code> <code>Table equities.fills is under legal hold: nothing may be removed, so no orphan-scan runs</code></td><td>A legal hold on the table, its namespace or the catalog forbids removing files.</td><td>Compaction is still allowed. The scan waits until a data steward releases the hold.</td></tr>
+            <tr><td><code>403</code> <code>Table equities.fills is frozen for DR reconcile: …</code></td><td>The table is frozen while a disaster-recovery reconcile runs.</td><td>Ask again after the freeze is lifted (<a href="freeze.html">Freeze and unfreeze for disaster recovery</a>).</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>modify</code></td><td>Your groups see the table but lack <code>modify</code> on it.</td><td>Ask a grant admin for <code>modify</code> (<a href="grant-access.html">Grant and revoke access</a>).</td></tr>
+            <tr><td><code>404</code></td><td>Your groups hold nothing on the table, or the path is wrong.</td><td>Check the path and your grants.</td></tr>
+            <tr><td><code>400</code> <code>Field job is compaction or orphan-scan</code></td><td>The body names another job.</td><td>Send one of the two.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">How long a request that the worker never takes (the worker is down) stays <code>waiting</code>, and whether it expires, was not confirmed in the code.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="maintenance-policy.html">Set a catalog's maintenance policy</a>: what the worker does on its own, and when.</li>
+          <li><a href="../console/maintenance.html">The Maintenance page</a>: the queue, the window and each table's assessment.</li>
+          <li><a href="../api/maintenance.html#endpoints">Maintenance API</a>: requests, health and policy endpoints.</li>
+          <li><a href="../concepts/maintenance.html">Maintenance</a>: compaction, snapshot expiry and orphan removal.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRequests.java</code>, <code>catalog-server/src/main/resources/nuna/ui/requests.js</code>, <code>catalog-maintenance/README.md</code> and the table health route, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>No request was sent to the local demo: a request writes, and the demo is shared.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

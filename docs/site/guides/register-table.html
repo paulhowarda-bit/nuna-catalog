@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/register-table">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Register an existing table · nuna docs</title>
+  <meta name="description" content="Bring an Iceberg table whose metadata file already exists under nuna, leaving its data files where they are, or bring back a dropped or unregistered table from its own file.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Register an existing table</h1>
+        <p class="lead">Bring an Iceberg table whose metadata file already exists under nuna, leaving its data files where they are, or bring back a dropped or unregistered table from its own file.</p>
+        <p class="doc-meta">
+          <span class="badge for">For data engineers</span>
+          <span class="badge needs">Needs <code>create</code> on the namespace</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>Registering names a table in a namespace and points it at a metadata file that already exists. nuna reads the file, takes the table's UUID from it as the table's id, and from then on every commit goes through nuna. Nothing is copied: the data files and the metadata file stay where they are. The same call with a view's metadata file registers a view, at <code>register-view</code>.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Your groups hold <code>create</code> on the namespace, or on the catalog.</li>
+        <li>The metadata file lies beneath one of the catalog's storage profile's <code>allowed-prefixes</code> (<a href="../configure/storage.html">Storage settings</a>), and nuna's storage identity can read it.</li>
+        <li>No other table or view in nuna holds the table's UUID, and no table or view in the namespace has the name you give it.</li>
+        <li>You register on main. A branch or tag refuses registrations.</li>
+        <li>For the curl example, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="register-the-table">Register the table</h2>
+      <p>Registering is the Iceberg REST catalog's register endpoint. The console has no register control.</p>
+          <div class="code" data-lang="bash" data-title="Register reference.instruments from its metadata file">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces/reference/register" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Iceberg-Access-Delegation: vended-credentials" \
+  -d '{"name": "instruments", "metadata-location": "s3://lake-trading/legacy/instruments/metadata/00012-….metadata.json"}'</code></pre>
+          </div>
+          <p>The server answers <code>200</code> with the loaded table, as a table load does: its metadata location, its metadata and, with the delegation header, storage credentials. A nested namespace is written with its levels joined by the character 0x1F, URL-encoded as <code>%1F</code>.</p>
+
+      <h2 id="bring-back-dropped-table">Bring back a dropped or unregistered table</h2>
+      <p>A dropped or unregistered table keeps its id and its location. Registering the metadata file it left at, under a free name in the namespace it left, brings it back as itself, with its grants and history. Only that one file brings it back, so it returns exactly as it left.</p>
+      <ul>
+        <li>For a dropped table, this is an undrop: it needs what an undrop needs and must happen within the undrop window (<a href="drop-restore-purge.html">Drop, restore and purge a table</a>).</li>
+        <li>It comes back only in its own namespace. Move it afterwards with a rename (<a href="rename-move.html">Rename or move a table or view</a>).</li>
+      </ul>
+
+      <aside class="callout warning">
+        <p class="callout-title">Stop writing to the table elsewhere</p>
+        <p>After registering, commit only through nuna. A commit another catalog makes to the same files writes a metadata file nuna does not know, and nuna keeps reading the one it registered.</p>
+      </aside>
+
+      <p>Once registered, the table is nuna's like any other.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The table is in the catalog</p>
+        <p>The table shows in its namespace in the console, and its <b class="ui">History</b> tab lists the commit that registered it. An engine reads it at <code>trading.reference.instruments</code>.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>Table already exists: reference.instruments</code></td><td>The name is taken in the namespace. <code>Table with same name already exists: …</code> means a view holds it.</td><td>Choose another name, or drop or unregister the table that holds it.</td></tr>
+            <tr><td><code>400</code> <code>Registering over an existing table (overwrite) is not supported: reference.instruments. Commit to the table, or drop or unregister it first; a register would skip the commit rules and the table's journal</code></td><td>The body set <code>"overwrite": true</code> for a name that is taken.</td><td>Commit to the table, or drop or unregister it first.</td></tr>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>Table UUID … already belongs to a table or view; only a dropped or unregistered table of this catalog is brought back by registering its own metadata file</code></td><td>Another live table or view in nuna holds the file's UUID.</td><td>Use that table, or register a file with another UUID.</td></tr>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>Table UUID … belongs to a dropped table of another namespace; it is brought back only in its own namespace, and a rename then moves it</code></td><td>The file is a dropped or unregistered table's, and the request names another namespace.</td><td>Register it in the namespace it left, then rename it.</td></tr>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>Table … is brought back only by the metadata file it was dropped at, not …</code></td><td>An older or newer file of a dropped or unregistered table was named.</td><td>Register the file its last commit wrote.</td></tr>
+            <tr><td><code>409</code> <code>UndropWindowClosedException</code> <code>The undrop window of … closed at …; it is waiting to be purged</code></td><td>The dropped table is past its undrop window.</td><td>It cannot be brought back.</td></tr>
+            <tr><td><code>400</code> <code>BadRequestException</code> <code>location "…" rejected: not beneath an allowed prefix of the storage profile</code></td><td>The metadata file lies outside the storage profile's allowed prefixes.</td><td>Copy the table beneath an allowed prefix, or ask an operator to add the prefix.</td></tr>
+            <tr><td><code>404</code> <code>NotFoundException</code> <code>Failed to open input stream for file: …</code></td><td>No file is at that location, or nuna's storage identity cannot read it.</td><td>Check the location and the bucket's policy.</td></tr>
+            <tr><td><code>400</code> <code>Metadata file … was written by a commit on a branch, and a table is registered only from a file of main's; merge the branch, or register a file main's commits wrote</code></td><td>The file is one a catalog branch wrote.</td><td>Merge the branch, or register a file of main's.</td></tr>
+            <tr><td><code>400</code> <code>registerTable is refused on branch dev of catalog trading: creates, drops, renames, registrations and namespace changes happen on main only</code></td><td>The request went through a branch or tag prefix.</td><td>Register on main (<code>/v1/trading/…</code>).</td></tr>
+            <tr><td><code>403</code> <code>ForbiddenException</code> naming <code>create</code></td><td>Your groups lack <code>create</code> on the namespace.</td><td>Ask a grant admin (<a href="grant-access.html">Grant and revoke access</a>).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="drop-restore-purge.html">Drop, restore and purge a table</a>: unregistering, and the undrop window.</li>
+          <li><a href="../api/iceberg-tables.html#endpoints">Iceberg tables API</a>: the register and unregister endpoints.</li>
+          <li><a href="../configure/storage.html">Storage settings</a>: storage profiles and their allowed prefixes.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/ViewRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java</code>, <code>catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java</code> and <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was registered on the local demo: a registration writes, and the demo is shared.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

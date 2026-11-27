@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/hardening">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hardening checklist · nuna docs</title>
+  <meta name="description" content="Every setting and deployment choice that tightens a nuna install, what to set it to, and how to check it is in place.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Hardening checklist</h1>
+        <p class="lead">Every setting and deployment choice that tightens a nuna install, what to set it to, and how to check it is in place.</p>
+      </header>
+
+      <p>Grouped by the layer it protects, in the order a request meets them. Each setting links to its entry in the settings reference. The curl checks assume <code>NUNA</code> and <code>TOKEN</code> as <a href="../clients/curl.html">Use the APIs with curl</a> sets them, with a token for the role the check names.</p>
+
+      <h2 id="identity">Identity</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting or choice</th><th scope="col">What to set</th><th scope="col">How to check</th></tr></thead>
+          <tbody>
+            <tr><td><a href="../configure/security.html#nuna-security-issuers"><code>nuna.security.issuers</code></a></td><td>Only your organization's identity provider. For each issuer, the narrowest <code>audiences</code> (the catalog's own application) and only the algorithms it signs with.</td><td>Read the rendered <code>application.yaml</code> in the release's ConfigMap. A request without a token answers <code>401</code>: <code>curl -sS -o /dev/null -w '%{http_code}' "$NUNA/v1/config"</code>.</td></tr>
+            <tr><td>Token lifetime at the identity provider</td><td>Short. The server does not check revocation, so a token works until it expires.</td><td>Decode the <code>exp</code> and <code>iat</code> claims of a token the provider issues.</td></tr>
+            <tr><td>The catalog's application at the identity provider</td><td>Emits only the groups assigned to it. The server refuses tokens whose groups were moved elsewhere because there were too many.</td><td>A member of many groups can sign in to the console.</td></tr>
+            <tr><td><a href="../configure/security.html#nuna-security-clock-skew"><code>nuna.security.clock-skew</code></a></td><td>The default, 60 s, or less where clocks are synchronized.</td><td>Read the ConfigMap.</td></tr>
+            <tr><td><a href="../configure/server.html#nuna-ui-dev-token-login"><code>nuna.ui.dev-token-login</code></a></td><td><code>false</code>, the default.</td><td>The console's sign-in page offers no box to paste a token.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="roles">Roles</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting or choice</th><th scope="col">What to set</th><th scope="col">How to check</th></tr></thead>
+          <tbody>
+            <tr><td><a href="../configure/security.html#nuna-security-grant-admin-groups"><code>nuna.security.grant-admin-groups</code></a></td><td>One small group, or none, granting <code>manage-grants</code> per catalog instead.</td><td><code>GET /management/v1/catalogs/<var>catalog</var>/grants/groups</code> lists the grant-admin groups.</td></tr>
+            <tr><td><a href="../configure/security.html#nuna-security-platform-operator-groups"><code>nuna.security.platform-operator-groups</code></a></td><td>One small group, separate from the grant admins. The server refuses to start if a group is in both.</td><td>The same answer lists the platform-operator groups.</td></tr>
+            <tr><td><a href="../configure/security.html#nuna-security-maintenance-principals"><code>nuna.security.maintenance-principals</code></a></td><td>Only the maintenance worker's principal id.</td><td>Read the ConfigMap. Each principal listed may call the worker's endpoints, purges included.</td></tr>
+            <tr><td><a href="../configure/security.html#nuna-security-own-group-principals"><code>nuna.security.own-group-principals</code></a></td><td>Empty. Anyone listed may grant to their own groups.</td><td>Read the ConfigMap.</td></tr>
+            <tr><td>Grants on each catalog</td><td>Groups, not broad catch-all groups; the lowest privilege on the highest object that covers the work.</td><td><code>GET /management/v1/catalogs/<var>catalog</var>/grants/export</code> as a grant admin, or <b class="ui">Export every grant</b> on the <b class="ui">Grants</b> page.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="engines-and-data">Engines and data</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting or choice</th><th scope="col">What to set</th><th scope="col">How to check</th></tr></thead>
+          <tbody>
+            <tr><td>Trusted engines</td><td>Register only engines that apply row filters and column masks and pass on their users' identity. A trusted engine reads flagged tables' files.</td><td><code>GET /management/v1/engines</code> as a platform operator.</td></tr>
+            <tr><td><a href="../configure/security.html#nuna-security-refuse-identity-less-commits"><code>nuna.security.refuse-identity-less-commits</code></a></td><td><code>true</code> where regulated areas exist, so a trusted engine cannot write there without naming its user.</td><td>Read the ConfigMap.</td></tr>
+            <tr><td><a href="../configure/security.html#nuna-opa-catalogs"><code>nuna.opa.catalogs</code></a></td><td>Every Trino catalog that reaches nuna, including each <code><var>catalog</var>@<var>ref</var></code> one. An unmapped Trino catalog gets no rules.</td><td>Compare the map with Trino's catalog files.</td></tr>
+            <tr><td>Regulated areas</td><td>Mark the catalogs and namespaces that hold regulated data with <code>regulated</code>, so unclassified tables there are closed.</td><td>The <b class="ui">Regulated areas</b> panel on the <b class="ui">Governance</b> page.</td></tr>
+            <tr><td>Flagged tables</td><td>Flag each table that needs row filters or column masks, and give every reading group a rule.</td><td>The <b class="ui">Flagged tables</b> panel on the <b class="ui">Governance</b> page.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="storage">Storage</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting or choice</th><th scope="col">What to set</th><th scope="col">How to check</th></tr></thead>
+          <tbody>
+            <tr><td><a href="../configure/storage.html#nuna-storage-require-tls"><code>nuna.storage.require-tls</code></a></td><td><code>true</code>, the default: a profile whose endpoint is plain <code>http</code> stops the server from starting.</td><td>Read the ConfigMap.</td></tr>
+            <tr><td><a href="../configure/storage.html#nuna-storage-credential-lifetime"><code>nuna.storage.credential-lifetime</code></a></td><td>The shortest your engines' longest query tolerates, from 15 to 60 minutes; 30 by default.</td><td>A table load's <code>s3.session-token-expires-at-ms</code>.</td></tr>
+            <tr><td><code>nuna.storage.profiles.<var>name</var>.maintenance-principal</code></td><td>The worker's own storage identity on every profile.</td><td><code>GET /management/v1/maintenance/delete-policies</code> as a platform operator lists no profile as unprotected.</td></tr>
+            <tr><td>Delete policies on each bucket</td><td>Apply the policies that answer gives, so only the worker can delete objects or change the bucket's lifecycle and policy.</td><td>Read the bucket policy from the store and compare.</td></tr>
+            <tr><td><code>nuna.storage.profiles.<var>name</var>.kms-key</code></td><td>On AWS S3, the KMS key every write must use.</td><td>A vended credential's writes without that key are refused by the store.</td></tr>
+            <tr><td>The STS role's own policy</td><td>Only the profile's allowed prefixes; the session policy narrows each credential further, never widens it.</td><td>Read the role's policy in the store.</td></tr>
+            <tr><td>Store credentials</td><td>In the release's Secret (<code>secrets.existingSecret</code>), never in <code>config</code>.</td><td>The ConfigMap holds no <code>secret-access-key</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="audit">Audit</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting or choice</th><th scope="col">What to set</th><th scope="col">How to check</th></tr></thead>
+          <tbody>
+            <tr><td><code>logging.level.nuna.audit</code></td><td><code>INFO</code> or finer. The server refuses to start otherwise.</td><td>The server starts.</td></tr>
+            <tr><td><a href="../configure/audit.html#nuna-audit-archive-bucket"><code>nuna.audit.archive.bucket</code></a></td><td>A bucket with Object Lock, which the server checks every hour; it refuses to start if the bucket has none.</td><td><code>GET /management/v1/audit/archive</code> as an audit reader shows the last check.</td></tr>
+            <tr><td><a href="../configure/audit.html#nuna-audit-tables-readers"><code>nuna.audit.tables.readers</code></a></td><td>A narrow group: audit readers see every object and every person in the trail.</td><td>The grants on the audit catalog, recorded as granted by <code>nuna-configuration</code>.</td></tr>
+            <tr><td>Where the <code>nuna.audit</code> log goes</td><td>To a store you keep, through the telemetry logs endpoint or your log collector.</td><td>Find a recent record of your own request by its request id.</td></tr>
+            <tr><td><a href="../configure/governance.html#nuna-governance-audit-reads-per-minute"><code>nuna.governance.audit-reads-per-minute</code></a></td><td>The default, 60 per caller, or lower.</td><td>A script reading faster gets <code>429</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="database">Database</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting or choice</th><th scope="col">What to set</th><th scope="col">How to check</th></tr></thead>
+          <tbody>
+            <tr><td><a href="../configure/database.html#nuna-database-allow-unsafe"><code>nuna.database.allow-unsafe</code></a></td><td>Empty, so the server refuses to start while the database's self-check reports an unsafe setting.</td><td>The server's start-up log names no allowed finding.</td></tr>
+            <tr><td>TLS to the database</td><td>A client certificate in <code>databaseTls.secretName</code>, named by the JDBC URL's TLS parameters.</td><td>The database reports the connection as TLS.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="deployment">Deployment</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Setting or choice</th><th scope="col">What to set</th><th scope="col">How to check</th></tr></thead>
+          <tbody>
+            <tr><td><code>podSecurityContext</code> and <code>securityContext</code></td><td>The chart's defaults: non-root user <code>10001</code>, the <code>RuntimeDefault</code> seccomp profile, no privilege escalation, a read-only root file system, every capability dropped.</td><td><code>kubectl get pod <var>pod</var> -o jsonpath='{.spec.securityContext}'</code>.</td></tr>
+            <tr><td><code>ingress.tls</code></td><td>A certificate for the server's host, so engines and browsers reach it over HTTPS.</td><td><code>curl -sSI "$NUNA/ui/"</code> succeeds over <code>https</code>.</td></tr>
+            <tr><td>The console's headers</td><td>Nothing to set: every console response carries a strict <code>Content-Security-Policy</code>, <code>X-Frame-Options: DENY</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: no-referrer</code> and <code>Cross-Origin-Opener-Policy: same-origin</code>.</td><td><code>curl -sSI "$NUNA/ui/"</code> shows them.</td></tr>
+            <tr><td><code>telemetry.logsTokenSecret</code></td><td>When logs go to the audit tables writer, a token in a Secret, sent as <code>X-Nuna-Audit-Token</code>.</td><td>Read the release's values; the writer's own settings name the token it expects.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="gap">Not documented yet: a network policy for the server's pods. The chart makes none; which paths to allow is in <a href="../install/requirements.html">Requirements</a>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../configure/security.html">Security settings</a>: every <code>nuna.security.*</code> setting.</li>
+          <li><a href="authorization.html">Authorization</a>: what each role may do.</li>
+          <li><a href="credential-vending.html">Credential vending</a>: what the storage settings protect.</li>
+          <li><a href="what-is-audited.html">What is audited</a>: what the audit settings keep.</li>
+          <li><a href="../install/helm-catalog.html">Install the catalog server with Helm</a>: where these values go.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java</code>, <code>OpaSettings.java</code> and <code>AuditCatalogSettings.java</code> in the same package, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java</code> and <code>deploy/helm/nuna-catalog/values.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The 401 without a token, the console's headers, and the engine registry's answer were checked against the local demo with GET and HEAD requests. The other checks were not run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

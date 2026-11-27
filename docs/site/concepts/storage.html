@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="concepts/storage">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storage profiles and credential vending · nuna docs</title>
+  <meta name="description" content="A storage profile names the object store and prefixes a catalog's tables live in, and the server vends each engine short-lived credentials scoped to one table's prefix.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Storage profiles and credential vending</h1>
+        <p class="lead">A storage profile names the object store and prefixes a catalog's tables live in, and the server vends each engine short-lived credentials scoped to one table's prefix.</p>
+      </header>
+
+      <figure class="diagram" id="fig-vending">
+        <svg viewBox="0 0 720 200" role="img" aria-labelledby="fig-vending-t fig-vending-d">
+          <title id="fig-vending-t">Credential vending</title>
+          <desc id="fig-vending-d">An engine loads a table from the server. The server asks STS for credentials limited to the table's prefix, writes an audit record, and returns them with the table. The engine uses them to read and write the table's files in the object store.</desc>
+          <rect class="d-node" x="20" y="70" width="140" height="52" rx="10"/>
+          <text class="d-label" x="90" y="101">Engine</text>
+          <rect class="d-node" x="290" y="70" width="140" height="52" rx="10"/>
+          <text class="d-label" x="360" y="101">The server</text>
+          <rect class="d-node d-accent" x="560" y="10" width="140" height="52" rx="10"/>
+          <text class="d-label" x="630" y="41">STS</text>
+          <rect class="d-node d-store" x="560" y="130" width="140" height="52" rx="10"/>
+          <text class="d-label" x="630" y="161">Object store</text>
+          <path class="d-edge" d="M160 90H290" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="225" y="82">load table</text>
+          <path class="d-edge" d="M430 86L560 40" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="480" y="50">assume role, session policy</text>
+          <path class="d-edge-dash" d="M290 108H160" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="225" y="128">metadata and credentials</text>
+          <path class="d-edge" d="M90 122V156H560" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="330" y="148">one table's prefix only</text>
+        </svg>
+        <figcaption>The server's own keys never leave it; the engine gets a session limited to one table.</figcaption>
+      </figure>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>A <a class="term" href="../reference/glossary.html#term-storage-profile">storage profile</a> is a named object store in the server's settings, under <code>nuna.storage.profiles.<var>name</var></code>: its kind (<code>s3</code>, <code>minio</code> or <code>ceph</code>), endpoint and region, the table root new tables go under, and the prefixes tables may live in. Each catalog is bound to one profile. <a class="term" href="../reference/glossary.html#term-vended-credentials">Vended credentials</a> are the short-lived keys the server hands an engine with each table it loads.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="profiles">Profiles</h3>
+      <ul>
+        <li>The table root must lie within one of the profile's allowed prefixes, and no two profiles' prefixes may overlap. A table location equal to a prefix is refused.</li>
+        <li>An AWS or Ceph profile names an STS role, <code>sts-role</code>, whose trust policy allows <code>sts:AssumeRole</code> and <code>sts:TagSession</code>; a MinIO profile needs none.</li>
+        <li>The server reaches the store with the profile's keys, or with the SDK's default credentials when the profile names none.</li>
+        <li>An endpoint must use TLS while <code>nuna.storage.require-tls</code> is true, the default. A profile can name a CA bundle for a private CA.</li>
+        <li>An AWS S3 profile can name a KMS key ARN, <code>kms-key</code>, in the profile's region. Its tables are then written with that key.</li>
+        <li>The profile names the <code>maintenance-principal</code>, the storage identity of the maintenance worker, the only identity that deletes.</li>
+      </ul>
+
+      <h3 id="vending">Vending</h3>
+      <p>When an engine loads a table, creates one, or asks for fresh credentials, the server assumes the profile's role with a session policy limited to the table's prefix: the objects under <code><var>prefix</var>/*</code>, and listing the bucket under that prefix only. The policy is at most 2,048 characters.</p>
+      <ul>
+        <li>A caller who may write the table's data gets read and write: <code>s3:GetObject</code>, <code>s3:PutObject</code>, <code>s3:AbortMultipartUpload</code> and <code>s3:ListMultipartUploadParts</code>. Anyone else gets <code>s3:GetObject</code> only.</li>
+        <li>No vended credential can delete.</li>
+        <li>With a KMS key, a write is allowed only with that key.</li>
+        <li>A caller who may write only on a catalog branch can write only beneath the branch's own folder of the table.</li>
+        <li>The session is named <code><var>subject</var>_<var>request id</var></code> and tagged with <code>nuna-principal</code>, <code>nuna-end-user</code>, <code>nuna-engine</code>, <code>nuna-request</code>, <code>nuna-catalog</code> and <code>nuna-table</code>, so the object store's own logs name who acted.</li>
+      </ul>
+      <p>Credentials last <code>nuna.storage.credential-lifetime</code>, 30 minutes by default, between 15 and 60 minutes. The server caches them per caller and table and hands out the cached set until it nears expiry. The load answer carries them in the table's config as <code>s3.access-key-id</code>, <code>s3.secret-access-key</code>, <code>s3.session-token</code> and <code>s3.session-token-expires-at-ms</code>, with <code>client.region</code>, the endpoint and path-style access for a store other than AWS, and <code>client.refresh-credentials-endpoint</code>, the route the engine calls for a fresh set.</p>
+      <p>An engine that sends <code>X-Iceberg-Access-Delegation: none</code> gets no credentials and must reach the store with its own.</p>
+
+      <h3 id="audited-first">Every new set is audited first</h3>
+      <p>The server writes a <code>credential-issue</code> audit record before it hands out a new set. If it cannot write the record, the engine gets <code>503</code> "Storage credentials cannot be issued now; retry later".</p>
+
+      <h3 id="flagged-tables">Tables with row filters or column masks</h3>
+      <p>A table with a row or column policy gives storage access, through load, credentials or commit, only to a trusted engine, which enforces the policy, and to a maintenance principal acting as itself. Anyone else is refused with "table <var>table</var> has a row/column policy; only a trusted engine that enforces it gets storage access". <a href="row-column-rules.html">Row filters and column masks</a> explains why.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>An engine never receives the server's own keys, and never receives credentials that reach beyond one table's prefix.</li>
+        <li>No engine can delete a file. Only the worker's own storage identity deletes, and the server publishes the bucket or user policies that make this so at <code>GET /management/v1/maintenance/delete-policies</code>.</li>
+        <li>The server does not apply those delete policies itself: an operator applies them to the store.</li>
+        <li>A location outside the profile is refused with <code>403</code> "Table location <var>location</var> is outside storage profile <var>profile</var>".</li>
+        <li>Credentials already handed out stay valid until they expire, even if the caller's grant is revoked.</li>
+      </ul>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <ul>
+        <li><a href="../configure/storage.html">Storage settings</a> and <a href="../install/object-storage.html">Set up object storage</a>.</li>
+        <li>The console's <a href="../console/service.html">Service page</a>, whose Credential vending panel counts the sets issued.</li>
+        <li><a href="../security/credential-vending.html">Credential vending</a>, for the security view of the same mechanism.</li>
+      </ul>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>One profile per catalog, fixed when the catalog is created.</li>
+        <li>A session policy of at most 2,048 characters.</li>
+        <li>Credential lifetimes between 15 and 60 minutes.</li>
+        <li>A KMS key on AWS S3 profiles only.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../install/aws-roles-anywhere.html">Reach AWS with IAM Roles Anywhere</a>: give the server an AWS identity without long-lived keys.</li>
+          <li><a href="catalog-objects.html">Catalogs, namespaces, tables and views</a>: how a table's location is assigned.</li>
+          <li><a href="maintenance.html">Maintenance</a>: the worker that deletes with its own identity.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java</code>, <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java</code>, <code>deploy/README.md</code> and <code>catalog-server/src/main/java/nuna/catalog/server/governance/DeletePolicyRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

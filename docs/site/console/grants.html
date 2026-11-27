@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/grants">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Grants page · nuna docs</title>
+  <meta name="description" content="Which groups hold what in a catalog, granting and revoking access, the privilege ladder in the console's words, and the separation-of-duties and self-grant refusals.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Grants page</h1>
+        <p class="lead">The Grants page answers, for grant admins, which groups hold what in a catalog, and lets them grant, revoke and export. Before you select <b class="ui">Grant</b>, it says what the grant will give, that it is already held, or why the catalog would refuse it.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-grants"><img src="../img/shots/console-grants-light.png" data-dark="../img/shots/console-grants-dark.png" width="1440" height="900" alt="The Grants page of lakehouse: the groups that hold grants, each group's grants and where they apply, and the Grant access button."><figcaption>The Grants page listing every group that holds a grant.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>The rail shows <b class="ui">Grants</b> only when your groups manage grants in the catalog. Every grant route needs manage-grants; grant admins hold it on every catalog. Without it, a link here shows "Grants in <var>catalog</var> are open to those who manage its grants." Everyone else sees their own groups' grants on each object's Access tab.</p>
+
+      <h2 id="grants-list">The grants</h2>
+      <p>The title is <b class="ui">Grants in <var>catalog</var></b>. "Grants go to groups, never to people. A group that manages grants holds no other duty, and data and tags never share a group: the catalog refuses a grant that would break that." The buttons are <b class="ui">Grant access</b> and <b class="ui">Export every grant</b>.</p>
+      <p><b class="ui">List the grants of</b> takes a group name, such as <code>trading-analysts</code>, and keeps it in the page's address.</p>
+      <ul>
+        <li>With no group named, <b class="ui">Groups</b> lists each group that holds a grant in the catalog, with its <b class="ui">Duties</b> (<b class="ui">Reading</b>, <b class="ui">Data</b>, <b class="ui">Grants</b>, <b class="ui">Tags</b>) and privileges. It also names the groups set by the deployment, which hold no grant: those that manage grants on every catalog and those that operate the platform. Empty: "No group holds a grant in <var>catalog</var> yet."</li>
+        <li>With a group named, <b class="ui">Grants to <var>group</var></b> lists its <b class="ui">Privilege</b>, <b class="ui">On</b> (a path and type, or <b class="ui">the whole catalog</b>), <b class="ui">Granted</b> and <b class="ui">Revoke</b>. Empty: "<var>group</var> holds no grant in <var>catalog</var>."</li>
+      </ul>
+      <p><b class="ui">Duties</b> sets out the four duties and which privileges belong to each: <b class="ui">Reading</b> (describe, select), <b class="ui">Data</b> (write, modify, create), <b class="ui">Grants</b> (manage-grants) and <b class="ui">Tags</b> (manage-tags). "Grants stand alone: a group that manages grants is granted nothing else. Data and tags exclude each other; reading goes with either. So no group can both change data and decide how it is labelled or who may see it."</p>
+
+      <h2 id="grant-access">Grant access</h2>
+      <p><b class="ui">Grant access</b> opens <b class="ui">Grant access in <var>catalog</var></b> here, or <b class="ui">Grant access on <var>name</var></b> from an object's Access tab.</p>
+      <ol class="steps">
+        <li><p class="step-title">Pick the group.</p><p>Pick one of the groups that already hold a grant, or type a name. The catalog cannot list your directory's groups, so a new name is accepted as typed: "<var>group</var> holds no grant in <var>catalog</var> yet. The catalog can't list your directory's groups, so check the spelling."</p></li>
+        <li><p class="step-title">Pick the access.</p><p>"From See it to Change it, each includes those above it."</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">In the console</th><th scope="col">Privilege</th><th scope="col">Offered on</th></tr></thead>
+              <tbody>
+                <tr><td><b class="ui">See it</b></td><td><code>describe</code></td><td>everything</td></tr>
+                <tr><td><b class="ui">Read its data</b></td><td><code>select</code></td><td>everything</td></tr>
+                <tr><td><b class="ui">Read and write rows</b></td><td><code>write</code></td><td>not views</td></tr>
+                <tr><td><b class="ui">Change it (schema, properties, maintenance)</b></td><td><code>modify</code></td><td>everything; on a view <b class="ui">Change it (definition, properties)</b></td></tr>
+                <tr><td><b class="ui">Create tables, views and namespaces in it</b></td><td><code>create</code></td><td>the catalog and namespaces</td></tr>
+                <tr><td><b class="ui">Set labels and holds</b></td><td><code>manage-tags</code></td><td>everything</td></tr>
+                <tr><td><b class="ui">Manage grants</b></td><td><code>manage-grants</code></td><td>everything</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </li>
+        <li><p class="step-title">Pick where.</p><p>On this page, search with <b class="ui">Find a namespace, table or view</b>, or select <b class="ui">Use the whole catalog</b>. From an Access tab, it is that object.</p></li>
+        <li><p class="step-title">Read the line beneath, and select <b class="ui">Grant</b>.</p><p>The catalog checks the grant as you choose. <b class="ui">Grant</b> is enabled only when it would be admitted. The answer is <b class="ui">Granted <var>privilege</var> on <var>name</var> to <var>group</var>.</b> "It is in the audit trail."</p></li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <caption>What the line beneath can say</caption>
+          <thead><tr><th scope="col">Message</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><var>group</var> will …</td><td>The grant is admitted. If the group already has it through a broader grant: "A grant here stands if that one is revoked."</td></tr>
+            <tr><td>Already held: <var>privilege</var> on <var>name</var>, granted by <var>who</var> …</td><td>Nothing to do.</td></tr>
+            <tr><td>You belong to <var>group</var>. No one grants to their own group: ask another grant admin.</td><td>The self-grant rule.</td></tr>
+            <tr><td><var>group</var> operates the platform, so it holds no grant.</td><td>Separation of duties.</td></tr>
+            <tr><td><var>group</var> manages grants on every catalog, so it holds no other grant.</td><td>Separation of duties.</td></tr>
+            <tr><td><var>group</var> manages grants in <var>catalog</var>, so it holds nothing else.</td><td>Separation of duties.</td></tr>
+            <tr><td><var>group</var> already holds other access in <var>catalog</var>, and a group that manages grants holds nothing else.</td><td>Separation of duties.</td></tr>
+            <tr><td><var>group</var> sets labels and holds in <var>catalog</var>, and data and tags never share a group.</td><td>Separation of duties.</td></tr>
+            <tr><td><var>group</var> changes data in <var>catalog</var>, and data and tags never share a group.</td><td>Separation of duties.</td></tr>
+            <tr><td><var>privilege</var> means nothing on a <var>kind</var>.</td><td>Such as create on a table.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="revoke">Revoke</h2>
+      <p><b class="ui">Revoke</b> opens <b class="ui">Revoke <var>privilege</var> from <var>group</var></b>: "<var>group</var> loses <var>privilege</var> on <var>type</var> <var>path</var>. The grant and its revocation stay in the audit trail." Select <b class="ui">Revoke</b>. A revoke removes the grant where it was made; a broader grant above still applies.</p>
+
+      <h2 id="export">Export every grant</h2>
+      <p><b class="ui">Export every grant</b> opens <b class="ui">Every grant in <var>catalog</var></b>, saying who exported how many and when; "The export is audited." Select <b class="ui">Download CSV</b> (columns <code>group</code>, <code>privilege</code>, <code>type</code>, <code>namespace</code>, <code>name</code>, <code>branch</code>, <code>granted-by</code>, <code>granted-at</code>), <b class="ui">Download JSON</b> or <b class="ui">Copy the JSON</b>.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">In the console</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Groups</td><td><code>GET /management/v1/catalogs/{catalog}/grants/groups</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>Grants to a group</td><td><code>GET …/grants?group={group}</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>The line beneath, while choosing</td><td><code>POST …/grants/preview</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>Grant</td><td><code>POST …/grants</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>Revoke</td><td><code>POST …/grants/revoke</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+            <tr><td>Export every grant</td><td><code>GET …/grants/export</code> (<a href="../api/grants.html#endpoints">Grants</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../guides/grant-access.html">Grant and revoke access</a>: the task, from the console and with curl.</li>
+          <li><a href="../reference/privileges.html">Privileges</a>: what each privilege allows.</li>
+          <li><a href="../security/authorization.html">Authorization</a>: separation of duties and the self-grant rule.</li>
+          <li><a href="../api/grants.html">Grants</a>: the API.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>governance.js</code>, <code>grant.js</code> and <code>panels.js</code>, and from <code>GrantRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

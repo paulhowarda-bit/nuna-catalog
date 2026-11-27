@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="clients/curl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Use the APIs with curl · nuna docs</title>
+  <meta name="description" content="Call nuna's Iceberg REST API and management API from a shell with curl: the two variables every example uses, the certificate, request ids, paging, idempotency keys, If-Match and errors.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Use the APIs with curl</h1>
+        <p class="lead">Call nuna's Iceberg REST API and management API from a shell with curl: the two variables every example on this site uses, the certificate, request ids, paging, idempotency keys, <code>If-Match</code> and errors.</p>
+        <p class="doc-meta"><span class="badge for">For engine users, data stewards, grant admins and platform operators</span></p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>You need curl and a POSIX shell: bash or zsh on Linux and macOS, Git Bash on Windows. Every example on this site is written for that shell; the line continuations (<code>\</code>) and quoting do not work in PowerShell.</li>
+        <li>You need an access token from your identity provider (<a href="tokens.html">Get a token</a>). nuna issues no tokens of its own.</li>
+        <li>You need the server's address. Ask the platform operators who installed nuna, or read it from the Helm release (<a href="../install/helm-catalog.html">Install the catalog server with Helm</a>).</li>
+      </ul>
+
+      <h2 id="set-the-two-shell-variables">Set the two shell variables</h2>
+      <p>Every curl example on this site uses two shell variables: <code>NUNA</code>, the server's base URL with no trailing slash, and <code>TOKEN</code>, your access token. Set them once in the shell you run the examples in.</p>
+      <div class="code" data-lang="bash" data-title="Set the two variables">
+<pre><code>export NUNA=https://nuna.example
+export TOKEN=…   # see Get a token</code></pre>
+      </div>
+      <p>Every request but two carries the token as a bearer token: <code>-H "Authorization: Bearer $TOKEN"</code>. The two exceptions are <code>/v1/oauth/tokens</code>, which answers every call with a fixed error, and the OPA decision endpoints under <code>/opa/v1/</code>, which read the user's token from the request body (<a href="../api/opa.html">OPA decisions</a>).</p>
+      <aside class="callout demo">
+        <p class="callout-title">The local demo uses its own address and tokens</p>
+        <p>In the demo, set <code>NUNA=https://localhost:8181</code> and read a token from the demo's token files, for example <code>TOKEN=$(cat ~/.nuna-demo/tokens/ana.jwt)</code>. <a href="../demo/sign-in.html">Demo users and sign-in</a> lists every demo user and what each may do.</p>
+      </aside>
+
+      <h2 id="trust-the-servers-certificate">Trust the server's certificate</h2>
+      <p>The server is reached over HTTPS. When its certificate comes from a certificate authority your machine does not trust, such as your organization's internal one, give curl that authority's certificate in PEM form. Either add <code>--cacert</code> to each command, or set <code>CURL_CA_BUNDLE</code> once, so the examples on this site run as written.</p>
+      <div class="code" data-lang="bash" data-title="Trust an internal certificate authority">
+<pre><code>export CURL_CA_BUNDLE=/path/to/internal-ca.pem</code></pre>
+      </div>
+      <p>curl on Windows checks whether the certificate has been revoked. A certificate authority that publishes no revocation list makes that check fail with <code>schannel: the revocation status is unknown</code>; add <code>--ssl-revoke-best-effort</code> to the command for such an authority.</p>
+      <aside class="callout demo">
+        <p class="callout-title">The demo's certificate authority is in ~/.nuna-demo/tls</p>
+        <p>The demo makes its own certificate authority, which can vouch only for <code>localhost</code>. Point curl at it, and on Windows add <code>--ssl-revoke-best-effort</code>:</p>
+        <div class="code" data-lang="bash">
+<pre><code>export CURL_CA_BUNDLE=~/.nuna-demo/tls/ca.crt</code></pre>
+        </div>
+      </aside>
+
+      <h2 id="make-a-first-request">Make a first request</h2>
+      <p>Ask the server for a catalog's configuration. An engine makes this call first, and it needs only a token and a catalog name. The catalog is named by the <code>warehouse</code> query parameter.</p>
+      <div class="code" data-lang="bash" data-title="Read catalog trading's configuration">
+<pre><code>curl -sS "$NUNA/v1/config?warehouse=trading" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <p>The answer names the prefix every other Iceberg call uses, the endpoints the server serves, and how long it keeps an idempotency key's answer. The endpoint list is cut to two items here.</p>
+      <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "defaults": {},
+  "overrides": {
+    "prefix": "trading"
+  },
+  "endpoints": [
+    "GET /v1/{prefix}/namespaces",
+    "POST /v1/{prefix}/namespaces"
+  ],
+  "idempotency-key-lifetime": "PT24H"
+}</code></pre>
+      </div>
+      <p>From here, an Iceberg call puts the prefix after <code>/v1/</code>: <code>"$NUNA/v1/trading/namespaces"</code>. A management call starts with <code>/management/v1/</code>: <code>"$NUNA/management/v1/catalogs"</code>. <a href="../api/index.html">API reference</a> lists every endpoint of both.</p>
+
+      <h2 id="read-the-response-headers">Read the response headers</h2>
+      <p>Add <code>-i</code> to see the status line and headers before the body. Three headers matter on nuna's answers.</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Response headers worth reading</caption>
+          <thead><tr><th scope="col">Header</th><th scope="col">On</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>X-Request-ID</code></td><td>Every response</td><td>The request's id: yours if you sent one, or one the server made (<a href="#request-ids">Request ids</a>).</td></tr>
+            <tr><td><code>ETag</code></td><td>A table load</td><td>A tag for this exact answer. Send it back in <code>If-None-Match</code> and the server answers <code>304</code> with no body while the table and your access to it are unchanged (<a href="../api/iceberg-tables.html#get-tables-table">Load a table</a>).</td></tr>
+            <tr><td><code>Retry-After</code></td><td><code>503</code> and <code>429</code></td><td>Seconds to wait before sending the same request again. A <code>503</code> with <code>Retry-After</code> means nothing was applied.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="code" data-lang="bash" data-title="Show the headers of a namespace listing">
+<pre><code>curl -sS -i "$NUNA/v1/trading/namespaces" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <div class="code" data-lang="http" data-kind="output" data-title="Response">
+<pre><code>HTTP/1.1 200
+Content-Type: application/json
+X-Request-ID: b7346ef207d85c781f9b8ce274a64d7d
+
+{"namespaces":[["equities"],["reference"]],"next-page-token":null}</code></pre>
+      </div>
+
+      <h2 id="request-ids">Request ids</h2>
+      <p>Every response carries <code>X-Request-ID</code>. Send your own in the request, 1 to 128 characters, and the server uses it; send none, or one that is blank or longer than 128 characters, and the server uses the request's trace id, or a random UUID when there is no trace. The id is in every log line the server writes while it handles the request (the <code>requestId</code> field) and in every audit record the request leaves, so it is what to quote when you ask an operator about one call (<a href="../operate/traces-and-logs.html">Traces, logs and the request id</a>).</p>
+      <div class="code" data-lang="bash" data-title="Send your own request id">
+<pre><code>curl -sS -i "$NUNA/v1/trading/namespaces/equities" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Request-ID: nightly-load-2026-11-26-0042"</code></pre>
+      </div>
+
+      <h2 id="page-through-a-listing">Page through a listing</h2>
+      <p>The Iceberg listings (namespaces, tables, views) page only when you ask. Without <code>pageToken</code>, the server answers every item and <code>"next-page-token": null</code>, and ignores <code>pageSize</code>. To page, send <code>pageToken</code> empty for the first page, then each answer's <code>next-page-token</code> until it is <code>null</code>. <code>pageSize</code> defaults to <code>100</code>; a larger size than <code>1000</code> gets <code>1000</code>. Operators change both bounds with <code>nuna.rest.default-page-size</code> and <code>nuna.rest.max-page-size</code> (<a href="../configure/server.html">Server settings</a>).</p>
+      <div class="code" data-lang="bash" data-title="Ask for the first page of one">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces?pageToken=&amp;pageSize=1" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "namespaces": [["equities"]],
+  "next-page-token": "AAAACGVxdWl0aWVz"
+}</code></pre>
+      </div>
+      <div class="code" data-lang="bash" data-title="Ask for the next page">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces?pageToken=AAAACGVxdWl0aWVz&amp;pageSize=1" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "namespaces": [["reference"]],
+  "next-page-token": null
+}</code></pre>
+      </div>
+      <p>A token the server did not give is refused with <code>400</code> and <code>Invalid page token: …</code>; a <code>pageSize</code> below 1 or not a number with <code>400</code> and <code>Invalid page size: …</code>. The management API pages the same way, with <code>pageToken</code> in the query and <code>next-page-token</code> in the body, but each listing sets its own size parameter and bounds; its page says which.</p>
+
+      <h2 id="send-a-write-safely">Send a write safely</h2>
+      <p>A write that times out might or might not have been applied. Send an <code>Idempotency-Key</code> with every write, and send the same request with the same key again after a timeout: the server applies it once and answers every repeat with the first answer.</p>
+      <div class="code" data-lang="bash" data-title="Create a namespace with an idempotency key">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-equities-daily-1" \
+  -d '{"namespace": ["equities", "daily"], "properties": {}}'</code></pre>
+      </div>
+      <ul>
+        <li>A key is 1 to 128 characters. A blank or longer key is refused with <code>400</code> and <code>Invalid Idempotency-Key: must be 1 to 128 characters</code>.</li>
+        <li>The server keeps a key's answer for 24 hours, as <code>idempotency-key-lifetime</code> in <code>/v1/config</code> says (<code>PT24H</code>).</li>
+        <li>A key is bound to your principal, the route, the path it acts on and the body. The same key with a different request is refused with <code>400</code> and <code>Idempotency key … was used for a different request</code>.</li>
+        <li>A repeat sent while the first request still runs waits for it, then gets its answer.</li>
+        <li>An answer of <code>500</code> or above is not kept: the key is released, and the repeat runs again.</li>
+      </ul>
+      <p>The Iceberg routes take a key on every write: namespace create, drop and property changes, and table and view create, commit, replace, register, unregister, drop and rename, and the multi-table commit. In the management API, a branch's or tag's create, renewal and deletion take one (<a href="../api/refs.html">Branches and tags API</a>).</p>
+      <p><code>If-Match</code> guards one kind of change: a row filter or column mask. Send the rule's version as the rules list gives it, <code>If-Match: "<var>version</var>"</code>, and the server writes nothing and answers <code>412</code> if someone else changed the rule since you read it (<a href="../api/row-column-rules.html">Row and column rules</a>).</p>
+
+      <h2 id="read-an-error">Read an error</h2>
+      <p>Every error answer is JSON with one object, <code>error</code>, holding the message, the error type and the status again. The type is the Iceberg exception name an engine maps to its own error; <a href="../reference/errors.html">Error responses</a> lists every type.</p>
+      <div class="code" data-lang="bash" data-title="Load a table that does not exist">
+<pre><code>curl -sS "$NUNA/v1/trading/namespaces/equities/tables/trades" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+      </div>
+      <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "error": {
+    "message": "Table does not exist: equities.trades",
+    "type": "NoSuchTableException",
+    "code": 404
+  }
+}</code></pre>
+      </div>
+      <p>A <code>404</code> also answers a request for something you hold no privilege on, so the answer does not tell you whether it exists (<a href="../concepts/access.html">Identity and access</a>).</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>401</code>, <code>Not authorized: the bearer token is missing or was not accepted</code></td><td>No <code>Authorization</code> header, a token that has expired, or one from an issuer the server does not trust.</td><td>Check that <code>TOKEN</code> is set and get a new token (<a href="tokens.html">Get a token</a>).</td></tr>
+            <tr><td><code>curl: (60)</code> and a certificate message</td><td>curl does not trust the server's certificate authority.</td><td>Set <code>CURL_CA_BUNDLE</code> or add <code>--cacert</code> (<a href="#trust-the-servers-certificate">Trust the server's certificate</a>).</td></tr>
+            <tr><td><code>404</code>, <code>NoSuchWarehouseException</code>, <code>The given warehouse does not exist: …</code></td><td>The catalog does not exist, or you hold nothing in it.</td><td>Check the name, then ask a grant admin for a grant (<a href="../guides/grant-access.html">Grant and revoke access</a>).</td></tr>
+            <tr><td><code>400</code>, <code>Missing query parameter warehouse, and this server has no default warehouse</code></td><td><code>/v1/config</code> was called without <code>warehouse</code>, and the server has no default catalog.</td><td>Add <code>?warehouse=<var>catalog</var></code>.</td></tr>
+            <tr><td><code>503</code> with <code>Retry-After</code></td><td>The server could not reach its database, or the identity provider's signing keys, and applied nothing.</td><td>Wait the seconds <code>Retry-After</code> gives, then send the same request again, with the same idempotency key.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="tokens.html">Get a token</a>: where <code>TOKEN</code> comes from and how long it lasts.</li>
+          <li><a href="../api/index.html">API reference</a>: every endpoint of both APIs.</li>
+          <li><a href="../reference/errors.html">Error responses</a>: every status and error type, and what to do.</li>
+          <li><a href="../operate/traces-and-logs.html">Traces, logs and the request id</a>: following one request through the server's logs.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/Idempotency.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/RestSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/security/RuleRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java</code> and <code>catalog-core/src/main/java/nuna/catalog/core/commit/CommitSettings.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The GET requests were run against the local demo with curl 8.17.0 on Windows, and their answers rewritten to the example estate's names; the demo's certificate settings were run as shown. The POST example was not run: the demo is shared, and its shape comes from the code.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

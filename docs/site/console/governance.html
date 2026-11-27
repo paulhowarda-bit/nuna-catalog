@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/governance">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Governance page · nuna docs</title>
+  <meta name="description" content="How much of a catalog is classified, which holds and freezes stand, which areas are regulated and which tables are flagged, and placing and lifting holds and freezes.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Governance page</h1>
+        <p class="lead">The Governance page answers, for data stewards and platform operators, how much of a catalog is classified, which legal holds and DR freezes stand, which areas are regulated and which tables are flagged, and lets them place and lift holds and freezes.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-governance"><img src="../img/shots/console-governance-light.png" data-dark="../img/shots/console-governance-dark.png" width="1440" height="900" alt="The Governance page's Summary tab: 25 of 33 tables classified, one legal hold, one DR freeze, three regulated areas and one flagged table, then the standing freeze on reference and hold on markets.equities.eu.xetra.trades, and the regulated areas in brokerage."><figcaption>The Summary tab with one hold and one freeze standing.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>The rail always shows <b class="ui">Governance</b>; the server answers the summary and the holds list to anyone whose groups hold describe on the catalog. Placing and releasing a hold needs manage-tags; freezing and lifting a freeze needs a platform operator, and anyone else is refused with <code>only platform operators may call setDrFreeze</code>.</p>
+
+      <h2 id="summary">Summary</h2>
+      <p>The title is <b class="ui"><var>x</var> of <var>N</var> tables classified.</b>, then how many tables are closed until a steward classifies them, or <b class="ui">None closed.</b> "Classification, owner, retention class and the regulated flag are set on the Access tab of each namespace, table or view, and for the catalog itself under Holds and freezes, each recorded with who set it."</p>
+      <p>Five figures: <b class="ui">Classified</b>, <b class="ui">Legal holds</b> (<b class="ui">nothing held</b> when none), <b class="ui">DR freezes</b> (<b class="ui">none standing</b>), <b class="ui">Regulated areas</b> and <b class="ui">Flagged tables</b>.</p>
+      <dl>
+        <dt><b class="ui">Holds and freezes</b></dt><dd>Those <b class="ui">standing now</b>: <b class="ui">Kind</b> (<b class="ui">Hold</b> or <b class="ui">Freeze</b>), <b class="ui">On</b>, <b class="ui">Reason, as recorded</b> and <b class="ui">Placed</b>, with <b class="ui">Release</b> (manage-tags) or <b class="ui">Lift</b> (platform operators). Empty: "No hold or freeze stands in <var>catalog</var>." "A hold stops snapshot expiry, orphan removal, drops and purges. A freeze stops every cleanup and write beneath it until it is lifted."</dd>
+        <dt><b class="ui">Regulated areas</b></dt><dd>Each regulated namespace with its reason, when it was marked and how many tables are closed. "Until a table in a regulated area has its own classification, people can find it but not read or change it." Empty: "No regulated area in this catalog: an unclassified table stays open."</dd>
+        <dt><b class="ui">Flagged tables</b></dt><dd>Tables read through Trino, each with its number of rules. Empty: "No table in this catalog is flagged."</dd>
+      </dl>
+
+      <h2 id="holds-and-freezes">Holds and freezes</h2>
+      <p>The second tab, <b class="ui">Holds and freezes in <var>catalog</var></b>: "A hold stops snapshot expiry, orphan removal, drops and purges on what it covers. A freeze stops every cleanup and write in its namespace until it is lifted." Its panels are <b class="ui">Standing</b>, newest first, and <b class="ui">Lifted and released</b>, for the last 30 days by default ("Nothing lifted or released in the last <var>N</var> days." when empty).</p>
+      <figure class="shot" id="fig-console-governance-holds"><img src="../img/shots/console-governance-holds-light.png" data-dark="../img/shots/console-governance-holds-dark.png" width="1440" height="900" alt="The Holds and freezes tab: the standing DR freeze on namespace reference and legal hold on table markets.equities.eu.xetra.trades, each with its reason, who placed it and when, and an empty Lifted and released list."><figcaption>Standing and lifted holds and freezes.</figcaption></figure>
+      <h3 id="place-hold">Place a hold</h3>
+      <p><b class="ui">Place a hold on a path</b> opens <b class="ui">Place a hold in <var>catalog</var></b>: "Name a namespace, table or view. The hold carries its reason for as long as it stands." Choose the <b class="ui">Kind</b>, write the <b class="ui">Path</b> (such as <code>equities.daily</code>, or <code>equities.fills</code> for a table), select <b class="ui">Next</b>, write the reason and select <b class="ui">Place the hold</b>. Only a steward can release it, with <b class="ui">Release</b> and then <b class="ui">Release the hold</b>; the hold and its release stay in the audit trail.</p>
+      <h3 id="freeze-namespace">Freeze a namespace</h3>
+      <p><b class="ui">Freeze a namespace for DR</b> opens <b class="ui">Freeze a namespace in <var>catalog</var> for DR</b>: "Name the namespace. The freeze stops every commit and cleanup beneath it until it is lifted." Write the <b class="ui">Namespace</b>, select <b class="ui">Next</b>, write the reason and select <b class="ui">Freeze</b>. <b class="ui">Lift</b>, then <b class="ui">Lift the freeze</b>, ends it.</p>
+      <h3 id="catalog-itself">The catalog itself</h3>
+      <p>Under <b class="ui"><var>catalog</var> itself</b> is the catalog's own governance panel, where a steward sets its classification and owner, marks it as a regulated area, or places a hold on the whole catalog, as on <a href="table.html#governance-panel">a table's Access tab</a>.</p>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">In the console</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>Summary</td><td><code>GET /management/v1/catalogs/{catalog}/governance/summary</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Standing, Lifted and released</td><td><code>GET /management/v1/catalogs/{catalog}/governance/holds</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Place the hold; Release the hold</td><td><code>POST …/holds</code>; <code>DELETE …/holds/{id}</code> on the object (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>Freeze; Lift the freeze</td><td><code>PUT</code>, <code>DELETE …/namespaces/{ns}/dr-freeze</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>The catalog itself</td><td><code>GET /management/v1/catalogs/{catalog}/governance</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/governance.html">Governance</a>: what each attribute, hold and freeze does.</li>
+          <li><a href="../guides/hold.html">Place and lift a legal hold</a>: the task step by step.</li>
+          <li><a href="../guides/freeze.html">Freeze and unfreeze for disaster recovery</a>: the DR freeze.</li>
+          <li><a href="table.html#access">The table page's Access tab</a>: governance on one table.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>governance.js</code> and <code>panels.js</code>, and from <code>GovernanceRoutes.java</code> and <code>ManagementGuard.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser. The demo's summary and holds were read with GET requests.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

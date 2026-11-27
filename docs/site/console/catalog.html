@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="console/catalog">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Catalog page · nuna docs</title>
+  <meta name="description" content="What a catalog holds that your groups may see, and the storage it was declared with: the Contents and Properties tabs.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="console-page">
+      <header class="doc-head">
+        <h1>The Catalog page</h1>
+        <p class="lead">The Catalog page answers, for anyone who may see a catalog, what it holds that your groups may see and how it was declared: its storage profile, location and encryption.</p>
+      </header>
+
+      <figure class="shot" id="fig-console-catalog"><img src="../img/shots/console-catalog-light.png" data-dark="../img/shots/console-catalog-dark.png" width="1440" height="900" alt="The Contents tab of catalog lakehouse: the tree on the left with brokerage, history, markets and reference, and a table of its four namespaces with their table counts, tonight's queue, governance, snapshots and last commit; reference is marked Frozen."><figcaption>The Contents tab of a catalog, with the tree on the left.</figcaption></figure>
+
+      <h2 id="who-sees-it">Who sees it</h2>
+      <p>Everyone who may see the catalog. The catalog picker lists a catalog only where one of your groups holds a grant on it or on something in it; grant admins and platform operators see every catalog. Listing a namespace needs describe on it, so the page lists only what your groups may see.</p>
+
+      <h2 id="head-and-tree">The head and the tree</h2>
+      <p>The head shows the catalog's name and <b class="ui">catalog</b>, then how many namespaces it has and <b class="ui"><var>N</var> tables queued for tonight</b> or <b class="ui">nothing you may read is queued for tonight</b>. <b class="ui">Copy <var>warehouse</var></b> copies the warehouse name an engine uses, and <b class="ui">Copy link</b> copies the page's address.</p>
+      <p>On the left, the tree lists the namespaces, tables and views, opened level by level. <b class="ui">Filter names in the tree</b> narrows it to matching names among the levels already open. Its key marks <b class="ui">equality deletes</b>, <b class="ui">small files or deletes</b>, <b class="ui">held</b>, <b class="ui">DR freeze</b> and <b class="ui">regulated</b>, and, when you read through a branch, <b class="ui">changed on @<var>ref</var></b>. When nothing open matches: "No open namespace in <var>catalog</var> holds a matching name. Open more of the tree, or use Go to a path."</p>
+
+      <h2 id="contents">Contents</h2>
+      <p>The <b class="ui">Contents</b> tab lists the top-level namespaces, with these columns (an empty column is left out):</p>
+      <dl>
+        <dt><b class="ui">Name</b> and <b class="ui">Kind</b></dt><dd>The name, and <b class="ui">namespace</b>, <b class="ui">table</b> or <b class="ui">view</b>. A namespace shows how many tables it holds, with a "+" when the count stopped at the first 1,000 tables and namespaces beneath it.</dd>
+        <dt><b class="ui">Format</b></dt><dd>The table's Iceberg format version, such as <b class="ui">v2</b>.</dd>
+        <dt><b class="ui">Tonight's queue</b></dt><dd><b class="ui"><var>N</var> queued</b>.</dd>
+        <dt><b class="ui">Governance</b></dt><dd><b class="ui">Held</b>, <b class="ui">Frozen</b>, <b class="ui">regulated</b> or <b class="ui">Closed until classified</b>.</dd>
+        <dt><b class="ui">Snapshots</b></dt><dd>How many snapshots the table keeps.</dd>
+        <dt><b class="ui">Last commit</b></dt><dd><b class="ui"><var>HH:MM</var> by <var>who</var></b>, or <b class="ui">by <var>person</var> via <var>principal</var></b> when an engine committed for someone. On a namespace, the latest commit beneath it and the table it was in.</dd>
+      </dl>
+      <p>The note beneath reads "Only what your groups may see is listed. Open a table for its maintenance, access and history." When nothing is listed: <b class="ui">No namespace in this catalog</b>, "Or nothing your groups may see. If you expected something here, ask a grant admin."</p>
+      <p>Read through a branch or tag, the table's figures are as the ref has it: the columns become <b class="ui">Last commit here</b> and <b class="ui">On @<var>ref</var></b>, and the note says "Format, snapshots and last commit are as @<var>ref</var> has each table. Open one to read it through @<var>ref</var>."</p>
+
+      <h2 id="properties">Properties</h2>
+      <p>The <b class="ui">Properties</b> tab shows the catalog <b class="ui">as the catalog was declared</b>: <b class="ui">Name</b>, <b class="ui">Legal entity</b>, <b class="ui">Storage profile</b> (its name and kind), <b class="ui">Endpoint</b> (or <b class="ui">the provider's default</b>), <b class="ui">Region</b>, <b class="ui">Table root</b>, <b class="ui">Allowed prefixes</b>, <b class="ui">Encryption</b> (<b class="ui">SSE-KMS, with a key of its own</b> or <b class="ui">the bucket's default</b>) and <b class="ui">KMS key set</b>.</p>
+      <p>Nothing here can be changed in the console: "Set when the deployment was configured; they can't be changed here. The catalog's owner and classification are under Governance, and how its tables are compacted, expired and cleaned up is its maintenance policy. Storage keys and roles are never shown." The two links open <a href="governance.html#holds-and-freezes">the catalog's own governance</a> and <a href="maintenance.html#policy">its maintenance policy</a>.</p>
+      <figure class="shot" id="fig-console-catalog-properties"><img src="../img/shots/console-catalog-properties-light.png" data-dark="../img/shots/console-catalog-properties-dark.png" width="1440" height="900" alt="The Properties tab of catalog lakehouse: name, legal entity Demo Entity, storage profile s3: MINIO, endpoint, region us-east-1, table root, allowed prefixes, encryption and KMS key set, with a note that these were set when the deployment was configured."><figcaption>A catalog's declared properties.</figcaption></figure>
+
+      <h2 id="from-the-command-line">From the command line</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">On the page</th><th scope="col">Endpoint</th></tr></thead>
+          <tbody>
+            <tr><td>The warehouse name</td><td><code>GET /v1/config?warehouse={catalog}</code> (<a href="../api/iceberg-config.html#endpoints">Configuration</a>)</td></tr>
+            <tr><td>Contents and the tree, with figures</td><td><code>GET /management/v1/catalogs/{catalog}/namespaces</code>, <code>…/namespaces/{ns}/tables</code> (<a href="../api/search.html#endpoints">Name search and listings</a>)</td></tr>
+            <tr><td>The namespaces, as engines list them</td><td><code>GET /v1/{prefix}/namespaces</code> (<a href="../api/iceberg-namespaces.html#endpoints">Namespaces</a>)</td></tr>
+            <tr><td>Properties</td><td><code>GET /management/v1/catalogs/{catalog}/properties</code> (<a href="../api/catalogs.html#endpoints">Catalogs</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="namespace.html">The namespace page</a>: one level down.</li>
+          <li><a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>: the object model.</li>
+          <li><a href="../concepts/storage.html">Storage profiles and credential vending</a>: what the properties mean.</li>
+          <li><a href="../configure/storage.html">Storage settings</a>: where they are declared.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the console's <code>browse.js</code>, <code>tree.js</code> and <code>api.js</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The console was not driven in a browser.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

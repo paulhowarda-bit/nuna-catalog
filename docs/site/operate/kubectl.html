@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/kubectl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Helm and kubectl recipes · nuna docs</title>
+  <meta name="description" content="The Helm and kubectl commands for status, logs, restarts after a Secret change and rollbacks, for each of nuna&#x27;s three releases.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="command">
+      <header class="doc-head">
+        <h1>Helm and kubectl recipes</h1>
+        <p class="lead">The Helm and kubectl commands for status, logs, restarts after a Secret change and rollbacks, for each of nuna's three releases.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>nuna runs as up to three Helm releases, each from its own chart in <code>deploy/helm/</code>:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>The releases</caption>
+          <thead><tr><th scope="col">Release</th><th scope="col">Chart</th><th scope="col">Runs</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna-catalog</code></td><td><code>deploy/helm/nuna-catalog</code></td><td>The catalog servers: 3 replicas by default, rolled one at a time with none down (<code>maxSurge</code> 1, <code>maxUnavailable</code> 0), and a disruption budget allowing one down.</td></tr>
+            <tr><td><code>nuna-maintenance</code></td><td><code>deploy/helm/nuna-maintenance</code></td><td>The maintenance worker: one replica, replaced with the <code>Recreate</code> strategy.</td></tr>
+            <tr><td><code>nuna-audit-tables</code></td><td><code>deploy/helm/nuna-audit-tables</code></td><td>The audit tables writer: one replica, <code>Recreate</code>, so an upgrade never runs two.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>When the release name contains the chart's name, as these do, the Deployment has the release's name. Each pod carries the labels <code>app.kubernetes.io/name</code> (the chart) and <code>app.kubernetes.io/instance</code> (the release).</p>
+
+      <h2 id="synopsis">Synopsis</h2>
+      <div class="code" data-lang="bash">
+<pre><code>helm install|upgrade &lt;release&gt; deploy/helm/&lt;chart&gt; -n "$NS" -f &lt;values.yaml&gt;
+kubectl -n "$NS" get|logs|describe|rollout ... deployment/&lt;release&gt;</code></pre>
+      </div>
+
+      <h3 id="install-or-upgrade">Install or upgrade a release</h3>
+      <div class="code" data-lang="bash">
+<pre><code>helm install nuna-catalog deploy/helm/nuna-catalog -n "$NS" -f catalog-values.yaml
+helm upgrade nuna-catalog deploy/helm/nuna-catalog -n "$NS" -f catalog-values.yaml</code></pre>
+      </div>
+      <p>Each pod carries a checksum of its ConfigMap and of the Secret the chart makes, so an upgrade that changes either rolls the pods.</p>
+
+      <h3 id="status">Status</h3>
+      <div class="code" data-lang="bash">
+<pre><code>helm -n "$NS" status nuna-catalog
+kubectl -n "$NS" get deployment nuna-catalog nuna-maintenance nuna-audit-tables
+kubectl -n "$NS" get pods -l app.kubernetes.io/instance=nuna-catalog</code></pre>
+      </div>
+      <p>A catalog pod is ready when <code>GET /ui/config.json</code> on port 8181 answers. The worker has no probe; the writer has a readiness probe on its OTLP port only when it takes the audit log over OTLP (<a href="health.html#liveness-and-readiness">Health checks</a>).</p>
+
+      <h3 id="logs">Logs</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" logs deployment/nuna-catalog --since=1h
+kubectl -n "$NS" logs deployment/nuna-maintenance --since=1h
+kubectl -n "$NS" logs deployment/nuna-audit-tables --since=1h
+kubectl -n "$NS" logs &lt;pod&gt; --previous</code></pre>
+      </div>
+      <p><code>logs deployment/…</code> reads one pod. Each line is a JSON object (<a href="traces-and-logs.html#log-lines">Log lines</a>). <code>--previous</code> reads the run before a restart, which is where a server that refused to start says why.</p>
+
+      <h3 id="restart-after-a-secret-change">Restart after a Secret change</h3>
+      <p>A Secret you manage yourself, named in <code>existingSecret</code>, is not part of the chart, so changing it does not roll the pods. Restart them:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" rollout restart deployment/nuna-catalog
+kubectl -n "$NS" rollout status deployment/nuna-catalog</code></pre>
+      </div>
+      <p>The catalog servers roll one at a time. Each stopping pod waits 5 seconds (<code>preStop</code>) for the Service to stop sending it requests, and has 45 seconds to finish. The writer has 70 seconds, to finish a commit in flight.</p>
+
+      <h3 id="roll-back">Roll back</h3>
+      <div class="code" data-lang="bash">
+<pre><code>helm -n "$NS" history nuna-catalog
+helm -n "$NS" rollback nuna-catalog &lt;revision&gt;</code></pre>
+      </div>
+      <p class="gap">Not documented yet: whether every release can roll back past a database schema change. Schema steps added so far only add, so servers of the previous release keep serving, but there is no stated rule.</p>
+
+      <h3 id="describe-a-failing-pod">Describe a failing pod</h3>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" describe pod &lt;pod&gt;
+kubectl -n "$NS" get events --sort-by=.lastTimestamp</code></pre>
+      </div>
+
+      <h3 id="compaction-jobs">Compaction Jobs</h3>
+      <p>The worker starts compaction Jobs in a namespace of their own, named in <code>compaction.namespace</code>, each called <code>nuna-compact-<var>id</var>-<var>date</var></code>:</p>
+      <div class="code" data-lang="bash">
+<pre><code>kubectl -n nuna-compaction get jobs
+kubectl -n nuna-compaction logs job/&lt;job&gt;</code></pre>
+      </div>
+
+      <h2 id="environment-variables">Environment variables</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Variable</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>NS</code></td><td>The namespace the releases are installed in. The commands on this page read it; set it in your shell first.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="callout demo">
+        <p class="callout-title">In the demo</p>
+        <p>The demo runs in the kind cluster <code>nuna</code>, context <code>kind-nuna</code>, namespace <code>nuna-demo</code>, with Deployments <code>nuna-catalog</code>, <code>nuna-maintenance</code> and <code>nuna-audit-tables</code>. Bring it up and down with <code>demo/demo.sh</code>, not with Helm (<a href="../demo/commands.html">demo.sh</a>).</p>
+      </aside>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../install/helm-catalog.html">Install the catalog server with Helm</a>.</li>
+          <li><a href="../configure/helm-values.html">Helm values</a>.</li>
+          <li><a href="troubleshooting.html">Troubleshooting</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from the three charts in <code>deploy/helm/</code> (values, deployment templates, helpers) and <code>deploy/README.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26. The demo's Deployments were listed with <code>kubectl get deploy</code>.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

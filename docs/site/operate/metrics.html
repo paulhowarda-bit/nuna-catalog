@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="operate/metrics">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Metrics · nuna docs</title>
+  <meta name="description" content="Every metric the nuna server and the maintenance worker export: its name, type, unit, labels and meaning.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Metrics</h1>
+        <p class="lead">Every metric the nuna server and the maintenance worker export: its name, type, unit, labels and meaning.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>Both programs record metrics with Micrometer and push them over OTLP/HTTP every minute, cumulative, once an endpoint is set (<a href="../install/telemetry.html">Send telemetry</a>). Neither has a scrape endpoint. Names below are Micrometer's, with dots. Over OTLP every timer is sent in milliseconds. Prometheus' default translation of OTLP names turns dots into underscores in names and labels, adds the unit, and ends counters in <code>_total</code>: <code>nuna.catalog.requests</code> arrives as <code>nuna_catalog_requests_milliseconds_count</code>, <code>_sum</code> and <code>_bucket</code>, and the label <code>operation.id</code> as <code>operation_id</code>. Micrometer also sends a <code>_max</code> gauge for each timer.</p>
+      <p>Each server holds only its own meters, so a deployment's figure is the sum over its servers, except the ref gauges, which every server reads from the database: take one server's value or the maximum. No label holds a namespace, table, principal or filter value, with one exception: <code>nuna.maintenance.table.compaction.need</code>.</p>
+
+      <h2 id="server-labels">Server labels</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Label</th><th scope="col">Values</th></tr></thead>
+          <tbody>
+            <tr><td><code>catalog</code></td><td>The name of a catalog that exists, or <code>none</code> for a call that named none, named one that does not exist, or was refused before its catalog was looked up.</td></tr>
+            <tr><td><code>operation.id</code></td><td>The Iceberg REST specification's operationId of the route, such as <code>loadTable</code>, <code>updateTable</code>, <code>commitTransaction</code>, <code>loadCredentials</code>, <code>reportMetrics</code> or <code>getConfig</code>.</td></tr>
+            <tr><td><code>outcome</code></td><td>Set per meter, below.</td></tr>
+            <tr><td><code>error.type</code></td><td>The Iceberg error type the answer named, such as <code>CommitFailedException</code> or <code>NotAuthorizedException</code>; for the token route the OAuth error, such as <code>invalid_client</code>. <code>none</code> when there was no error or the body named no type.</td></tr>
+            <tr><td><code>requirement.type</code></td><td>For a commit refused because a requirement failed, its type, such as <code>assert-ref-snapshot-id</code>. Otherwise <code>none</code>.</td></tr>
+            <tr><td><code>ref.kind</code></td><td>On commits, <code>main</code> or <code>branch</code>, where the commit landed. On the ref gauges, <code>branch</code> or <code>tag</code>.</td></tr>
+            <tr><td><code>report.type</code></td><td><code>scan-report</code> or <code>commit-report</code>.</td></tr>
+            <tr><td><code>operation</code></td><td>A commit report's snapshot operation: <code>append</code>, <code>replace</code>, <code>overwrite</code> or <code>delete</code>; any other is <code>other</code>, and a scan report has <code>none</code>.</td></tr>
+            <tr><td><code>engine.name</code></td><td>The <code>engine-name</code> in a report's metadata, such as <code>spark</code>. A server keeps the first 20 names it sees; later names, and names that are not 1 to 32 letters, digits, spaces, dots, hyphens or underscores starting with a letter or digit, count as <code>other</code>. <code>none</code> when the report gives none.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="server-meters">Server meters</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Meter</th><th scope="col">Type</th><th scope="col">Labels</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.catalog.requests</code></td><td>Timer, buckets at 10, 50 and 300 ms</td><td><code>catalog</code>, <code>operation.id</code>, <code>outcome</code> (<code>2xx</code>, <code>3xx</code>, <code>4xx</code>, <code>5xx</code>), <code>error.type</code></td><td>Every call to an Iceberg REST route, <code>POST /v1/oauth/tokens</code> included, timed from before authentication to the written response, so refused calls are timed too. The buckets are the latency objectives and are set in code. Management, console and other routes are timed only by <code>http.server.requests</code>.</td></tr>
+            <tr><td><code>nuna.catalog.commits</code></td><td>Counter</td><td><code>catalog</code>, <code>ref.kind</code>, <code>operation.id</code>, <code>outcome</code>, <code>requirement.type</code>, <code>error.type</code></td><td>One count for each reply of the commit engine to <code>createTable</code>, <code>updateTable</code>, <code>registerTable</code>, <code>unregisterTable</code>, <code>commitTransaction</code>, <code>createView</code>, <code>replaceView</code> or <code>registerView</code>. Outcomes below.</td></tr>
+            <tr><td><code>nuna.catalog.credential.vends</code></td><td>Timer</td><td><code>catalog</code>, <code>outcome</code>, <code>error.type</code></td><td>Each vend of storage credentials, from a load, create, commit or registration answer or the credentials route. Outcomes below.</td></tr>
+            <tr><td><code>nuna.catalog.metadata.cache.lookups</code></td><td>Counter</td><td><code>outcome</code>: <code>hit</code>, <code>miss</code></td><td>Lookups in the server's cache of metadata files: found in memory, or read from the object store.</td></tr>
+            <tr><td><code>nuna.catalog.alerts.metadata.integrity</code></td><td>Counter</td><td>none</td><td>A metadata file no longer hashes to what its pointer recorded. Registered at start-up, so it is pushed every minute even at 0.</td></tr>
+            <tr><td><code>nuna.catalog.alerts.regulated.schema.change</code></td><td>Counter</td><td>none</td><td>A commit changed a regulated table's schema or partition spec.</td></tr>
+            <tr><td><code>nuna.catalog.alerts.large.metadata</code></td><td>Counter</td><td>none</td><td>A loaded metadata file is over the size or snapshot limit; once per file per server.</td></tr>
+            <tr><td><code>nuna.catalog.refs</code></td><td>Gauge</td><td><code>catalog</code>, <code>ref.kind</code>: <code>branch</code>, <code>tag</code></td><td>Each declared catalog's open branches and its tags, against <a href="../configure/governance.html#nuna-refs-max-branches"><code>nuna.refs.max-branches</code></a> and <a href="../configure/governance.html#nuna-refs-max-tags"><code>nuna.refs.max-tags</code></a>. Read from the database at most every 30 s; NaN while it cannot be read.</td></tr>
+            <tr><td><code>nuna.catalog.refs.expiring</code></td><td>Gauge</td><td><code>catalog</code></td><td>Open branches within <a href="../configure/governance.html#nuna-refs-expiry-warning"><code>nuna.refs.expiry-warning</code></a> of their expiry.</td></tr>
+            <tr><td><code>nuna.audit.logged</code></td><td>Gauge</td><td><code>run</code>: the server run's id</td><td>The audit records this server has written to its log since it started: the number of the last.</td></tr>
+            <tr><td><code>nuna.audit.archive.highest</code></td><td>Gauge</td><td><code>run</code></td><td>The highest record number the hourly archive check verified in each server run not yet done. Absent without an audit archive.</td></tr>
+            <tr><td><code>nuna.catalog.report.*</code></td><td>Timer or distribution summary</td><td><code>catalog</code>, <code>report.type</code>, <code>operation</code>, <code>engine.name</code></td><td>What engines report about their scans and commits (below).</td></tr>
+            <tr><td><code>nuna.store</code></td><td>Timer</td><td><code>backend</code>, <code>operation</code>, <code>outcome</code>, <code>exception</code>, <code>error</code></td><td>Each call to the catalog database made inside a request (<a href="traces-and-logs.html#the-servers-spans">its span</a>).</td></tr>
+            <tr><td><code>nuna.objectstore</code></td><td>Timer</td><td><code>profile</code>, <code>operation</code>, <code>outcome</code>, <code>exception</code>, <code>error</code></td><td>Each request for metadata files to the object store inside a request.</td></tr>
+            <tr><td><code>nuna.sts</code></td><td>Timer</td><td><code>profile</code>, <code>access</code>, <code>outcome</code>, <code>exception</code>, <code>error</code></td><td>Each STS AssumeRole a vend made. A vend served from the credential cache makes none.</td></tr>
+            <tr><td><code>nuna.audit.publish</code></td><td>Timer, buckets at 5, 10, 25, 50, 100, 250 and 500 ms, 1, 2.5 and 5 s</td><td><code>topic</code>, <code>event</code>, <code>outcome</code>, <code>exception</code>, <code>error</code></td><td>Each audit record sent to Kafka inside a request, from the send to the acknowledgement. Never recorded when the server audits to its log alone.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The server also exports Spring Boot's standard meters, among them <code>http.server.requests</code> (by route template, method, status and outcome), <code>jvm.*</code>, <code>process.*</code>, <code>system.*</code> and <code>logback.events</code>.</p>
+
+      <h3 id="commit-outcomes">Commit outcomes</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col"><code>outcome</code></th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>committed</code></td><td>The change was committed.</td></tr>
+            <tr><td><code>unchanged</code></td><td>The request changed nothing, so nothing was written.</td></tr>
+            <tr><td><code>replayed</code></td><td>An <code>Idempotency-Key</code> repeated a commit already made, and its first answer was given again.</td></tr>
+            <tr><td><code>requirement-failed</code></td><td>A requirement did not hold: <code>409</code> <code>CommitFailedException</code>. Contention with another writer, or a stale engine.</td></tr>
+            <tr><td><code>refused</code></td><td>Any other <code>4xx</code>: a missing table, a bad update, a governance rule. <code>error.type</code> says which.</td></tr>
+            <tr><td><code>unknown</code></td><td>The commit may or may not have happened: <code>CommitStateUnknownException</code>.</td></tr>
+            <tr><td><code>failed</code></td><td>Any other <code>5xx</code>, including the database being unreachable (<code>ServiceUnavailableException</code>, nothing applied).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="vend-outcomes">Vend outcomes</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col"><code>outcome</code></th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>issued</code></td><td>New credentials were minted, audited and handed out.</td></tr>
+            <tr><td><code>cached</code></td><td>Credentials came from the credential cache: no STS call and no new audit record of an issue.</td></tr>
+            <tr><td><code>none</code></td><td>The caller declined credentials (<code>X-Iceberg-Access-Delegation: none</code>), as the console always does.</td></tr>
+            <tr><td><code>failed</code></td><td>None could be issued. <code>error.type</code> names why, such as <code>ServiceUnavailableException</code> or <code>ForbiddenException</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="engine-reports">Engine reports</h3>
+      <p>Each result in a client's scan or commit report becomes a meter named <code>nuna.catalog.report.</code> and the result's name with its hyphens made dots: <code>total-duration</code> becomes <code>nuna.catalog.report.total.duration</code>. A timer result is one timing; a counter result is a distribution summary with one sample per report, in bytes for the <code>bytes</code> results. Results the specification does not name are skipped.</p>
+      <ul>
+        <li>Scan reports: <code>total.planning.duration</code> (timer); <code>result.data.files</code>, <code>result.delete.files</code>, <code>total.data.manifests</code>, <code>total.delete.manifests</code>, <code>scanned.data.manifests</code>, <code>skipped.data.manifests</code>, <code>scanned.delete.manifests</code>, <code>skipped.delete.manifests</code>, <code>skipped.data.files</code>, <code>skipped.delete.files</code>, <code>indexed.delete.files</code>, <code>equality.delete.files</code>, <code>positional.delete.files</code>, <code>dvs</code> (counts); <code>total.file.size.in.bytes</code>, <code>total.delete.file.size.in.bytes</code> (bytes).</li>
+        <li>Commit reports: <code>total.duration</code> (timer); <code>attempts</code>, <code>added.data.files</code>, <code>removed.data.files</code>, <code>total.data.files</code>, <code>added.delete.files</code>, <code>added.equality.delete.files</code>, <code>added.positional.delete.files</code>, <code>added.dvs</code>, <code>removed.delete.files</code>, <code>removed.equality.delete.files</code>, <code>removed.positional.delete.files</code>, <code>removed.dvs</code>, <code>total.delete.files</code>, <code>added.records</code>, <code>removed.records</code>, <code>total.records</code>, <code>added.positional.deletes</code>, <code>removed.positional.deletes</code>, <code>total.positional.deletes</code>, <code>added.equality.deletes</code>, <code>removed.equality.deletes</code>, <code>total.equality.deletes</code>, <code>manifests.created</code>, <code>manifests.replaced</code>, <code>manifests.kept</code>, <code>manifest.entries.processed</code> (counts); <code>added.files.size.bytes</code>, <code>removed.files.size.bytes</code>, <code>total.files.size.bytes</code> (bytes).</li>
+      </ul>
+
+      <h2 id="worker-meters">Worker meters</h2>
+      <p>The maintenance worker registers each meter as it starts, so dashboards and alerts see zeros before the first scan. A scan succeeds when it read the whole work list; a job that fails inside it is counted under <code>nuna.maintenance.failures</code> and the scan still succeeds. The counters below have no labels unless the table says so.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Meter</th><th scope="col">Type</th><th scope="col">Labels</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.maintenance.scan</code></td><td>Timer</td><td><code>outcome</code>: <code>success</code>, <code>failure</code></td><td>Each scan's duration. The alerts read this one.</td></tr>
+            <tr><td><code>nuna.maintenance.scan.last.success</code></td><td>Gauge, seconds since the epoch</td><td>none</td><td>When the last successful scan ended; 0 until one has.</td></tr>
+            <tr><td><code>nuna.maintenance.failures</code></td><td>Counter</td><td><code>kind</code>, below</td><td>Failed jobs and work list reads.</td></tr>
+            <tr><td><code>nuna.maintenance.tables</code></td><td>Counter</td><td>none</td><td>Tables the work list named.</td></tr>
+            <tr><td><code>nuna.maintenance.snapshots.expired</code></td><td>Counter</td><td>none</td><td>Snapshots expired.</td></tr>
+            <tr><td><code>nuna.maintenance.manifests.rewritten</code></td><td>Counter</td><td>none</td><td>Manifests rewritten.</td></tr>
+            <tr><td><code>nuna.maintenance.orphan.scans</code></td><td>Counter</td><td>none</td><td>Orphan scans of a table's location.</td></tr>
+            <tr><td><code>nuna.maintenance.orphans.found</code></td><td>Counter</td><td>none</td><td>Unreachable files an orphan scan found old enough to delete.</td></tr>
+            <tr><td><code>nuna.maintenance.tables.assessed</code></td><td>Counter</td><td>none</td><td>Tables whose manifests were read to judge whether they need compaction.</td></tr>
+            <tr><td><code>nuna.maintenance.tables.needing.compaction</code></td><td>Counter</td><td><code>reason</code>: <code>small-files</code>, <code>deletes</code>, <code>equality-deletes</code></td><td>Tables found needing compaction, once for each reason.</td></tr>
+            <tr><td><code>nuna.maintenance.compactions.started</code></td><td>Counter</td><td>none</td><td>Compaction Jobs started.</td></tr>
+            <tr><td><code>nuna.maintenance.compactions.cut.off</code></td><td>Counter</td><td>none</td><td>Compaction Jobs the cleanup window's end stopped.</td></tr>
+            <tr><td><code>nuna.maintenance.tables.left.over</code></td><td>Counter</td><td>none</td><td>Tables that needed compaction and got no Job before the window closed.</td></tr>
+            <tr><td><code>nuna.maintenance.table.compaction.need</code></td><td>Gauge</td><td><code>catalog</code>, <code>namespace</code>, <code>table</code></td><td>For each table that needed compaction at its last assessment, how far past its thresholds it was: 1 at a threshold, 2 twice past it. The one meter that names tables: everyone who can read your metrics sees those names.</td></tr>
+            <tr><td><code>nuna.maintenance.files.recorded</code></td><td>Counter</td><td>none</td><td>Files handed to the catalog's pending-deletion list.</td></tr>
+            <tr><td><code>nuna.maintenance.files.outside</code></td><td>Counter</td><td>none</td><td>Unreferenced files left alone because they lie outside their table's location.</td></tr>
+            <tr><td><code>nuna.maintenance.purges.completed</code></td><td>Counter</td><td>none</td><td>Dropped objects purged.</td></tr>
+            <tr><td><code>nuna.maintenance.purges.skipped</code></td><td>Counter</td><td>none</td><td>Purges another worker holds, or the catalog refused or rate-limited.</td></tr>
+            <tr><td><code>nuna.maintenance.files.deleted</code></td><td>Counter</td><td>none</td><td>Files deleted: due pending deletions and purged objects' files.</td></tr>
+            <tr><td><code>nuna.maintenance.files.kept</code></td><td>Counter</td><td><code>ref.kind</code>: <code>branch</code>, <code>tag</code></td><td>Files left alone because a catalog branch or tag reaches them.</td></tr>
+            <tr><td><code>nuna.maintenance.refs.warned</code></td><td>Counter</td><td>none</td><td>Branches whose expiry warning the worker sent.</td></tr>
+            <tr><td><code>nuna.maintenance.refs.ended</code></td><td>Counter</td><td>none</td><td>Branches past their expiry the worker ended.</td></tr>
+            <tr><td><code>nuna.maintenance.scan.run</code></td><td>Timer</td><td><code>outcome</code>, <code>exception</code>, <code>error</code></td><td>Each scan as its span's observation; registered at the first scan.</td></tr>
+            <tr><td><code>nuna.maintenance.part</code></td><td>Timer</td><td><code>part</code>, <code>outcome</code>, <code>exception</code>, <code>error</code></td><td>Each part of a scan (<a href="traces-and-logs.html#the-workers-spans">the parts</a>); registered at first use.</td></tr>
+            <tr><td><code>http.client.requests</code></td><td>Timer</td><td><code>method</code>, <code>uri</code> (a route), <code>status</code>, <code>outcome</code>, <code>error</code></td><td>Each call to the catalog and to the identity provider.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>For each of the last three Micrometer also keeps a long-task timer, <code><var>name</var>.active</code>, of those under way.</p>
+
+      <h3 id="failure-kinds">Failure kinds</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col"><code>kind</code></th><th scope="col">What failed</th></tr></thead>
+          <tbody>
+            <tr><td><code>work-list</code></td><td>Reading a page of the work list. The scan fails.</td></tr>
+            <tr><td><code>storage-prefixes</code></td><td>Reading the storage prefixes the catalog gives the worker, or a profile no store or two serve, or a prefix the worker refuses.</td></tr>
+            <tr><td><code>table-load</code></td><td>Loading a table the work list named.</td></tr>
+            <tr><td><code>table-changed</code></td><td>The name is now another table's, so nothing ran on it. Normal after a drop and re-create.</td></tr>
+            <tr><td><code>snapshot-expiry</code></td><td>Expiring a table's snapshots, or recording the files it left.</td></tr>
+            <tr><td><code>manifest-rewrite</code></td><td>Rewriting a table's manifests, or recording files.</td></tr>
+            <tr><td><code>orphan-scan</code></td><td>Scanning a table's location for orphans, or recording them.</td></tr>
+            <tr><td><code>compaction</code></td><td>Assessing a table, or launching its compaction Job.</td></tr>
+            <tr><td><code>purge</code></td><td>Claiming, deleting or completing one dropped object's purge.</td></tr>
+            <tr><td><code>deletion</code></td><td>Deleting one object's due files, checking them against refs, or reporting them done.</td></tr>
+            <tr><td><code>refs</code></td><td>Warning of or ending one branch.</td></tr>
+            <tr><td><code>report</code></td><td>Reporting a scan, assessment or job to the catalog. The work goes on.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Each failure is also a WARN log line naming the table or object.</p>
+
+      <h2 id="dr-verifier-meters">DR verifier meters</h2>
+      <p>These exist only on a worker with a DR replica named in <a href="../configure/maintenance.html#nuna-maintenance-dr"><code>nuna.maintenance.dr.replicas</code></a>.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Meter</th><th scope="col">Type</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.maintenance.dr.pass</code></td><td>Timer, <code>outcome</code>: <code>success</code>, <code>failure</code></td><td>Each pass's duration. A pass fails when it cannot read the DR work list.</td></tr>
+            <tr><td><code>nuna.maintenance.dr.pass.last.success</code></td><td>Gauge, seconds since the epoch</td><td>When the last successful pass ended; 0 until one has.</td></tr>
+            <tr><td><code>nuna.maintenance.dr.tables.behind</code></td><td>Gauge</td><td>Tables and views behind their DR watermark after the last pass.</td></tr>
+            <tr><td><code>nuna.maintenance.dr.lag.max</code></td><td>Gauge, seconds</td><td>The largest DR lag after the last pass: the time since the oldest commit not found whole in the DR store.</td></tr>
+            <tr><td><code>nuna.maintenance.dr.versions.verified</code></td><td>Counter</td><td>Versions the watermarks moved past.</td></tr>
+            <tr><td><code>nuna.maintenance.dr.failures</code></td><td>Counter</td><td>Tables and views whose DR check or report failed.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="dashboards-alerts.html">Dashboards and alerts</a>: the panels and rules built on these meters, and the Prometheus names they assume.</li>
+          <li><a href="traces-and-logs.html">Traces, logs and the request id</a>: the spans behind the timers.</li>
+          <li><a href="../install/telemetry.html">Send telemetry</a>: pointing both programs at a collector.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/metrics/</code> (<code>RequestMetrics</code>, <code>CatalogMetrics</code>, <code>MetricsWiring</code>, <code>RefGauges</code>), <code>rest/ServerAlerts.java</code>, <code>tracing/</code>, <code>governance/AuditArchiveCheck.java</code> and <code>GovernanceWiring.java</code>, and <code>catalog-maintenance/src/main/java/nuna/maintenance/</code> (<code>WorkerMetrics</code>, <code>ScanReport</code>, <code>CompactionNeed</code>, <code>ScanSpans</code>, <code>DrVerifier</code>), with <code>docs/observability/catalog-metrics.md</code> and <code>worker-metrics.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

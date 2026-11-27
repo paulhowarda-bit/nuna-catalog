@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="tools/fixture">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Every component · nuna docs</title>
+  <meta name="description" content="A test page holding every component of the writers' contract, for the stylesheet and check.py. Not part of the site.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Every component</h1>
+        <p class="lead">A test page holding every component of the writers' contract, for the stylesheet and <code>check.py</code>. Its facts are made up.</p>
+        <p class="doc-meta">
+          <span class="badge for">For platform operators</span>
+          <span class="badge needs">Needs <code>modify</code> on the table</span>
+          <span class="badge audited">Audited</span>
+          <span class="badge demo">Demo only</span>
+          <span class="badge internal">Internal</span>
+          <span class="badge tested">Tested in the engine matrix</span>
+          <span class="badge untested">Not tested by nuna</span>
+        </p>
+      </header>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <p>The server reads <code>nuna.security.issuers</code> at start-up. A path you replace looks like <code>/v1/<var>catalog</var>/namespaces</code>. A <a class="term" href="../reference/glossary.html#term-snapshot">snapshot</a> is a <em>term</em> at its definition, and <strong>this</strong> is the word a sentence turns on. Press <kbd>/</kbd> to search, or <kbd>Ctrl</kbd>+<kbd>C</kbd> to copy. The <abbr title="Open Policy Agent">OPA</abbr> endpoint follows the standard<sup>1</sup>.</p>
+      <ul>
+        <li>A full sentence ends with a full stop.</li>
+        <li>Every item in one list has the same form, and this one wraps onto a second line at phone width to show the indent.</li>
+      </ul>
+      <ol>
+        <li>An ordered list item.</li>
+        <li>Another ordered list item.</li>
+      </ol>
+      <p>Select <b class="ui">Grant access</b>. Go to <span class="ui-path"><b class="ui">Catalog</b> <b class="ui">orders</b> <b class="ui">Maintenance</b></span>. Read <a href="https://iceberg.apache.org/spec/">the Iceberg table spec</a> for the rest, or <a href="#callouts">the callouts below</a>.</p>
+
+      <h2 id="callouts">Callouts</h2>
+      <aside class="callout note">
+        <p class="callout-title">The worker needs its own grant</p>
+        <p>Without <code>modify</code> on the catalog, the worker scans the catalog but compacts nothing.</p>
+      </aside>
+      <p>Text between callouts.</p>
+      <aside class="callout tip">
+        <p class="callout-title">Set the variables once</p>
+        <p>Every curl example on the site uses <code>$NUNA</code> and <code>$TOKEN</code>.</p>
+      </aside>
+      <p>Text between callouts.</p>
+      <aside class="callout warning">
+        <p class="callout-title">A Secret change does not restart the servers</p>
+        <p>Run a rollout restart after it.</p>
+        <div class="code" data-lang="bash">
+<pre><code>kubectl rollout restart deployment/nuna-catalog</code></pre>
+        </div>
+      </aside>
+      <p>Text between callouts.</p>
+      <aside class="callout danger">
+        <p class="callout-title">Purging cannot be undone</p>
+        <p>The files are deleted from the object store.</p>
+      </aside>
+      <p>Text between callouts.</p>
+      <aside class="callout demo">
+        <p class="callout-title">Developer tokens exist only in the demo</p>
+        <ul><li>The demo's issuer signs them.</li><li>A production install has no such issuer.</li></ul>
+      </aside>
+      <p>Text between callouts.</p>
+      <aside class="callout check">
+        <p class="callout-title">You should see the table in the console</p>
+        <p>Its History tab lists one snapshot.</p>
+      </aside>
+
+      <h2 id="steps">Steps</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Start the demo.</p>
+          <div class="code" data-lang="bash">
+<pre><code>demo/demo.sh up</code></pre>
+          </div>
+          <p>The first run builds every image and takes several minutes.</p>
+        </li>
+        <li>
+          <p class="step-title">Open the console at <code>https://localhost:8181/ui/</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Sign in as <code>presenter</code>.</p>
+          <p>A longer explanation that runs onto a second line so the step's rail and the text alignment can be checked at every width.</p>
+        </li>
+      </ol>
+
+      <h2 id="tabs">Tabs</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>Select <b class="ui">Grant access</b>, choose the group and the privilege, then select <b class="ui">Grant</b>.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Grant select">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"group": "trading-analysts", "privilege": "select"}'</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <div class="code" data-lang="sql">
+<pre><code>-- Spark SQL has no grant statement for nuna
+SELECT count(*) FROM trading.equities.fills WHERE qty &gt; 100;</code></pre>
+          </div>
+        </section>
+      </div>
+      <p>The same group again, to show the choice is shared:</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console"><p>In the console.</p></section>
+        <section class="tab" data-tab="curl" data-label="curl"><p>With curl.</p></section>
+      </div>
+      <div class="tabs" data-group="os">
+        <section class="tab" data-tab="bash" data-label="Linux and macOS">
+          <div class="code" data-lang="bash">
+<pre><code>export NUNA=https://nuna.example
+export TOKEN=…   # see Get a token</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="powershell" data-label="Windows (PowerShell)">
+          <div class="code" data-lang="powershell">
+<pre><code>$env:NUNA = 'https://nuna.example'
+$env:TOKEN = '…'  # see Get a token</code></pre>
+          </div>
+        </section>
+      </div>
+
+      <h2 id="code-blocks">Code blocks</h2>
+      <div class="code" data-lang="bash" data-title="Create a namespace">
+<pre><code>curl -sS -X POST "$NUNA/v1/trading/namespaces" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"namespace": ["equities"]}'</code></pre>
+      </div>
+      <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "namespace": ["equities"],
+  "properties": {"owner": "data-stewards", "retention-days": 30, "regulated": true, "comment": null}
+}</code></pre>
+      </div>
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code># the catalog chart's settings
+config:
+  nuna:
+    security:
+      issuers:
+        - url: "https://idp.example/realms/data"   # the issuer
+          audience: nuna
+      grant-admin-groups: [grant-admins]
+  server:
+    port: 8181
+secrets:
+  existingSecret: nuna-catalog-secrets</code></pre>
+      </div>
+      <div class="code" data-lang="properties">
+<pre><code># Spark: a second catalog on the branch
+spark.sql.catalog.dev=org.apache.iceberg.spark.SparkCatalog
+spark.sql.catalog.dev.type=rest
+spark.sql.catalog.dev.uri=https://nuna.example/
+spark.sql.catalog.dev.warehouse=trading@dev</code></pre>
+      </div>
+      <div class="code" data-lang="python">
+<pre><code>from pyiceberg.catalog import load_catalog
+
+# one catalog per ref
+catalog = load_catalog("trading", uri="https://nuna.example", warehouse="trading", token="…")
+table = catalog.load_table("equities.fills")
+print(len(table.scan().to_arrow()), "rows")</code></pre>
+      </div>
+      <div class="code" data-lang="http">
+<pre><code>GET /v1/config?warehouse=trading@dev HTTP/1.1
+Host: nuna.example
+Authorization: Bearer …</code></pre>
+      </div>
+      <div class="code" data-lang="java">
+<pre><code>// a privilege and what it includes
+public enum Privilege { DESCRIBE, SELECT, WRITE, MODIFY, CREATE, MANAGE_GRANTS, MANAGE_TAGS; }</code></pre>
+      </div>
+      <div class="code" data-lang="text" data-kind="output">
+<pre><code>building commit a7a929ac
+The demo runs commit a7a929ac. Console: https://localhost:8181/ui/</code></pre>
+      </div>
+
+      <h2 id="tables">Tables</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What each privilege allows</caption>
+          <thead><tr><th scope="col">Privilege</th><th scope="col">Allows</th><th scope="col">Includes</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>describe</code></th><td>Seeing that the object exists: listing it and loading a namespace.</td><td>Nothing else.</td></tr>
+            <tr><th scope="row"><code>select</code></th><td>Reading data: loading a table or view, and receiving read credentials.</td><td><code>describe</code></td></tr>
+            <tr><th scope="row"><code>manage-grants</code></th><td><p>Granting and revoking privileges on the object.</p><ul><li>Not on its own grants.</li></ul></td><td><code>describe</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="settings">Settings</h2>
+      <section class="setting">
+        <h3 id="nuna-security-grant-admin-groups"><code>nuna.security.grant-admin-groups</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>list of strings</dd>
+          <dt>Default</dt><dd>empty</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_SECURITY_GRANT_ADMIN_GROUPS</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.security.grant-admin-groups</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A made-up description of the setting, for the stylesheet.</p>
+      </section>
+      <section class="setting">
+        <h3 id="nuna-storage-profiles-name-bucket"><code>nuna.storage.profiles.<var>name</var>.bucket</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required)</dd>
+        </dl>
+        <p>A second entry.</p>
+      </section>
+
+      <h2 id="endpoint">An endpoint</h2>
+      <section class="endpoint">
+        <h3 id="post-grants"><span class="method" data-method="POST">POST</span> <code>/management/v1/catalogs/{catalog}/grants</code></h3>
+        <p>Grants one privilege on one object to one group.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>manage-grants</code> on the object</span> <span class="badge audited">Audited</span></p>
+        <h4 id="post-grants-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>catalog</code></td><td>path</td><td>string</td><td>Yes</td><td>The catalog's name.</td></tr>
+              <tr><td><code>page-size</code></td><td>query</td><td>integer</td><td>No</td><td>Most items in one page. Default <code>100</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-grants-body">Request body</h4>
+        <div class="code" data-lang="json">
+<pre><code>{"group": "trading-analysts", "privilege": "select", "on": ["equities"]}</code></pre>
+        </div>
+        <h4 id="post-grants-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>201</code></td><td>The grant was made.</td></tr>
+              <tr><td><code>403</code></td><td>The caller holds no <code>manage-grants</code> on the object.</td></tr>
+              <tr><td><code>409</code></td><td>The grant would break separation of duties.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="post-grants-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/grants" -H "Authorization: Bearer $TOKEN" -d @grant.json</code></pre>
+        </div>
+      </section>
+      <section class="endpoint">
+        <h3 id="get-grants"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/grants</code></h3>
+        <p>Lists grants.</p>
+      </section>
+      <section class="endpoint">
+        <h3 id="delete-grants"><span class="method" data-method="DELETE">DELETE</span> <code>/management/v1/catalogs/{catalog}/grants</code></h3>
+        <p>Revokes a grant.</p>
+      </section>
+      <section class="endpoint">
+        <h3 id="put-policy"><span class="method" data-method="PUT">PUT</span> <code>/management/v1/catalogs/{catalog}/maintenance-policy</code></h3>
+        <p>Sets the policy.</p>
+      </section>
+      <section class="endpoint">
+        <h3 id="head-table"><span class="method" data-method="HEAD">HEAD</span> <code>/v1/{prefix}/namespaces/{namespace}/tables/{table}</code></h3>
+        <p>Checks a table exists.</p>
+      </section>
+
+      <h2 id="terms-and-cards">Terms and cards</h2>
+      <dl class="terms">
+        <dt id="term-snapshot">Snapshot</dt>
+        <dd>The state of a table's data at one commit: the list of data and delete files it holds.</dd>
+        <dt id="term-ref">Ref</dt>
+        <dd>A catalog branch or a tag.</dd>
+      </dl>
+      <dl>
+        <dt>Plain term</dt><dd>A plain definition list.</dd>
+      </dl>
+      <ul class="cards">
+        <li><a href="../start/quickstart.html"><span class="card-title">Run nuna on your laptop</span><span class="card-text">Start the demo, sign in to the console and look at a table.</span></a></li>
+        <li><a href="../start/first-table.html"><span class="card-title">Create your first table</span><span class="card-text">Point an engine at the demo and write rows.</span></a></li>
+        <li><a href="../start/console-tour.html"><span class="card-title">Tour the console</span><span class="card-text">Every rail page once.</span></a></li>
+      </ul>
+
+      <h2 id="figures">Figures</h2>
+      <figure class="shot pending" id="fig-table-maintenance"
+              data-shot="console-table-maintenance"
+              data-shot-route="#c=lakehouse&amp;k=table&amp;ns=brokerage&amp;n=fills&amp;tab=maintenance"
+              data-shot-user="presenter"
+              data-shot-width="1440"
+              data-shot-state="After one maintenance night, so the Last night panel has figures.">
+        <figcaption>The table page's Maintenance tab after a night's maintenance.</figcaption>
+      </figure>
+      <figure class="diagram" id="fig-architecture">
+        <svg viewBox="0 0 720 220" role="img" aria-labelledby="fig-architecture-t fig-architecture-d">
+          <title id="fig-architecture-t">An engine, the server and its stores</title>
+          <desc id="fig-architecture-d">Spark calls the server over REST; the server keeps pointers in its database and vends credentials for the object store.</desc>
+          <rect class="d-group" x="250" y="10" width="450" height="200" rx="14"/>
+          <text class="d-note" x="475" y="200">Your cluster</text>
+          <rect class="d-node" x="20" y="60" width="160" height="56" rx="10"/>
+          <text class="d-label" x="100" y="93">Spark</text>
+          <rect class="d-node d-accent" x="280" y="60" width="160" height="56" rx="10"/>
+          <text class="d-label" x="360" y="93">nuna server</text>
+          <rect class="d-node d-store" x="520" y="30" width="160" height="56" rx="10"/>
+          <text class="d-label" x="600" y="63">Database</text>
+          <rect class="d-node d-held" x="520" y="110" width="160" height="56" rx="10"/>
+          <text class="d-label" x="600" y="143">Object store</text>
+          <path class="d-edge" d="M180 88H280" marker-end="url(#d-arrow)"/>
+          <text class="d-note" x="230" y="80">REST</text>
+          <path class="d-edge" d="M440 80L520 60" marker-end="url(#d-arrow)"/>
+          <path class="d-edge-dash" d="M440 98L520 136" marker-end="url(#d-arrow)"/>
+        </svg>
+        <figcaption>The server never holds data; it holds each table's pointer.</figcaption>
+      </figure>
+      <figure class="diagram pending" id="fig-commit-race">
+        <p class="shot-todo">Diagram to draw: two engines commit to one table; the database accepts the first and refuses the second, which retries on the new metadata.</p>
+        <figcaption>Two commits race; one wins and the other retries.</figcaption>
+      </figure>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <p class="gap">Not documented yet: what the worker does when two scans of one catalog overlap. No test or document says.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>403</code> with a message naming <code>manage-grants</code></td><td>Your groups hold no <code>manage-grants</code> on the object.</td><td>Ask a grant admin.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="a-third-level">A third level</h3>
+      <p>Text under an h3, with a long unbroken name that must wrap: <code>nuna.audit-tables.kafka.consumer.max-poll-interval-milliseconds-for-the-writer</code>.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/access.html">Identity and access</a>: how grants pass down the tree.</li>
+          <li><a href="../api/grants.html#endpoints">Grants</a>: every grant endpoint.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>docs/site/DESIGN.md</code>, checked against commit <code>a7a929ac</code> on 2026-11-26.</p>
+        <p>Nothing on this page was run: its facts are made up.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

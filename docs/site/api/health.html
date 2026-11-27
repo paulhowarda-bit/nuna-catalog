@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="api/health">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Health · nuna docs</title>
+  <meta name="description" content="Read one server's figures, the whole deployment's catalog health, and one table's health, under /management/v1.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="api">
+      <header class="doc-head">
+        <h1>Health</h1>
+        <p class="lead">Read one server's figures, the whole deployment's catalog health, and one table's health, under <code>/management/v1</code>.</p>
+      </header>
+
+      <p>Server and catalog health are for platform operators: anyone else is refused with <code>403</code>, audited, before anything is gathered. Table health is for anyone who may read the table. For liveness and readiness probes, see <a href="../operate/health.html">Health checks</a>. The examples use curl with <code>$NUNA</code> and <code>$TOKEN</code> set as <a href="../clients/curl.html">curl</a> shows.</p>
+
+      <h2 id="endpoints">Endpoints</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>Health endpoints</caption>
+          <thead><tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><a href="#get-health-server"><code>/management/v1/health/server</code></a></td><td>Reads this server's figures over the last day, and optionally its view of the database.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-health-catalog"><code>/management/v1/health/catalog</code></a></td><td>Adds up every server's figures, with the SLOs and alerts.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-table-health"><code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health</code></a></td><td>Reads one table's health score, last compaction and waiting requests.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="endpoint">
+        <h3 id="get-health-server"><span class="method" data-method="GET">GET</span> <code>/management/v1/health/server</code></h3>
+        <p>Reads the figures of the server that answers, over the last day or since it started, whichever is shorter. With <code>store=true</code>, it also reads the catalog's database as this server finds it; that part is asked for separately so the servers gathering figures never wait on a database that does not answer.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-health-server-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>store</code></td><td>query</td><td>boolean</td><td>No</td><td><code>true</code> to add the database's facts. Default <code>false</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-health-server-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"server": {"id", "name", "started-at"}, "from", "to", "figures": {<var>name</var>: <var>number</var>}, "store"}</code>. <code>figures</code> holds counts such as <code>commit</code>, <code>load</code>, <code>not-modified</code> and their latency buckets (<code>commit.le.300</code>: commits within 300 ms), <code>vends.issued</code>, <code>vends.cached</code>, <code>vends.none</code> and the <code>alerts.*</code> counts.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator: <code>only platform operators may call readServerHealth</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-health-server-example">Example</h4>
+        <p>The figures below are cut to four.</p>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/server?store=true" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "server": {"id": "bb06eee7-159b-493c-a12b-918371ef3622", "name": "nuna-catalog-6c65d6c9dd-lw69w", "started-at": "2026-11-25T23:42:24.801Z"},
+  "from": "2026-11-25T23:42:24.801Z",
+  "to": "2026-11-26T04:40:25.803Z",
+  "figures": {"commit": 3.0, "commit.le.300": 2.0, "load": 3941.0, "vends.issued": 509.0},
+  "store": {
+    "configured": "postgresql",
+    "backend": "PostgreSQL",
+    "version": "18.7",
+    "pitr-window-seconds": 604800,
+    "self-check": {
+      "at": "2026-11-25T23:42:22.744Z",
+      "allowed": [
+        {"code": "pg.no-sync-standby", "detail": "synchronous_standby_names is '' and 0 standbys stream in sync or quorum state (the catalog role needs pg_monitor to see them)"}
+      ]
+    }
+  }
+}</code></pre>
+        </div>
+        <p class="gap">Not documented yet: the full list of figure names and of <code>store</code> fields for each database. See <code>catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java</code> and <code>StoreFacts.java</code>; this page was not checked against them.</p>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-health-catalog"><span class="method" data-method="GET">GET</span> <code>/management/v1/health/catalog</code></h3>
+        <p>Adds this server's figures to those of every other server that answers, and shapes them into SLOs, credential vends, audit delivery and alerts. Each server is listed once, with whether it answered; a server that did not answer says why.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-health-catalog-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"alerts", "audit", "credential-vends", "slos", "to", "answered", "silent", "servers"}</code>. Each SLO has <code>objective-ms</code>, <code>count</code>, <code>within</code>, <code>met</code> and <code>p99</code>. Each server has <code>id</code>, <code>name</code>, <code>address</code> (for other servers), <code>answered</code>, <code>started-at</code> and <code>from</code>; <code>this-server</code> marks the one that answered you. A silent server has <code>address</code>, <code>answered: false</code> and <code>why</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You are not a platform operator.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-health-catalog-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/health/catalog" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "alerts": {"metadata-integrity": 0, "regulated-schema-change": 0, "large-metadata": 0},
+  "audit": {"acknowledged": 0, "failed": 0},
+  "credential-vends": {"issued": 509, "cached": 5140, "none": 2, "failed": 0, "failures": {}},
+  "slos": {
+    "load": {"objective-ms": 50, "count": 3941, "within": 3787, "met": false, "p99": {"at-most-ms": 300}},
+    "not-modified": {"objective-ms": 10, "count": 1704, "within": 973, "met": false, "p99": {"at-most-ms": 300}},
+    "commit": {"objective-ms": 300, "count": 3, "within": 2, "met": false, "p99": {"over-ms": 300}}
+  },
+  "to": "2026-11-26T04:40:26.118Z",
+  "answered": 1,
+  "silent": 0,
+  "servers": [
+    {"id": "bb06eee7-159b-493c-a12b-918371ef3622", "name": "nuna-catalog-6c65d6c9dd-lw69w", "answered": true, "started-at": "2026-11-25T23:42:24.801Z", "from": "2026-11-25T23:42:24.801Z", "this-server": true}
+  ]
+}</code></pre>
+        </div>
+        <p class="gap">Not documented yet: the target share each SLO's <code>met</code> is judged against. It is set in <code>Figures.java</code>, which this page was not checked against.</p>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-table-health"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health</code></h3>
+        <p>Reads a table's health: the worker's last assessment of its files, with the health score and the reasons it needs compaction, its last compaction, and the maintenance requests waiting on it. A table the worker has not assessed has no <code>assessment</code>.</p>
+        <p class="doc-meta"><span class="badge needs">Needs <code>select</code> on the table</span></p>
+        <h4 id="get-table-health-parameters">Parameters</h4>
+        <div class="table-wrap">
+          <table class="params">
+            <thead><tr><th scope="col">Name</th><th scope="col">In</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>namespace</code></td><td>path</td><td>string</td><td>Yes</td><td>The namespace levels joined by <code>%1F</code>: <code>equities%1Fdaily</code>.</td></tr>
+              <tr><td><code>table</code></td><td>path</td><td>string</td><td>Yes</td><td>The table's name.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-table-health-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td>The <a href="#table-health">table health</a> follows.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something on the table but not <code>select</code>.</td></tr>
+              <tr><td><code>404</code></td><td>The table is not there, or you hold nothing on it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-table-health-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/namespaces/equities%1Fdaily/tables/positions/health" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "id": "5f6a7b8c-9d0e-4f1a-8b2c-3d4e5f6a7b8c",
+  "catalog": "trading",
+  "namespace": ["equities", "daily"],
+  "name": "positions",
+  "assessment": {
+    "assessed-at": "2026-11-26T02:00:03.117Z",
+    "needs-compaction": false,
+    "reasons": [],
+    "score": 0.0,
+    "data-files": 1,
+    "small-files": 0,
+    "small-file-share": 0.0,
+    "delete-files": 0,
+    "position-delete-files": 0,
+    "deletion-vectors": 0,
+    "equality-delete-files": 0
+  },
+  "requests": []
+}</code></pre>
+        </div>
+      </section>
+
+      <h2 id="objects">Objects</h2>
+
+      <h3 id="table-health">Table health</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code>, <code>catalog</code>, <code>namespace</code>, <code>name</code></td><td></td><td>The table.</td></tr>
+            <tr><td><code>assessment.assessed-at</code></td><td>string</td><td>When the worker last assessed it.</td></tr>
+            <tr><td><code>assessment.needs-compaction</code>, <code>assessment.reasons</code>, <code>assessment.score</code></td><td></td><td>Whether it needs compaction, why, and its health score.</td></tr>
+            <tr><td><code>assessment.data-files</code>, <code>small-files</code>, <code>small-file-share</code></td><td>number</td><td>Its data files, how many are small, and their share.</td></tr>
+            <tr><td><code>assessment.delete-files</code>, <code>position-delete-files</code>, <code>deletion-vectors</code>, <code>equality-delete-files</code></td><td>integer</td><td>Its delete files, in all and by kind.</td></tr>
+            <tr><td><code>last-compaction</code></td><td>object</td><td><code>{"started-at", "ended-at", "outcome"}</code>, when it has been compacted.</td></tr>
+            <tr><td><code>requests</code></td><td>array</td><td>Waiting or started maintenance requests, as <a href="maintenance.html#post-table-maintenance-requests">a request</a> answers them.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../operate/health.html">Health checks</a>: liveness, readiness and the start-up self-check.</li>
+          <li><a href="../operate/table-health.html">Table health</a>: the score and its reasons.</li>
+          <li><a href="maintenance.html">Maintenance</a>: the neediest tables and the worker's scans.</li>
+          <li><a href="../console/service.html">The Service page</a>: catalog health in the console.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java</code> and <code>catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>All three examples were run against the demo and their responses rewritten to the fictional estate; the demo ran one server on PostgreSQL.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

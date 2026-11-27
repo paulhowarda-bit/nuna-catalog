@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="security/encryption">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Encryption and keys · nuna docs</title>
+  <meta name="description" content="How data and metadata are encrypted on the way between nuna's parts and at rest in the object store, and how a storage profile's KMS key is enforced on every write.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="concept">
+      <header class="doc-head">
+        <h1>Encryption and keys</h1>
+        <p class="lead">How data and metadata are encrypted on the way between nuna's parts and at rest in the object store, and how a storage profile's KMS key is enforced on every write.</p>
+      </header>
+
+      <h2 id="what-it-is">What it is</h2>
+      <p>nuna holds no data of its own: table data and metadata files sit in your object store, and the catalog's pointers sit in your database. Encryption at rest is therefore the store's and the database's. What the server adds is a check that every connection it makes to the store uses TLS, and, on AWS S3, a single KMS key that every write must use.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <h3 id="in-transit">In transit</h3>
+      <ul>
+        <li><strong>To the object store.</strong> With <code>nuna.storage.require-tls</code> at its default, <code>true</code>, the server refuses to start with a storage profile whose endpoint is plain <code>http</code>. A store whose certificate a private certificate authority signed is trusted through the profile's <code>ca-bundle</code>, for that profile's S3 and STS clients only.</li>
+        <li><strong>To the database.</strong> The JDBC URL's TLS parameters name the files of a client certificate, mounted from the chart's <code>databaseTls</code> Secret. For MongoDB, TLS is set in the connection string.</li>
+        <li><strong>From engines and browsers.</strong> The server listens on port <code>8181</code>; the chart's ingress carries the TLS certificate (<code>ingress.tls</code>).</li>
+        <li><strong>Telemetry.</strong> An <code>https</code> OTLP endpoint is trusted through <code>telemetry.caConfigMap</code>.</li>
+      </ul>
+
+      <h3 id="at-rest-kms">At rest, with a KMS key</h3>
+      <p>An AWS S3 storage profile can name <code>kms-key</code>: the ARN of one KMS key, in the profile's region. With it:</p>
+      <ul>
+        <li>Every vended session policy allows <code>s3:PutObject</code> only with server-side encryption by that key, and allows <code>kms:Decrypt</code>, with <code>kms:GenerateDataKey</code> for writers.</li>
+        <li>Each table load tells the engine to write with it: <code>s3.sse.type</code> is <code>kms</code> and <code>s3.sse.key</code> names the key.</li>
+        <li>The server's own metadata files name it.</li>
+      </ul>
+      <p>Without <code>kms-key</code>, writes are encrypted as the bucket's default encryption says. A table's <code>encryption.key-id</code> property is fixed when the table is created: <code>Property encryption.key-id is fixed when the table is created</code>.</p>
+
+      <h2 id="what-it-guarantees">What it guarantees and what it does not</h2>
+      <ul>
+        <li>A credential the server vends cannot write an object without the profile's key, when the profile names one.</li>
+        <li>The server does not encrypt files itself, and it does not check the bucket's default encryption.</li>
+        <li>Each catalog records the KMS key set named in its settings (<code>kms-key-set</code>), and that never changes; the key the store uses comes from the profile's <code>kms-key</code>.</li>
+      </ul>
+      <p class="gap">Not documented yet: whether the server itself listens on TLS when no ingress is used. The chart's service is plain port <code>8181</code>, and no server setting for a certificate was found.</p>
+
+      <h2 id="where-you-see-it">Where you see it</h2>
+      <p>The settings are in <a href="../configure/storage.html#nuna-storage-require-tls">Storage settings</a> and <a href="../configure/helm-values.html">Helm chart values</a>. A profile's key appears in its <code>nuna.catalog.storage-setup</code> audit record as <code>kms-key</code>.</p>
+
+      <h2 id="limits">Limits</h2>
+      <ul>
+        <li>Only an AWS S3 profile names a KMS key: <code>only an AWS S3 profile names a KMS key, not a CEPH profile</code>.</li>
+        <li>The key is an ARN, not an alias or a bare key id: <code>must be a KMS key ARN, arn:&lt;partition&gt;:kms:&lt;region&gt;:&lt;account&gt;:key/&lt;key id&gt;, not an alias or a bare key id; got …</code>.</li>
+        <li>The key is in the profile's region: <code>the key … is not in the profile's region …: S3 encrypts only with a key in the bucket's region</code>.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="credential-vending.html">Credential vending</a>: the session policy the key condition sits in.</li>
+          <li><a href="../install/object-storage.html">Set up object storage</a>: storage profiles and their keys.</li>
+          <li><a href="../install/postgresql.html">Use PostgreSQL</a>: the database's TLS client certificate.</li>
+          <li><a href="hardening.html">Hardening checklist</a>: every setting that tightens an install.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java</code>, <code>SessionPolicy.java</code> and <code>CaBundle.java</code> in the same package, <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java</code>, <code>catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java</code>, <code>catalog-audit/src/main/java/nuna/catalog/audit/StorageSetup.java</code> and <code>deploy/helm/nuna-catalog/values.yaml</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

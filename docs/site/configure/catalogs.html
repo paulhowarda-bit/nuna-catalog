@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/catalogs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Catalog settings · nuna docs</title>
+  <meta name="description" content="Declare the deployment&#x27;s catalogs in the server&#x27;s settings, each bound to one storage profile, KMS key set and legal entity for its whole life.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Catalog settings</h1>
+        <p class="lead">Declare the deployment's catalogs in the server's settings, each bound to one storage profile, KMS key set and legal entity for its whole life.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The server has no API that creates a catalog. Each catalog is declared in the server's settings, under <code>nuna.storage.catalogs</code>, and the server creates it at start-up. There are no <code>nuna.catalog.*</code> settings: everything about a catalog that is set at all is set here and on the pages this one links to.</p>
+
+      <h2 id="how-a-declared-catalog-comes-to-exist">How a declared catalog comes to exist</h2>
+
+      <p>At start-up, before it takes requests, the server reads <code>nuna.storage.catalogs</code> and, for each catalog named there:</p>
+
+      <ol>
+        <li>Refuses to start if the name holds <code>@</code>, which the REST prefix <code><var>catalog</var>@<var>ref</var></code> keeps for a catalog branch or tag.</li>
+        <li>Refuses to start if the entry lacks <code>profile</code>, <code>kms-key-set</code> or <code>legal-entity</code>, or if <code>profile</code> names no profile in <code>nuna.storage.profiles</code>.</li>
+        <li>Creates the catalog when the database holds none of that name, and writes an audit record of type <code>storage-setup</code> (action <code>CATALOG_CREATED</code>) whose actor is <code>nuna-configuration</code>.</li>
+        <li>Refuses to start when the database already holds the catalog bound to another profile, KMS key set or legal entity.</li>
+      </ol>
+
+      <p>A catalog's binding to its storage profile, KMS key set and legal entity never changes once the catalog exists. Changing any of the three for an existing catalog stops every server that reads the new settings, with the message <code>catalog <var>name</var> is bound to … in the store, but configured as …; a catalog's boundary never changes</code>.</p>
+
+      <p>Catalog names are case-insensitive and keep the case they were declared with: <code>Trading</code> and <code>trading</code> are one catalog. Two servers that start together and both declare a new catalog create it once; the second checks that the catalog holds what it would have written.</p>
+
+      <p>Removing a catalog from <code>nuna.storage.catalogs</code> does not remove it from the database, but the catalog list (<code>GET /management/v1/catalogs</code>, which the console reads) shows only the catalogs the settings declare, so the console no longer offers it. Its tables still answer over the Iceberg REST API as long as the server configures the storage profile the catalog is bound to. A server that lacks that profile fails each request to the catalog with the message <code>catalog <var>id</var> uses storage profile <var>id</var>, which this server does not configure</code>.</p>
+
+      <aside class="callout note">
+        <p class="callout-title">Grants come after the catalog</p>
+        <p>A new catalog holds no grants, so only grant admins can act in it at first. Grant the first groups their privileges as <a href="../guides/create-catalog.html">Create a catalog</a> describes. The one exception is the audit catalog, whose two groups the server grants at start-up from <a href="audit.html#nuna-audit-tables-catalog"><code>nuna.audit.tables.*</code></a>.</p>
+      </aside>
+
+      <h2 id="nuna-storage-catalogs-group">nuna.storage.catalogs</h2>
+
+      <p>One entry per catalog, keyed by the catalog's name.</p>
+
+      <section class="setting">
+        <h3 id="nuna-storage-catalogs"><code>nuna.storage.catalogs</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>map of catalog name to its declaration</dd>
+          <dt>Default</dt><dd>empty: no catalog is declared</dd>
+          <dt>Environment variable</dt><dd>one variable per field, such as <code>NUNA_STORAGE_CATALOGS_<var>NAME</var>_PROFILE</code>; the name is read in lower case</dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.catalogs</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The catalogs this deployment declares. The server creates each one that does not exist at start-up and checks each one that does. With none declared, the server starts and serves no catalog until one is.</p>
+        <p>Every server of a deployment reads the same database, so give every server the same declarations.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-catalogs-name-profile"><code>nuna.storage.catalogs.<var>name</var>.profile</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required for each declared catalog)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_CATALOGS_<var>NAME</var>_PROFILE</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.catalogs.<var>name</var>.profile</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The storage profile the catalog's tables live in, by its name in <a href="storage.html#nuna-storage-profiles"><code>nuna.storage.profiles</code></a>. Every table of the catalog is placed under that profile's <code>table-root</code>, and every credential vended for the catalog is scoped to that profile's store.</p>
+        <p>The server refuses to start when it is missing, with <code>nuna.storage.catalogs.<var>name</var> needs profile, kms-key-set and legal-entity</code>, and when it names no profile, with <code>nuna.storage.catalogs.<var>name</var>.profile names no profile: <var>profile</var></code>. It can never change for an existing catalog.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-catalogs-name-kms-key-set"><code>nuna.storage.catalogs.<var>name</var>.kms-key-set</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required for each declared catalog)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_CATALOGS_<var>NAME</var>_KMSKEYSET</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.catalogs.<var>name</var>.kms-key-set</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>A name for the set of KMS keys the catalog's data is encrypted under, recorded with the catalog and shown in its properties (<code>GET /management/v1/catalogs/{catalog}/properties</code>, and the console's Catalog page). The server does not call KMS and does not encrypt with it: encryption at rest follows the storage profile's <a href="storage.html#nuna-storage-profiles-name-kms-key"><code>kms-key</code></a>, or the bucket's default when the profile names none.</p>
+        <p>Required, and fixed once the catalog exists.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-storage-catalogs-name-legal-entity"><code>nuna.storage.catalogs.<var>name</var>.legal-entity</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none (required for each declared catalog)</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_STORAGE_CATALOGS_<var>NAME</var>_LEGALENTITY</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.storage.catalogs.<var>name</var>.legal-entity</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The legal entity whose data the catalog holds, recorded with the catalog and shown in its properties beside the KMS key set. The server records it and shows it; no rule reads it.</p>
+        <p>Required, and fixed once the catalog exists.</p>
+      </section>
+
+      <h2 id="example">Example</h2>
+
+      <p>Two catalogs on one profile, in the catalog chart's values. The profile itself is on <a href="storage.html">Storage settings</a>.</p>
+
+      <div class="code" data-lang="yaml" data-title="values.yaml">
+<pre><code>config:
+  nuna:
+    storage:
+      catalogs:
+        trading:
+          profile: onprem
+          kms-key-set: trading-keys
+          legal-entity: example-securities
+        nuna_audit:
+          profile: onprem
+          kms-key-set: audit-keys
+          legal-entity: example-securities</code></pre>
+      </div>
+
+      <p>After the servers start, <code>GET /management/v1/catalogs</code> lists the declared catalogs a caller holds something in (grant admins and platform operators see every one), and <code>GET /management/v1/catalogs/trading/properties</code> answers the catalog's binding: its name, KMS key set, legal entity and storage profile (name, kind, endpoint, region, table root, allowed prefixes and whether writes use a KMS key). Neither answer names a key, a role or a credential.</p>
+
+      <h2 id="settings-that-name-a-catalog">Settings that name a catalog</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>Other settings that name a declared catalog</caption>
+          <thead><tr><th scope="col">Setting</th><th scope="col">Page</th><th scope="col">What it does with the catalog</th></tr></thead>
+          <tbody>
+            <tr><td><code>nuna.rest.default-warehouse</code></td><td><a href="server.html#nuna-rest-default-warehouse">Server settings</a></td><td>The catalog <code>GET /v1/config</code> answers for when an engine names no warehouse.</td></tr>
+            <tr><td><code>nuna.audit.tables.catalog</code></td><td><a href="audit.html#nuna-audit-tables-catalog">Audit settings</a></td><td>The audit catalog, which must be declared here; the server grants its readers and writer at start-up.</td></tr>
+            <tr><td><code>nuna.audit-tables.catalog</code></td><td><a href="audit-tables.html#nuna-audit-tables-catalog">Audit tables writer settings</a></td><td>The catalog the audit tables writer writes the table <code>events</code> to.</td></tr>
+            <tr><td><code>nuna.opa.catalogs</code></td><td><a href="security.html#nuna-opa-catalogs">Security settings</a></td><td>Maps each Trino catalog to the nuna catalog, or <code><var>catalog</var>@<var>ref</var></code>, it reads.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../concepts/catalog-objects.html">Catalogs, namespaces, tables and views</a>: what a catalog holds and how names work</li>
+          <li><a href="storage.html">Storage settings</a>: the profiles a catalog is bound to</li>
+          <li><a href="../guides/create-catalog.html">Create a catalog</a>: declaring a catalog and giving it its first grants</li>
+          <li><a href="../api/catalogs.html">Catalogs API</a>: listing catalogs and reading their properties</li>
+          <li><a href="helm-values.html#nuna-catalog">Helm chart values</a>: where <code>config</code> goes in the catalog chart</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/storage/StorageSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/CatalogProperties.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java</code> and <code>catalog-core/src/main/java/nuna/catalog/core/Names.java</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The example values were rendered with <code>helm template</code> against the catalog chart.</p>
+        <p>No server was started with them for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

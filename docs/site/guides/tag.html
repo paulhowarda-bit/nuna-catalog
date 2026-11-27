@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="guides/tag">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keep a point in time with a tag · nuna docs</title>
+  <meta name="description" content="Make a read-only tag of the whole catalog, read every table through it as it was, and remove it when it is no longer needed.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Keep a point in time with a tag</h1>
+        <p class="lead">Make a read-only tag of the whole catalog, read every table through it as it was, and remove it when it is no longer needed.</p>
+        <p class="doc-meta">
+          <span class="badge for">For engine users and data stewards</span>
+          <span class="badge needs">Needs <code>create</code> on the catalog</span>
+          <span class="badge audited">Audited</span>
+        </p>
+      </header>
+
+      <p>A catalog tag names one point: every table's and view's metadata file, and its name, as they were when the tag was made. Reading through the tag, <code>trading@eod-2026-11-25</code>, gives each table as it was at that point, under the name it had then, however main has moved since. A tag never expires and never takes a write. Keep one for each end of day, a month-end close or the data a report was run on.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>Making and deleting a tag needs <code>create</code> on the catalog. Reading through it needs what reading main needs: a table's grants hold on every ref.</li>
+        <li>A catalog holds at most <code>nuna.refs.max-tags</code> tags (default <code>1000</code>).</li>
+        <li>For the curl examples, <code>NUNA</code> and <code>TOKEN</code> are set as <a href="../clients/curl.html">Use the APIs with curl</a> describes.</li>
+      </ul>
+
+      <h2 id="make-the-tag">Make the tag</h2>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <ol class="steps">
+            <li>
+              <p class="step-title">Select <b class="ui">Branches and tags</b> in the rail, then <b class="ui">Make a branch or tag</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Choose <b class="ui">Tag</b> and enter its name.</p>
+              <p>Leave <b class="ui">From</b> at <b class="ui">main, as it is now</b>, or choose a branch to keep that branch's state. Say why the tag exists under <b class="ui">Purpose (optional)</b>.</p>
+            </li>
+            <li>
+              <p class="step-title">Select <b class="ui">Make it</b>.</p>
+            </li>
+          </ol>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Tag main as it is now">
+<pre><code>curl -sS -X POST "$NUNA/management/v1/catalogs/trading/refs" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "eod-2026-11-25", "kind": "tag", "description": "End of day, 25 November"}'</code></pre>
+          </div>
+          <p>The server answers <code>201</code> with the tag. A tag has no <code>expires-at</code>.</p>
+          <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "id": "c41d07b2-8e5a-4f63-a1d9-7b2e60f4a8c5",
+  "name": "eod-2026-11-25",
+  "kind": "tag",
+  "from": "main",
+  "created-at": "2026-11-25T22:00:03.512Z",
+  "created-by": "trading-etl",
+  "description": "End of day, 25 November",
+  "cut-at": "2026-11-25T22:00:03.512Z"
+}</code></pre>
+          </div>
+        </section>
+      </div>
+
+      <h2 id="read-through-the-tag">Read through the tag</h2>
+      <p>Point an engine catalog at the warehouse <code>trading@eod-2026-11-25</code>. Each table reads as it was at the point; a table created on main since is not there, and a table dropped or renamed since is there under its old name.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>Choose the tag in the header's <b class="ui">Reading</b> control. Every catalog, namespace, table and view page then reads through it and says so; a property shown there is <b class="ui">Read-only through a tag.</b> The tag's own page, opened from <b class="ui">Branches and tags</b>, lists under <b class="ui">What it keeps</b> each table and view and the version it keeps.</p>
+        </section>
+        <section class="tab" data-tab="spark" data-label="Spark">
+          <div class="code" data-lang="properties" data-title="spark-defaults.conf: a catalog named eod on the tag">
+<pre><code>spark.sql.catalog.eod=org.apache.iceberg.spark.SparkCatalog
+spark.sql.catalog.eod.type=rest
+spark.sql.catalog.eod.uri=https://nuna.example/
+spark.sql.catalog.eod.warehouse=trading@eod-2026-11-25
+spark.sql.catalog.eod.token=…
+spark.sql.catalog.eod.header.X-Iceberg-Access-Delegation=vended-credentials</code></pre>
+          </div>
+          <div class="code" data-lang="sql" data-title="Positions as at end of day">
+<pre><code>SELECT * FROM eod.equities.daily.positions;</code></pre>
+          </div>
+        </section>
+        <section class="tab" data-tab="pyiceberg" data-label="PyIceberg">
+          <div class="code" data-lang="python" data-title="Read through the tag">
+<pre><code>from pyiceberg.catalog import load_catalog
+
+eod = load_catalog("eod", type="rest", uri="https://nuna.example", warehouse="trading@eod-2026-11-25",
+                   token=token, **{"header.X-Iceberg-Access-Delegation": "vended-credentials"})
+positions = eod.load_table("equities.daily.positions").scan().to_arrow()</code></pre>
+          </div>
+        </section>
+      </div>
+      <p>A tag is read-only three times over. The catalog refuses any write through it with <code>400</code>; Iceberg Java and PyIceberg clients refuse a commit before sending it, since the tag advertises only read endpoints; and the storage credentials it vends only read, so the object store refuses a data file.</p>
+
+      <h2 id="remove-the-tag">Remove the tag</h2>
+      <p>A tag lasts until someone deletes it. Every file it names is kept until then: snapshot expiry and the orphan scan read every ref.</p>
+      <div class="tabs" data-group="client">
+        <section class="tab" data-tab="console" data-label="Console">
+          <p>On the tag's page, select <b class="ui">Delete</b>, then <b class="ui">Delete @eod-2026-11-25</b> in the dialog <b class="ui">Delete the tag @eod-2026-11-25</b>. The cross on the tag's line in <b class="ui">Branches and tags</b> opens the same dialog.</p>
+        </section>
+        <section class="tab" data-tab="curl" data-label="curl">
+          <div class="code" data-lang="bash" data-title="Delete the tag">
+<pre><code>curl -sS -X DELETE "$NUNA/management/v1/catalogs/trading/refs/eod-2026-11-25" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+          </div>
+          <p>The server answers <code>204</code>.</p>
+        </section>
+      </div>
+      <p>To let one table's data go while keeping the rest of the tag, take that table out of refs instead: <code>POST /management/v1/catalogs/trading/objects/&lt;table id&gt;/refs/remove</code> with <code>{"refs": ["eod-2026-11-25"]}</code>, or <code>{"all-refs": true}</code> for every ref that names it. That needs <code>manage-tags</code> on the table, and a legal hold or DR freeze refuses it.</p>
+
+      <aside class="callout check">
+        <p class="callout-title">The tag keeps the catalog as it was</p>
+        <p>Commit to a table on main, then read it through the tag: the tag still returns the earlier rows. <code>GET /management/v1/catalogs/trading/refs/eod-2026-11-25</code> shows the tag with its <code>cut-at</code>.</p>
+      </aside>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>What you see, why, and what to do</caption>
+          <thead><tr><th scope="col">What you see</th><th scope="col">Why</th><th scope="col">What to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>400</code> <code>updateTable is refused on tag eod-2026-11-25 of catalog trading: a tag is read-only</code></td><td>A write was sent through the tag. The message names the operation.</td><td>Write through main or a branch.</td></tr>
+            <tr><td><code>Server does not support endpoint: POST /v1/{prefix}/namespaces/{namespace}/tables/{table}</code> in the client</td><td>The client refused a commit through the tag before sending it.</td><td>Write through main or a branch.</td></tr>
+            <tr><td><code>400</code> <code>Ref eod-2026-11-25 is a tag, which never expires</code></td><td>A renewal was asked for a tag.</td><td>Nothing to do: a tag lasts until deleted.</td></tr>
+            <tr><td><code>409</code> <code>RefLimitException</code> <code>Catalog trading holds 1000 tags, as many as nuna.refs.max-tags allows</code></td><td>The catalog holds as many tags as allowed.</td><td>Delete tags no longer needed, or ask an operator to raise the limit.</td></tr>
+            <tr><td><code>409</code> <code>AlreadyExistsException</code> <code>Ref already exists: eod-2026-11-25</code></td><td>A branch or tag has that name, in any case.</td><td>Choose another name.</td></tr>
+            <tr><td><code>404</code> <code>NoSuchRefException</code> <code>Ref does not exist: …</code></td><td>The <code>from</code> ref does not exist.</td><td>Check its name.</td></tr>
+            <tr><td><code>404</code> <code>The given warehouse does not exist: trading@eod-2026-11-25 (catalog trading has no branch or tag eod-2026-11-25)</code></td><td>The tag does not exist, or was deleted.</td><td>Check the name in <b class="ui">Branches and tags</b>.</td></tr>
+            <tr><td><code>409</code> <code>NamespaceNotEmptyException</code> <code>… is not empty: a branch or tag names a table or view in it</code></td><td>A namespace drop on main was refused because the tag still names a table in it.</td><td>Delete the tag, or take the table out of refs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="branch-workflow.html">Write, audit and publish with a branch</a>: the writable kind of ref.</li>
+          <li><a href="time-travel.html">Read an earlier version of a table</a>: one table's snapshots and Iceberg refs.</li>
+          <li><a href="../concepts/branches-and-tags.html">Catalog branches and tags</a>: what a ref keeps.</li>
+          <li><a href="../api/refs.html#endpoints">Branches and tags API</a>: every ref endpoint.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/governance/RefSettings.java</code>, <code>catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java</code>, <code>catalog-server/src/main/resources/nuna/ui/refs.js</code> and <code>docs/refs.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>The shape of a tag was read from the local demo's ref listing (its tag <code>sample</code>) with a GET request. Making and deleting were not run.</p>
+      </details>
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

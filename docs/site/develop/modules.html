@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="develop/modules">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Module map · nuna docs</title>
+  <meta name="description" content="Each Gradle module of the nuna build and what it holds, in the order settings.gradle.kts lists them.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference">
+      <header class="doc-head">
+        <h1>Module map</h1>
+        <p class="lead">Each Gradle module of the nuna build and what it holds, in the order <code>settings.gradle.kts</code> lists them.</p>
+      </header>
+
+      <h2 id="modules">Modules</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Module</th><th scope="col">Holds</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>catalog-tests-s3</code></th><td>Test support: the one S3 store every test uses, chosen with <code>-Ps3=silo</code>, <code>ceph</code> or <code>aws</code>, and the tests' Kafka broker.</td></tr>
+            <tr><th scope="row"><code>catalog-tests-docker</code></th><td>Test support: the Testcontainers Docker client made safe for Podman, added to every test run.</td></tr>
+            <tr><th scope="row"><code>catalog-core</code></th><td>Domain types, the commit loop, idempotency, the commit rules and authorization decisions.</td></tr>
+            <tr><th scope="row"><code>catalog-iceberg</code></th><td>The only module of nuna's own that imports iceberg-core: metadata parsing, applying updates and requirements, and the wire format.</td></tr>
+            <tr><th scope="row"><code>catalog-store-api</code></th><td>The storage interface every database implements, and the shared suite each must pass.</td></tr>
+            <tr><th scope="row"><code>catalog-store-sql</code></th><td>The PostgreSQL and CockroachDB store.</td></tr>
+            <tr><th scope="row"><code>catalog-store-sql-raft</code></th><td>Tests only: the SQL store's suite on a CockroachDB cluster. Nothing depends on it.</td></tr>
+            <tr><th scope="row"><code>catalog-store-oracle</code></th><td>The Oracle store.</td></tr>
+            <tr><th scope="row"><code>catalog-store-mongo</code></th><td>The MongoDB store.</td></tr>
+            <tr><th scope="row"><code>catalog-objectstore</code></th><td>Storage profiles, metadata file reading and writing with hash checks, and location guardrails.</td></tr>
+            <tr><th scope="row"><code>catalog-security</code></th><td>Token validation, principals and trusted engines.</td></tr>
+            <tr><th scope="row"><code>catalog-audit</code></th><td>Audit events, the outbox relay, Kafka publishing, the change stream and the hash-chained archive.</td></tr>
+            <tr><th scope="row"><code>catalog-server</code></th><td>The Spring Boot server: the REST and management routes, settings, error mapping, self-checks, and the console under <code>src/main/resources/nuna/ui/</code>.</td></tr>
+            <tr><th scope="row"><code>catalog-tests-load</code></th><td>Load, contention, resilience and latency runs against running servers. Every test is tagged <code>overnight</code>.</td></tr>
+            <tr><th scope="row"><code>catalog-tests-conformance</code></th><td>Runs the Iceberg REST Compatibility Kit against the server, with a record of which tests pass so none regresses.</td></tr>
+            <tr><th scope="row"><code>catalog-tests-engines</code></th><td>The engine matrix: Spark, Kafka Connect, PyIceberg and SingleStore against the server deployed by its Helm chart in a kind cluster.</td></tr>
+            <tr><th scope="row"><code>singlestore-change-feed</code></th><td>A SingleStore pipeline connector that reads a table's change feed and commits it to an Iceberg table through the catalog.</td></tr>
+            <tr><th scope="row"><code>catalog-maintenance</code></th><td>The maintenance worker, a separate service.</td></tr>
+            <tr><th scope="row"><code>catalog-audit-tables</code></th><td>The audit tables writer, a separate service.</td></tr>
+            <tr><th scope="row"><code>demo-datagen</code></th><td>The demo's data generator, which produces the brokerage world.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="index.html">Build nuna from source</a>: build every module.</li>
+          <li><a href="testing.html">How nuna is tested</a>: which modules' tests run in which build.</li>
+          <li><a href="../concepts/architecture.html">How nuna fits together</a>: the programs these modules make.</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>settings.gradle.kts</code>, each module's <code>build.gradle.kts</code> description and the READMEs of <code>catalog-maintenance</code>, <code>catalog-audit-tables</code> and <code>catalog-tests-engines</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

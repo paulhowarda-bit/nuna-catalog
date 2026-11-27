@@ -26,12 +26,13 @@ const gotoIn = $('#goto-in');
 const gotoList = $('#goto-list');
 const gotoH = $('#goto-h');
 
-let config = {'dev-token-login': false, oidc: null};
+let config = {'dev-token-login': false, oidc: null, 'docs-url': null};
 let catalogs = null;
 let cat = null;
 let prev = null;
 
-// ---- theme: light, dark, or the system's; the choice is kept in this browser ----
+// ---- theme: light, dark, or the system's; the choice is kept in this browser, and the documentation served beside the
+// console under /docs/ reads the same key, so a reader's choice carries across ----
 
 const THEME = 'nuna.theme';
 let theme = 'auto';
@@ -122,13 +123,48 @@ function homeKey(c) {
   return 'catalog';
 }
 
+// ---- the documentation: served by the server at /docs/, a copy elsewhere, or none (nuna.ui.docs-url) ----
+
+/** A page of the documentation, or null when the server hides its links. */
+const docs = page => config['docs-url'] ? config['docs-url'] + page : null;
+
+const DOC_PAGES = {overview: 'overview', refs: 'branches-and-tags', maintenance: 'maintenance', governance: 'governance',
+  grants: 'grants', audit: 'audit', service: 'service'};
+
+/** The documentation's page for the console page shown, at the tab shown when the page documents each tab. */
+function docsOf(r, navKey) {
+  if (!navKey) return docs('console/index.html');
+  const page = navKey === 'catalog' ? ({namespace: 'namespace', table: 'table', view: 'view'}[r.k] || 'catalog')
+    : DOC_PAGES[navKey];
+  return docs(`console/${page}.html${r.tab && navKey !== 'service' ? '#' + encodeURIComponent(r.tab) : ''}`);
+}
+
+/** Points the header's Docs button and the drawer's link at `url`, or hides them; the keys dialog names the home. */
+function setDocs(url) {
+  for (const a of $$('[data-docs]')) {
+    a.hidden = !url;
+    if (url) a.href = url;
+  }
+  const line = $('[data-docs-line]');
+  line.hidden = !config['docs-url'];
+  if (config['docs-url']) {
+    const home = $('[data-docs-home]');
+    home.href = config['docs-url'];
+    home.textContent = new URL(config['docs-url'], location.href).href;
+  }
+}
+
+/** A next step for a page that holds nothing for the caller: who may use what, in the documentation. */
+const privilegesLink = () => docs('reference/privileges.html') ? h('p', null, h('a', {href: docs('reference/privileges.html'),
+  target: '_blank', rel: 'noopener'}, 'Who may use what, in the docs')) : null;
+
 const RAIL = ['overview', 'catalog', 'refs', 'maintenance', 'governance', 'grants', 'audit', 'service'];
 
 /** A page the caller's groups cannot use, reached by a link: said in plain words, and the catalog is never asked. */
 function closedPage(title, words) {
   return h('div', {class: 'nc-main', id: 'closed-page'}, h('div', {class: 'ph'}, h('h1', {tabindex: '-1'}, title)),
     h('div', {class: 'empty', 'data-closed': ''}, h('h3', null, words), h('p', null, `Your groups: ${groupWords()}. Ask a grant `
-      + 'admin if your work needs it.')));
+      + 'admin if your work needs it.'), privilegesLink()));
 }
 
 // ---- the menu: a rail on a wide screen, a drawer on a phone ----
@@ -348,6 +384,10 @@ function signInPage(message, again) {
       + 'to connect your organisation\'s sign-in.',
     techDetails(h('p', null, 'An operator sets ', h('code', null, 'nuna.ui.oidc.issuer'), ' and ', h('code', null, 'nuna.ui.oidc.client-id'),
       ' (or, for local development only, ', h('code', null, 'nuna.ui.dev-token-login=true'), ').')))));
+  }
+  if (docs('console/sign-in.html')) {
+    form.append(h('p', {class: 'fine signin-docs'}, h('a', {href: docs('console/sign-in.html'), target: '_blank', rel: 'noopener',
+      'data-docs-signin': ''}, 'Documentation'), ': how signing in works, and everything nuna does.'));
   }
   fill(signinEl, h('main', {class: 'signin', id: 'signin-page'},
     h('div', {class: 'signin-side'}, brand(), h('h2', null, CLAIM),
@@ -665,7 +705,8 @@ const same = (a, b) => a && b && a.page === b.page && a.c === b.c && a.k === b.k
 function noCatalog() {
   return h('div', {class: 'nc-main'}, h('div', {class: 'ph'}, h('h1', {tabindex: '-1'}, 'No catalog to show')),
     h('div', {class: 'empty'}, h('h3', null, 'Your groups hold nothing in any catalog'),
-      h('p', null, 'The catalog lists only the catalogs where your groups hold a grant. Ask a grant admin for one.')));
+      h('p', null, 'The catalog lists only the catalogs where your groups hold a grant. Ask a grant admin for one.'),
+      privilegesLink()));
 }
 
 function render() {
@@ -690,6 +731,7 @@ function render() {
   if (r.page !== 'service' && !names.length) {
     cat = null;
     setChrome(null);
+    setDocs(docsOf(r, null));
     slot.replaceChildren(noCatalog());
     document.title = 'No catalog · nuna';
     prev = r;
@@ -698,6 +740,7 @@ function render() {
   if (r.c && !names.includes(r.c)) {
     cat = fallback;
     setChrome(null);
+    setDocs(docsOf(r, null));
     slot.replaceChildren(notFound(`No catalog named ${r.c} that your groups may see`));
     document.title = 'Not found · nuna';
     prev = r;
@@ -749,6 +792,7 @@ function render() {
   const reading = !r.page && r.k !== 'ref' ? r.r : null;
   const carried = r.page && r.page !== 'service' ? r.r : null;
   setChrome(navKey, reading || carried);
+  setDocs(docsOf(r, navKey));
   // A browse page that reads through a ref draws the Reading control itself (refChrome); every other page with a
   // catalog gets one whose refs open the catalog through them (Atelier's review, S4; backlog 201).
   const pageReads = navKey === 'catalog';

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="install/telemetry">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Send telemetry · nuna docs</title>
+  <meta name="description" content="Point the catalog server and the maintenance worker at an OpenTelemetry collector, so their metrics, traces and logs reach your monitoring.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="guide">
+      <header class="doc-head">
+        <h1>Send telemetry</h1>
+        <p class="lead">Point the catalog server and the maintenance worker at an OpenTelemetry collector, so their metrics, traces and logs reach your monitoring.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>Both programs send metrics, traces and logs over OTLP/HTTP once an endpoint is set, and export nothing until then. Their log lines go to stdout as JSON either way, so the cluster's own log collection works without a collector.</p>
+
+      <h2 id="before-you-begin">Before you begin</h2>
+      <ul>
+        <li>An OpenTelemetry collector, or another receiver, that takes OTLP over HTTP with protobuf, usually on port 4318. OTLP over gRPC (port 4317) is not supported.</li>
+        <li>The catalog and maintenance worker charts installed, or about to be (<a href="helm-catalog.html">Install the catalog server with Helm</a>, <a href="helm-maintenance.html">Install the maintenance worker</a>).</li>
+      </ul>
+
+      <h2 id="set-the-endpoint">Set the endpoint</h2>
+      <ol class="steps">
+        <li>
+          <p class="step-title">Add a telemetry block to each chart's values.</p>
+          <div class="code" data-lang="yaml">
+<pre><code>telemetry:
+  endpoint: http://otel-collector.observability:4318
+  headersSecret: {name: otlp-headers, key: headers}
+  caConfigMap: {name: otlp-ca, key: ca.crt}
+  sampling: "0.1"
+  resourceAttributes: {deployment.environment.name: prod}</code></pre>
+          </div>
+          <p>Only <code>endpoint</code> is needed. <code>/v1/metrics</code>, <code>/v1/traces</code> and <code>/v1/logs</code> are added to it.</p>
+        </li>
+        <li>
+          <p class="step-title">Put any credential headers in a Secret.</p>
+          <p>Headers are <code>name=value</code> pairs separated by commas. Make the Secret in the release's namespace:</p>
+          <div class="code" data-lang="bash">
+<pre><code>kubectl -n "$NS" create secret generic otlp-headers \
+  --from-literal=headers='authorization=Bearer &lt;key&gt;'</code></pre>
+          </div>
+          <p>When nothing in them is secret, use <code>headers: "x-tenant=lake"</code> instead. <code>headersSecret</code> wins when both are set.</p>
+        </li>
+        <li>
+          <p class="step-title">Trust an internal CA, if the collector uses one.</p>
+          <p>For an <code>https</code> endpoint signed by an internal CA, put the CA's PEM certificate in a ConfigMap and name it in <code>caConfigMap</code>. The chart mounts it at <code>/etc/nuna/otlp-ca</code>.</p>
+        </li>
+        <li>
+          <p class="step-title">Upgrade the releases.</p>
+          <div class="code" data-lang="bash">
+<pre><code>helm upgrade nuna-catalog deploy/helm/nuna-catalog -n "$NS" -f catalog-values.yaml
+helm upgrade nuna-maintenance deploy/helm/nuna-maintenance -n "$NS" -f maintenance-values.yaml</code></pre>
+          </div>
+        </li>
+      </ol>
+      <aside class="callout check">
+        <p class="callout-title">Check it worked</p>
+        <p>Within a minute or two your metrics store holds <code>nuna_catalog_alerts_metadata_integrity_total</code>, which every server sends each minute from its start, with <code>job</code> set to <code><var>namespace</var>/nuna-catalog</code>.</p>
+      </aside>
+
+      <h2 id="what-the-chart-sets">What the chart sets</h2>
+      <p>The charts turn the values into the standard OpenTelemetry variables, which Spring Boot reads:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>Environment variables the charts set</caption>
+          <thead><tr><th scope="col">Variable</th><th scope="col">From</th></tr></thead>
+          <tbody>
+            <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td><code>telemetry.endpoint</code></td></tr>
+            <tr><td><code>OTEL_EXPORTER_OTLP_HEADERS</code></td><td><code>telemetry.headersSecret</code>, or <code>telemetry.headers</code></td></tr>
+            <tr><td><code>OTEL_EXPORTER_OTLP_CERTIFICATE</code></td><td>The file from <code>telemetry.caConfigMap</code></td></tr>
+            <tr><td><code>OTEL_TRACES_SAMPLER</code>, <code>OTEL_TRACES_SAMPLER_ARG</code></td><td><code>parentbased_traceidratio</code> and <code>telemetry.sampling</code></td></tr>
+            <tr><td><code>OTEL_SERVICE_NAME</code></td><td>Always the chart's name: <code>nuna-catalog</code> or <code>nuna-maintenance</code></td></tr>
+            <tr><td><code>OTEL_RESOURCE_ATTRIBUTES</code></td><td>Always <code>service.namespace</code>, <code>service.version</code> (the image tag), <code>service.instance.id</code> (the pod), <code>k8s.namespace.name</code>, <code>k8s.pod.name</code> and <code>k8s.node.name</code>, plus <code>telemetry.resourceAttributes</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>If your platform injects the <code>OTEL_*</code> variables itself, with an operator or a sidecar, leave <code>telemetry.endpoint</code> empty. The endpoint and headers it injects take effect, beside the service name, resource attributes and sampler the chart sets.</p>
+
+      <h2 id="send-the-logs-elsewhere">Send the logs elsewhere</h2>
+      <p>The catalog chart can send its logs alone to another OTLP/HTTP endpoint: <code>telemetry.logsEndpoint</code>, the full URL ending <code>/v1/logs</code>. It takes precedence over <code>endpoint</code> for logs; metrics and traces still go to <code>endpoint</code>, or nowhere. The usual use is the audit tables writer's receiver, so the console's Audit page needs no Kafka:</p>
+      <div class="code" data-lang="yaml">
+<pre><code>telemetry:
+  logsEndpoint: http://nuna-audit-tables:4318/v1/logs
+  logsTokenSecret: {name: audit-receiver-token, key: token}</code></pre>
+      </div>
+      <p>The token in <code>logsTokenSecret</code> is sent with every log export as the <code>X-Nuna-Audit-Token</code> header (<a href="../operate/audit-pipeline.html">Run the audit pipeline</a>).</p>
+
+      <h2 id="outside-kubernetes">Outside Kubernetes</h2>
+      <p>Set the same variables yourself:</p>
+      <div class="table-wrap">
+        <table>
+          <caption>OpenTelemetry variables nuna reads</caption>
+          <thead><tr><th scope="col">Variable</th><th scope="col">Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>The collector's OTLP/HTTP base URL. Switches on all three signals.</td></tr>
+            <tr><td><code>OTEL_EXPORTER_OTLP_METRICS_ENDPOINT</code>, <code>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT</code>, <code>OTEL_EXPORTER_OTLP_LOGS_ENDPOINT</code></td><td>One signal's full URL instead.</td></tr>
+            <tr><td><code>OTEL_EXPORTER_OTLP_HEADERS</code></td><td>Headers sent with every export.</td></tr>
+            <tr><td><code>OTEL_EXPORTER_OTLP_LOGS_HEADERS</code></td><td>Headers for log exports only.</td></tr>
+            <tr><td><code>OTEL_EXPORTER_OTLP_CERTIFICATE</code></td><td>A PEM file with the CA that signed an <code>https</code> collector's certificate.</td></tr>
+            <tr><td><code>OTEL_SERVICE_NAME</code>, <code>OTEL_RESOURCE_ATTRIBUTES</code></td><td>The resource the signals come from.</td></tr>
+            <tr><td><code>OTEL_TRACES_SAMPLER</code>, <code>OTEL_TRACES_SAMPLER_ARG</code></td><td>Which traces are kept. Without them, 10% of new traces.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Metrics stay off until a metrics endpoint is set, even though Spring Boot alone would push to <code>localhost:4318</code>.</p>
+
+      <h2 id="if-it-fails">If it fails</h2>
+      <ul>
+        <li><strong>Nothing arrives.</strong> Check the endpoint is OTLP over HTTP, not gRPC, and that the pods reach it. Each failed export logs a warning.</li>
+        <li><strong>Requests slow when the collector is down.</strong> They do not: exports run on background threads with queues of 2,048, and records that do not fit are dropped. A stopping pod waits up to 10 s for its last exports.</li>
+        <li><strong>Series arrive under unexpected names.</strong> See <a href="../operate/dashboards-alerts.html#if-your-prometheus-names-differ">If your Prometheus names differ</a>.</li>
+      </ul>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="../operate/metrics.html">Metrics</a>, <a href="../operate/traces-and-logs.html">Traces, logs and the request id</a>.</li>
+          <li><a href="../operate/dashboards-alerts.html">Dashboards and alerts</a>.</li>
+          <li><a href="../configure/helm-values.html">Helm values</a>.</li>
+        </ul>
+      </section>
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>deploy/helm/nuna-catalog/values.yaml</code>, <code>deploy/helm/nuna-maintenance/values.yaml</code>, both charts' deployment templates, <code>deploy/README.md</code> (Telemetry) and <code>docs/observability/README.md</code>, checked against commit <code>b3e8582f</code> on 2026-11-26.</p>
+        <p>Nothing was run for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>
