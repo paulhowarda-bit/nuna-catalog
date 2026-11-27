@@ -2,14 +2,14 @@ Breaks: shares an ACATS transfer brings in (template 83) are not on the stock re
 Module: demo-datagen
 Test: ClearingTest#theStockRecordTiesToTheLedgersPositionsAndLotsAndItsOwnersToItsLocations
 diff --git a/demo-datagen/src/main/java/nuna/datagen/world/World.java b/demo-datagen/src/main/java/nuna/datagen/world/World.java
-index 556e1ee4..4de1736d 100644
+index 47ce2fb9..b538d89f 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/world/World.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/world/World.java
-@@ -1252,7 +1252,6 @@ public final class World {
+@@ -1353,7 +1353,6 @@ public final class World {
              FinancialTransaction t = ft(83, a, "acats", Map.of(6, s.id(), 8, total, 11, control, 12, contra, 13, type,
                  18, lots));
              if (book(current, t, false)) {
 -                clearing.transfer(a.id(), s, BigDecimal.valueOf(total));
+                 positionsReceived++;
+                 sharesReceived = sharesReceived.add(BigDecimal.valueOf(total));
                  List<Long> held = longLots.computeIfAbsent(a.id(), k -> new TreeMap<>())
-                     .computeIfAbsent(s.id(), k -> new ArrayList<>());
-                 for (int k = 0; k < lots.size(); k++) {
