@@ -67,6 +67,7 @@ class GovernanceRoutes {
     private static final String FREEZE = "/dr-freeze";
     private static final String SUMMARY = "/governance/summary";
     private static final String HOLDS_AND_FREEZES = "/governance/holds";
+    private static final String DR_FREEZES = "/governance/dr-freezes";
 
     /** The attributes set through this API, from the console or an outside tool (D27), by their path name. */
     static final Map<String, GovernanceAttribute.Kind> PUSHED = Map.of(
@@ -147,6 +148,24 @@ class GovernanceRoutes {
         ObjectNode window = body.putObject("history");
         window.put("days", HoldHistory.DAYS);
         window.put("since", result.since().toString());
+        return json(200, body);
+    }
+
+    /**
+     * The DR freezes standing in the catalog, the newest placed first, for a platform operator, who may lift them but
+     * holds no describe (D55, item 323): each with what it is on, the reason as recorded, who placed it and when.
+     * Read without a hold, a lift or the tables beneath a frozen level, so no legal hold reaches it; a grant holder
+     * who is no operator reads freezes in {@link #holdsAndFreezes}. A refusal is audited as a denial; a read
+     * records nothing, as {@link #holdsAndFreezes} does.
+     */
+    @GetMapping(path = CATALOG + DR_FREEZES, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> drFreezes(@PathVariable("catalog") String prefix, HttpServletRequest http) {
+        Request request = management.request(http);
+        Target target = management.target(request, "listDrFreezes", null, prefix, null, null, null);
+        guard.requireOperatorOn(request, target, "listDrFreezes");
+        ObjectNode body = Management.JSON.createObjectNode();
+        body.put("catalog", target.catalog().name());
+        body.set("freezes", GovernanceSummary.readFreezes(store, target.catalog()).drFreezes());
         return json(200, body);
     }
 

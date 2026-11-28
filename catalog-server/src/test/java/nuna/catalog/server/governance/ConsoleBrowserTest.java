@@ -558,7 +558,8 @@ class ConsoleBrowserTest {
             browser.open("/ui/#p=governance&c=trading");
             browser.await(By.cssSelector("#governance-freeze [data-act='freeze-path']"));
             assertThat(driver.findElements(By.cssSelector("#governance-summary, #governance-holds"))).isEmpty();
-            assertThat(driver.findElement(By.id("operator-freezes")).getText()).isEmpty();
+            // The standing freezes he may lift, from the operators' own list, which writes no denial (D55, item 323).
+            browser.await(By.cssSelector("#operator-freezes tr[data-on='" + String.join(".", eu) + "']"));
             assertThat(rail()).containsExactly("service", "governance");
             browser.open("/ui/#c=trading");
             assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
@@ -1099,6 +1100,40 @@ class ConsoleBrowserTest {
         assertThat(cell(hold, 2)).isEqualTo("this namespace");
         assertThat(browser.await(By.cssSelector("#governance .status-row")).getText()).contains("No DR freeze");
         assertThat(driver.findElements(By.cssSelector("#governance .status-frozen"))).isEmpty();
+    }
+
+    /**
+     * A platform operator who holds nothing in the catalog sees on Governance the DR freezes he may lift, each with its
+     * path, its reason as text, who placed it and when, and lifts one with Lift; no legal hold is listed (D55, item 323).
+     */
+    @Test
+    void anOperatorSeesTheStandingFreezesAndLiftsOneFromGovernance() {
+        List<String> drill = List.of(top, "drill_" + Api.suffix());
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":" + json(drill) + "}"), 200);
+        String markup = "console test: <b>drill</b> & <img src=x>";
+        expect(api.manage("PUT", "/namespaces/" + ns(drill) + "/dr-freeze", "{\"reason\":\"" + markup + "\"}", AUTH,
+                api.operator()), 200);
+
+        signIn(api.operator());
+        browser.open("/ui/#p=governance&c=trading");
+        WebElement eus = browser.await(By.cssSelector("#operator-freezes tr[data-on='" + String.join(".", eu) + "']"));
+        assertThat(cell(eus, 1)).isEqualTo(String.join(".", eu) + " · namespace");
+        assertThat(cell(eus, 2)).isEqualTo(FREEZE_REASON);
+        assertThat(cell(eus, 3)).as("when and by whom").contains("\n").isNotBlank();
+        assertThat(textContent(browser.await(By.id("operator-freezes")))).doesNotContain(HOLD_REASON);
+        assertThat(driver.findElements(By.cssSelector("#operator-freezes tr[data-kind='hold']"))).isEmpty();
+
+        By drilled = By.cssSelector("#operator-freezes tr[data-on='" + String.join(".", drill) + "']");
+        WebElement row = browser.await(drilled);
+        assertThat(cell(row, 2)).as("the reason is text, never markup").isEqualTo(markup);
+        assertThat(row.findElements(By.cssSelector("td:nth-child(2) b, td:nth-child(2) img"))).isEmpty();
+        row.findElement(By.cssSelector("[data-act='lift']")).click();
+        WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
+        browser.awaitText(By.cssSelector("dialog.dlg #dlg-h"), "Lift the DR freeze on " + drill.getLast());
+        dialog.findElement(By.cssSelector("button[type='submit']")).click();
+        browser.await("the lifted freeze stayed listed", d -> d.findElements(drilled).isEmpty());
+        assertThat(driver.findElements(By.cssSelector("#operator-freezes tr[data-on='" + String.join(".", eu) + "']")))
+                .hasSize(1);
     }
 
     /**

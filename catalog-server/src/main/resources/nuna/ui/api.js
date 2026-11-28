@@ -219,6 +219,9 @@ export const governanceSummary = catalog => call(`/management/v1/catalogs/${enc(
 /** Every hold and freeze in a catalog (item 128): those standing, and those the store recorded lifted in the last 30 days (item 133). */
 export const holdsAndFreezes = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/holds`);
 
+/** The DR freezes standing in a catalog, for platform operators (D55, item 323): {catalog, freezes: [{on, reason, placed-by, placed-at}]}, no hold. */
+export const drFreezes = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/dr-freezes`);
+
 /** An object's export: its pointer, current metadata and commit journal, by the object's id, through a catalog ref when `ref` names one (item 172). */
 export const exportObject = (catalog, id, ref) =>
   call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}/export${ref ? '?ref=' + enc(ref) : ''}`);

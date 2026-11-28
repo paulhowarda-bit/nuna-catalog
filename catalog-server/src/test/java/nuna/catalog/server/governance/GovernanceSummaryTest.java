@@ -388,6 +388,82 @@ class GovernanceSummaryTest {
                 "listHoldsAndFreezes");
     }
 
+    // ---- the DR freezes, for platform operators (D55, item 323) ----
+
+    /**
+     * With a hold and a freeze standing on one table, an operator's list has the freeze and nothing of the hold: no
+     * hold kind, no hold's reason, no lift and no count of the tables beneath. The holds list still refuses him.
+     */
+    @Test
+    void anOperatorListsTheStandingFreezesNewestFirstAndNoHold() {
+        attribute(journal.securable(), GovernanceAttribute.Kind.DR_FREEZE, "DR reconcile of the ledger", 2);
+        lifts.add(new GovernanceLift(GovernanceLift.Kind.DR_FREEZE, Optional.empty(), namespaceOf(sandbox),
+                "DR drill 2026-11-02", "oscar", NOW.minus(Duration.ofDays(3)), "olga", NOW.minus(Duration.ofDays(2))));
+        caller = OLGA;
+        GovernanceRoutes routes = routes();
+
+        ResponseEntity<String> response = routes.drFreezes("gate", http);
+        JsonNode body = json(response);
+
+        assertThat(body.propertyNames()).containsExactly("catalog", "freezes");
+        assertThat(body.get("catalog").asString()).isEqualTo("gate");
+        JsonNode freezes = body.get("freezes");
+        assertThat(freezes.valueStream().map(each -> each.get("reason").asString()).toList())
+                .as("newest placed first").containsExactly("DR drill 2026-11-21", "DR reconcile of the ledger");
+        for (JsonNode freeze : freezes) {
+            assertThat(freeze.propertyNames()).containsExactly("on", "reason", "placed-by", "placed-at");
+            assertThat(freeze.get("placed-by").asString()).isEqualTo("oscar");
+        }
+        assertThat(paths(freezes.valueStream().map(each -> each.get("on")).toList()))
+                .containsExactly("Markets", "finance.ledger.journal");
+        assertThat(freezes.get(1).get("on").get("id").asString()).isEqualTo(journal.id().toString());
+        assertThat(freezes.get(1).get("placed-at").asString()).isEqualTo(NOW.minus(Duration.ofDays(2)).toString());
+        // The whole body: nothing of the hold on the same table, nor of any other, nor what was lifted.
+        assertThat(response.getBody()).doesNotContain("hold", "Matter", journalHold.id().toString(),
+                euHold.reason(), viewHold.reason(), "lifted", "2026-11-02", "closed", "tables");
+        assertThat(denials()).isEmpty();
+
+        assertThat(answer(() -> routes.holdsAndFreezes("gate", http))).as("the holds list").isEqualTo(403);
+        assertThat(denials()).extracting(Denial::operation).containsExactly("listHoldsAndFreezes");
+    }
+
+    @Test
+    void anOperatorInACatalogWithNoFreezeGetsAnEmptyList() {
+        attributes.removeIf(a -> a.kind() == GovernanceAttribute.Kind.DR_FREEZE);
+        caller = OLGA;
+
+        assertThat(json(routes().drFreezes("gate", http)).get("freezes")).isEmpty();
+    }
+
+    /** A grant holder who is no operator, describe and the steward's manage-tags among them, is refused, audited. */
+    @Test
+    void aGrantHolderWhoIsNoOperatorIsRefusedTheFreezesAndTheRefusalAudited() {
+        GovernanceRoutes routes = routes();
+        for (Caller refused : List.of(ANN, STELLA, TOM)) {
+            caller = refused;
+            assertThat(answer(() -> routes.drFreezes("gate", http))).as("freezes for %s", refused.principal().id())
+                    .isEqualTo(403);
+        }
+
+        assertThat(denials()).extracting(Denial::operation)
+                .containsExactly("listDrFreezes", "listDrFreezes", "listDrFreezes");
+        assertThat(denials()).extracting(d -> d.actor().principal()).containsExactly("ann", "stella", "tom");
+        Denial first = denials().getFirst();
+        assertThat(first.reason()).startsWith("no_privilege");
+        assertThat(first.privilege()).isNull();
+        assertThat(first.securable().kind()).isEqualTo(nuna.catalog.audit.Securable.Kind.CATALOG);
+        assertThat(first.securable().id()).isEqualTo(catalog.id());
+    }
+
+    @Test
+    void aCallerThatHoldsNothingInTheCatalogIsToldNoCatalogIsThereForTheFreezes() {
+        caller = NED;
+
+        assertThat(error(() -> routes().drFreezes("gate", http)).type()).isEqualTo("NoSuchWarehouseException");
+        assertThat(denials()).extracting(Denial::operation).containsExactly("listDrFreezes");
+        assertThat(denials().getFirst().actor().principal()).isEqualTo("ned");
+    }
+
     // ---- helpers ----
 
     private GovernanceRoutes routes() {
