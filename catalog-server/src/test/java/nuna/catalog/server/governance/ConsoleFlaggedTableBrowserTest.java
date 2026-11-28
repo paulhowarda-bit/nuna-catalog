@@ -215,9 +215,8 @@ class ConsoleFlaggedTableBrowserTest {
         assertThat(textContent(row.findElement(By.cssSelector(".badge")))).isEqualTo("Rule");
         assertThat(textContent(row.findElement(By.cssSelector(".what"))))
                 .startsWith("set the rule for demo-analysts");
-        assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
-                .map(r -> textContent(r.findElements(By.tagName("td")).get(0)).trim() + " "
-                        + textContent(r.findElements(By.tagName("td")).get(1)).trim()).toList())
+        browser.await("the chips have no counts", d -> d.findElements(By.cssSelector("#audit-feed .chip .n")).size() > 1);
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .chip")).stream().map(c -> textContent(c).strip()).toList())
                 .contains("Row and column rules 1", "Grants 1");
 
         browser.await(By.cssSelector("#audit-feed .chip[data-f='rule']")).click();

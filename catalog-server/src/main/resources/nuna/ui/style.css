@@ -461,6 +461,13 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .feed-row .what { color: var(--text-2); margin-top: 2px; }
 .feed-row .what code { color: var(--text); }
 .feed-row.is-refused { background: var(--bad-wash); border-radius: 6px; padding-left: 8px; padding-right: 8px; }
+/* a record is one line on a wide screen, and a run of like records one row, its records opened beneath it (backlog 328) */
+#audit-feed .feed-row { align-items: baseline; padding-top: 8px; padding-bottom: 8px; }
+.feed-row > .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.feed-row > .line .what { margin: 0; }
+.feed-row > .line .via { color: var(--text-2); }
+@container frame (min-width: 1241px) { #audit-feed .feed-row { grid-template-columns: 112px 118px minmax(0, 1fr) auto; } }
+.feed-row.in-run { box-shadow: inset 2px 0 0 var(--line-strong); padding-left: 12px; background: var(--surface-2); }
 .raw { font: 400 var(--t-12)/1.55 var(--f-mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px 14px; white-space: pre; overflow-x: auto; color: var(--text); grid-column: 2 / -1; }
 .raw .k { color: var(--accent); } .raw .s { color: var(--ok-ink); } .raw .n { color: var(--held-ink); }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }

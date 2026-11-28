@@ -1146,9 +1146,10 @@ class ConsoleBrowserTest {
             """;
 
     /**
-     * Audit filters by kind, and each By kind row applies its kind (Atelier's review, F7; backlog 187): a grant admin
-     * reaches a grant's record in three steps, Audit (where they land), the grant row, its record. Every filter is in
-     * the link, so Back keeps it; the audit's own reads are hidden unless asked for; the range names both days.
+     * Audit filters by kind (Atelier's review, F7; backlog 187): a grant admin reaches a grant's record in three steps,
+     * Audit (where they land), the Grants chip, its record. Every filter is in the link, so Back keeps it; the audit's
+     * own reads are hidden unless asked for; the counts' range names both days. By kind, which repeated the chips'
+     * counts, is gone, and with no archive so is Hash chain (backlog 328).
      */
     @Test
     void auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads() {
@@ -1158,19 +1159,26 @@ class ConsoleBrowserTest {
         driver.executeScript(AUDIT_TABLES_IN_THE_PAGE);
         browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
         assertThat(feedTypes()).containsExactly("grant", "commit");
-        assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
-        assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
-                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\. Choose a kind to show its records in the feed\\. .*");
+        // All is every kind but Reads (backlog 328).
+        assertThat(asked(lastAsked())).contains("nuna.catalog.grant", "nuna.catalog.commit")
+                .doesNotContain("nuna.catalog.read", "nuna.catalog.audit-read", "nuna.catalog.export");
+        browser.await("the chips have no counts", d -> !textContent(d.findElement(By.cssSelector("#audit-feed p[data-counts]"))).isEmpty());
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed p[data-counts]"))))
+                .matches("Counts are of the last day, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\.");
+        assertThat(driver.findElements(By.cssSelector("#audit-kinds, #hash-chain"))).isEmpty();
 
-        // By kind uses the chips' words, so its counts add up to them; each badge is its chip's word, the raw type
-        // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
-        assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
-                .map(row -> cell(row, 1) + " " + cell(row, 2)).toList()).containsExactly("Grants 1", "Commits 1", "All 2");
+        // The chips' counts add up, the audit's own reads hidden and not counted; each badge is its chip's word, the raw
+        // type its title (Atelier's re-walk after phase 2, backlog 214).
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .chip")).stream().map(c -> textContent(c).strip()).toList())
+                .contains("All 2", "Grants 1", "Commits 1", "Reads 0");
         // The headline counts every record; the chips leave out the hidden reads, and the checkbox says how many
         // (Atelier's re-walk after 212 to 217, backlog 220).
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip())
                 .isEqualTo("Show audit reads · 2 records hidden");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("4");
+        // The tile says how the chips share its total, so the two add up (backlog 328).
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-d"))))
+                .isEqualTo("2 under All, 0 under Reads, 2 audit reads");
         // Most recorded keeps its number columns in its card at 1280, 1440 and 1920 px: the long path wraps after a dot
         // (backlog 220), never inside a word, as it broke letter by letter at 1440 (backlog 326).
         WebElement busiest = browser.await(By.cssSelector("#audit-busiest"));
@@ -1187,7 +1195,7 @@ class ConsoleBrowserTest {
         WebElement grantBadge = driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .badge"));
         assertThat(textContent(grantBadge)).isEqualTo("Grant");
         assertThat(grantBadge.getDomAttribute("title")).isEqualTo("nuna.catalog.grant");
-        browser.await(By.cssSelector("#audit-kinds tr[data-kind='grant'] button")).click();
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='grant']")).click();
         browser.await("the feed did not show only grants", d -> feedTypes().equals(List.of("grant")));
         assertThat(lastAsked()).isEqualTo("nuna.catalog.grant");
         assertThat(driver.getCurrentUrl()).contains("p=audit", "kind=grant");
@@ -1216,7 +1224,7 @@ class ConsoleBrowserTest {
         driver.findElement(By.cssSelector("#audit-feed input[name='audit-reads']")).click();
         browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip()).isEqualTo("Show audit reads");
-        assertThat(lastAsked()).isNull();
+        assertThat(asked(lastAsked())).contains("nuna.catalog.audit-read", "nuna.catalog.grant").doesNotContain("nuna.catalog.read");
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
     }
 
@@ -1458,6 +1466,108 @@ class ConsoleBrowserTest {
     private List<String> feedTypes() {
         return driver.findElements(By.cssSelector("#audit-feed .feed-row")).stream()
                 .map(row -> row.getDomAttribute("data-type")).toList();
+    }
+
+    /** A type filter's types. */
+    private static List<String> asked(String types) {
+        assertThat(types).as("the feed's type filter").isNotNull();
+        return List.of(types.split(","));
+    }
+
+    /**
+     * One engine polling a table: the day's reads, and a page of them with one grant among them (backlog 328, from the
+     * review of 27 Nov, where 57,357 of 63,554 records were reads).
+     */
+    private static final String ENGINE_READS_IN_THE_PAGE = """
+            const real = window.fetch;
+            window.asked = [];
+            const now = Date.now();
+            let i = 0;
+            const rec = (secs, type, who, engine, path, data) => ({time: new Date(now - secs * 1000).toISOString(),
+              type: 'nuna.catalog.' + type, principal: who, engine, 'event-id': 'e' + (++i), partition: 0, offset: i,
+              'request-id': 'r' + i, object: {kind: 'TABLE', path}, event: {data}, chain: {status: 'no-archive'}});
+            const read = (secs, who, engine, path) => rec(secs, 'read', who, engine, path, {served: {version: 5}, branch: 'main'});
+            const rates = ['markets', 'fx', 'rates'];
+            const records = [];
+            for (let k = 0; k < 5; k++) records.push(read(10 + k * 3, 'singlestore', 'singlestore-demo', rates));
+            records.push(rec(40, 'grant', 'gina', null, ['equities', 'eu', 'trades'], {}));
+            records.push(read(50, 'spark', 'spark', ['equities', 'eu', 'trades']));
+            records.push(read(53, 'spark', 'spark', ['equities', 'eu', 'trades']));
+            for (let k = 0; k < 3; k++) records.push(read(60 + k * 3, 'singlestore', 'singlestore-demo', rates));
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/audit/summary')) {
+                return json({'by-type': {'nuna.catalog.read': 57357, 'nuna.catalog.audit-read': 8, 'nuna.catalog.grant': 1,
+                  'nuna.catalog.commit': 6196}, from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+              }
+              if (u.pathname.endsWith('/audit/archive')) return json({configured: false});
+              if (u.pathname.endsWith('/audit/feed')) {
+                window.asked.push(u.searchParams.get('type'));
+                const types = (u.searchParams.get('type') || '').split(',').filter(Boolean);
+                return json({records: records.filter(r => !types.length || types.includes(r.type))});
+              }
+              return real(url, init);
+            };
+            location.hash = '#p=audit&c=trading&kind=all';
+            """;
+
+    /**
+     * One engine's polling reads no longer drown the feed (Atelier's review of 27 Nov, item 4; backlog 328): All leaves
+     * the reads out and says so, the reads have their own chip, the tile says how the chips share its total, and a run of
+     * like records in a row is one row, which says how many and when, and opens its records beneath it. The fold covers
+     * only the page's own records, and the status line says so.
+     */
+    @Test
+    void anEnginesPollingReadsFoldIntoRunsUnderTheirOwnChip() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(ENGINE_READS_IN_THE_PAGE);
+        browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
+        browser.await("the chips have no counts", d -> !textContent(d.findElement(By.cssSelector("#audit-feed p[data-counts]"))).isEmpty());
+
+        assertThat(feedTypes()).containsExactly("grant");
+        assertThat(asked(lastAsked())).doesNotContain("nuna.catalog.read");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']"))).strip()).isEqualTo("All 6,197");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='read']"))).strip()).isEqualTo("Reads 57,357");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed p[data-counts]"))))
+                .endsWith(" All leaves out the 57,357 reads, which engines make every few seconds: they have their own chip.");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("63,562");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-d"))))
+                .isEqualTo("6,197 under All, 57,357 under Reads, 8 audit reads");
+
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='read']")).click();
+        browser.await("the feed did not show the reads", d -> feedTypes().size() == 4);
+        assertThat(asked(lastAsked())).containsExactly("nuna.catalog.read", "nuna.catalog.export");
+        assertThat(driver.getCurrentUrl()).contains("kind=read");
+        // Five singlestore reads in a row, two spark reads (too few to fold), then three singlestore reads.
+        List<WebElement> rows = driver.findElements(By.cssSelector("#audit-feed .feed-row"));
+        assertThat(rows.stream().map(r -> String.valueOf(r.getDomAttribute("data-run"))).toList())
+                .containsExactly("5", "null", "null", "3");
+        assertThat(textContent(rows.get(0).findElement(By.cssSelector(".what"))))
+                .matches("loaded version 5 of main · markets\\.fx\\.rates · 5 times, \\d\\d:\\d\\d:\\d\\d to \\d\\d:\\d\\d:\\d\\d");
+        assertThat(textContent(rows.get(0).findElement(By.cssSelector(".via")))).isEqualTo("via singlestore-demo");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-status"))))
+                .contains("Like records in a row are folded into one, among the 50 of each page only.");
+
+        // Nothing is hidden: the run opens its five records beneath it, each one a record, and closes again.
+        WebElement open = rows.get(0).findElement(By.cssSelector("button"));
+        assertThat(textContent(open)).isEqualTo("Show records");
+        open.click();
+        browser.await("the run did not open", d -> d.findElements(By.cssSelector("#audit-feed .feed-row.in-run")).size() == 5);
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row")).get(1).getDomAttribute("class")).contains("in-run");
+        assertThat(textContent(open)).isEqualTo("Hide records");
+        open.click();
+        browser.await("the run did not close", d -> d.findElements(By.cssSelector("#audit-feed .feed-row.in-run")).isEmpty());
+
+        // On a wide screen a record is one line.
+        frameOf(1920);
+        WebElement single = browser.await(By.cssSelector("#audit-feed .feed-row:not(.is-run)"));
+        assertThat((Boolean) driver.executeScript("return arguments[0].querySelector('.line').getBoundingClientRect().height < 32",
+                single))
+                .as("a record on one line at 1920 px").isTrue();
+        driver.manage().window().setSize(new Dimension(1440, 900));
     }
 
     /** The type filter of the feed's last request, null for none. */
