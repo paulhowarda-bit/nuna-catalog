@@ -299,6 +299,9 @@ class ConsoleBrowserTest {
         String crowded = "a_namespace_named_far_too_long_for_one_mark_" + Api.suffix();
         expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + crowded + "\"]}"), 200);
         api.table(crowded, "lonely");
+        // The sixth tile is Audit's, which needs the audit tables; this server has none, so their last day is answered.
+        HasCdp cdp = (HasCdp) new Augmenter().augment(driver);
+        cdp.executeCdpCommand("Page.addScriptToEvaluateOnNewDocument", Map.of("source", AN_AUDIT_DAY));
         signIn(api.everyDuty());
         // The console's frame is hidden until a page signed in is drawn, so one is drawn before it is measured.
         browser.open("/ui/#p=overview&c=trading");
@@ -338,6 +341,21 @@ class ConsoleBrowserTest {
               if ((cs.borderTopWidth !== '0px') !== (i > 0)) wrong.push(`row ${i + 1}, tile ${j + 1}: top ${cs.borderTopWidth}`);
             }));
             return {rows: rows.length, wrong: wrong.join('; ')};
+            """;
+
+    /** Answers a catalog's audit summary, an empty last day, and the archive, none set, as a server with audit tables would. */
+    private static final String AN_AUDIT_DAY = """
+            (() => {
+              const real = window.fetch;
+              const answer = body => Promise.resolve(new Response(JSON.stringify(body), {status: 200,
+                headers: {'Content-Type': 'application/json'}}));
+              window.fetch = (url, init) => {
+                const path = new URL(url, location.origin).pathname;
+                if (path.endsWith('/audit/summary')) return answer({'by-type': {}, 'deployment-by-type': {}});
+                if (path.endsWith('/management/v1/audit/archive')) return answer({configured: false});
+                return real(url, init);
+              };
+            })();
             """;
 
     /** The estate's labels that touch another, or run past the next namespace's first mark, as "a and b". */
@@ -1052,9 +1070,10 @@ class ConsoleBrowserTest {
         assertThat(expiries).noneMatch(WebElement::isDisplayed);
 
         browser.open("/ui/#" + at("namespace", levels, null, null));
+        WebElement lines = contentsRow("lines");
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
                 .extracting(ConsoleBrowser::textContent).contains("Last data change");
-        assertThat(textContent(contentsRow("lines").findElement(By.cssSelector("td.last"))))
+        assertThat(textContent(lines.findElement(By.cssSelector("td.last"))))
                 .endsWith(" by " + JsonPath.read(listed.body(), "$.tables[0].last-data-change.principal"));
     }
 

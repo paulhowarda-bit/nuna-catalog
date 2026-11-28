@@ -1,0 +1,26 @@
+Breaks: the header mark's label and link are set on the first [data-brand], which is <html> while a pack is set, not the mark.
+Module: catalog-server
+Test: ConsoleBrandTest#thePackShowsFromFirstPaintAndTheButtonTurnsItOffAndOn
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 583fcb10..6dc85982 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -74,7 +74,7 @@ function applyBrand() {
+   }
+   for (const n of $$('[data-pack-label]')) n.textContent = offered ? b['toggle-label'] : '';
+   for (const n of $$('[data-product]')) n.textContent = product();
+-  $('a[data-brand]').setAttribute('aria-label', `${packOn() && b ? b['mark-label'] : 'nuna'}, overview`);
++  $('[data-brand]').setAttribute('aria-label', `${packOn() && b ? b['mark-label'] : 'nuna'}, overview`);
+   if (packOn() && b && !b['show-name']) root.setAttribute('data-name-out', product());
+   else root.removeAttribute('data-name-out');
+ }
+@@ -288,7 +288,7 @@ function setChrome(navKey, ref) {
+     if (k === navKey) a.setAttribute('aria-current', 'page');
+     else a.removeAttribute('aria-current');
+   }
+-  $('a[data-brand]').href = cat ? homeHref(cat) : pageHref('service');
++  $('[data-brand]').href = cat ? homeHref(cat) : pageHref('service');
+   const count = $('.count', navEl);
+   queue().then(rows => {
+     const n = queueOf(rows, cat).length;
