@@ -40,6 +40,11 @@ kind_up() {
     echo "starting the Podman machine" >&2
     podman machine start >/dev/null
   fi
+  # The machine's kernel keeps a large free reserve and compacts eagerly (Paul, 2026-11-28; backlog 343): with
+  # the defaults, CockroachDB's three nodes broke its free memory into small pieces and the kernel could not open
+  # the channels that carry Windows' connections in ("page allocation failure: order:7"), so tests timed out
+  # reading. Written once; /etc/sysctl.d is read at every boot.
+  podman machine ssh "test -f /etc/sysctl.d/90-nuna-memory.conf || { printf 'vm.min_free_kbytes = 262144\nvm.compaction_proactiveness = 50\n' | sudo tee /etc/sysctl.d/90-nuna-memory.conf >/dev/null && sudo sysctl -q -p /etc/sysctl.d/90-nuna-memory.conf; }" >/dev/null 2>&1 || true
   case "$(podman container inspect --format '{{.State.Status}}' "$KIND_NODE" 2>/dev/null)" in
     running) ;;
     "")
