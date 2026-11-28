@@ -81,7 +81,8 @@ A job that fails is logged, counted in the scan's report, and tried again at the
 on. Every job can be run again safely. Recording a file that is already pending changes nothing: the catalog
 keeps each file once per object, with the time it was first recorded.
 
-The worker also reports its own work to the catalog, which keeps it for the console's health pages (D38,
+The worker also reports its own work to the catalog, which keeps it for the console's Service and Maintenance pages
+and each table's Maintenance tab (D38,
 `docs/observability/table-health.md`): each scan as it starts and ends (`PUT /management/v1/maintenance/scans/{id}`),
 and each table's assessment and compaction Job as it makes or starts and ends them
 (`PUT /management/v1/maintenance/tables/{id}/assessment`, `.../compaction`). A report the catalog does not take is
@@ -194,8 +195,8 @@ neediest tables in the worker's order (`docs/observability/table-health.md`).
 
 ## Maintenance on request
 
-A caller with `modify` on a table can ask for its compaction or its orphan scan to run now, from the console's
-Health tab or `POST .../tables/{table}/maintenance/requests` (D30, amended 2026-11-20; backlog 114;
+A caller with `modify` on a table can ask for its compaction or its orphan scan to run now, from the table's
+Maintenance tab in the console (**Compact now** is also at the top of the table's page) or `POST .../tables/{table}/maintenance/requests` (D30, amended 2026-11-20; backlog 114;
 `docs/observability/table-health.md`, "Maintenance on request"). The catalog checks the asker and its guards; the
 worker takes the request at its next scan, from the work list's `requests` section, inside the window or outside it:
 

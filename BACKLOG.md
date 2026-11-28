@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 2 S, 9 M, 4 L, 4 XL.
+**18 open:** 2 S, 8 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,7 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
 | [332](backlog/332.md) | M | Sign-in screen: the identity provider's name in words, and the developer token box folded | the code is small, but the docs screenshot needs the demo rebuilt | 2026-11-27 |
 | [333](backlog/333.md) | L | A brand slot for the console and the docs site: Ice line by default, an install's pack by settings | 2 to 5 days; it waits on nothing, the real pack is work's job | 2026-11-27 |
 
@@ -1300,28 +1299,6 @@ than one collector, `telemetry.sampling` at 1.0 in work's values, README.md sayi
 tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
 forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
-### 317. Internal documents disagree with the code
-
-- Added: 2026-11-27 by local_e8ac51d8-1582-4b16-bc65-5fa26bbd5773
-- Touches: demo/README.md, deploy/README.md, deploy/helm/, deploy/local/, docs/, catalog-maintenance/README.md, catalog-tests-engines/README.md, build-plan.md
-- Effort: M, many small corrections across the internal Markdown, each checked against the code
-
-Found while writing the documentation site (backlog 301), 2026-11-27; Paul asked for each to be filed.
-
-The documentation site was written from the code; these internal documents say otherwise:
-- `demo/README.md`: a "Snapshots" tab (now History); 3.8 GB (4,210 MiB) and 1.5 GB (1,472 MiB); the pinned list
-  misses metrics, and metrics are tail-sampled, not sampled at 1; ana's access from `print_access` is not "select on
-  both"; sign-out sends `id_token_hint` (`auth.js`), not "no ID token".
-- `deploy/README.md` and the chart's `values.yaml` comments miss the settings classes; `deploy/README.md` misses the
-  `pg_monitor` and `VIEWCLUSTERSETTING` grants; `deploy/local` values comments still name Docker Desktop.
-- `docs/observability/health-page.md` uses `#p=health` (now `#p=service`); `docs/observability/dashboards-and-alerts.md`
-  gives old counts (29 alert rules); `catalog-maintenance/README.md` says "Health tab"; `docs/refs.md` uses old
-  console words; `docs/install-at-work.md`'s image table is out of date; `build-plan.md` M8's SLO lines and
-  `catalog-tests-engines/README.md` are stale.
-
-What done looks like: each corrected from the code. The public documentation is `docs/site/`; where an internal
-document only repeats it, it may point there instead.
-
 ### 332. Sign-in screen: the identity provider's name in words, and the developer token box folded
 
 - Added: 2026-11-27 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
@@ -1720,6 +1697,7 @@ from disk stays Ice line.
 | [314](backlog/314.md) | Grafana dashboards and demo.sh messages name backlog items and D rows | done | 2026-11-27 |
 | [315](backlog/315.md) | Console: small faults the documentation writers found | done | 2026-11-27 |
 | [316](backlog/316.md) | Demo: the audit tables writer makes no commit, and demo.sh sql opens a database the feed setup drops | done | 2026-11-27 |
+| [317](backlog/317.md) | Internal documents disagree with the code | done | 2026-11-28 |
 | [318](backlog/318.md) | Brokerage world: fixes from the live check of items 151 to 155 and 308 | done | 2026-11-27 |
 | [319](backlog/319.md) | Console: a link to Grafana's charts on the Service page, when a Grafana URL is configured | done | 2026-11-27 |
 | [320](backlog/320.md) | demo.sh's aml_cases hold check fails at random under pipefail | done | 2026-11-27 |
