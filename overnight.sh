@@ -259,7 +259,24 @@ main() {
     # JVM exits) and Podman answers. The Ceph leg of 2026-11-15 started 9 s after the heavy build ended, while Docker
     # was still removing that build's containers, and its maintenance tests found no Docker; run on its own, the
     # same leg found it (backlog 32).
+    # Testcontainers reaches Podman through Windows' Docker pipe, which Podman's win-sshproxy serves; podman itself
+    # talks over SSH and keeps answering when that process has died. On 2026-11-28 it had, and every container test
+    # of the heavy build failed with "Could not find a valid Docker environment" (backlog 336). A missing pipe is
+    # brought back by restarting the machine, and the kind cluster in it.
+    pipe_up() { powershell.exe -NoProfile -Command "if (Test-Path '\\\\.\\pipe\\docker_engine') { exit 0 } else { exit 1 }" >/dev/null 2>&1; }
     settle() {
+        if [ "$(uname -o 2>/dev/null)" = Msys ] && ! pipe_up; then
+            say "Podman's Docker pipe is gone (win-sshproxy died); restarting the Podman machine"
+            { podman machine stop; podman machine start; } >>"$runs/overnight.log" 2>&1
+            if [ "$context" = kind-nuna ]; then
+                timeout 600 bash "$repo/deploy/kind/kind.sh" up >/dev/null 2>&1
+                # After the machine restart of 2026-11-28 the node ran, but its API port answered Windows with EOF
+                # until the node's container was restarted.
+                timeout 30 kubectl --context "$context" get nodes >/dev/null 2>&1 ||
+                    { podman restart nuna-control-plane >/dev/null 2>&1; sleep 60; }
+            fi
+            pipe_up || say "Podman's Docker pipe is still gone after the restart"
+        fi
         local until=$(( $(date +%s) + 180 ))
         while [ "$(date +%s)" -lt "$until" ]; do
             if [ -z "$(timeout 30 podman ps -q --filter label=org.testcontainers=true 2>/dev/null)" ] &&
