@@ -16,7 +16,9 @@ import org.testcontainers.utility.MountableFile;
 /**
  * The alert rules in deploy/grafana/rules, run by promtool (backlog 261). The catalog's rules have unit tests,
  * deploy/grafana/tests/nuna-catalog.test.yaml: a catalog answering every call 5xx pages, 409 conflicts alone do not,
- * a catalog that stops pushing pages, and a page whose series stop keeps firing for its keep_firing_for. promtool
+ * a catalog that stops pushing pages, and a page whose series stop keeps firing for its keep_firing_for. The maintenance rules have
+ * deploy/grafana/tests/nuna-maintenance.test.yaml: tables skipped as closed until classified for a day open a ticket
+ * (backlog 334). promtool
  * comes in the Prometheus image the demo runs ({@code prometheus.image}), so these start a container: heavy.
  */
 @Tag("heavy")
@@ -51,6 +53,12 @@ class AlertRulesTest {
     @Test
     void theCatalogRulesPassTheirUnitTests() throws Exception {
         promtool("test", "rules", "/grafana/tests/nuna-catalog.test.yaml");
+    }
+
+    /** A worker that skips tables closed until classified for a day opens a ticket; none closed, none (backlog 334). */
+    @Test
+    void theMaintenanceRulesPassTheirUnitTests() throws Exception {
+        promtool("test", "rules", "/grafana/tests/nuna-maintenance.test.yaml");
     }
 
     private static void promtool(String... arguments) throws Exception {

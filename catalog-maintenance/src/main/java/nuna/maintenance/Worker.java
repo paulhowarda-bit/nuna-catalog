@@ -183,6 +183,7 @@ final class Worker implements AutoCloseable {
                     tables -> tables.forEach(t -> maintain(t, now, report)), report);
             List<Management.RequestWork> requests = new ArrayList<>();
             pages(Management.Section.REQUESTS, management::requests, requests::addAll, report);
+            report.closed += (int) requests.stream().filter(r -> r.table().closed()).count();
             requested.compact(requests, report);
             compact(report);
             if (reaches) {
@@ -319,6 +320,9 @@ final class Worker implements AutoCloseable {
      */
     void maintain(Management.TableWork work, Instant now, ScanReport report) {
         report.tables++;
+        if (work.closed()) {
+            report.closed++;
+        }
         boolean expire = work.runs("snapshot-expiry.enabled");
         boolean rewrite = work.runs("manifest-rewrite.enabled");
         Optional<CleanupWindow.Night> open = open();
@@ -387,9 +391,15 @@ final class Worker implements AutoCloseable {
 
     /**
      * The table as the work list named it, loaded by name; none when it cannot be loaded or another table now has the
-     * name, each reported.
+     * name, each reported, or when the work list says it is closed until classified, which is named, not loaded.
      */
     private Optional<Table> load(Management.TableWork work, ScanReport report) {
+        if (work.closed()) {
+            // Closed until classified (D27): the catalog would refuse the load and audit the refusal at every scan,
+            // so the worker leaves the table alone, names it, and the gauge of closed tables shows it (backlog 334).
+            report.skippedClosed(work);
+            return Optional.empty();
+        }
         Table table;
         try {
             table = spans.part(ScanSpans.Part.TABLE_LOAD, KeyValues.empty(),

@@ -36,6 +36,11 @@ final class WorkerMetrics {
     static final String SCAN = PREFIX + "scan";
     /** A gauge: when the last successful scan ended, in seconds since the epoch; 0 until one has. */
     static final String LAST_SUCCESS = PREFIX + "scan.last.success";
+    /**
+     * A gauge: how many work-list entries the last finished scan found closed until classified (D27; backlog 334),
+     * skipped without being loaded; 0 until a scan has finished. No table label.
+     */
+    static final String CLOSED = PREFIX + "tables.closed";
     /** A counter: failed jobs and work list reads, by kind. */
     static final String FAILURES = PREFIX + "failures";
     /** A counter: tables found needing compaction, by reason. */
@@ -103,6 +108,8 @@ final class WorkerMetrics {
     private final Timer failed;
     /** When the last successful scan ended, in seconds since the epoch; 0 until one has. */
     private volatile double lastSuccess;
+    /** How many work-list entries the last finished scan found closed until classified. */
+    private volatile int closed;
 
     /**
      * @param clock the worker's clock, which dates a successful scan
@@ -131,6 +138,9 @@ final class WorkerMetrics {
         Gauge.builder(LAST_SUCCESS, this, metrics -> metrics.lastSuccess).strongReference(true).baseUnit("seconds")
                 .description("When the last successful scan ended, in seconds since the epoch; 0 until one has")
                 .register(registry);
+        Gauge.builder(CLOSED, this, metrics -> metrics.closed).strongReference(true)
+                .description("Work-list entries the last finished scan found closed until classified, not loaded")
+                .register(registry);
     }
 
     private Timer scanTimer(String outcome) {
@@ -158,6 +168,9 @@ final class WorkerMetrics {
                     TimeUnit.NANOSECONDS);
             if (success) {
                 lastSuccess = clock.millis() / 1000.0;
+            }
+            if (ended) {
+                closed = report.closed;
             }
         }
     }

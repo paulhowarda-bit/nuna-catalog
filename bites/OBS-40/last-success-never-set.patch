@@ -2,15 +2,15 @@ Breaks: the last-success gauge never moves from 0, so the worker-not-scanning al
 Module: catalog-maintenance
 Test: ScanMetricsTest
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-index 8d8605b..3df5454 100644
+index 53512dd9..2c02d6bd 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-@@ -109,7 +109,7 @@ final class WorkerMetrics {
+@@ -167,7 +167,7 @@ final class WorkerMetrics {
              (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
                      TimeUnit.NANOSECONDS);
              if (success) {
 -                lastSuccess = clock.millis() / 1000.0;
 +                clock.millis();
              }
-         }
-     }
+             if (ended) {
+                 closed = report.closed;

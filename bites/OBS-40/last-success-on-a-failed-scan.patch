@@ -2,10 +2,10 @@ Breaks: the last-success gauge moves at the end of every scan that returns, one 
 Module: catalog-maintenance
 Test: ScanMetricsTest
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-index 60c2991..a0d9e67 100644
+index 53512dd9..9dcdb65b 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-@@ -156,7 +156,7 @@ final class WorkerMetrics {
+@@ -166,7 +166,7 @@ final class WorkerMetrics {
              report.kept.forEach((kind, files) -> kept.get(kind).increment(files));
              (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
                      TimeUnit.NANOSECONDS);
@@ -13,4 +13,4 @@ index 60c2991..a0d9e67 100644
 +            if (ended) {
                  lastSuccess = clock.millis() / 1000.0;
              }
-         }
+             if (ended) {

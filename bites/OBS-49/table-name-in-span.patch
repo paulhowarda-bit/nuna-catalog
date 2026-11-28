@@ -2,11 +2,11 @@ Breaks: a table's load span names the table.
 Module: catalog-maintenance
 Test: WorkerTraceTest
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-index 62b16e8..e0967b7 100644
+index 82ca0d1e..2d6d86e7 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-@@ -249,7 +249,7 @@ final class Worker implements AutoCloseable {
-     private Optional<Table> load(Management.TableWork work, ScanReport report) {
+@@ -402,7 +402,7 @@ final class Worker implements AutoCloseable {
+         }
          Table table;
          try {
 -            table = spans.part(ScanSpans.Part.TABLE_LOAD, KeyValues.empty(),

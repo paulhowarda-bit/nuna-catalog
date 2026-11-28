@@ -1,0 +1,16 @@
+Breaks: the work list no longer marks a table closed until classified, so the worker loads it at every scan, is refused, and each refusal is audited as a denial (backlog 334).
+Module: catalog-server
+Test: MaintenanceClosedTablesTest#aClosedTableIsMarkedClosedAndAnOpenOneIsNot+aRequestForAClosedTableIsMarkedClosedToo
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+index defd128f..17b10e18 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+@@ -477,7 +477,7 @@ class MaintenanceRoutes {
+         for (int i = 0; i < entries.size(); i++) {
+             if (decisions.get(i) instanceof Authorizer.Decision.Denied denied
+                     && denied.reason() == Authorizer.Reason.UNCLASSIFIED) {
+-                entries.get(i).node().put("closed", true);
++                continue;
+             }
+         }
+     }

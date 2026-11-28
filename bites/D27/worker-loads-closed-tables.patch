@@ -1,0 +1,16 @@
+Breaks: the worker loads a table the work list marks closed until classified, so the catalog refuses and audits it at every scan and the refusal counts as a failed table-load (backlog 334).
+Module: catalog-maintenance
+Test: FailedJobsReportTest#aClosedTableIsSkippedWithoutLoadingIt
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+index 82ca0d1e..edd32bb3 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+@@ -394,7 +394,7 @@ final class Worker implements AutoCloseable {
+      * name, each reported, or when the work list says it is closed until classified, which is named, not loaded.
+      */
+     private Optional<Table> load(Management.TableWork work, ScanReport report) {
+-        if (work.closed()) {
++        if (work.closed() && false) {
+             // Closed until classified (D27): the catalog would refuse the load and audit the refusal at every scan,
+             // so the worker leaves the table alone, names it, and the gauge of closed tables shows it (backlog 334).
+             report.skippedClosed(work);
