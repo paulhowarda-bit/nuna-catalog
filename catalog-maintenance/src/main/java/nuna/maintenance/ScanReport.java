@@ -4,7 +4,11 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import org.apache.iceberg.exceptions.ForbiddenException;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 
 /** What one scan of the work list did; logged after each scan and recorded as meters ({@link WorkerMetrics}). */
 final class ScanReport {
@@ -82,6 +86,29 @@ final class ScanReport {
     final Map<Failure, Integer> failuresByKind = new EnumMap<>(Failure.class);
     /** The first of {@link #failures} of each kind. */
     final Map<Failure, String> firstFailures = new EnumMap<>(Failure.class);
+    /**
+     * The first failed jobs on a table, at most {@link #MAX_NAMED}, each with its table and why (backlog 327), for the
+     * scan's report to the catalog; {@link #failuresByKind} counts them all.
+     */
+    final List<Named> named = new ArrayList<>();
+
+    /** The failed jobs a scan names at most, as the catalog keeps them. */
+    static final int MAX_NAMED = 20;
+    /** The longest message named, as the catalog keeps it. */
+    static final int MAX_MESSAGE = 300;
+    private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}+");
+    /**
+     * The words of the catalog's refusal of a table closed until classified (D27; the authorizer's
+     * {@code UNCLASSIFIED} denial), which answers 403 as every other refusal does.
+     */
+    static final String CLOSED_WORDS = "closed until it is classified";
+
+    /**
+     * A failed job on a table: its kind, the table as the work list named it, why in a word ({@code closed},
+     * {@code refused}, {@code not-found}, {@code changed} or {@code error}) and the message the worker met.
+     */
+    record Named(Failure kind, Management.TableWork table, String reason, String message) {
+    }
 
     /** Counts files a ref keeps, by its kind. */
     void kept(Map<Management.RefKind, Integer> byKind) {
@@ -90,6 +117,35 @@ final class ScanReport {
 
     void failed(Failure kind, String what, RuntimeException e) {
         failed(kind, what + ": " + e);
+    }
+
+    /** A job on {@code table} that failed with {@code e}, named with the table and why (backlog 327). */
+    void failed(Failure kind, Management.TableWork table, String what, RuntimeException e) {
+        failed(kind, what + " " + table.id(), e);
+        name(kind, table, reason(e), Optional.ofNullable(e.getMessage()).orElse(e.getClass().getSimpleName()));
+    }
+
+    /** A job on {@code table} that did not run, for {@code reason}, named with the table (backlog 327). */
+    void failed(Failure kind, Management.TableWork table, String reason, String message) {
+        failed(kind, message);
+        name(kind, table, reason, message);
+    }
+
+    private void name(Failure kind, Management.TableWork table, String reason, String message) {
+        if (named.size() < MAX_NAMED) {
+            String words = CONTROL.matcher(message).replaceAll(" ").strip();
+            words = words.isEmpty() ? reason : words;
+            named.add(new Named(kind, table, reason, words.length() > MAX_MESSAGE ? words.substring(0, MAX_MESSAGE)
+                    : words));
+        }
+    }
+
+    /** Why a job failed, in a word, from what the catalog or the store answered. */
+    static String reason(RuntimeException e) {
+        if (e instanceof ForbiddenException) {
+            return String.valueOf(e.getMessage()).contains(CLOSED_WORDS) ? "closed" : "refused";
+        }
+        return e instanceof NoSuchTableException ? "not-found" : "error";
     }
 
     void failed(Failure kind, String message) {

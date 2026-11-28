@@ -30,14 +30,20 @@ import java.util.UUID;
  *                  scan kept before the catalog recorded them
  * @param storage   the worker's storage identities, each with its prefixes, as it reported them; empty when it
  *                  reported none, as one that could not read its prefixes (item 275) or an earlier release does
+ * @param failedJobs the failed jobs the worker named, each with its table and why (backlog 327): at most
+ *                  {@value #MAX_FAILED_JOBS}, the first it met, so {@code failures} may count more; none from a worker
+ *                  of an earlier release
  */
 public record MaintenanceScan(UUID id, String worker, Instant startedAt, Optional<Instant> endedAt,
                               Optional<Outcome> outcome, Map<String, Integer> failures, Optional<String> error,
-                              Optional<SortedSet<String>> groups, Optional<List<WorkerStorage>> storage) {
+                              Optional<SortedSet<String>> groups, Optional<List<WorkerStorage>> storage,
+                              List<FailedJob> failedJobs) {
 
     public enum Outcome { SUCCEEDED, FAILED }
 
     public static final int MAX_ERROR = 1000;
+    /** The failed jobs a scan names at most; the worker names the first it meets. */
+    public static final int MAX_FAILED_JOBS = 20;
     private static final int MAX_KINDS = 32;
     private static final int MAX_GROUPS = 1000;
     private static final int MAX_STORES = 32;
@@ -54,6 +60,7 @@ public record MaintenanceScan(UUID id, String worker, Instant startedAt, Optiona
         failures = Collections.unmodifiableMap(new TreeMap<>(failures));
         groups = groups.map(names -> Collections.unmodifiableSortedSet(new TreeSet<>(names)));
         storage = storage.map(List::copyOf);
+        failedJobs = List.copyOf(failedJobs);
         if (endedAt.isPresent() != outcome.isPresent()) {
             throw new IllegalArgumentException("a scan has an outcome exactly when it has ended");
         }
@@ -68,6 +75,9 @@ public record MaintenanceScan(UUID id, String worker, Instant startedAt, Optiona
         if (error.isPresent() && (error.get().isEmpty() || error.get().length() > MAX_ERROR)) {
             throw new IllegalArgumentException("an error is 1 to " + MAX_ERROR + " characters");
         }
+        if (failedJobs.size() > MAX_FAILED_JOBS) {
+            throw new IllegalArgumentException("a scan names at most " + MAX_FAILED_JOBS + " failed jobs");
+        }
         if (groups.isPresent() && (groups.get().size() > MAX_GROUPS
                 || !groups.get().stream().allMatch(group -> WorkerStorage.TEXT.matcher(group).matches()))) {
             throw new IllegalArgumentException("groups are at most " + MAX_GROUPS + ", each 1 to 1000 characters,"
@@ -81,6 +91,13 @@ public record MaintenanceScan(UUID id, String worker, Instant startedAt, Optiona
                         + " endpoint once");
             }
         }
+    }
+
+    /** A scan that names no failed job, as a worker of an earlier release reports it. */
+    public MaintenanceScan(UUID id, String worker, Instant startedAt, Optional<Instant> endedAt,
+                           Optional<Outcome> outcome, Map<String, Integer> failures, Optional<String> error,
+                           Optional<SortedSet<String>> groups, Optional<List<WorkerStorage>> storage) {
+        this(id, worker, startedAt, endedAt, outcome, failures, error, groups, storage, List.of());
     }
 
     /** A scan just started, reporting nothing of what it reaches. */

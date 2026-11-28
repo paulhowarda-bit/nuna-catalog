@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CompactionRun;
+import nuna.catalog.store.FailedJob;
 import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.NamespaceRecord;
@@ -388,6 +389,30 @@ public abstract class HealthSuite extends GroupSuite {
                 Optional.empty(), Map.of(), Optional.empty(), Optional.of(new TreeSet<>()), Optional.of(List.of())), 50);
         assertThat(kept(none).groups()).contains(new TreeSet<>());
         assertThat(kept(none).storage()).contains(List.of());
+    }
+
+    @Test
+    @DisplayName("Health: a scan keeps the failed jobs it names, each with its table and why, and one that names none"
+            + " keeps none")
+    void aScanKeepsItsFailedJobs() {
+        Instant base = now().minusSeconds(3500);
+        UUID id = UUID.randomUUID();
+        List<FailedJob> jobs = List.of(
+                new FailedJob("table-load", "brokerage", List.of("party"), "beneficial_owners", UUID.randomUUID(),
+                        "closed", "Forbidden: table beneficial_owners is in a regulated area and has no"
+                        + " classification; it is closed until it is classified"),
+                new FailedJob("compaction", "lake", List.of("a", "b.c"), "t", UUID.randomUUID(), "error",
+                        "the cluster refused the Job"));
+        store.recordScan(MaintenanceScan.started(id, "svc-maintenance", base), 50);
+        assertThat(kept(id).failedJobs()).as("a scan just started names none").isEmpty();
+
+        MaintenanceScan ended = new MaintenanceScan(id, "svc-maintenance", base, Optional.of(base.plusSeconds(1)),
+                Optional.of(MaintenanceScan.Outcome.SUCCEEDED), Map.of("table-load", 1, "compaction", 1),
+                Optional.empty(), Optional.of(new TreeSet<>()), Optional.of(List.of()), jobs);
+        store.recordScan(ended, 50);
+
+        assertThat(kept(id)).isEqualTo(ended);
+        assertThat(kept(id).failedJobs().get(1).namespace()).containsExactly("a", "b.c");
     }
 
     private MaintenanceScan kept(UUID id) {

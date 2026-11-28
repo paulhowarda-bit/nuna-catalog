@@ -124,7 +124,7 @@ final class RequestedWork {
                     () -> compactor.launch(work, need, run), launched -> launched.name().toLowerCase(Locale.ROOT));
         } catch (RuntimeException e) {
             LOG.warn("Failed starting the requested compaction of table {} ({})", work.name(), work.id(), e);
-            report.failed(ScanReport.Failure.COMPACTION, "starting the requested compaction of " + work.id(), e);
+            report.failed(ScanReport.Failure.COMPACTION, work, "starting the requested compaction of", e);
             return;
         }
         if (launch == Compactor.Launch.OFF) {
@@ -226,7 +226,7 @@ final class RequestedWork {
             }, done -> ScanSpans.OK);
         } catch (RuntimeException e) {
             LOG.warn("Failed the requested orphan scan of table {} ({})", work.name(), work.id(), e);
-            report.failed(ScanReport.Failure.ORPHAN_SCAN, "scanning for orphans of " + work.id(), e);
+            report.failed(ScanReport.Failure.ORPHAN_SCAN, work, "scanning for orphans of", e);
             outcome = "failed";
         }
         health.job(id, night, HealthReports.Job.ORPHAN_SCAN, work.id(), Optional.empty(), started,

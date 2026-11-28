@@ -99,13 +99,15 @@ final class HealthReports {
      */
     void scanStarted(UUID scan, Instant at, Optional<List<Storage.Reach>> storage, ScanReport report) {
         send("scan-start", "reporting the start of scan " + scan, report, () -> {
-            management.reportScan(scan, at, Optional.empty(), Optional.empty(), Map.of(), Optional.empty(), storage);
+            management.reportScan(scan, at, Optional.empty(), Optional.empty(), Map.of(), Optional.empty(), storage,
+                    List.of());
             return true;
         });
     }
 
     /**
-     * Reports the scan's end: how it ended, its failures so far by kind, for a failed scan, why (its first failed
+     * Reports the scan's end: how it ended, its failures so far by kind and the first failed jobs on a table, each
+     * named with the table and why (backlog 327), for a failed scan, why (its first failed
      * work list read, else {@code error}), and what the store let the worker list and delete beneath each prefix, none
      * when the scan could not read its prefixes.
      */
@@ -119,7 +121,7 @@ final class HealthReports {
                         .filter(message -> !message.isEmpty());
         send("scan-end", "reporting the end of scan " + scan, report, () -> {
             management.reportScan(scan, started, Optional.of(ended), Optional.of(succeeded ? "succeeded" : "failed"),
-                    failures, why, storage);
+                    failures, why, storage, report.named);
             return true;
         });
     }
