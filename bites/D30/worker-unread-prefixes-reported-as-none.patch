@@ -2,11 +2,12 @@ Breaks: a scan that could not read its storage prefixes reports that it reaches 
 Module: catalog-maintenance
 Test: WorkerPrefixesTest#aFailedReadListsAndDeletesNothingThatScan
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Management.java b/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
+index 9a579325..ca551239 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
-@@ -342,7 +342,7 @@
-         ObjectNode kinds = body.putObject("failures");
-         failures.forEach(kinds::put);
+@@ -356,7 +356,7 @@ final class Management {
+             failed.put("message", job.message());
+         });
          error.ifPresent(message -> body.put("error", message));
 -        storage.ifPresent(reached -> {
 +        storage.or(() -> Optional.of(List.of())).ifPresent(reached -> {

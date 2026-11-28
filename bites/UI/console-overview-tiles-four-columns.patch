@@ -1,0 +1,16 @@
+Breaks: The overview's six tiles keep four columns, two cells of the second row empty.
+Module: catalog-server
+Test: ConsoleBrowserTest#overviewTilesFillTheirRowsAndTheEstatesLabelsNeverRunTogether
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1467,7 +1467,7 @@
+    cells left in the second row and its first tile's left border breaking the line. Five or six sit as three columns
+    where the four would stand, each row's first tile with no left border and every row after the first ruled above. */
+ @container page (min-width: 1093px) {
+-  #overview-kpis:has(> .kpi:nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
++  #overview-kpis:has(> .kpi:nth-child(5)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+   #overview-kpis:has(> .kpi:nth-child(5)) > .kpi:nth-child(3n+1) { border-left: 0; }
+   #overview-kpis:has(> .kpi:nth-child(5)) > .kpi:nth-child(n+4) { border-top: 1px solid var(--line); }
+ }

@@ -14,6 +14,7 @@ import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.CompactionRun;
+import nuna.catalog.store.FailedJob;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
@@ -104,8 +105,12 @@ class HealthRoutes {
      * only once it has ended. {@code storage} is what the worker's own storage identities reach (backlog 250): for each,
      * its {@code kind} and {@code endpoint}, and its {@code prefixes}, each with {@code listed} ({@code ok},
      * {@code refused} or {@code failed}) and its {@code list-code}, and the {@code deleted}, {@code delete-refused}
-     * and {@code delete-failed} counts with the first such delete's {@code delete-code}. The worker is the caller, and
-     * the catalog keeps the groups its token carries with the scan. A scan that has ended keeps its end. Answers 204.
+     * and {@code delete-failed} counts with the first such delete's {@code delete-code}. {@code failed-jobs} names the
+     * first failed jobs (backlog 327), at most {@value MaintenanceScan#MAX_FAILED_JOBS}: each its {@code kind}, as
+     * {@code failures} counts it, its table's {@code catalog}, {@code namespace}, {@code name} and {@code id}, a
+     * {@code reason} ({@code closed}, {@code refused}, {@code not-found}, {@code changed} or {@code error}) and the
+     * {@code message} the worker met; a worker of an earlier release sends none. The worker is the caller, and the
+     * catalog keeps the groups its token carries with the scan. A scan that has ended keeps its end. Answers 204.
      */
     @PutMapping(path = SCAN)
     ResponseEntity<Void> reportScan(@PathVariable String id, @RequestBody(required = false) String body,
@@ -120,7 +125,7 @@ class HealthRoutes {
                     optionalInstant(json, "ended-at"), optionalText(json, "outcome").map(outcome ->
                             MaintenanceScan.Outcome.valueOf(constant(outcome))), failures(json),
                     optionalText(json, "error"), Optional.of(new TreeSet<>(request.caller().principal().groups())),
-                    storage(json));
+                    storage(json), failedJobs(json));
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("Not a scan report: " + e.getMessage());
         }
@@ -376,6 +381,18 @@ class HealthRoutes {
             ArrayNode names = node.putArray("groups");
             groups.forEach(names::add);
         });
+        ArrayNode failed = node.putArray("failed-jobs");
+        scan.failedJobs().forEach(job -> {
+            ObjectNode named = failed.addObject();
+            named.put("kind", job.kind());
+            named.put("catalog", job.catalog());
+            ArrayNode levels = named.putArray("namespace");
+            job.namespace().forEach(levels::add);
+            named.put("name", job.name());
+            named.put("id", job.id().toString());
+            named.put("reason", job.reason());
+            named.put("message", job.message());
+        });
         scan.storage().ifPresent(stores -> {
             ArrayNode storage = node.putArray("storage");
             stores.forEach(store -> {
@@ -431,6 +448,45 @@ class HealthRoutes {
             stores.add(new WorkerStorage(requiredText(store, "kind"), optionalText(store, "endpoint"), covered));
         }
         return Optional.of(stores);
+    }
+
+    /** The failed jobs a scan report names (backlog 327); none when it names none, as an earlier release's worker. */
+    private static List<FailedJob> failedJobs(JsonNode json) {
+        JsonNode value = json.get("failed-jobs");
+        if (value == null || value.isNull()) {
+            return List.of();
+        }
+        if (!value.isArray()) {
+            throw new IllegalArgumentException("failed-jobs is not an array");
+        }
+        List<FailedJob> jobs = new ArrayList<>();
+        for (JsonNode job : value) {
+            JsonNode namespace = job.get("namespace");
+            if (!job.isObject() || namespace == null || !namespace.isArray()) {
+                throw new IllegalArgumentException("a failed job is an object with an array of namespace levels: "
+                        + job);
+            }
+            List<String> levels = new ArrayList<>();
+            for (JsonNode level : namespace) {
+                if (!level.isString()) {
+                    throw new IllegalArgumentException("a namespace level is not a string: " + level);
+                }
+                levels.add(level.asString());
+            }
+            jobs.add(new FailedJob(requiredText(job, "kind"), requiredText(job, "catalog"), levels,
+                    requiredText(job, "name"), uuidField(job, "id"), requiredText(job, "reason"),
+                    requiredText(job, "message")));
+        }
+        return jobs;
+    }
+
+    private static UUID uuidField(JsonNode json, String field) {
+        String text = requiredText(json, field);
+        try {
+            return UUID.fromString(text);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(field + " is not a UUID: " + text);
+        }
     }
 
     private static String requiredText(JsonNode json, String field) {

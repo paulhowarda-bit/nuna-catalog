@@ -85,7 +85,7 @@ class ConsoleViewGovernanceBrowserTest {
 
         browser.open("/ui/#" + at(ns, "daily"));
         awaitFact("Classification", "confidential · inherited from namespace " + ns + " · api-test");
-        assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels'] button")))
+        assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels'] button[data-label]")))
                 .extracting(b -> b.getDomAttribute("data-label"))
                 .containsExactly("classification", "owner");
         assertThat(page()).doesNotContain("snapshot", "freeze for dr");
@@ -127,8 +127,11 @@ class ConsoleViewGovernanceBrowserTest {
         driver.findElement(By.cssSelector("dialog.dlg input[name='reason']")).sendKeys("Matter 2026-146");
         submit("Held: ");
 
-        WebElement held = browser.await(By.cssSelector("#governance .status-held"));
-        assertThat(held.getText()).startsWith("1 legal hold").contains("It cannot be dropped or purged.");
+        // The hold is said once, in its panel, and what it refuses in the enforcement panel (backlog 329).
+        browser.awaitText(By.cssSelector("#legal-holds h2"), "1 hold");
+        assertThat(browser.await(By.cssSelector("#legal-holds tr[data-hold]")).getText()).contains("Matter 2026-146");
+        assertThat(driver.findElement(By.id("view-page")).getText()).contains("Refused · under legal hold")
+                .doesNotContain("No legal hold");
         assertThat(page()).doesNotContain("snapshot");
         expect(api.rest("DELETE", view, null), 403);
 
@@ -136,7 +139,7 @@ class ConsoleViewGovernanceBrowserTest {
         assertThat(browser.await(By.cssSelector("dialog.dlg .dlg-body")).getText())
                 .contains("Matter 2026-146", "lets the view be dropped and purged again");
         submit("Released");
-        browser.awaitText(By.cssSelector("#governance .status-row"), "No legal hold");
+        browser.awaitText(By.cssSelector("#legal-holds"), "None, here or above.");
         expect(api.rest("DELETE", view, null), 204);
     }
 

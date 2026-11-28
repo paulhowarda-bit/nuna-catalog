@@ -1,0 +1,16 @@
+Breaks: the worker reads the catalog's refusal of a table closed until classified as any other refusal, so the console says "refused" where it should say "closed until classified" (backlog 327).
+Module: catalog-maintenance
+Test: FailedJobsReportTest#aFailedLoadNamesItsTableAndWhy
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/ScanReport.java b/catalog-maintenance/src/main/java/nuna/maintenance/ScanReport.java
+index 43240d55..8c3bed02 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/ScanReport.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/ScanReport.java
+@@ -143,7 +143,7 @@ final class ScanReport {
+     /** Why a job failed, in a word, from what the catalog or the store answered. */
+     static String reason(RuntimeException e) {
+         if (e instanceof ForbiddenException) {
+-            return String.valueOf(e.getMessage()).contains(CLOSED_WORDS) ? "closed" : "refused";
++            return String.valueOf(e.getMessage()).contains(CLOSED_WORDS) ? "refused" : "refused";
+         }
+         return e instanceof NoSuchTableException ? "not-found" : "error";
+     }

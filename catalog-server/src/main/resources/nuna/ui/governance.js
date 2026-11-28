@@ -8,13 +8,14 @@ import {at, code, fill, fmt, frozenPill, h, heldPill, icon, load, muted, openDia
   pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre, opensRow} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
 import {drFreeze, governanceTab, placeHold, privilegeCell, releaseHold, revokeDialog, targetOfOn} from './panels.js';
-import {may, operates} from './access.js';
+import {holdsIn, may, operates} from './access.js';
 import {DUTY, grantAccess} from './grant.js';
 
 const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write, modify, create'], ['grants', 'Grants', 'manage-grants'],
   ['tags', 'Tags', 'manage-tags']];
 
 export function governancePage(catalog, tab) {
+  if (!holdsIn(catalog) && operates()) return freezePage(catalog);
   const key = tab === 'holds' ? tab : '';
   const tabs = tabsNav('Governance', [['', 'Summary'], ['holds', 'Holds and freezes']], key,
     k => pageHref('governance', catalog, k || null));
@@ -112,9 +113,9 @@ function standingTable(catalog, standing, reload) {
       h('td', {class: 'name'}, onLink(catalog, x.on)),
       h('td', {class: 'wrap'}, x.reason || muted('–')),
       h('td', null, h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'] || '')),
-      h('td', null, x.kind === 'hold'
+      h('td', null, h('div', {class: 'row-acts'}, x.kind === 'hold'
         ? may(catalog, 'manage-tags') ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => releaseHold(level, x, reload)}, 'Release') : null
-        : operates() ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => drFreeze(level, true, reload)}, 'Lift') : null));
+        : operates() ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => drFreeze(level, true, reload)}, 'Lift') : null)));
   }));
 }
 
@@ -194,7 +195,8 @@ export function grantsPage(catalog, group) {
           'data-privilege': x.privilege, 'data-path': pathOf(x.securable), 'data-branch': x.branch || null, class: isMade(x) ? 'is-new' : null},
         h('td', {class: 'name'}, x.group), privilegeCell(x), h('td', null, onWords(x.securable)),
         h('td', null, h('span', {class: 'tnum'}, at(x['granted-at'])), ' ', muted(x['granted-by'])),
-        h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(catalog, x, () => showList())}, 'Revoke')))))
+        h('td', null, h('div', {class: 'row-acts'}, h('button', {class: 'btn sm ghost', type: 'button',
+          onclick: () => revokeDialog(catalog, x, () => showList())}, 'Revoke'))))))
           : h('p', {class: 'muted'}, g ? `${g} holds no grant in ${catalog}.` : `Your groups hold no grant in ${catalog}.`)];
     });
   };
@@ -312,6 +314,26 @@ function holdsPage(catalog, tabs) {
       + 'in its namespace until it is lifted.',
     side: acts.length ? acts : null,
   }), tabs, lists, h('h2', {class: 'section-h'}, `${catalog} itself`), own);
+  return main;
+}
+
+/**
+ * Governance for a platform operator who holds nothing in the catalog (backlog 325): the DR freeze alone. The summary
+ * and the holds list need describe, which he holds nowhere, so they are not asked for. Item 323 lists here the
+ * standing freezes he may lift, in `#operator-freezes`, once the catalog lets an operator read them (D55).
+ */
+function freezePage(catalog) {
+  const main = h('div', {class: 'nc-main', id: 'governance-freeze'});
+  const freezes = h('div', {class: 'stack', id: 'operator-freezes'});
+  main.append(pageHead({
+    eyebrow: `${catalog} · governance`,
+    title: `DR freezes in ${catalog}`,
+    sub: 'A freeze stops every cleanup and write in its namespace until it is lifted. As a platform operator you freeze a '
+      + 'namespace here by its path. The catalog\'s holds, classifications and summary are for those whose groups hold a '
+      + 'grant in it.',
+    side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'freeze-path', onclick: () => freezeOnPath(catalog, () => {})},
+      icon('snow'), 'Freeze a namespace for DR'),
+  }), freezes);
   return main;
 }
 

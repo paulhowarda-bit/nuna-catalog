@@ -173,6 +173,14 @@ public final class Authorizer {
     }
 
     /**
+     * Whether a journal entry's principal and end user ({@code null} when none) were a maintenance principal acting
+     * as itself: the worker's commits, which the console names "nuna maintenance" (backlog 330).
+     */
+    public boolean maintenance(String principal, String endUser) {
+        return endUser == null && maintenancePrincipals.contains(principal);
+    }
+
+    /**
      * Whether the caller is a maintenance principal acting as itself (D25, D30). One acting for an end user is
      * not: the maintenance exemption is never an end user's.
      */

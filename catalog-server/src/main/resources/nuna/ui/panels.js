@@ -118,6 +118,38 @@ export const flaggedHere = g => (g.attributes || []).some(a => a.attribute === '
 /** What a flagged table's Overview, Schema and History say in place of the refused load (Atelier, 2026-11-24; backlog 241). */
 export const TRINO_WORDS = 'Its data is read through Trino, which applies each group\'s rule. The console shows no rows.';
 
+/**
+ * Whether a table's load was refused because the table is closed until classified (D27): in a regulated area, with no
+ * classification of its own. Told from the table's own answer, not from the catalog's marks, which need describe on
+ * the catalog (Atelier, 2026-11-27; backlog 324). The catalog answers it as a ForbiddenException, as every refusal.
+ */
+export const closedRefusal = error => !!error && error.status === 403
+  && /closed until it is classified/.test(String(error.message || ''));
+
+/** The regulated area a closed table is in, in words: its nearest level marked regulated, or null when unread. */
+async function regulatedArea(target) {
+  const {g, levels} = await governanceOf(target);
+  const a = (g.attributes || []).find(x => x.attribute === 'regulated' && String(x.value).toLowerCase() === 'true');
+  const t = a && levels.get(String(a.level).split(':')[1]);
+  return t ? (t.kind === 'catalog' ? t.catalog : what(t)) : null;
+}
+
+/**
+ * The one notice a closed table's tabs show in place of its load (backlog 324): closed, why, and who opens it; for a
+ * caller who may manage tags, Set a classification, the Access tab's dialog. `reload` runs once it is set.
+ */
+export async function closedNotice(target, reload) {
+  const area = await regulatedArea(target).catch(() => null);
+  const tags = may(target.catalog, 'manage-tags');
+  return h('div', {class: 'notice warn-note', id: 'closed-until-classified'}, icon('lock'),
+    h('div', {class: 'stack'},
+      h('span', null, h('b', null, 'Closed until classified.'), ` ${target.name} is in `,
+        area ? ['the regulated area ', h('b', null, area)] : 'a regulated area', ' and has no classification of its own, so nobody can read or change it. ',
+        'A steward opens it by setting a classification.'),
+      tags ? h('div', null, h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'classify-closed',
+        onclick: () => classify(target, null, reload)}, 'Set a classification')) : null));
+}
+
 /** The governance facts on a table's overview: its holds, a DR freeze, its classification and owner, with where each was set. */
 export async function governanceSummary(target) {
   const {g, levels} = await governanceOf(target);
@@ -157,48 +189,51 @@ export async function governanceTab(target, reload) {
   };
   const status = h('div', {class: 'status-row'},
     freeze ? h('p', {class: 'status-frozen'}, frozenPill('DR freeze in force'), ' ', h('span', {class: 'fine'}, String(freeze)))
-      : h('p', {class: 'status-free'}, pill('ok', 'No DR freeze'), ' ', muted(view ? 'Its definition may be replaced.' : 'Commits are allowed.')),
-    holds.length ? h('p', {class: 'status-held'}, heldPill(plural(holds.length, 'legal hold')), ' ',
-      h('span', {class: 'fine'}, view ? 'It cannot be dropped or purged.' : 'Snapshots cannot be removed; it cannot be dropped or purged.'))
-      : h('p', null, pill('', 'No legal hold')));
-  // Changing labels and holds needs manage-tags, a DR freeze a platform operator: drawn only for those (item 184).
+      : h('p', {class: 'status-free'}, pill('ok', 'No DR freeze'), ' ', muted(view ? 'Its definition may be replaced.' : 'Commits are allowed.')));
+  // Changing labels and holds needs manage-tags, a DR freeze a platform operator: drawn only for those (item 184), in
+  // one row that wraps evenly, a missing classification first and primary (backlog 329).
   const tags = may(target.catalog, 'manage-tags');
   const freezes = target.kind === 'namespace' && operates();
+  const acts = !tags && !freezes ? null : h('div', {class: 'refusal-acts gov-acts', 'data-acts': 'labels'},
+    tags ? h('button', {class: 'btn sm' + (effective.classification ? '' : ' primary'), type: 'button', 'data-label': 'classification',
+      onclick: () => classify(target, effective.classification, reload)},
+    effective.classification ? 'Change the classification' : 'Set a classification') : null,
+    tags ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'owner', onclick: () => setOwner(target, effective.owner, reload)},
+      effective.owner ? 'Change the owner' : 'Set the owner') : null,
+    // A retention class keeps snapshots, which a view has none of; a regulated mark closes tables only (item 146).
+    tags && !view ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'retention-class',
+      onclick: () => setRetentionClass(target, effective['retention-class'], reload)},
+    effective['retention-class'] ? 'Change the retention class' : 'Set a retention class') : null,
+    tags && (target.kind === 'catalog' || target.kind === 'namespace') ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'regulated',
+      onclick: () => setRegulated(target, ownRegulated, effective.regulated === 'true', reload)},
+    ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null,
+    // The row and column flag is a table's own (backlog 239): set and removed here, on the table only (backlog 241).
+    tags && target.kind === 'table' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'row-column-policy',
+      onclick: () => setFlag(target, flagged, reload)}, flagged ? 'Remove the flag' : 'Flag for row and column rules') : null,
+    tags ? h('button', {class: 'btn sm', type: 'button', onclick: () => placeHold(target, reload)}, icon('lock'),
+      target.kind === 'namespace' ? 'Place a hold here' : 'Place a hold') : null,
+    freezes ? h('button', {class: 'btn sm', type: 'button', onclick: () => drFreeze(target, !!freeze, reload)},
+      icon('snow'), freeze ? 'Lift the DR freeze' : 'Freeze for DR') : null);
+  // Every value set here and above, with who set it when: folded inside the panel, which already says what is in force
+  // and where it was set (backlog 329).
+  const whereSet = h('details', {class: 'tech', id: 'where-set'}, h('summary', null, 'Show where each value was set'), attrs.length
+    ? tbl('attributes stack-line', ['Attribute', 'Value', 'Level', 'Provenance', 'Set'], attrs.map(a => h('tr', null,
+      h('td', {class: ATTRIBUTE_LABELS[a.attribute] ? null : 'name'}, attributeLabel(a.attribute)), h('td', {class: 'wrap'}, a.attribute === 'maintenance-policy' ? policyLink(target, a.value) : attributeValue(a.attribute, a.value)), h('td', null, levelLabel(a.level, here, levels)),
+      h('td', {class: 'muted wrap'}, a.provenance), h('td', null, h('span', {class: 'tnum'}, at(a['set-at'])), ' ', muted(a['set-by'])))))
+    : h('p', {class: 'muted'}, 'No attribute set here or above.'));
   const left = h('div', {class: 'panel', id: 'governance'}, h('h2', null, 'Governance ', h('span', {class: 'meta'}, 'each value with where it was set')),
     status,
     facts(ATTRIBUTES.map(name => [attributeLabel(name), valueWithSource(name)]), 'effective'),
-    !tags ? null : h('div', {class: 'refusal-acts', 'data-acts': 'labels'},
-      h('button', {class: 'btn sm', type: 'button', 'data-label': 'classification', onclick: () => classify(target, effective.classification, reload)},
-        effective.classification ? 'Change the classification' : 'Set a classification'),
-      h('button', {class: 'btn sm', type: 'button', 'data-label': 'owner', onclick: () => setOwner(target, effective.owner, reload)},
-        effective.owner ? 'Change the owner' : 'Set the owner'),
-      // A retention class keeps snapshots, which a view has none of; a regulated mark closes tables only (item 146).
-      !view ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'retention-class',
-        onclick: () => setRetentionClass(target, effective['retention-class'], reload)},
-      effective['retention-class'] ? 'Change the retention class' : 'Set a retention class') : null,
-      target.kind === 'catalog' || target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'regulated',
-        onclick: () => setRegulated(target, ownRegulated, effective.regulated === 'true', reload)},
-      ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null,
-      // The row and column flag is a table's own (backlog 239): set and removed here, on the table only (backlog 241).
-      target.kind === 'table' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'row-column-policy',
-        onclick: () => setFlag(target, flagged, reload)}, flagged ? 'Remove the flag' : 'Flag for row and column rules') : null),
-    !tags && !freezes ? null : h('div', {class: 'refusal-acts'},
-      tags ? h('button', {class: 'btn sm', type: 'button', onclick: () => placeHold(target, reload)}, icon('lock'),
-        target.kind === 'namespace' ? 'Place a hold here' : 'Place a hold') : null,
-      freezes ? h('button', {class: 'btn sm', type: 'button', onclick: () => drFreeze(target, !!freeze, reload)},
-        icon('snow'), freeze ? 'Lift the DR freeze' : 'Freeze for DR') : null));
-  const holdsPanel = panel('Legal holds', holds.length ? 'nearest level first' : null, holds.length
+    whereSet, acts);
+  // The holds are said here alone (backlog 329); what they refuse is the enforcement panel's.
+  const holdsPanel = panel('Legal holds', holds.length ? `${plural(holds.length, 'hold')} · nearest level first` : null, holds.length
     ? tbl('holds', ['Reason, as recorded', 'Level', 'Placed', ''], holds.map(hold => h('tr', {'data-hold': hold.id},
       h('td', null, hold.reason), h('td', null, levelLabel(hold.level, here, levels)),
       h('td', null, h('span', {class: 'tnum'}, at(hold['placed-at'])), ' ', muted(hold['placed-by'])),
       h('td', null, tags ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () =>
         releaseHold(levels.get(String(hold.level).split(':')[1]) || target, hold, reload)}, 'Release') : null))))
     : h('p', {class: 'muted'}, 'None, here or above.'));
-  const attributes = panel('Attributes', 'nearest level first', attrs.length
-    ? tbl('attributes stack-line', ['Attribute', 'Value', 'Level', 'Provenance', 'Set'], attrs.map(a => h('tr', null,
-      h('td', {class: ATTRIBUTE_LABELS[a.attribute] ? null : 'name'}, attributeLabel(a.attribute)), h('td', {class: 'wrap'}, a.attribute === 'maintenance-policy' ? policyLink(target, a.value) : attributeValue(a.attribute, a.value)), h('td', null, levelLabel(a.level, here, levels)),
-      h('td', {class: 'muted wrap'}, a.provenance), h('td', null, h('span', {class: 'tnum'}, at(a['set-at'])), ' ', muted(a['set-by'])))))
-    : h('p', {class: 'muted'}, 'No attribute set here or above.'));
+  holdsPanel.id = 'legal-holds';
   const enforced = panel('What the catalog enforces', target.kind === 'namespace' || target.kind === 'catalog' ? 'beneath it' : 'on every call',
     facts([
       // A view has no snapshots or data files: what it enforces is on replacing its definition, and on its drop.
@@ -209,7 +244,7 @@ export async function governanceTab(target, reload) {
         : [h('b', null, 'On'), ' · as its maintenance policy sets']],
       ['Drop and purge', holds.length ? [h('b', null, 'Refused'), ' · under legal hold'] : [h('b', null, 'Allowed'), ' · to groups holding modify']],
     ]));
-  return h('div', {class: 'stack'}, h('div', {class: 'grid-2'}, left, h('div', {class: 'stack'}, enforced, holdsPanel)), attributes);
+  return h('div', {class: 'grid-2'}, left, h('div', {class: 'stack'}, holdsPanel, enforced));
 }
 
 // The four labels people set here (D27, amended 2026-11-22): each through the push API's route, recorded with the
@@ -485,8 +520,11 @@ const RUNG_WORDS = {
   modify: 'Read and write its data, and change it: its schema, properties and maintenance',
 };
 
-/** What the caller's groups' grants allow on the object, in words (Atelier, 2026-11-23: Access leads with it). */
-async function youMay(target) {
+/**
+ * What the caller's groups' grants allow on the object, in words (Atelier, 2026-11-23: Access leads with it); on a
+ * table closed until classified, nothing until it is (backlog 324).
+ */
+async function youMay(target, closed = false) {
   const held = await heldHere(target);
   const privileges = new Set(held.map(g => g.privilege));
   const rung = RUNGS.filter(x => privileges.has(x)).pop();
@@ -497,6 +535,7 @@ async function youMay(target) {
   if (privileges.has('manage-grants') || may(target.catalog, 'manage-grants')) lines.push('Grant on it, and see who holds what');
   const groups = [...new Set(held.map(g => g.group))].sort();
   return h('div', {class: 'panel', id: 'you-may'}, h('h2', null, 'What you may do ', h('span', {class: 'meta'}, `on this ${target.kind}`)),
+    closed && lines.length ? h('p', {'data-closed': ''}, h('b', null, 'Nothing until it is classified; then:')) : null,
     lines.length ? h('ul', {class: 'may-list'}, lines.map(l => h('li', null, icon('check'), l + '.')))
       : h('p', {class: 'muted'}, `Your groups hold no grant that reaches this ${target.kind}.`),
     h('p', {class: 'fine'}, groups.length ? `Through your groups' grants: ${groups.join(', ')}. ` : '',
@@ -506,13 +545,21 @@ async function youMay(target) {
 /**
  * A table's, view's or namespace's Access tab: Grant access at its top for those who manage the catalog's grants
  * (backlog 248), what the caller may do, a reader's view of a flagged table, then its governance, a table's row
- * filters and column masks (backlog 243), then its grants.
+ * filters and column masks (backlog 243), then its grants. A table closed until classified (`closed`, its load's
+ * answer) shows the closed notice in place of the reader's view, and a classification set here reloads through
+ * `reopen`, which reads the table again (backlog 324).
  */
-export function accessTab(target, reload) {
+export function accessTab(target, reload, {closed = Promise.resolve(false), reopen = reload} = {}) {
   const you = h('div');
   const gov = h('div');
-  load(you, () => youMay(target));
-  load(gov, () => governanceTab(target, reload));
+  const shut = h('div');
+  const view = h('div');
+  load(you, async () => youMay(target, await closed));
+  load(gov, async () => governanceTab(target, await closed ? reopen : reload));
+  closed.then(async isClosed => {
+    if (isClosed) fill(shut, await closedNotice(target, reopen));
+    else fill(view, yourView(target, heldHere(target)));
+  });
   // Which branches and tags keep a table or view, after its governance (item 279): from item 170's read alone.
   const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;
   if (kept) load(kept, () => keptPanel(target));
@@ -527,7 +574,7 @@ export function accessTab(target, reload) {
   const acts = may(target.catalog, 'manage-grants') ? h('div', {class: 'refusal-acts access-acts'},
     h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target,
       {after: made => { listed = listAgain(made); }, closed: showMade})}, icon('key'), 'Grant access')) : null;
-  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, kept, rulesPanel(target), grants);
+  return h('div', {class: 'stack', id: 'access-tab'}, acts, shut, you, view, gov, kept, rulesPanel(target), grants);
 }
 
 /** The Access tab's grants, and what lists them again once the dialog makes one, marking it. */
@@ -538,16 +585,22 @@ function grantsPart(target) {
   // Who holds what here, and granting, are for those who manage the catalog's grants (item 184); anyone else sees
   // their own groups' grants, which the catalog shows them, and is never refused for browsing.
   const manages = may(target.catalog, 'manage-grants');
+  // Only the grants that reach the object, the answer What you may do reads; every one in the catalog is a click away,
+  // for everyone (Atelier, backlog 329).
   const ownGrants = () => load(mine, async () => {
-    const list = await api.grantsOfGroups(target.catalog, []);
-    return list.length ? tbl('stack-line', ['Group', 'Privilege', 'On', 'Granted'], list.map(g => h('tr', null,
-      h('td', {class: 'name'}, g.group), privilegeCell(g), h('td', null, onWords(g.securable)),
+    const list = await heldHere(target);
+    return [list.length ? tbl('stack-line own-here', ['Group', 'Privilege', 'Granted on', 'Granted'], list.map(g => h('tr',
+      {'data-group': g.group, 'data-privilege': g.privilege}, h('td', {class: 'name'}, g.group), privilegeCell(g),
+      h('td', null, grantedOn(target, g.securable)[1]),
       h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])))))
-      : h('p', {class: 'muted'}, 'Your groups hold no grant in this catalog.');
+      : h('p', {class: 'muted'}, `Your groups hold no grant that reaches this ${target.kind}.`),
+    h('p', {class: 'fine'}, h('button', {class: 'linkish', type: 'button', 'data-act': 'own-grants-all',
+      onclick: () => everyOwnGrant(target.catalog)}, `Every grant of your groups in ${target.catalog}`))];
   });
+  const ownPanel = (...more) => panel('Your groups\' grants here', null, mine, more);
   if (!manages) {
     ownGrants();
-    return [h('div', {class: 'stack grants-here', 'data-grants': 'own'}, panel('Your groups\' grants', `in ${target.catalog}`, mine,
+    return [h('div', {class: 'stack grants-here', 'data-grants': 'own'}, ownPanel(
       h('p', {class: 'fine'}, `Who else holds what on this ${target.kind}, and granting, are open to those who manage `
         + `${target.catalog}'s grants.`))), () => {}];
   }
@@ -590,7 +643,20 @@ function grantsPart(target) {
   refresh();
   return [h('div', {class: 'grid-21 grants-here'}, reach,
     h('div', {class: 'stack'}, who,
-      panel('Your groups\' grants', `in ${target.catalog}`, mine))), refresh];
+      ownPanel())), refresh];
+}
+
+/** Every grant of the caller's groups in the catalog, as the catalog answers, in a dialog of its own (backlog 329). */
+function everyOwnGrant(catalog) {
+  const out = h('div', {id: 'own-grants-all'});
+  openDialog(`Your groups' grants in ${catalog}`, out, {wide: true});
+  load(out, async () => {
+    const list = await api.grantsOfGroups(catalog, []);
+    return list.length ? tbl('stack-line', ['Group', 'Privilege', 'On', 'Granted'], list.map(g => h('tr', null,
+      h('td', {class: 'name'}, g.group), privilegeCell(g), h('td', null, onWords(g.securable)),
+      h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])))))
+      : h('p', {class: 'muted'}, `Your groups hold no grant in ${catalog}.`);
+  });
 }
 
 // ---- the audit trail ----

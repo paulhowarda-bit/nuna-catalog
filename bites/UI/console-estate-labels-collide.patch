@@ -1,0 +1,16 @@
+Breaks: The estate draws a namespace's label though it runs into the next one's.
+Module: catalog-server
+Test: ConsoleBrowserTest#overviewTilesFillTheirRowsAndTheEstatesLabelsNeverRunTogether
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/queue.js b/catalog-server/src/main/resources/nuna/ui/queue.js
+--- a/catalog-server/src/main/resources/nuna/ui/queue.js
++++ b/catalog-server/src/main/resources/nuna/ui/queue.js
+@@ -212,7 +212,7 @@
+   // name it, on hover and to a screen reader.
+   for (const {group, name, count, end} of named) {
+     count.setAttribute('x', String(Number(name.getAttribute('x')) + name.getComputedTextLength() + 6));
+-    if (Number(count.getAttribute('x')) + count.getComputedTextLength() > end) {
++    if (false && Number(count.getAttribute('x')) + count.getComputedTextLength() > end) {
+       name.remove();
+       count.remove();
+       group.append(s('title', null, group.getAttribute('aria-label')));

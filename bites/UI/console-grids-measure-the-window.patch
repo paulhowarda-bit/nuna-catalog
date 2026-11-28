@@ -1,0 +1,16 @@
+Breaks: The content column is no longer a size container, so beside the tree History keeps two columns and its Commits do not span the tab (backlog 326).
+Module: catalog-server
+Test: ConsoleBrowserTest#besideTheMenuAndTheTreeHistoryAndGovernanceShowTheirTablesWhole
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index d2eb1495..32a08aa1 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1401,7 +1401,6 @@ details.setup-fold[open] > summary { margin-bottom: 6px; }
+    still lays out the chrome and the phone. Widths are the column's, inside its padding: 972 px is a 1,240 px window beside
+    the full menu, 832 px one of 1,100 px. A size container holds fixed boxes too, so the Settings drawer and its scrim
+    span the content column, from its top. */
+-.nc-main { container: page / inline-size; }
+ .nc-main .drawer { top: 0; width: min(640px, 100%); }
+ .nc-main .drawer-scrim { inset: 0; }
+ @container page (max-width: 972px) {

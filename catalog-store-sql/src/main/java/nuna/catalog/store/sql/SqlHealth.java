@@ -6,6 +6,7 @@ import static nuna.catalog.store.sql.Jdbc.query;
 import static nuna.catalog.store.sql.Jdbc.update;
 
 import nuna.catalog.store.CompactionRun;
+import nuna.catalog.store.FailedJob;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
@@ -30,7 +31,8 @@ import java.util.stream.Collectors;
 /**
  * What the maintenance worker reports of its own work, kept for the console (D38): each table's latest assessment and
  * last compaction in {@code table_health}, and the recent scans in {@code maintenance_scan}, each with the worker's
- * groups and the storage it reached as text ({@link MaintenanceScan#writeGroups}, {@link WorkerStorage#write}). The
+ * groups, the storage it reached and its failed jobs as text ({@link MaintenanceScan#writeGroups},
+ * {@link WorkerStorage#write}, {@link FailedJob#write}). The
  * reports carry no change id and write no audit record; each is safe to repeat. Recording share-locks the table, so a
  * drop waits, and a purge's completion deletes its row.
  */
@@ -40,7 +42,7 @@ final class SqlHealth {
             + " h.deletion_vectors, h.equality_delete_files, h.reasons, h.score, h.compaction_started_at,"
             + " h.compaction_ended_at, h.compaction_outcome";
     private static final String SCAN = "id, worker, started_at, ended_at, outcome, failures, error, worker_groups,"
-            + " worker_storage";
+            + " worker_storage, failed_jobs";
 
     private final Transactions transactions;
 
@@ -118,15 +120,16 @@ final class SqlHealth {
 
     void recordScan(MaintenanceScan scan, int keep) {
         transactions.writeAndRetryOnFailure("scan record", connection -> {
-            update(connection, "INSERT INTO maintenance_scan AS s (" + SCAN + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            update(connection, "INSERT INTO maintenance_scan AS s (" + SCAN + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                             + " ON CONFLICT (id) DO UPDATE SET ended_at = excluded.ended_at, outcome = excluded.outcome,"
                             + " failures = excluded.failures, error = excluded.error,"
-                            + " worker_groups = excluded.worker_groups, worker_storage = excluded.worker_storage"
+                            + " worker_groups = excluded.worker_groups, worker_storage = excluded.worker_storage,"
+                            + " failed_jobs = excluded.failed_jobs"
                             + " WHERE s.ended_at IS NULL",
                     scan.id(), scan.worker(), scan.startedAt(), scan.endedAt().orElse(null),
                     scan.outcome().map(Enum::name).orElse(null), failures(scan.failures()), scan.error().orElse(null),
                     scan.groups().map(MaintenanceScan::writeGroups).orElse(null),
-                    scan.storage().map(WorkerStorage::write).orElse(null));
+                    scan.storage().map(WorkerStorage::write).orElse(null), FailedJob.write(scan.failedJobs()));
             update(connection, "DELETE FROM maintenance_scan WHERE id NOT IN (SELECT id FROM maintenance_scan"
                     + " ORDER BY started_at DESC, id DESC LIMIT ?) AND id NOT IN (SELECT id FROM maintenance_scan"
                     + " WHERE outcome = 'SUCCEEDED' ORDER BY started_at DESC, id DESC LIMIT 1)", keep);
@@ -168,7 +171,8 @@ final class SqlHealth {
                 Optional.ofNullable(row.getString("outcome")).map(MaintenanceScan.Outcome::valueOf),
                 failures(row.getString("failures")), Optional.ofNullable(row.getString("error")),
                 Optional.ofNullable(row.getString("worker_groups")).map(MaintenanceScan::readGroups),
-                Optional.ofNullable(row.getString("worker_storage")).map(WorkerStorage::read));
+                Optional.ofNullable(row.getString("worker_storage")).map(WorkerStorage::read),
+                Optional.ofNullable(row.getString("failed_jobs")).map(FailedJob::read).orElse(List.of()));
     }
 
     static Set<String> reasons(String stored) {

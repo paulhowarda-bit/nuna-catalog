@@ -4,11 +4,12 @@
 // 125); and the governance figures for those who may describe the catalog (item 128).
 
 import * as api from './api.js';
-import {auditOpen, operates} from './access.js';
+import {auditOpen, holdsAudit, operates} from './access.js';
 import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
 import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
-import {pageHref} from './route.js';
-import {catalogOff, estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable, shapeWords} from './queue.js';
+import {objectHref, pageHref} from './route.js';
+import {catalogOff, estate, estateCounts, estateLegend, iceEstate, keyOfRow, lastAssessed, queue, queueOf, queueTable, shapeWords,
+  targetOfRow} from './queue.js';
 import {sloFigures} from './health.js';
 import {governanceFigures} from './governance.js';
 import {editPolicyLink} from './maintenance.js';
@@ -46,7 +47,8 @@ export function overviewPage(catalog) {
             ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
       sub: off && !left ? `${plural(c.total, 'table')} you may read, none assessed: the worker assesses a table only where its policy turns `
         + 'maintenance on.'
-        : 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s Maintenance tab has the detail.',
+        : [left ? null : unassessedNames(tables),
+          'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s Maintenance tab has the detail.'],
       side: assessed ? pill('ok', icon('check'), 'Last assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
     })];
     if (c.total) {
@@ -92,13 +94,32 @@ export function overviewPage(catalog) {
   return main;
 }
 
+/** The most not-assessed tables the headline names; it counts the rest. */
+const UNASSESSED_NAMED = 5;
+
+/**
+ * The tables the worker has not assessed yet, named under the headline, each linked to its Maintenance tab, one
+ * closed until classified said so, since the worker cannot load it (backlog 327); none while every table is
+ * unassessed, which the headline explains itself.
+ */
+export function unassessedNames(tables) {
+  const rows = tables.filter(t => !t.assessment).sort((a, b) => keyOfRow(a).localeCompare(keyOfRow(b)));
+  if (!rows.length || rows.length === tables.length) return null;
+  return h('span', {'data-unassessed': ''}, 'Not assessed yet: ', rows.slice(0, UNASSESSED_NAMED).map((row, i) =>
+    [i ? ', ' : '', h('a', {href: objectHref(targetOfRow(row), 'maintenance')}, keyOfRow(row)),
+      row.closed ? ' (closed until classified)' : '']),
+  rows.length > UNASSESSED_NAMED ? `, and ${fmt(rows.length - UNASSESSED_NAMED)} more` : '', '. ');
+}
+
 /**
  * The headline of a catalog with no table the caller may read: it says so, and names the catalog with the most
- * tables the caller may read, linked to the same page there (Atelier's review, F2).
+ * tables the caller may read, linked to the same page there (Atelier's review, F2). Never the audit tables' catalog,
+ * which holds no maintenance or data of the caller's own: a dead end, as a sign-in's landing leaves it out too (the
+ * 27 Nov review; backlog 331).
  */
 export function nothingToRead(catalog, everywhere, page) {
   const counts = new Map();
-  for (const t of everywhere) if (t.catalog !== catalog) counts.set(t.catalog, (counts.get(t.catalog) || 0) + 1);
+  for (const t of everywhere) if (t.catalog !== catalog && !holdsAudit(t.catalog)) counts.set(t.catalog, (counts.get(t.catalog) || 0) + 1);
   const [other, n] = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
   return [`Nothing in ${catalog} you may read.`, other ? [' ', h('a', {href: pageHref(page, other), 'data-other-catalog': other},
     `${other} has ${plural(n, 'table')}`, ' →')] : null];

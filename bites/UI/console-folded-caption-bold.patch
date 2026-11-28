@@ -1,0 +1,16 @@
+Breaks: A folded panel's caption is bold, as its heading is.
+Module: catalog-server
+Test: ConsoleBrowserTest#theTableTabsShowSchemasSpecsSnapshotsAndHistory
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1287,7 +1287,7 @@
+ details.panel.fold > summary::-webkit-details-marker { display: none; }
+ details.panel.fold > summary h2 { display: inline; font: 600 var(--t-14)/1.3 var(--f-ui); margin: 0; }
+ /* A folded panel's caption keeps the panel's meta style, not its heading's bold (the 27 Nov review; backlog 331). */
+-details.panel.fold > summary h2 .meta { margin-left: 6px; font: 400 var(--t-12)/1.3 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--text-2); }
++details.panel.fold > summary h2 .no-such-thing { margin-left: 6px; font: 400 var(--t-12)/1.3 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--text-2); }
+ details.panel.fold > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--text-2); }
+ details.panel.fold[open] > summary::before { content: '\25BE'; }
+ 

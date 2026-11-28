@@ -153,7 +153,7 @@ final class NightlyCompaction {
                 }
             } catch (RuntimeException e) {
                 LOG.warn("Failed launching compaction of table {} ({})", table.name(), table.id(), e);
-                report.failed(ScanReport.Failure.COMPACTION, "launching compaction of " + table.id(), e);
+                report.failed(ScanReport.Failure.COMPACTION, table, "launching compaction of", e);
                 failed.add(next);
             }
         }

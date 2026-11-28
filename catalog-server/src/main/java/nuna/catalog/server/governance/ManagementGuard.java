@@ -13,6 +13,7 @@ import nuna.catalog.server.security.Denials;
 import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.security.SecuritySettings;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.JournalEntry;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
 
@@ -54,6 +55,11 @@ class ManagementGuard {
                 instanceof Decision.Denied denied) {
             throw hidden(request, on, target, refuse(request, target.audit(), operation, denied));
         }
+    }
+
+    /** Whether a journaled commit was a maintenance principal's, acting as itself (backlog 330). */
+    boolean maintenance(JournalEntry entry) {
+        return authorizer.maintenance(entry.principal(), entry.endUser());
     }
 
     /**

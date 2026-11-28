@@ -1,0 +1,16 @@
+Breaks: Signing in draws the rail items before the catalog list has answered.
+Module: catalog-server
+Test: ConsoleBrowserTest#signInDrawsNoRailItemBeforeTheCatalogListAnswers
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -822,7 +822,7 @@
+   showWho();
+   // No rail item is drawn until the catalog list says what the caller's groups may use, nor one left from whoever
+   // signed in before (the 27 Nov review; backlog 331): setChrome draws them once it has answered.
+-  for (const a of $$('a[data-k]', navEl)) a.hidden = true;
++  for (const a of $$('a[data-k]', navEl)) a.hidden = !!a.hidden;
+   fill(slot, h('p', {class: 'loading-line'}, 'Loading…'));
+   try {
+     const listed = await api.catalogs();

@@ -7,6 +7,7 @@ import static nuna.catalog.store.oracle.Jdbc.update;
 import static nuna.catalog.store.oracle.OracleGovernance.upsert;
 
 import nuna.catalog.store.CompactionRun;
+import nuna.catalog.store.FailedJob;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
@@ -43,7 +44,7 @@ final class OracleHealth {
             + " h.deletion_vectors, h.equality_delete_files, h.reasons, h.score, h.compaction_started_at,"
             + " h.compaction_ended_at, h.compaction_outcome";
     private static final String SCAN = "id, worker, started_at, ended_at, outcome, failures, error";
-    private static final String SCAN_READ = SCAN + ", worker_groups, worker_storage";
+    private static final String SCAN_READ = SCAN + ", worker_groups, worker_storage, failed_jobs";
 
     private final Transactions transactions;
 
@@ -140,9 +141,10 @@ final class OracleHealth {
                     scan.outcome().map(Enum::name).orElse(null), failures(scan.failures()), scan.error().orElse(null));
             if (written > 0) {
                 // The CLOBs on their own: a long text bound in MERGE's USING select is not a CLOB there.
-                update(connection, "UPDATE maintenance_scan SET worker_groups = ?, worker_storage = ? WHERE id = ?",
-                        scan.groups().map(MaintenanceScan::writeGroups).orElse(null),
-                        scan.storage().map(WorkerStorage::write).orElse(null), scan.id());
+                update(connection, "UPDATE maintenance_scan SET worker_groups = ?, worker_storage = ?, failed_jobs = ?"
+                                + " WHERE id = ?", scan.groups().map(MaintenanceScan::writeGroups).orElse(null),
+                        scan.storage().map(WorkerStorage::write).orElse(null), FailedJob.write(scan.failedJobs()),
+                        scan.id());
             }
             update(connection, "DELETE FROM maintenance_scan WHERE id NOT IN (SELECT id FROM maintenance_scan"
                     + " ORDER BY started_at DESC, id DESC FETCH FIRST ? ROWS ONLY) AND id NOT IN (SELECT id"
@@ -187,7 +189,8 @@ final class OracleHealth {
                 Optional.ofNullable(row.getString("outcome")).map(MaintenanceScan.Outcome::valueOf),
                 failures(Jdbc.text(row, "failures")), Optional.ofNullable(Jdbc.text(row, "error")),
                 Optional.ofNullable(Jdbc.text(row, "worker_groups")).map(MaintenanceScan::readGroups),
-                Optional.ofNullable(Jdbc.text(row, "worker_storage")).map(WorkerStorage::read));
+                Optional.ofNullable(Jdbc.text(row, "worker_storage")).map(WorkerStorage::read),
+                Optional.ofNullable(Jdbc.text(row, "failed_jobs")).map(FailedJob::read).orElse(List.of()));
     }
 
     private static Set<String> reasons(String stored) {

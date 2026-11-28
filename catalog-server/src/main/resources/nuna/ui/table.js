@@ -13,13 +13,15 @@ import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, f
 import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {policyKey, policyValue, sourceWords, tableHealthTab} from './health.js';
-import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceSummary, TRINO_WORDS} from './panels.js';
-import {copyLinkButton, crumbsFor} from './browse.js';
-import {askDialog, mayModify, requestPills} from './requests.js';
+import {accessTab, actionWords, auditTab, closedNotice, closedRefusal, exportDialog, flaggedHere, governanceSummary, TRINO_WORDS}
+  from './panels.js';
+import {noteClosed} from './tree.js';
+import {committer, copyLinkButton, crumbsFor} from './browse.js';
+import {askDialog, describesHere, mayModify, readsHere, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
 import {fillKeptSlots, keptPanel} from './kept.js';
 import {droppedThroughRef, missingWords, readingRef, readOnlyNote, refChrome, refNote, replacedGuard} from './refs.js';
-import {closedNote, openingTab, trailOpen, trailWords} from './access.js';
+import {closedNote, openingTab, trailOpen, trailWords, unreadWords} from './access.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
 
@@ -44,6 +46,18 @@ function loadOnce(target, loader) {
 
 const loadTable = target => loadOnce(target, () => api.table(warehouseOf(target), target.namespace, target.name));
 const loadView = target => loadOnce(target, () => api.view(warehouseOf(target), target.namespace, target.name));
+
+/**
+ * What a load stands in for when the caller's own grants hold no read of the object (backlog 325): it is never asked,
+ * since the catalog would refuse it and record the refusal, and its data tabs say so in a closed note.
+ */
+const UNREAD = Object.freeze({status: 0, unread: true});
+
+/** The object's load when the caller's grants read it, else UNREAD, without asking (backlog 325). */
+const loadIfRead = (target, reads, loader) => reads.then(yes => yes ? loader(target) : Promise.reject(UNREAD));
+
+/** A data tab's closed note for a caller who may not read the object; Atelier, 2026-11-27: the tabs stay. */
+const unreadNote = target => closedNote(unreadWords(target));
 
 /** What a load that failed leaves: the catalog's answer, and that the other tabs are checked on their own. */
 /** The catalog's answer for a ref that is not live (item 109): the band shows it, so no tab draws it again. */
@@ -142,7 +156,9 @@ export function tablePage(target, tab, route) {
   main.append(head, tabs);
   const body = tabBody(main);
   refChrome(route, head);
-  let metadata = loadTable(target);
+  // Read only when the caller's grants that reach it read it (backlog 325).
+  const reads = readsHere(target);
+  let metadata = loadIfRead(target, reads, loadTable);
   metadata.then(t => {
     const m = t.metadata;
     title.insertBefore(badge(`iceberg v${m['format-version']}`, 'strong'), title.children[2] || null);
@@ -153,10 +169,19 @@ export function tablePage(target, tab, route) {
   const reload = () => show();
   const afterChange = () => {
     forget(target);
-    metadata = loadTable(target);
+    metadata = loadIfRead(target, reads, loadTable);
+    // A classification set opens a closed table: its mark goes once it loads.
+    metadata.then(() => {
+      const shut = $('.pill[data-closed]', title);
+      if (shut) shut.remove();
+      noteClosed(target, false);
+    }, () => {});
     show();
   };
-  headMarks(target, title);
+  // Whether the table is closed until classified, from its own load's answer (backlog 324): null when another refusal
+  // leaves it unknown.
+  const closedOf = () => metadata.then(() => false, error => closedRefusal(error) || null);
+  headMarks(target, title, closedOf(), reads);
   // Compact now is main's: the worker compacts main only.
   if (!target.ref) mayModify(target).then(may => {
     if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
@@ -166,9 +191,10 @@ export function tablePage(target, tab, route) {
     if (key === null) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
     } else if (key === 'maintenance') {
-      load(body, () => throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload)));
+      load(body, async () => await reads ? throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload))
+        : unreadNote(target));
     } else if (key === 'access') {
-      load(body, () => throughRef(target, () => metadata, 'access', () => accessTab(target, reload)));
+      load(body, () => throughRef(target, () => metadata, 'access', () => accessTab(target, reload, {closed: closedOf(), reopen: afterChange})));
     } else if (key === 'audit' && !trailOpen(target.catalog)) {
       fill(body, closedNote(trailWords(target.catalog)));
     } else if (key === 'audit') {
@@ -179,6 +205,8 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
+          if (error === UNREAD) return unreadNote(target);
+          if (closedRefusal(error)) return closedNotice(target, afterChange);
           return await flaggedLoad(error, target) || await missingLoad(error, target, title)
             || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
         }
@@ -194,8 +222,16 @@ export function tablePage(target, tab, route) {
   return main;
 }
 
-/** The marks beside a table's name: tonight's queue, a hold, a DR freeze and its classification, as the catalog says them. */
-function headMarks(target, title) {
+/**
+ * The marks beside a table's name: tonight's queue, a hold, a DR freeze and its classification, as the catalog says
+ * them; and Closed until classified, as its load answers (`closed`), which the tree marks too (backlog 324). Its
+ * requests are asked only of a caller who reads it (`reads`), its governance of one who may describe it (backlog 325).
+ */
+function headMarks(target, title, closed, reads) {
+  closed.then(shut => {
+    if (shut !== null) noteClosed(target, shut);
+    if (shut) title.append(h('span', {class: 'pill bad', 'data-closed': ''}, 'Closed until classified'));
+  });
   queue().then(rows => {
     const row = queueOf(rows, target.catalog).find(r => keyOfRow(r) === [target.catalog, pathOf(target)].join('.'));
     if (row) {
@@ -203,8 +239,10 @@ function headMarks(target, title) {
       title.append(h('a', {href: objectHref(target, 'maintenance'), class: 'pill ' + (eq ? 'bad' : 'warn')}, 'Needs compaction'));
     }
   }, () => {});
-  api.tableHealth(target).then(health => title.append(...requestPills(health.requests)), () => {});
-  api.governance(target).then(g => {
+  reads.then(yes => yes && api.tableHealth(target).then(health => title.append(...requestPills(health.requests))))
+    .catch(() => {});
+  describesHere(target).then(yes => yes && api.governance(target)).then(g => {
+    if (!g) return;
     if ((g.holds || []).length) title.append(heldPill());
     const e = g.effective || {};
     if (e['dr-freeze']) title.append(frozenPill());
@@ -548,6 +586,12 @@ const SHORT = ['operation', 'added-data-files', 'deleted-data-files', 'added-rec
 
 // ---- history: one row per commit, with the snapshot it made (Atelier, 2026-11-23; backlog 199) ----
 
+/**
+ * A snapshot id as History shows it, 4137…6884, cut from the id's own digits, as a parsed number rounds them; one of nine
+ * digits or fewer shows whole (backlog 326).
+ */
+const shortId = id => id.length > 9 ? `${id.slice(0, 4)}…${id.slice(-4)}` : id;
+
 const signed = (add, del) => {
   const a = Number(add) || 0;
   const d = Number(del) || 0;
@@ -556,10 +600,24 @@ const signed = (add, del) => {
   return a ? '+' + fmt(a) : '0';
 };
 
+/** The update actions an expiry commits: its snapshots removed, and with them refs, statistics, schemas and specs. */
+const EXPIRY_ACTIONS = new Set(['remove-snapshots', 'remove-snapshot-ref', 'remove-statistics', 'remove-partition-statistics',
+  'remove-schemas', 'remove-partition-specs']);
+
+/** Whether a commit only expired snapshots: it removed some, and did nothing an expiry does not. */
+export const expiryOnly = e => Array.isArray(e.updates) && e.updates.some(u => u.action === 'remove-snapshots')
+  && e.updates.every(u => EXPIRY_ACTIONS.has(u.action));
+
+/** Rows History reads its way to on opening, at least, before it stops: folded expiries count one row a run. */
+const LEADING_ROWS = 10;
+
 /**
  * The table's history: each commit the catalog's journal keeps, newest first, with who made it and the snapshot it
  * added, if any; the snapshot lanes above, and the selected snapshot's summary and time-travel SQL beside. A commit
- * that added no snapshot (a schema or spec change, a property) shows none.
+ * that added no snapshot (a schema or spec change, a property) shows none. A run of two or more commits in a row that
+ * only expired snapshots, by one principal on one line, folds into one row, opened on click (Atelier, 2026-11-27;
+ * backlog 330), so the worker's expiry every few minutes does not bury the data changes; History reads on until it
+ * shows ten rows or four pages.
  */
 function historyTab(target, t) {
   const m = t.metadata;
@@ -584,7 +642,7 @@ function historyTab(target, t) {
     const id = String(sn['snapshot-id']);
     for (const tr of $$('tr[data-id]', tbody)) tr.classList.toggle('is-sel', tr.dataset.id === id);
     for (const c of $$('.lanes circle[data-id]', box)) c.classList.toggle('is-sel', c.dataset.id === id);
-    meta.textContent = `${id.slice(0, 4)}…${id.slice(-4)} · ${when(sn['timestamp-ms'])} · ${opOf(sn)}`;
+    meta.textContent = `${shortId(id)} · ${when(sn['timestamp-ms'])} · ${opOf(sn)}`;
     const summary = sn.summary || {};
     const shownSummary = whole ? Object.assign({'snapshot-id': sn['snapshot-id'], 'parent-snapshot-id': sn['parent-snapshot-id'],
       'sequence-number': sn['sequence-number'], 'schema-id': sn['schema-id'], 'manifest-list': sn['manifest-list']}, {summary})
@@ -610,7 +668,7 @@ function historyTab(target, t) {
       h('td', {class: 'num'}, line, fmt(e['new-version'])), h('td', {class: 'tnum'}, when(e['committed-at'])),
       h('td', {class: 'wrap'}, changeWords(e.updates, e['new-version'])),
       h('td', {class: 'name snap'}, sn ? [h('button', {class: 'row-pick', type: 'button', 'aria-label': `Snapshot ${id}, ${opOf(sn)}`,
-        onclick: () => select(sn)}, id), ' ', muted('· ' + opOf(sn))] : muted('–')),
+        title: id, onclick: () => select(sn)}, shortId(id)), ' ', muted('· ' + opOf(sn))] : muted('–')),
       h('td', {class: 'num'}, sn ? signed(sum['added-records'], sum['deleted-records']) : null),
       h('td', {class: 'by'}, byWords(e)),
       h('td', null, sn ? (refs.get(sn['snapshot-id']) || []).flatMap(([name, type], i) => [i ? ' ' : '', refBadge(name, type)]) : null),
@@ -625,11 +683,62 @@ function historyTab(target, t) {
     });
     return [tr, det];
   };
+  // A run of expiry-only commits by one principal on one line: its fold row once it holds two, and its members' rows.
+  let run = null;
+  let rows = 0;
+  const foldOpen = (r, open) => {
+    r.open = open;
+    r.btn.setAttribute('aria-expanded', String(open));
+    r.btn.textContent = open ? 'Hide' : `Show ${r.entries.length}`;
+    for (const [tr, det, btn] of r.members) {
+      tr.hidden = !open;
+      if (!open && !det.hidden) btn.click();
+    }
+  };
+  const foldWords = r => {
+    const newest = r.entries[0];
+    const oldest = r.entries[r.entries.length - 1];
+    r.version.replaceChildren(fmt(oldest['new-version']), '–', fmt(newest['new-version']));
+    r.span.replaceChildren(`${at(oldest['committed-at'])} to ${at(newest['committed-at'])}`);
+    r.change.replaceChildren(`Snapshots expired ${fmt(r.entries.length)} times`);
+    r.btn.setAttribute('aria-label', `${r.entries.length} snapshot expiries, each commit`);
+    if (!r.open) r.btn.textContent = `Show ${r.entries.length}`;
+    r.fold.classList.toggle('is-cur', r.entries.some(e => e['new-location'] === t['metadata-location']));
+  };
+  const place = e => {
+    const [tr, det] = row(e);
+    const member = [tr, det, tr.querySelector('td:last-child button')];
+    const key = expiryOnly(e) ? `${e.principal}\u0000${e['end-user'] || ''}\u0000${e.branch || ''}` : null;
+    if (!key || !run || run.key !== key) {
+      run = key ? {key, entries: [e], members: [member], fold: null} : null;
+      rows++;
+      tbody.append(tr, det);
+      return;
+    }
+    run.entries.push(e);
+    run.members.push(member);
+    if (!run.fold) {
+      const r = run;
+      r.version = h('td', {class: 'num'});
+      r.span = h('td', {class: 'tnum'});
+      r.change = h('td', {class: 'wrap'});
+      r.btn = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false', onclick: () => foldOpen(r, !r.open)});
+      r.fold = h('tr', {class: 'mlog-fold', 'data-fold': 'expiry'}, r.version, r.span, r.change, h('td', null, muted('–')), h('td'),
+        h('td', {class: 'by'}, byWords(e)), h('td'), h('td', null, r.btn));
+      r.members[0][0].before(r.fold);
+      r.open = false;
+      foldOpen(r, false);
+    } else {
+      tr.hidden = !run.open;
+    }
+    tbody.append(tr, det);
+    foldWords(run);
+  };
   let shown = 0;
   let id = null;
   const page = token => (id || (id = api.governance(target).then(g => g.target.id))).then(x => api.metadataLog(target.catalog, x, token, target.ref)).then(answer => {
     const entries = answer.journal || [];
-    tbody.append(...entries.flatMap(row));
+    entries.forEach(place);
     shown += entries.length;
     if (current) select(current);
     const next = answer['next-page-token'];
@@ -645,14 +754,16 @@ function historyTab(target, t) {
         page(next).catch(error => more.replaceChildren(failure(error, {compact: true})));
       }}, 'Show the next 25'));
     }
+    return answer;
   });
   const log = h('div', {class: 'panel', id: 'metadata-log'});
   load(log, async () => {
-    await page(null);
+    let answer = await page(null);
+    for (let read = 1; read < 4 && rows < LEADING_ROWS && answer['next-page-token']; read++) answer = await page(answer['next-page-token']);
     return [h('h2', null, 'Commits ', logMeta),
       tbl('stack-line mlog', [['Version', 'num'], 'Written', 'Change', 'Snapshot', ['Rows', 'num'], 'By', 'Iceberg refs', ''], tbody), more,
-      h('p', {class: 'fine'}, 'Each row is one commit: who made it, what it changed and the snapshot it added. The catalog keeps '
-        + 'every commit, even after the table\'s own list drops its file.')];
+      h('p', {class: 'fine'}, 'Each row is one commit: who made it, what it changed and the snapshot it added. Snapshot expiries '
+        + 'made one after another fold into one row; open it for each. The catalog keeps every commit, even after the table\'s own list drops its file.')];
   });
   const expiry = h('div');
   load(expiry, async () => {
@@ -774,7 +885,7 @@ async function snapshotCommits(target, ids) {
 }
 
 function byWords(e) {
-  return [h('b', null, e.principal || '–'), e['end-user'] ? [' for ', h('b', null, e['end-user'])] : null,
+  return [h('b', {title: e.maintenance ? e.principal : null}, committer(e) || '–'), e['end-user'] ? [' for ', h('b', null, e['end-user'])] : null,
     e.engine ? [' ', muted('via ' + e.engine)] : null];
 }
 
@@ -793,9 +904,9 @@ export function viewPage(target, tab, route) {
   main.append(head, tabs);
   const body = tabBody(main);
   refChrome(route, head);
-  const loaded = loadView(target);
+  title.append(badge('view', 'strong'));
+  const loaded = loadIfRead(target, readsHere(target), loadView);
   loaded.then(v => {
-    title.append(badge('view', 'strong'));
     addCount(tabs, 'versions', (v.metadata.versions || []).length);
   }, () => {});
   const show = () => {
@@ -809,6 +920,7 @@ export function viewPage(target, tab, route) {
         try {
           v = await loaded;
         } catch (error) {
+          if (error === UNREAD) return unreadNote(target);
           return refusedLoad(error, 'Access and Audit', target.ref);
         }
         return key === 'versions' ? versionsTab(v) : viewOverview(target, v);

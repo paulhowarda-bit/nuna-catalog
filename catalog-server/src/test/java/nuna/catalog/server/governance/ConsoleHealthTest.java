@@ -143,8 +143,11 @@ class ConsoleHealthTest {
                 WORKER), 204);
         expect(api.manage("PUT", "/maintenance/scans/" + UUID.randomUUID(), "{\"started-at\":\""
                 + scans.plusSeconds(600) + "\",\"ended-at\":\"" + scans.plusSeconds(601) + "\",\"outcome\":\"failed\","
-                + "\"failures\":{\"table-load\":4},\"error\":\"console health test: the catalog was down\"}", WORKER),
-                204);
+                + "\"failures\":{\"table-load\":4},\"failed-jobs\":[{\"kind\":\"table-load\",\"catalog\":\"trading\","
+                + "\"namespace\":[\"" + readable + "\"],\"name\":\"unseen\",\"id\":\"" + api.id(readable, "tables",
+                "unseen") + "\",\"reason\":\"closed\",\"message\":\"Forbidden: table unseen is in a regulated area and"
+                + " has no classification; it is closed until it is classified\"}],"
+                + "\"error\":\"console health test: the catalog was down\"}", WORKER), 204);
 
         readers = "health-readers-" + Api.suffix();
         expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + readable
@@ -255,6 +258,12 @@ class ConsoleHealthTest {
         assertThat(driver.findElement(By.id("health-job-failures")).getText())
                 .contains("orphan-scan 2", "table-load 4");
         assertThat(fact("Latest failed scan")).endsWith(": console health test: the catalog was down");
+        // The last scan's failed jobs, each table named and linked, with why; the jobs it counted past those (327).
+        WebElement named = driver.findElement(By.cssSelector("#health-failed-jobs li[data-kind='table-load']"));
+        assertThat(named.getText()).isEqualTo("4 tables could not be loaded: trading." + readable + ".unseen, closed"
+                + " until classified; and 3 more.");
+        assertThat(named.findElement(By.tagName("a")).getDomAttribute("href"))
+                .isEqualTo("#c=trading&k=table&ns=" + readable + "&n=unseen");
 
         // Platform operators hold no grant, so tonight's queue lists no table for them; the worker is there too.
         browser.open("/ui/#p=maintenance&c=trading");
@@ -262,6 +271,8 @@ class ConsoleHealthTest {
         assertThat(driver.findElements(By.cssSelector("#neediest tbody tr"))).isEmpty();
         assertThat(browser.await(By.cssSelector("#maintenance #health-last-success")).getText())
                 .isEqualTo(local(lastSuccess) + " by maintenance");
+        assertThat(driver.findElement(By.cssSelector("#maintenance #health-failed-jobs")).getText())
+                .as("on Maintenance as on Service").contains("trading." + readable + ".unseen, closed until classified");
     }
 
     @Test
@@ -331,12 +342,19 @@ class ConsoleHealthTest {
         assertThat(shape.findElement(By.cssSelector(".kpi-v")).getText()).startsWith("1 of 3");
         assertThat(shape.findElement(By.cssSelector(".kpi-d")).getText())
                 .isEqualTo("2 queued for tonight, 1 not assessed yet");
+        // The headline names the table not assessed yet, linked to its Maintenance tab (backlog 327).
+        WebElement unassessed = driver.findElement(By.cssSelector("#overview .ph .sub [data-unassessed]"));
+        assertThat(unassessed.getText()).isEqualTo("Not assessed yet: trading." + readable + ".unseen.");
+        assertThat(unassessed.findElement(By.tagName("a")).getDomAttribute("href"))
+                .isEqualTo("#c=trading&k=table&ns=" + readable + "&n=unseen&tab=maintenance");
         // Each legend item is a flex row, so its count and words come back on lines of their own.
         assertThat(browser.await(By.id("estate-legend")).getText().replaceAll("\\s+", " "))
                 .contains("1 not assessed yet");
         browser.open("/ui/#p=maintenance&c=trading");
         assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText())
                 .isEqualTo("2 tables queued for tonight. 1 not assessed yet.");
+        assertThat(browser.await(By.cssSelector("#maintenance .ph .sub [data-unassessed]")).getText())
+                .isEqualTo("Not assessed yet: trading." + readable + ".unseen.");
 
         // None assessed: before the worker reports, nothing is called in shape (backlog 143). The catalog's policy is
         // the built-in one, every job off, and nothing nearer first turns one on, so that is said first (backlog 190);

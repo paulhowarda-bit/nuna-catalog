@@ -1,0 +1,16 @@
+Breaks: Delete sits as close to the other row actions as they do to each other.
+Module: catalog-server
+Test: ConsoleBrowserTest#rowActionsLookAlikeWithDeleteLastAndSetApart
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1460,7 +1460,7 @@
+    Branches and tags as on Governance, and delete last, set apart and in the bad ink. */
+ .row-acts .btn, .row-acts .btn.ghost { border-color: var(--line); background: transparent; color: var(--text-2); }
+ .row-acts .btn:hover { background: var(--surface-2); border-color: var(--line-strong); color: var(--text); }
+-.row-acts .btn.danger { margin-left: 10px; color: var(--bad-ink, var(--warn-ink)); }
++.row-acts .btn.danger { margin-left: 0; color: var(--bad-ink, var(--warn-ink)); }
+ .row-acts .btn.danger:hover { background: var(--bad-wash); border-color: var(--bad-ink); }
+ 
+ /* The overview's tiles fill their rows (the 27 Nov review; backlog 331): a presenter's six sat in four columns, two empty

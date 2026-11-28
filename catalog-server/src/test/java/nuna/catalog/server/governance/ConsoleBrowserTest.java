@@ -5,6 +5,8 @@ import static nuna.catalog.server.governance.Api.expect;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
+import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.Denial;
 import nuna.catalog.server.ConsoleBrowser;
 import nuna.catalog.server.IssuerForTests;
 import java.net.http.HttpResponse;
@@ -61,6 +63,9 @@ class ConsoleBrowserTest {
     private static final String AUTH = "Authorization";
     private static final String HOLD_REASON = "console test: litigation hold";
     private static final String FREEZE_REASON = "console test: DR reconcile in progress";
+    /** A table's data tabs to a caller whose groups do not read it (backlog 325). */
+    private static final String UNREAD_TABLE = "Reading this table's data needs select on it, which your groups do not"
+            + " hold. Its grants and governance are on Access.";
     private static final long S1 = 7_001;
     private static final long S2 = 7_002;
     private static final long S3 = 7_003;
@@ -204,6 +209,188 @@ class ConsoleBrowserTest {
     }
 
     /**
+     * The empty headline never sends anyone to the audit tables' catalog, a dead end for data and maintenance, as a
+     * sign-in's landing leaves it out too (the 27 Nov review: gary was told "nuna_audit has 1 table"; backlog 331).
+     * This server has no audit tables, so the page is answered one, nuna_audit, holding a table the caller may select.
+     */
+    @Test
+    void theEmptyHeadlineNamesNoAuditCatalog() {
+        HasCdp cdp = (HasCdp) new Augmenter().augment(driver);
+        cdp.executeCdpCommand("Page.addScriptToEvaluateOnNewDocument", Map.of("source", AN_AUDIT_CATALOG));
+        signIn(gary());
+        browser.open("/ui/#p=overview&c=trading");
+        browser.awaitText(By.cssSelector("#overview h1"), "Nothing in trading you may read.");
+        assertThat((Boolean) driver.executeScript("return window.auditAnswered === 2"))
+                .as("the catalog list and the estate were both answered with nuna_audit").isTrue();
+        assertThat(driver.findElements(By.cssSelector("#overview h1 a[data-other-catalog]"))).isEmpty();
+    }
+
+    /** Answers the catalog list and the estate each with the audit tables' catalog, nuna_audit, and one table in it. */
+    private static final String AN_AUDIT_CATALOG = """
+            (() => {
+              const real = window.fetch;
+              window.auditAnswered = 0;
+              const add = (url, init, edit) => real(url, init).then(async answer => {
+                if (!answer.ok) return answer;
+                const body = await answer.json();
+                edit(body);
+                window.auditAnswered++;
+                return new Response(JSON.stringify(body), {status: 200, headers: {'Content-Type': 'application/json'}});
+              });
+              window.fetch = (url, init) => {
+                const path = new URL(url, location.origin).pathname;
+                if (path.endsWith('/management/v1/catalogs')) {
+                  return add(url, init, b => b.catalogs.push({name: 'nuna_audit', audit: true, may: {select: true}}));
+                }
+                if (path.endsWith('/management/v1/maintenance/estate')) {
+                  return add(url, init, b => { b.tables = (b.tables || []).concat([{catalog: 'nuna_audit',
+                    namespace: ['audit'], name: 'events'}]); });
+                }
+                return real(url, init);
+              };
+            })();
+            """;
+
+    /**
+     * Signing in draws no rail item until the catalog list has said what the caller's groups may use, and the loading
+     * line sits inside the page's padding, not in its corner (the 27 Nov review: gary's landing sat on an unstyled
+     * "Loading…" with all eight rail items drawn; backlog 331). The list is held here until both are seen.
+     */
+    @Test
+    void signInDrawsNoRailItemBeforeTheCatalogListAnswers() {
+        HasCdp cdp = (HasCdp) new Augmenter().augment(driver);
+        cdp.executeCdpCommand("Page.addScriptToEvaluateOnNewDocument", Map.of("source", HOLD_THE_CATALOG_LIST));
+        signIn(gary());
+        browser.open("/ui/");
+        browser.await("the console did not ask for the catalog list",
+                d -> (Boolean) driver.executeScript("return window.heldList.asked"));
+        WebElement line = browser.await(By.cssSelector("#slot > .loading-line"));
+        assertThat(driver.findElements(By.cssSelector("#nav a[data-k]"))).hasSize(8).noneMatch(WebElement::isDisplayed);
+        assertThat(List.of(line.getCssValue("padding-top"), line.getCssValue("padding-left")))
+                .as("the page's padding").containsExactly("24px", "28px");
+        driver.executeScript("window.heldList.release()");
+        browser.await("gary did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance", "grants");
+    }
+
+    /** Holds the console's catalog list until {@code window.heldList.release()}. */
+    private static final String HOLD_THE_CATALOG_LIST = """
+            (() => {
+              const real = window.fetch;
+              let release;
+              const gate = new Promise(done => release = done);
+              window.heldList = {asked: false, release};
+              window.fetch = (url, init) => {
+                if (!new URL(url, location.origin).pathname.endsWith('/management/v1/catalogs')) return real(url, init);
+                window.heldList.asked = true;
+                return gate.then(() => real(url, init));
+              };
+            })();
+            """;
+
+    /**
+     * The overview's tiles fill their rows: a presenter's six sit as three columns of two rows at 1,440 px and two
+     * columns of three at 1,280, each row's first tile with no left border and every row after the first ruled above
+     * (the 27 Nov review; backlog 331). And the estate's namespace labels never run together, as "markets 5reference 1"
+     * did: one too long for the room beside its marks is left out, its marks naming it on hover.
+     */
+    @Test
+    void overviewTilesFillTheirRowsAndTheEstatesLabelsNeverRunTogether() {
+        String crowded = "a_namespace_named_far_too_long_for_one_mark_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + crowded + "\"]}"), 200);
+        api.table(crowded, "lonely");
+        signIn(api.everyDuty());
+        for (int[] at : new int[][] {{1440, 2}, {1280, 3}, {1920, 2}}) {
+            frameOf(at[0]);
+            browser.open("/ui/#p=overview&c=trading");
+            browser.await("the six tiles did not come",
+                    d -> d.findElements(By.cssSelector("#overview-kpis > .kpi")).size() == 6);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tiles = (Map<String, Object>) driver.executeScript(TILE_ROWS);
+            assertThat(tiles.get("rows")).as("rows of tiles at %d px", at[0]).isEqualTo((long) at[1]);
+            assertThat(tiles.get("wrong")).as("the tiles' rows and rules at %d px", at[0]).isEqualTo("");
+
+            browser.await(By.cssSelector("#overview [data-iceline='estate'] svg .labs"));
+            assertThat((String) driver.executeScript(LABELS_RUN_TOGETHER)).as("the estate's labels at %d px", at[0])
+                    .isEmpty();
+            assertThat(driver.findElements(By.cssSelector("#overview [data-iceline='estate'] .labs text.lab-strong")))
+                    .extracting(ConsoleBrowser::textContent).as("the long name has no room beside its one mark")
+                    .doesNotContain(crowded);
+            WebElement group = driver.findElement(By.cssSelector("#overview [data-iceline='estate'] a.ga[aria-label^='"
+                    + crowded + ",']"));
+            assertThat(textContent(group.findElement(By.tagName("title")))).startsWith(crowded + ", 1 table");
+        }
+    }
+
+    /** The overview's tiles by row: how many rows, and each tile whose rules are wrong for its place. */
+    private static final String TILE_ROWS = """
+            const tiles = [...document.querySelectorAll('#overview-kpis > .kpi')];
+            const tops = [...new Set(tiles.map(t => Math.round(t.getBoundingClientRect().top)))];
+            const rows = tops.map(y => tiles.filter(t => Math.round(t.getBoundingClientRect().top) === y));
+            const wrong = [];
+            if (new Set(rows.map(r => r.length)).size !== 1) wrong.push('rows of ' + rows.map(r => r.length).join(', '));
+            rows.forEach((r, i) => r.forEach((t, j) => {
+              const cs = getComputedStyle(t);
+              if ((cs.borderLeftWidth !== '0px') !== (j > 0)) wrong.push(`row ${i + 1}, tile ${j + 1}: left ${cs.borderLeftWidth}`);
+              if ((cs.borderTopWidth !== '0px') !== (i > 0)) wrong.push(`row ${i + 1}, tile ${j + 1}: top ${cs.borderTopWidth}`);
+            }));
+            return {rows: rows.length, wrong: wrong.join('; ')};
+            """;
+
+    /** The estate's labels that touch another, or run past the next namespace's first mark, as "a and b". */
+    private static final String LABELS_RUN_TOGETHER = """
+            const svg = document.querySelector('#overview [data-iceline="estate"] svg');
+            const texts = [...svg.querySelectorAll('.labs text.lab-strong, .labs text.lab:not([text-anchor])')];
+            const boxes = texts.map(t => ({t: t.textContent, b: t.getBoundingClientRect()}));
+            const hits = [];
+            for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+              const a = boxes[i].b, b = boxes[j].b;
+              if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) hits.push(boxes[i].t + ' and ' + boxes[j].t);
+            }
+            return hits.join('; ');
+            """;
+
+    /**
+     * Every row action is one ghost button, alike on Branches and tags and on Governance: Read, Merge… and Renew as
+     * Lift and Release are, and Delete last, set apart and in the bad ink (the 27 Nov review; backlog 331).
+     */
+    @Test
+    void rowActionsLookAlikeWithDeleteLastAndSetApart() {
+        String branch = "acts_" + Api.suffix();
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + branch + "\",\"kind\":\"branch\"}"), 201);
+        try {
+            signIn(api.everyDuty());
+            browser.open("/ui/#c=trading&tab=refs");
+            WebElement acts = browser.await(By.cssSelector("tr[data-ref='" + branch + "'] .row-acts"));
+            List<WebElement> buttons = acts.findElements(By.cssSelector(":scope > .btn"));
+            assertThat(buttons).extracting(ConsoleBrowser::textContent).containsExactly("Read", "Merge…", "Renew", "Delete");
+            WebElement delete = buttons.getLast();
+            assertThat(delete.getAccessibleName()).isEqualTo("Delete @" + branch);
+            List<String> look = look(buttons.getFirst());
+            assertThat(buttons).allSatisfy(b -> assertThat(look(b)).as(textContent(b)).isEqualTo(look));
+            assertThat(delete.getCssValue("color")).isNotEqualTo(buttons.getFirst().getCssValue("color"));
+            int gap = buttons.get(2).getRect().getX() - (buttons.get(1).getRect().getX() + buttons.get(1).getRect().getWidth());
+            int apart = delete.getRect().getX() - (buttons.get(2).getRect().getX() + buttons.get(2).getRect().getWidth());
+            assertThat(apart).as("delete set apart").isGreaterThan(gap);
+
+            browser.open("/ui/#p=governance&c=trading&tab=holds");
+            WebElement lift = browser.await(By.cssSelector("#holds-standing tr[data-kind='freeze'][data-on='" + top
+                    + ".equities.eu'] .row-acts > .btn"));
+            assertThat(textContent(lift)).isEqualTo("Lift");
+            assertThat(look(lift)).isEqualTo(look);
+        } finally {
+            api.manage("DELETE", "/refs/" + branch, null);
+        }
+    }
+
+    /** What makes a row action look as it does, but its ink: its outline, ground, size, type and corners. */
+    private static List<String> look(WebElement button) {
+        return List.of("border-top-style", "border-top-width", "border-top-color", "background-color", "height",
+                "font-size", "font-weight", "padding-left", "border-top-left-radius").stream()
+                .map(button::getCssValue).toList();
+    }
+
+    /**
      * Each role sees only the pages, tabs and buttons its groups can use, and lands where its work is (Atelier's
      * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Service; a grant admin
      * on Audit, with no Overview or Maintenance; a platform operator on Service, with no catalog to pick.
@@ -241,12 +428,16 @@ class ConsoleBrowserTest {
         signIn(api.operator());
         browser.open("/ui/");
         browser.await("the operator did not land on Service", d -> d.getCurrentUrl().endsWith("#p=service"));
-        assertThat(rail()).containsExactly("service", "catalog", "refs", "governance");
+        // He holds nothing in the catalog: Catalog and Branches and tags are not drawn, and his Governance is the DR
+        // freeze alone (backlog 325).
+        assertThat(rail()).containsExactly("service", "governance");
         // Service is the whole deployment's: it offers no catalog to pick (backlog 200).
         assertThat(driver.findElement(By.cssSelector(".pick-wrap")).isDisplayed()).isFalse();
-        // An operator freezes a namespace from Holds and freezes, not only from its Access tab (backlog 221).
+        // An operator freezes a namespace from Governance, not only from its Access tab (backlog 221), where neither
+        // the summary nor the holds list, which need describe, is asked for (backlog 325).
         browser.open("/ui/#p=governance&c=trading&tab=holds");
-        browser.await(By.cssSelector("#governance-holds [data-act='freeze-path']")).click();
+        browser.await(By.cssSelector("#governance-freeze [data-act='freeze-path']")).click();
+        assertThat(driver.findElements(By.cssSelector("#governance-holds, #governance-summary, .nc-main .refusal"))).isEmpty();
         WebElement named = browser.await(By.cssSelector("dialog.dlg"));
         named.findElement(By.cssSelector("input[name='path']")).sendKeys(top + ".equities.eu");
         named.findElement(By.cssSelector("button[type='submit']")).click();
@@ -299,7 +490,9 @@ class ConsoleBrowserTest {
         assertThat(overview.getDomAttribute("href")).isEqualTo("#" + at("table", eu, "trades", "overview"));
         overview.click();
         browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='overview'][aria-current='page']"));
-        refusal("#table-page .tab-body");
+        // It stays on offer and says, without asking the catalog, that his groups do not read it (backlog 325).
+        assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                .isEqualTo(UNREAD_TABLE);
         // So does a view.
         browser.open("/ui/#" + at("view", equities, "daily", null));
         browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='access'][aria-current='page']"));
@@ -319,6 +512,78 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector("#overview-tab"));
         browser.open("/ui/#" + at("view", equities, "daily", null));
         browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='overview'][aria-current='page']"));
+    }
+
+    /**
+     * Browsing writes no refusal the console could have known from the caller's own grants (the 27 Nov review, item 3;
+     * backlog 325), as the demo's gary, cora and oscar: a table's or view's data tabs stay on offer and say in a closed
+     * note that the caller's groups do not read it, without asking for its load or its health; a platform operator
+     * who holds nothing in the catalog is not offered its namespaces or branches and tags, and his Governance is the
+     * DR freeze alone. One refusal asked for on purpose at the end shows the audit log is being read.
+     */
+    @Test
+    void browsingWritesNoRefusalTheCallersOwnGrantsForetell() {
+        String compliance = "compliance-" + Api.suffix();
+        IssuerForTests.grant(jdbc, Api.CATALOG, compliance, "describe");
+        expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":" + json(eu)
+                + "},\"group\":\"" + compliance + "\",\"privilege\":\"select\"}", AUTH, api.grantAdmin()), 204);
+        try (AuditLogCapture log = new AuditLogCapture()) {
+            // gary manages grants and reads nothing.
+            signIn(gary());
+            for (String tab : new String[] {"overview", "schema", "history", "maintenance"}) {
+                browser.open("/ui/#" + at("table", eu, "trades", tab));
+                assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                        .as(tab).isEqualTo(UNREAD_TABLE);
+            }
+            assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab]")))
+                    .as("every tab stays on offer (Atelier, 2026-11-27)").extracting(a -> a.getDomAttribute("data-tab"))
+                    .containsExactly("overview", "schema", "history", "access", "maintenance", "audit");
+
+            // cora reads eu only: elsewhere she is told per object, not from what she may do somewhere in the catalog.
+            signIn(person("cora", compliance));
+            browser.open("/ui/#" + at("table", eu, "trades", "overview"));
+            browser.await(By.cssSelector("#overview-tab"));
+            for (String tab : new String[] {"overview", "maintenance"}) {
+                browser.open("/ui/#" + at("table", ledger, "accounts", tab));
+                assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                        .as(tab).isEqualTo(UNREAD_TABLE);
+            }
+            browser.open("/ui/#" + at("view", equities, "daily", "overview"));
+            assertThat(textContent(browser.await(By.cssSelector("#view-page .tab-body [data-closed] h3"))))
+                    .isEqualTo("Reading this view's data needs select on it, which your groups do not hold. Its grants and"
+                            + " governance are on Access.");
+
+            // oscar operates the deployment and holds nothing in trading.
+            signIn(person("oscar", GovernanceServer.PLATFORM_OPS));
+            browser.open("/ui/#p=governance&c=trading");
+            browser.await(By.cssSelector("#governance-freeze [data-act='freeze-path']"));
+            assertThat(driver.findElements(By.cssSelector("#governance-summary, #governance-holds"))).isEmpty();
+            assertThat(driver.findElement(By.id("operator-freezes")).getText()).isEmpty();
+            assertThat(rail()).containsExactly("service", "governance");
+            browser.open("/ui/#c=trading");
+            assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                    .isEqualTo("trading's namespaces, tables, branches and tags are open to those whose groups hold a"
+                            + " grant in it.");
+            browser.open("/ui/#c=trading&tab=refs");
+            browser.awaitText(By.cssSelector("#closed-page h1"), "Branches and tags");
+
+            // The one refusal asked for: once it is in the log, nothing before it was refused to any of them.
+            expect(api.send("GET", "/v1/trading/namespaces/" + ns(eu) + "/tables/trades", null, AUTH, gary()), 403);
+            long deadline = System.nanoTime() + ConsoleBrowser.WAIT.toNanos();
+            while (denials(log, "gary").isEmpty() && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertThat(denials(log, "gary")).extracting(Denial::operation).containsExactly("loadTable");
+            assertThat(denials(log, "cora")).isEmpty();
+            assertThat(denials(log, "oscar")).isEmpty();
+        }
+    }
+
+    /** The refusals the audit log holds for {@code principal}, in order. */
+    private static List<Denial> denials(AuditLogCapture log, String principal) {
+        return log.records().stream().map(CatalogEvent::data)
+                .filter(d -> d instanceof Denial denial && denial.actor().principal().equals(principal))
+                .map(Denial.class::cast).toList();
     }
 
     /**
@@ -444,10 +709,10 @@ class ConsoleBrowserTest {
     }
 
     /**
-     * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
-     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log, "12:49 by lake".
-     * Each child namespace gets its totals over the tables beneath it (backlog 147), its newest commit "12:49 in
-     * rates" (backlog 186).
+     * A namespace's Contents gives each table its format, snapshot count and last data change, as the catalog's
+     * listing of them answers (backlogs 137 and 330): here the newest entry of the table's metadata log, which
+     * appended rows, "12:49 by lake"; a table created and never written to has none. Each child namespace gets its
+     * totals over the tables beneath it (backlog 147), its newest data change "12:49 in rates" (backlog 186).
      */
     @Test
     void contentsShowEachTablesFormatSnapshotsAndLastCommit() {
@@ -458,15 +723,23 @@ class ConsoleBrowserTest {
         String committer = JsonPath.read(log.body(), "$.journal[0].principal");
         assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[1].last-commit.version"))
                 .isEqualTo(JsonPath.<Integer>read(log.body(), "$.journal[0].new-version"));
+        assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[1].last-data-change.version"))
+                .as("trades' last commit appended rows").isEqualTo(JsonPath.<Integer>read(log.body(),
+                        "$.journal[0].new-version"));
+        assertThat(JsonPath.<List<Object>>read(listed.body(), "$.tables[?(@.name == 'positions')].last-data-change"))
+                .as("positions was created and never written to").isEmpty();
 
         signIn(tester());
         browser.open("/ui/#" + at("namespace", eu, null, null));
         browser.await(By.cssSelector("#namespace-page table.contents tr[data-name='trades']"));
         // A column with nothing on any row is dropped (backlog 193): the queue and governance columns come and go with
-        // what other tests leave, so only the columns these tables always fill are named.
+        // what other tests leave, so only the columns these tables always fill are named. Kind says "table" on both
+        // rows, so it goes too (the 27 Nov review; backlog 331); Format stays, v2 beside v3.
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
-                .extracting(ConsoleBrowser::textContent).containsSubsequence("Name", "Kind", "Format", "Snapshots",
-                        "Last commit");
+                .extracting(ConsoleBrowser::textContent).containsSubsequence("Name", "Format", "Snapshots",
+                        "Last data change")
+                .doesNotContain("Kind");
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents td.kind"))).isEmpty();
         WebElement trades = contentsRow("trades");
         assertThat(contentsCell(trades, "fmt")).isEqualTo("v2");
         assertThat(contentsCell(trades, "snaps")).isEqualTo("3");
@@ -475,6 +748,7 @@ class ConsoleBrowserTest {
         WebElement positions = contentsRow("positions");
         assertThat(contentsCell(positions, "fmt")).isEqualTo("v3");
         assertThat(contentsCell(positions, "snaps")).as("created, never appended to").isEqualTo("0");
+        assertThat(contentsCell(positions, "last")).as("no data change yet").isEqualTo("–");
 
         // A namespace's row counts the tables beneath it, sums their snapshots and names the newest commit by its
         // table's path below it, as the catalog's totals answer (backlog 147); it has no format of its own. A view
@@ -486,15 +760,22 @@ class ConsoleBrowserTest {
         assertThat(JsonPath.<Integer>read(totals.body(), "$.namespaces[0].tables")).isEqualTo(2);
         assertThat(JsonPath.<Integer>read(totals.body(), "$.namespaces[0].snapshots")).isEqualTo(3);
         assertThat(JsonPath.<Boolean>read(totals.body(), "$.namespaces[0].complete")).isTrue();
-        List<String> newest = JsonPath.read(totals.body(), "$.namespaces[0].newest-commit.table");
-        assertThat(newest).hasSize(1).isSubsetOf("trades", "positions");
+        List<String> newest = JsonPath.read(totals.body(), "$.namespaces[0].newest-data-change.table");
+        assertThat(newest).as("positions holds no data change").containsExactly("trades");
 
         browser.open("/ui/#" + at("namespace", equities, null, null));
         WebElement euRow = contentsRow("eu");
         assertThat(contentsCell(euRow, 1)).isEqualTo("eu · 2 tables");
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
-                .extracting(ConsoleBrowser::textContent).doesNotContain("Format");
+                .extracting(ConsoleBrowser::textContent).doesNotContain("Format").contains("Kind");
         assertThat(euRow.findElements(By.cssSelector("td.fmt"))).isEmpty();
+        // A namespace beside a view keeps Kind, each drawn as the tree draws it, its icon then its word, with no chip
+        // around it (backlog 331).
+        WebElement euKind = euRow.findElement(By.cssSelector("td.kind"));
+        assertThat(textContent(euKind).trim()).isEqualTo("namespace");
+        assertThat(euKind.findElements(By.cssSelector(".badge"))).isEmpty();
+        assertThat(euKind.findElement(By.cssSelector("svg.ico-n use")).getDomAttribute("href")).isEqualTo("#i-ns");
+        assertThat(contentsRow("daily").findElement(By.cssSelector("td.kind svg.ico-v")).isDisplayed()).isTrue();
         assertThat(textContent(driver.findElement(By.cssSelector("#namespace-page .title-row code"))))
                 .isEqualTo(top + ".equities");
         assertThat(contentsCell(euRow, "snaps")).isEqualTo("3");
@@ -564,6 +845,14 @@ class ConsoleBrowserTest {
             browser.awaitText(By.cssSelector("[data-ref-band='" + tag + "']"), "Reading the tag");
             WebElement folded = browser.await(By.cssSelector("details#engine-refs"));
             assertThat(folded.getDomAttribute("open")).isNull();
+            // Folded, its caption keeps the panel's meta style, not the heading's bold, so the two do not run together
+            // (the 27 Nov review; backlog 331).
+            WebElement caption = folded.findElement(By.cssSelector("summary h2 .meta"));
+            assertThat(textContent(caption)).isEqualTo("Iceberg's own, not the catalog's");
+            assertThat(caption.getCssValue("font-weight")).isEqualTo("400");
+            assertThat(folded.findElement(By.cssSelector("summary h2")).getCssValue("font-weight")).isEqualTo("600");
+            assertThat(caption.getCssValue("color"))
+                    .isNotEqualTo(folded.findElement(By.cssSelector("summary h2")).getCssValue("color"));
         } finally {
             api.manage("DELETE", "/refs/" + tag, null);
         }
@@ -682,12 +971,74 @@ class ConsoleBrowserTest {
             return found.isEmpty() ? null : found;
         });
         assertThat(rows).extracting(row -> row.getDomAttribute("data-id")).containsExactly(String.valueOf(first));
+        // The commit shows its snapshot shortened, cut from the id's own digits, and whole on hover (backlog 326): cut
+        // from a parsed number, 8809372496300770237 would show as 8809…0000.
+        WebElement pick = rows.getFirst().findElement(By.cssSelector("button.row-pick"));
+        assertThat(textContent(pick)).isEqualTo("8809…0237");
+        assertThat(pick.getDomAttribute("title")).isEqualTo(String.valueOf(first));
+        assertThat(textContent(driver.findElement(By.cssSelector("#selected-snapshot h2 .meta")))).startsWith("9007…0993 · ");
         assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]")))
                 .extracting(c -> c.getDomAttribute("data-id"))
                 .containsExactly(String.valueOf(first), String.valueOf(second));
         browser.await(By.xpath("//button[normalize-space()='Show the whole summary']")).click();
         String whole = textContent(browser.await(By.cssSelector("#selected-snapshot pre.raw")));
         assertThat(whole).contains("\"snapshot-id\": " + second + ",", "\"parent-snapshot-id\": " + first + ",");
+    }
+
+    /**
+     * Snapshot expiries made one after another fold into one row of History, opened on click, and Contents names the
+     * append before them as the last data change, not the expiry (Atelier, 2026-11-27; backlog 330).
+     */
+    @Test
+    void expiriesFoldIntoOneRowAndContentsNamesTheLastDataChange() {
+        List<String> levels = List.of("fold_" + Api.suffix());
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":" + json(levels) + "}"), 200);
+        String location = create(levels, "lines", 2);
+        String root = location.substring(0, location.indexOf("/metadata/"));
+        long now = System.currentTimeMillis();
+        StringBuilder added = new StringBuilder();
+        for (int id = 1; id <= 4; id++) {
+            added.append("""
+                    {"action":"add-snapshot","snapshot":{"snapshot-id":%d,%s"sequence-number":%d,"timestamp-ms":%d,
+                      "manifest-list":"%s/metadata/snap-%d.avro","schema-id":0,"summary":{"operation":"append"}}},"""
+                    .formatted(id, id > 1 ? "\"parent-snapshot-id\":" + (id - 1) + "," : "", id, now - 5_000 + id,
+                            root, id));
+        }
+        expect(api.rest("POST", tableRest(levels, "lines"), "{\"requirements\":[],\"updates\":[" + added
+                + "{\"action\":\"set-snapshot-ref\",\"ref-name\":\"main\",\"snapshot-id\":4,\"type\":\"branch\"}]}"),
+                200);
+        for (int id = 1; id <= 3; id++) {
+            expect(api.rest("POST", tableRest(levels, "lines"), Api.removeSnapshot(id)), 200);
+        }
+        HttpResponse<String> listed = expect(api.manage("GET", "/namespaces/" + ns(levels)
+                + "/tables", null), 200);
+        assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[0].last-commit.version")).isEqualTo(5);
+        assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[0].last-data-change.version"))
+                .as("the append, not the expiries after it").isEqualTo(2);
+
+        signIn(tester());
+        browser.open("/ui/#" + at("table", levels, "lines", "history"));
+        WebElement fold = browser.await(By.cssSelector("#metadata-log tbody tr.mlog-fold"));
+        assertThat(textContent(fold)).contains("Snapshots expired 3 times", " to ");
+        assertThat(textContent(fold.findElement(By.xpath("./td[1]")))).isEqualTo("3–5");
+        List<WebElement> expiries = driver.findElements(By.cssSelector("#metadata-log tbody tr[data-version='3'],"
+                + " #metadata-log tbody tr[data-version='4'], #metadata-log tbody tr[data-version='5']"));
+        assertThat(expiries).hasSize(3).noneMatch(WebElement::isDisplayed);
+        assertThat(driver.findElement(By.cssSelector("#metadata-log tbody tr[data-version='2']")).isDisplayed())
+                .as("the data change leads, unfolded").isTrue();
+        WebElement open = fold.findElement(By.cssSelector("button[aria-expanded]"));
+        assertThat(textContent(open)).isEqualTo("Show 3");
+        open.click();
+        assertThat(open.getDomAttribute("aria-expanded")).isEqualTo("true");
+        assertThat(expiries).allMatch(WebElement::isDisplayed);
+        open.click();
+        assertThat(expiries).noneMatch(WebElement::isDisplayed);
+
+        browser.open("/ui/#" + at("namespace", levels, null, null));
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).contains("Last data change");
+        assertThat(textContent(contentsRow("lines").findElement(By.cssSelector("td.last"))))
+                .endsWith(" by " + JsonPath.read(listed.body(), "$.tables[0].last-data-change.principal"));
     }
 
     @Test
@@ -718,7 +1069,10 @@ class ConsoleBrowserTest {
         browser.open("/ui/#" + at("table", eu, "trades", "governance"));
         WebElement frozen = browser.await(By.cssSelector("#governance .status-frozen"));
         assertThat(frozen.getText()).contains("DR freeze in force", FREEZE_REASON);
-        assertThat(browser.await(By.cssSelector("#governance .status-held")).getText()).startsWith("1 legal hold");
+        // The hold is said once, in its own panel (backlog 329): no pill in the status row.
+        assertThat(textContent(browser.await(By.cssSelector("#legal-holds h2")))).isEqualTo("Legal holds 1 hold · nearest level first");
+        assertThat(driver.findElements(By.cssSelector("#governance .status-held"))).isEmpty();
+        assertThat(textContent(browser.await(By.cssSelector("#governance .status-row")))).doesNotContainIgnoringCase("legal hold");
 
         assertThat(fact("Owner")).startsWith("desk-a ").contains("inherited from namespace " + top);
         assertThat(fact("Classification")).startsWith("internal ").contains("this table");
@@ -729,7 +1083,13 @@ class ConsoleBrowserTest {
         assertThat(cell(holds.get(0), 1)).isEqualTo(HOLD_REASON);
         assertThat(cell(holds.get(0), 2)).isEqualTo("inherited from namespace " + top + ".equities");
         assertThat(cell(holds.get(0), 3)).endsWith("stella");
-        assertThat(rows(panel("Attributes"))).extracting(row -> row.get(0) + " = " + row.get(1) + " @ " + row.get(2))
+        // Where each value was set is folded inside the Governance panel, not a panel of its own (backlog 329).
+        assertThat(driver.findElements(By.xpath("//div[contains(@class,'nc-main')]//*[contains(concat(' ',@class,' '),"
+                + "' panel ')][h2[starts-with(normalize-space(),'Attributes')]]"))).isEmpty();
+        WebElement whereSet = browser.await(By.cssSelector("#governance details#where-set"));
+        assertThat(whereSet.getDomProperty("open")).isEqualTo("false");
+        whereSet.findElement(By.tagName("summary")).click();
+        assertThat(rows(whereSet)).extracting(row -> row.get(0) + " = " + row.get(1) + " @ " + row.get(2))
                 .contains("Classification = internal @ this table",
                         "Owner = desk-a @ inherited from namespace " + top);
 
@@ -741,13 +1101,62 @@ class ConsoleBrowserTest {
         assertThat(driver.findElements(By.cssSelector("#governance .status-frozen"))).isEmpty();
     }
 
+    /**
+     * The Access tab's "Your groups' grants here" lists only the grants that reach the object, the answer What you may
+     * do reads, and every grant of the caller's groups in the catalog is one click away, for anyone (the 27 Nov review,
+     * item 6; Atelier; backlog 329).
+     */
+    @Test
+    void yourGroupsGrantsListOnlyThoseThatReachTheObject() {
+        String desk = "desk-" + Api.suffix();
+        IssuerForTests.grant(jdbc, Api.CATALOG, desk, "describe");
+        for (List<String> levels : List.of(eu, ledger)) {
+            expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":" + json(levels)
+                    + "},\"group\":\"" + desk + "\",\"privilege\":\"select\"}", AUTH, api.grantAdmin()), 204);
+        }
+        signIn(person("dana", desk));
+        browser.open("/ui/#" + at("table", eu, "trades", "access"));
+        WebElement own = browser.await(By.cssSelector("#access-tab [data-grants='own']"));
+        assertThat(textContent(own.findElement(By.tagName("h2")))).isEqualTo("Your groups' grants here");
+        List<WebElement> here = browser.await("no grants listed here", d -> {
+            List<WebElement> found = d.findElements(By.cssSelector("#access-tab table.own-here tbody tr"));
+            return found.size() == 2 ? found : null;
+        });
+        assertThat(here).extracting(r -> r.getDomAttribute("data-privilege") + " " + textContent(r.findElements(By.tagName("td")).get(2)))
+                .as("the ledger's grant does not reach the table").containsExactly("describe catalog trading",
+                        "select namespace " + String.join(".", eu));
+
+        browser.await(By.cssSelector("#access-tab [data-act='own-grants-all']")).click();
+        WebElement all = browser.await(By.cssSelector("dialog.dlg #own-grants-all"));
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg #dlg-h")))).isEqualTo("Your groups' grants in trading");
+        List<WebElement> every = browser.await("not every grant listed", d -> {
+            List<WebElement> found = all.findElements(By.cssSelector("tbody tr"));
+            return found.size() == 3 ? found : null;
+        });
+        assertThat(every).extracting(r -> textContent(r.findElements(By.tagName("td")).get(2)))
+                .contains("namespace " + String.join(".", ledger));
+
+        // A grant admin has the same list and link beside the grants that reach the table.
+        signIn(gary());
+        browser.open("/ui/#" + at("table", eu, "trades", "access"));
+        browser.await(By.cssSelector("#access-tab .grants-reach"));
+        browser.await(By.cssSelector("#access-tab .grants-here [data-act='own-grants-all']"));
+        assertThat(driver.findElements(By.xpath("//div[@id='access-tab']//h2[normalize-space()=\"Your groups' grants here\"]")))
+                .hasSize(1);
+    }
+
     @Test
     void refusalsAreShownExactlyAsTheCatalogAnswered() {
-        // D27: an unclassified table in a regulated namespace is refused everything but describe.
+        // D27: an unclassified table in a regulated namespace is refused everything but describe. The console says it
+        // is closed until classified in its own notice instead of the refusal (backlog 324; the notice's words are
+        // ConsoleFlaggedTableBrowserTest's).
         signIn(tester());
         browser.open("/ui/#" + at("table", ledger, "accounts", null));
-        assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
-                + "/tables/accounts?snapshots=all", null, AUTH, tester(), "X-Iceberg-Access-Delegation", "none"));
+        assertThat(textContent(browser.await(By.id("closed-until-classified")))).startsWith("Closed until classified.");
+        assertThat(driver.findElements(By.cssSelector("#table-page .tab-body .refusal"))).isEmpty();
+        assertThat(JsonPath.<String>read(expect(api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
+                + "/tables/accounts?snapshots=all", null, AUTH, tester(), "X-Iceberg-Access-Delegation", "none"), 403)
+                .body(), "$.error.message")).endsWith("it is closed until it is classified");
 
         // Reading an object's audit trail needs manage-grants: the tab is not offered, and a link to it says so
         // without asking the catalog (backlog 184), which would refuse it.
@@ -758,10 +1167,14 @@ class ConsoleBrowserTest {
         expect(api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null, AUTH, tester()), 403);
 
         // Grant administrators are kept away from the data itself (D18): a table opens on Access for them (backlog
-        // 245), and its Overview shows the refusal.
+        // 245), and its Overview says so without asking (backlog 325). Exporting its metadata, which they ask for
+        // themselves, shows the catalog's refusal of its load.
         signIn(api.grantAdmin());
         browser.open("/ui/#" + at("table", eu, "trades", "overview"));
-        assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
+        assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                .isEqualTo(UNREAD_TABLE);
+        browser.await(By.cssSelector("#table-page [data-act='export-meta']")).click();
+        assertShownVerbatim(refusal("dialog.dlg"), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
                 + "/tables/trades?snapshots=all", null, AUTH, api.grantAdmin(), "X-Iceberg-Access-Delegation", "none"));
     }
 
@@ -977,6 +1390,50 @@ class ConsoleBrowserTest {
                 + "'][data-privilege='select'][data-on='namespace']")).getDomAttribute("class")).isNull();
     }
 
+    /**
+     * The grids are measured against the content column, not the window (backlog 326). Beside the menu and the tree, at
+     * 1,280, 1,440 and 1,920 px, History stacks, so its Commits span the tab; each commit is one line, with no word broken,
+     * and its snapshot shows whole or shortened from the id's own digits. Governance's holds and freezes and its
+     * regulated areas fit their cards, with no word broken. Before, at 1,440 px the content beside the tree was about
+     * 870 px and History kept two columns, so the Commits broke "snapshots expired" letter by letter.
+     */
+    @Test
+    void besideTheMenuAndTheTreeHistoryAndGovernanceShowTheirTablesWhole() {
+        signIn(tester());
+        for (int width : new int[] {1280, 1440, 1920}) {
+            frameOf(width);
+            browser.open("/ui/#" + at("table", eu, "trades", "history"));
+            List<WebElement> snapshots = browser.await("the commits that added snapshots are not shown", d -> {
+                List<WebElement> found = d.findElements(By.cssSelector("#metadata-log tbody tr[data-id]"));
+                return found.size() == 3 ? found : null;
+            });
+            assertThat(driver.findElement(By.cssSelector(".browse > .tree")).isDisplayed()).as("the tree at %d px", width)
+                    .isTrue();
+            assertThat((Boolean) driver.executeScript("const tab = document.getElementById('history-tab').getBoundingClientRect();"
+                    + " const log = document.getElementById('metadata-log').getBoundingClientRect();"
+                    + " return Math.abs(tab.width - log.width) < 1"))
+                    .as("the Commits span the History tab at %d px", width).isTrue();
+            assertThat(cell(snapshots.get(0), 4)).isEqualTo(S3 + " · append");
+            assertThat((List<?>) driver.executeScript(LINES_BROKEN, "#metadata-log tbody tr[data-version] > td:not(:last-child)"))
+                    .as("the commits on more than one line at %d px", width).isEmpty();
+            assertThat((List<?>) driver.executeScript(BROKEN_WORDS, "#metadata-log tbody tr[data-version] > td"))
+                    .as("the words broken in the Commits at %d px", width).isEmpty();
+            assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
+
+            browser.open("/ui/#p=governance&c=trading");
+            browser.await(By.cssSelector("#regulated tr[data-on='" + top + ".ledger']"));
+            browser.await(By.cssSelector("#governance-summary tr[data-kind='freeze'][data-on='" + top + ".equities.eu']"));
+            for (String table : List.of("#governance-summary .grid-2 > .panel:first-child", "#regulated")) {
+                assertThat((Boolean) driver.executeScript("const w = document.querySelector(arguments[0] + ' .wrap-tbl');"
+                        + " return w.scrollWidth <= w.clientWidth + 1", table))
+                        .as("%s fits its card at %d px", table, width).isTrue();
+                assertThat((List<?>) driver.executeScript(BROKEN_WORDS, table + " tbody td"))
+                        .as("the words broken in %s at %d px", table, width).isEmpty();
+            }
+            assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
+        }
+    }
+
     @Test
     void theGovernanceSummaryCountsAndListsTheHoldTheFreezeAndTheRegulatedNamespace() {
         signIn(tester());
@@ -1096,9 +1553,10 @@ class ConsoleBrowserTest {
             """;
 
     /**
-     * Audit filters by kind, and each By kind row applies its kind (Atelier's review, F7; backlog 187): a grant admin
-     * reaches a grant's record in three steps, Audit (where they land), the grant row, its record. Every filter is in
-     * the link, so Back keeps it; the audit's own reads are hidden unless asked for; the range names both days.
+     * Audit filters by kind (Atelier's review, F7; backlog 187): a grant admin reaches a grant's record in three steps,
+     * Audit (where they land), the Grants chip, its record. Every filter is in the link, so Back keeps it; the audit's
+     * own reads are hidden unless asked for; the counts' range names both days. By kind, which repeated the chips'
+     * counts, is gone, and with no archive so is Hash chain (backlog 328).
      */
     @Test
     void auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads() {
@@ -1108,30 +1566,46 @@ class ConsoleBrowserTest {
         driver.executeScript(AUDIT_TABLES_IN_THE_PAGE);
         browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
         assertThat(feedTypes()).containsExactly("grant", "commit");
-        assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
-        assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
-                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\. Choose a kind to show its records in the feed\\. .*");
+        // All is every kind but Reads (backlog 328).
+        assertThat(asked(lastAsked())).contains("nuna.catalog.grant", "nuna.catalog.commit")
+                .doesNotContain("nuna.catalog.read", "nuna.catalog.audit-read", "nuna.catalog.export");
+        browser.await("the chips have no counts", d -> !textContent(d.findElement(By.cssSelector("#audit-feed p[data-counts]"))).isEmpty());
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed p[data-counts]"))))
+                .matches("Counts are of the last day, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\.");
+        assertThat(driver.findElements(By.cssSelector("#audit-kinds, #hash-chain"))).isEmpty();
 
-        // By kind uses the chips' words, so its counts add up to them; each badge is its chip's word, the raw type
-        // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
-        assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
-                .map(row -> cell(row, 1) + " " + cell(row, 2)).toList()).containsExactly("Grants 1", "Commits 1", "All 2");
+        // The chips' counts add up, the audit's own reads hidden and not counted; each badge is its chip's word, the raw
+        // type its title (Atelier's re-walk after phase 2, backlog 214).
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .chip")).stream().map(c -> textContent(c).strip()).toList())
+                .contains("All 2", "Grants 1", "Commits 1", "Reads 0");
+        // A chip's title is its record types and their counts, as By kind's rows gave them.
+        assertThat(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']")).getDomAttribute("title"))
+                .isEqualTo("grant 1 · commit 1");
         // The headline counts every record; the chips leave out the hidden reads, and the checkbox says how many
         // (Atelier's re-walk after 212 to 217, backlog 220).
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip())
                 .isEqualTo("Show audit reads · 2 records hidden");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("4");
-        // Most recorded keeps its number columns in its card at 1440 px: the long path wraps (backlog 220).
-        driver.manage().window().setSize(new Dimension(1440, 900));
+        // The tile says how the chips share its total, so the two add up (backlog 328).
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-d"))))
+                .isEqualTo("2 under All, 0 under Reads, 2 audit reads");
+        // Most recorded keeps its number columns in its card at 1280, 1440 and 1920 px: the long path wraps after a dot
+        // (backlog 220), never inside a word, as it broke letter by letter at 1440 (backlog 326).
         WebElement busiest = browser.await(By.cssSelector("#audit-busiest"));
-        browser.await("Most recorded overflows its card", d -> (Boolean) driver.executeScript(
-                "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+        for (int width : new int[] {1280, 1440, 1920}) {
+            frameOf(width);
+            browser.await("Most recorded overflows its card at " + width + " px", d -> (Boolean) driver.executeScript(
+                    "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+            assertThat((List<?>) driver.executeScript(BROKEN_WORDS, "#audit-busiest tbody td"))
+                    .as("the words broken in Most recorded at %d px", width).isEmpty();
+        }
+        driver.manage().window().setSize(new Dimension(1440, 900));
         assertThat(textContent(busiest.findElement(By.cssSelector("thead")))).contains("Records", "Reads");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='hold']")))).isEqualTo("Governance 0");
         WebElement grantBadge = driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .badge"));
         assertThat(textContent(grantBadge)).isEqualTo("Grant");
         assertThat(grantBadge.getDomAttribute("title")).isEqualTo("nuna.catalog.grant");
-        browser.await(By.cssSelector("#audit-kinds tr[data-kind='grant'] button")).click();
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='grant']")).click();
         browser.await("the feed did not show only grants", d -> feedTypes().equals(List.of("grant")));
         assertThat(lastAsked()).isEqualTo("nuna.catalog.grant");
         assertThat(driver.getCurrentUrl()).contains("p=audit", "kind=grant");
@@ -1160,7 +1634,7 @@ class ConsoleBrowserTest {
         driver.findElement(By.cssSelector("#audit-feed input[name='audit-reads']")).click();
         browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip()).isEqualTo("Show audit reads");
-        assertThat(lastAsked()).isNull();
+        assertThat(asked(lastAsked())).contains("nuna.catalog.audit-read", "nuna.catalog.grant").doesNotContain("nuna.catalog.read");
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
     }
 
@@ -1402,6 +1876,108 @@ class ConsoleBrowserTest {
     private List<String> feedTypes() {
         return driver.findElements(By.cssSelector("#audit-feed .feed-row")).stream()
                 .map(row -> row.getDomAttribute("data-type")).toList();
+    }
+
+    /** A type filter's types. */
+    private static List<String> asked(String types) {
+        assertThat(types).as("the feed's type filter").isNotNull();
+        return List.of(types.split(","));
+    }
+
+    /**
+     * One engine polling a table: the day's reads, and a page of them with one grant among them (backlog 328, from the
+     * review of 27 Nov, where 57,357 of 63,554 records were reads).
+     */
+    private static final String ENGINE_READS_IN_THE_PAGE = """
+            const real = window.fetch;
+            window.asked = [];
+            const now = Date.now();
+            let i = 0;
+            const rec = (secs, type, who, engine, path, data) => ({time: new Date(now - secs * 1000).toISOString(),
+              type: 'nuna.catalog.' + type, principal: who, engine, 'event-id': 'e' + (++i), partition: 0, offset: i,
+              'request-id': 'r' + i, object: {kind: 'TABLE', path}, event: {data}, chain: {status: 'no-archive'}});
+            const read = (secs, who, engine, path) => rec(secs, 'read', who, engine, path, {served: {version: 5}, branch: 'main'});
+            const rates = ['markets', 'fx', 'rates'];
+            const records = [];
+            for (let k = 0; k < 5; k++) records.push(read(10 + k * 3, 'singlestore', 'singlestore-demo', rates));
+            records.push(rec(40, 'grant', 'gina', null, ['equities', 'eu', 'trades'], {}));
+            records.push(read(50, 'spark', 'spark', ['equities', 'eu', 'trades']));
+            records.push(read(53, 'spark', 'spark', ['equities', 'eu', 'trades']));
+            for (let k = 0; k < 3; k++) records.push(read(60 + k * 3, 'singlestore', 'singlestore-demo', rates));
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/audit/summary')) {
+                return json({'by-type': {'nuna.catalog.read': 57357, 'nuna.catalog.audit-read': 8, 'nuna.catalog.grant': 1,
+                  'nuna.catalog.commit': 6196}, from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+              }
+              if (u.pathname.endsWith('/audit/archive')) return json({configured: false});
+              if (u.pathname.endsWith('/audit/feed')) {
+                window.asked.push(u.searchParams.get('type'));
+                const types = (u.searchParams.get('type') || '').split(',').filter(Boolean);
+                return json({records: records.filter(r => !types.length || types.includes(r.type))});
+              }
+              return real(url, init);
+            };
+            location.hash = '#p=audit&c=trading&kind=all';
+            """;
+
+    /**
+     * One engine's polling reads no longer drown the feed (Atelier's review of 27 Nov, item 4; backlog 328): All leaves
+     * the reads out and says so, the reads have their own chip, the tile says how the chips share its total, and a run of
+     * like records in a row is one row, which says how many and when, and opens its records beneath it. The fold covers
+     * only the page's own records, and the status line says so.
+     */
+    @Test
+    void anEnginesPollingReadsFoldIntoRunsUnderTheirOwnChip() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(ENGINE_READS_IN_THE_PAGE);
+        browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
+        browser.await("the chips have no counts", d -> !textContent(d.findElement(By.cssSelector("#audit-feed p[data-counts]"))).isEmpty());
+
+        assertThat(feedTypes()).containsExactly("grant");
+        assertThat(asked(lastAsked())).doesNotContain("nuna.catalog.read");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']"))).strip()).isEqualTo("All 6,197");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='read']"))).strip()).isEqualTo("Reads 57,357");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed p[data-counts]"))))
+                .endsWith(" All leaves out the 57,357 reads, which engines make every few seconds: they have their own chip.");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("63,562");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-d"))))
+                .isEqualTo("6,197 under All, 57,357 under Reads, 8 audit reads");
+
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='read']")).click();
+        browser.await("the feed did not show the reads", d -> feedTypes().size() == 4);
+        assertThat(asked(lastAsked())).containsExactly("nuna.catalog.read", "nuna.catalog.export");
+        assertThat(driver.getCurrentUrl()).contains("kind=read");
+        // Five singlestore reads in a row, two spark reads (too few to fold), then three singlestore reads.
+        List<WebElement> rows = driver.findElements(By.cssSelector("#audit-feed .feed-row"));
+        assertThat(rows.stream().map(r -> String.valueOf(r.getDomAttribute("data-run"))).toList())
+                .containsExactly("5", "null", "null", "3");
+        assertThat(textContent(rows.get(0).findElement(By.cssSelector(".what"))))
+                .matches("loaded version 5 of main · markets\\.fx\\.rates · 5 times, \\d\\d:\\d\\d:\\d\\d to \\d\\d:\\d\\d:\\d\\d");
+        assertThat(textContent(rows.get(0).findElement(By.cssSelector(".via")))).isEqualTo("via singlestore-demo");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-status"))))
+                .contains("Like records in a row are folded into one, among the 50 of each page only.");
+
+        // Nothing is hidden: the run opens its five records beneath it, each one a record, and closes again.
+        WebElement open = rows.get(0).findElement(By.cssSelector("button"));
+        assertThat(textContent(open)).isEqualTo("Show records");
+        open.click();
+        browser.await("the run did not open", d -> d.findElements(By.cssSelector("#audit-feed .feed-row.in-run")).size() == 5);
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row")).get(1).getDomAttribute("class")).contains("in-run");
+        assertThat(textContent(open)).isEqualTo("Hide records");
+        open.click();
+        browser.await("the run did not close", d -> d.findElements(By.cssSelector("#audit-feed .feed-row.in-run")).isEmpty());
+
+        // On a wide screen a record is one line.
+        frameOf(1920);
+        WebElement single = browser.await(By.cssSelector("#audit-feed .feed-row:not(.is-run)"));
+        assertThat((Boolean) driver.executeScript("return arguments[0].querySelector('.line').getBoundingClientRect().height < 32",
+                single))
+                .as("a record on one line at 1920 px").isTrue();
+        driver.manage().window().setSize(new Dimension(1440, 900));
     }
 
     /** The type filter of the feed's last request, null for none. */
@@ -1675,23 +2251,73 @@ class ConsoleBrowserTest {
      * asserts the header fits: no wider than the window, Sign out within it, and no part of it over another.
      */
     private void assertTheHeaderFits(int width, boolean frame) {
-        driver.manage().window().setSize(new Dimension(width, 900));
         if (frame) {
-            for (int i = 0; i < 3; i++) {
-                int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
-                if (now == width) {
-                    break;
-                }
-                Dimension size = driver.manage().window().getSize();
-                driver.manage().window().setSize(new Dimension(size.width + width - now, 900));
-            }
-            assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
-                    .as("the console's frame").isEqualTo(width);
+            frameOf(width);
+        } else {
+            driver.manage().window().setSize(new Dimension(width, 900));
         }
         assertThat(headerFits()).as("the header fits at %d px", width).isTrue();
         assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
         assertThat((String) driver.executeScript(HEADER_OVERLAPS)).as("the header's parts at %d px", width).isEmpty();
     }
+
+    /** Sizes the window so the console's frame, the window less its scroll bar, is {@code width} wide. */
+    private void frameOf(int width) {
+        driver.manage().window().setSize(new Dimension(width, 900));
+        for (int i = 0; i < 3; i++) {
+            int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
+            if (now == width) {
+                break;
+            }
+            Dimension size = driver.manage().window().getSize();
+            driver.manage().window().setSize(new Dimension(size.width + width - now, 900));
+        }
+        assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
+                .as("the console's frame").isEqualTo(width);
+    }
+
+    /**
+     * The words broken across two lines in the cells {@code arguments[0]} selects, each as the letters before the break,
+     * a bar, and the letter after it: a line may end at a space, a dot, an underscore, a hyphen or a {@code <br>}, never
+     * between two letters or digits (backlog 326).
+     */
+    private static final String BROKEN_WORDS = """
+            const out = [];
+            const word = c => /[\\p{L}\\p{N}]/u.test(c);
+            for (const cell of document.querySelectorAll(arguments[0])) {
+              const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+              let prev = null;
+              for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                if (n.nodeType === Node.ELEMENT_NODE) {
+                  if (n.tagName === 'BR') prev = null;
+                  continue;
+                }
+                for (let i = 0; i < n.data.length; i++) {
+                  const r = document.createRange();
+                  r.setStart(n, i);
+                  r.setEnd(n, i + 1);
+                  const box = r.getClientRects()[0];
+                  if (!box) continue;
+                  const c = n.data[i];
+                  if (prev && word(c) && word(prev.c) && box.top >= prev.bottom - 1) out.push(prev.text + '|' + c);
+                  prev = {c, bottom: box.bottom, text: word(c) ? (prev && word(prev.c) ? prev.text : '') + c : ''};
+                }
+              }
+            }
+            return out;
+            """;
+
+    /** The cells {@code arguments[0]} selects whose words run onto a second line, by their text. */
+    private static final String LINES_BROKEN = """
+            const out = [];
+            for (const cell of document.querySelectorAll(arguments[0])) {
+              const r = document.createRange();
+              r.selectNodeContents(cell);
+              const tops = [...r.getClientRects()].filter(x => x.width > 0 && x.height > 0).map(x => x.top);
+              if (tops.length && Math.max(...tops) - Math.min(...tops) > 8) out.push(cell.textContent);
+            }
+            return out;
+            """;
 
     /**
      * Returns the first overlap in the header, or an empty string: two shown parts of {@code #top} side by side that
@@ -1996,20 +2622,26 @@ class ConsoleBrowserTest {
 
         // The namespace's Contents through the branch fills its columns as the branch has each table (backlog 168):
         // orders changed here at the branch's own version 1, fills as at the point at main's version 1, both with
-        // their format and snapshots.
+        // their snapshots. Both are format v2, so Format says one thing on every row and goes, said once beneath the
+        // table instead (the 27 Nov review; backlog 331).
         browser.open("/ui/#" + at("namespace", List.of(ns), null, null) + "&r=" + branch);
         WebElement ordersHere = contentsRow("orders");
-        assertThat(contentsCell(ordersHere, "fmt")).startsWith("v");
         assertThat(contentsCell(ordersHere, "snaps")).isEqualTo("0");
         assertThat(textContent(ordersHere.findElement(By.cssSelector(".on-ref")))).contains("changed here");
         WebElement fillsHere = contentsRow("fills");
-        assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents td.fmt"))).isEmpty();
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).doesNotContain("Format", "Kind");
         assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point · v1");
-        assertThat(textContent(fillsHere.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
+        // Neither has changed data, orders a property and fills only made, so Last data change here says nothing on
+        // any row and goes (backlogs 193 and 330).
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).doesNotContain("Last data change here");
         assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
-                .contains("Format, snapshots and last commit are as @" + branch + " has each table. Open one to read"
-                        + " it through @" + branch + ".")
-                .doesNotContain("A dash under Last commit");
+                .contains("Every table here is Iceberg format v2. Format, snapshots and last data change are as @"
+                        + branch + " has each table. Open one to"
+                        + " read it through @" + branch + ".")
+                .doesNotContain("A dash under Last data change");
 
         // A page that reads main only, Overview, keeps the control: it reads main, and a ref opens the catalog
         // through it.

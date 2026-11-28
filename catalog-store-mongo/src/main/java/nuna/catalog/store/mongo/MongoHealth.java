@@ -18,6 +18,7 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.UpdateOptions;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CompactionRun;
+import nuna.catalog.store.FailedJob;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
@@ -194,7 +195,8 @@ final class MongoHealth {
                                 .append("workerGroups", scan.groups().<BsonValue>map(MongoHealth::groups)
                                         .orElse(BsonNull.VALUE))
                                 .append("workerStorage", scan.storage().<BsonValue>map(MongoHealth::storage)
-                                        .orElse(BsonNull.VALUE))),
+                                        .orElse(BsonNull.VALUE))
+                                .append("failedJobs", failedJobs(scan.failedJobs()))),
                         new UpdateOptions().upsert(true));
             }
             List<BsonValue> keeping = new ArrayList<>();
@@ -245,7 +247,26 @@ final class MongoHealth {
                 Optional.ofNullable(string(doc, "error")), array(doc, "workerGroups").map(groups -> groups.stream()
                         .map(group -> group.asString().getValue()).collect(Collectors.toCollection(TreeSet::new))),
                 array(doc, "workerStorage").map(stores -> stores.stream().map(store -> storage(store.asDocument()))
-                        .toList()));
+                        .toList()),
+                array(doc, "failedJobs").map(jobs -> jobs.stream().map(job -> failedJob(job.asDocument())).toList())
+                        .orElse(List.of()));
+    }
+
+    /** The failed jobs the worker named, each with its table and why (backlog 327); absent in a scan kept before. */
+    private static BsonArray failedJobs(List<FailedJob> jobs) {
+        return new BsonArray(jobs.stream().<BsonValue>map(job -> new BsonDocument("kind", new BsonString(job.kind()))
+                .append("catalog", new BsonString(job.catalog()))
+                .append("namespace", new BsonArray(job.namespace().stream().<BsonValue>map(BsonString::new).toList()))
+                .append("name", new BsonString(job.name()))
+                .append("tableId", new BsonString(job.id().toString()))
+                .append("reason", new BsonString(job.reason()))
+                .append("message", new BsonString(job.message()))).toList());
+    }
+
+    private static FailedJob failedJob(BsonDocument job) {
+        return new FailedJob(string(job, "kind"), string(job, "catalog"), job.getArray("namespace").stream()
+                .map(level -> level.asString().getValue()).toList(), string(job, "name"),
+                UUID.fromString(string(job, "tableId")), string(job, "reason"), string(job, "message"));
     }
 
     /** The array at {@code field}; empty when it is absent or null, as in a scan kept before backlog 250. */

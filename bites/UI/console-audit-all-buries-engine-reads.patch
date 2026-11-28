@@ -1,0 +1,17 @@
+Breaks: All asks for the reads too, so one engine's polling buries every other record under it (backlog 328).
+Module: catalog-server
+Test: ConsoleBrowserTest#anEnginesPollingReadsFoldIntoRunsUnderTheirOwnChip
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index d4439899..7b86dfbd 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -230,7 +230,7 @@ function feedPanel(catalog, summary, own) {
+   reads.checked = st.auditReads;
+   // The audit's own reads are each reader's look at the feed: hidden unless asked for, or they bury the rest. All is
+   // every kind but Reads, with the audit's reads when they are asked for (backlog 328).
+-  const typesOf = kind => (KINDS.find(([k]) => k === kind)[3] || [...TYPES.filter(t => !READS.includes(t)), 'audit-read'])
++  const typesOf = kind => (KINDS.find(([k]) => k === kind)[3] || [...TYPES, 'audit-read'])
+     .filter(t => st.auditReads || t !== 'audit-read');
+   // What the chips' counts cover: the last day, and under All, every record but the reads (backlog 328).
+   const countNote = h('p', {class: 'fine', 'data-counts': '', title: 'The writer leaves its own records out, and a record '

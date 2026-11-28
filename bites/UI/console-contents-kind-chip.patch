@@ -1,0 +1,16 @@
+Breaks: Contents draws a namespace's kind as a bordered chip, not as the tree's icon.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/browse.js b/catalog-server/src/main/resources/nuna/ui/browse.js
+--- a/catalog-server/src/main/resources/nuna/ui/browse.js
++++ b/catalog-server/src/main/resources/nuna/ui/browse.js
+@@ -193,7 +193,7 @@
+       const t = totalsCells(x.totals.get(n[n.length - 1]));
+       return h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'namespace', 'data-name': n[n.length - 1], title: t.title},
+         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'namespace', namespace: n, ref: x.ref})}, n[n.length - 1]), t.count),
+-        kindCell('namespace'), h('td', {class: 'fmt'}, muted('–')),
++        h('td', {class: 'kind'}, badge([icon('ns', 'ic ico-n'), 'namespace'])), h('td', {class: 'fmt'}, muted('–')),
+         h('td', {class: 'queue'}, queuePill(queuedUnder(x.q, n))),
+         h('td', {class: 'gov'}, markPills(x.gov.get('namespace:' + n.join('.'))) || muted('–')),
+         h('td', {class: 'num snaps'}, t.snaps), h('td', {class: 'last'}, t.last), x.ref ? h('td', null, onRefCell(x, n, true)) : null);

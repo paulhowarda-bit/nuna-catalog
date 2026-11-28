@@ -397,14 +397,14 @@ final class Worker implements AutoCloseable {
                     loaded -> sameTable(work, loaded) ? "loaded" : "changed");
         } catch (RuntimeException e) {
             LOG.warn("Cannot load table {} ({})", work.name(), work.id(), e);
-            report.failed(ScanReport.Failure.TABLE_LOAD, "loading " + work.id(), e);
+            report.failed(ScanReport.Failure.TABLE_LOAD, work, "loading", e);
             return Optional.empty();
         }
         if (!sameTable(work, table)) {
             // Dropped, renamed or unregistered, and another table now has the name, since the work list was read:
             // its own policy is not this one, so nothing here runs on it. The next scan sees it as it is.
-            report.failed(ScanReport.Failure.TABLE_CHANGED, "table " + work.id() + " is now another table, "
-                    + table.uuid());
+            report.failed(ScanReport.Failure.TABLE_CHANGED, work, "changed", "table " + work.id()
+                    + " is now another table, " + table.uuid());
             return Optional.empty();
         }
         return Optional.of(table);
@@ -492,7 +492,7 @@ final class Worker implements AutoCloseable {
             return true;
         } catch (RuntimeException e) {
             LOG.warn("Failed {} table {} ({})", what, work.name(), work.id(), e);
-            report.failed(kind, what + " " + work.id(), e);
+            report.failed(kind, work, what, e);
             return false;
         }
     }

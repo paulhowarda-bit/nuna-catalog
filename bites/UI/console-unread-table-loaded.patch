@@ -1,0 +1,17 @@
+Breaks: A table or view the caller's own grants do not read is loaded anyway, and its data tabs show the refusal, which the catalog records.
+Module: catalog-server
+Test: ConsoleBrowserTest#browsingWritesNoRefusalTheCallersOwnGrantsForetell
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index bf87a17b..d7c0da9d 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -54,7 +54,7 @@ const loadView = target => loadOnce(target, () => api.view(warehouseOf(target),
+ const UNREAD = Object.freeze({status: 0, unread: true});
+ 
+ /** The object's load when the caller's grants read it, else UNREAD, without asking (backlog 325). */
+-const loadIfRead = (target, reads, loader) => reads.then(yes => yes ? loader(target) : Promise.reject(UNREAD));
++const loadIfRead = (target, reads, loader) => reads.then(yes => loader(target));
+ 
+ /** A data tab's closed note for a caller who may not read the object; Atelier, 2026-11-27: the tabs stay. */
+ const unreadNote = target => closedNote(unreadWords(target));

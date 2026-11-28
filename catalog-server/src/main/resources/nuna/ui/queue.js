@@ -164,6 +164,7 @@ export function iceEstate(host, W, rows) {
   const sky = s('g', {class: 'rise'});
   const sink = s('g', {class: 'sink'});
   const labels = s('g', {class: 'labs'});
+  const named = [];
   let x = L;
   groups.forEach((g, gi) => {
     const x0 = x;
@@ -192,8 +193,10 @@ export function iceEstate(host, W, rows) {
       x += step;
     }
     sky.append(group);
-    labels.append(s('text', {class: 'lab-strong', x: x0, y: H - 6}, g.name),
-      s('text', {class: 'lab', x: x0 + g.name.length * 7.9 + 8, y: H - 6}, g.rows.length.toLocaleString('en-GB')));
+    const name = s('text', {class: 'lab-strong', x: x0, y: H - 6}, g.name);
+    const count = s('text', {class: 'lab', x: x0 + g.name.length * 7.9 + 8, y: H - 6}, g.rows.length.toLocaleString('en-GB'));
+    labels.append(name, count);
+    named.push({group, name, count, end: gi < groups.length - 1 ? x + GAP - 6 : W});
     if (gi < groups.length - 1) labels.append(s('line', {class: 'grp', x1: x + GAP / 2, y1: Y - 6, x2: x + GAP / 2, y2: Y + 6}));
     x += GAP;
   });
@@ -204,6 +207,17 @@ export function iceEstate(host, W, rows) {
   }
   svg.append(ghosts, sky, sink, s('line', {class: 'water', x1: 0, y1: Y, x2: W, y2: Y}), labels);
   host.append(svg);
+  // Each namespace's label is measured as drawn, its count set after its name; one that would run into the next
+  // namespace's is left out, as "markets 5reference 1" ran together at 1440 (the 27 Nov review; backlog 331). Its marks
+  // name it, on hover and to a screen reader.
+  for (const {group, name, count, end} of named) {
+    count.setAttribute('x', String(Number(name.getAttribute('x')) + name.getComputedTextLength() + 6));
+    if (Number(count.getAttribute('x')) + count.getComputedTextLength() > end) {
+      name.remove();
+      count.remove();
+      group.append(s('title', null, group.getAttribute('aria-label')));
+    }
+  }
   host.append(h('p', {class: 'ice-cap'}, 'Above the line: tables in shape. Below: tables queued for tonight. Click a '
     + 'namespace or a queued table to open it.'));
 }

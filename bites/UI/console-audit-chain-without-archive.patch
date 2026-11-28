@@ -1,0 +1,17 @@
+Breaks: Hash chain is shown with no archive configured, repeating the Archive checked tile (backlog 328).
+Module: catalog-server
+Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index d4439899..5816a42a 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -156,7 +156,7 @@ const findings = c => [
+  */
+ function chainPanel(a) {
+   // Without an archive there is no chain to check, and the Archive checked tile already says so (backlog 328).
+-  if (!a.configured) return null;
++  if (!a.configured && false) return null;
+   const check = a.check;
+   const cp = check ? check.checkpoints || {} : {};
+   const wrong = check ? (check.chains || []).filter(c => findings(c)) : [];

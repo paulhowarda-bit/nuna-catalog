@@ -1,0 +1,16 @@
+Breaks: The empty headline sends the caller to the audit tables' catalog.
+Module: catalog-server
+Test: ConsoleBrowserTest#theEmptyHeadlineNamesNoAuditCatalog
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/overview.js b/catalog-server/src/main/resources/nuna/ui/overview.js
+--- a/catalog-server/src/main/resources/nuna/ui/overview.js
++++ b/catalog-server/src/main/resources/nuna/ui/overview.js
+@@ -119,7 +119,7 @@
+  */
+ export function nothingToRead(catalog, everywhere, page) {
+   const counts = new Map();
+-  for (const t of everywhere) if (t.catalog !== catalog && !holdsAudit(t.catalog)) counts.set(t.catalog, (counts.get(t.catalog) || 0) + 1);
++  for (const t of everywhere) if (t.catalog !== catalog) counts.set(t.catalog, (counts.get(t.catalog) || 0) + 1);
+   const [other, n] = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
+   return [`Nothing in ${catalog} you may read.`, other ? [' ', h('a', {href: pageHref(page, other), 'data-other-catalog': other},
+     `${other} has ${plural(n, 'table')}`, ' →')] : null];
