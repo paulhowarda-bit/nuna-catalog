@@ -246,7 +246,7 @@ Three worktree sessions, each owning one module:
 - Nightly engine matrix: Spark, Flink, Trino, PyIceberg, DuckDB, SingleStore — create, write, read, evolve, drop; deep namespaces; v2 and v3 tables [D31, D35]. On 2026-11-12 (Paul) the catalog moved to Kubernetes: the matrix now deploys it with its Helm chart (`deploy/helm/nuna-catalog`) into a kind cluster, and runs Spark, Kafka Connect (the Iceberg sink, fed from a Kafka topic), PyIceberg and SingleStore. Kafka Connect replaced Flink; Trino and DuckDB were dropped. Also on 2026-11-12 (Paul): row-level DELETE, UPDATE and MERGE INTO under copy-on-write and merge-on-read, on v2 and v3, written by Spark (which reports the delete files and snapshot operations) and read back by PyIceberg and SingleStore.
 - Load: a 10k+-snapshot table; 8–32 concurrent writers on one table with zero 5xx, deadlocks, lost or duplicated commits.
 - Resilience: kill the primary mid-commit; rolling upgrade across a schema change; reconcile-from-storage DR drill (freeze cleanup and writes, fast-forward pointers along metadata-log chains) [D37].
-- SLO runs (load p99 < 50 ms, 304 p99 < 10 ms, commit p99 < 300 ms, ≥ 500 commits/s); the laptop shows relative behaviour only.
+- SLO runs (load p99 < 50 ms, 304 p99 < 10 ms, commit p99 < 300 ms, ≥ 500 commits/s); the laptop shows relative behaviour only. `SloTest` (`catalog-tests-load`, `overnight`) records its numbers in `build/m8/results/slo.txt` and checks only that nothing failed. In production the alert rules watch the three latency objectives and, since backlog 261, availability (at most 0.1% of loads, of commits and of all requests answered 5xx), each by burn rate; 500 commits/s is a dashboard panel with no alert (D43, amended 2026-11-20). See `docs/observability/dashboards-and-alerts.md`.
 - **Gate:** all of the above green on the personal machine.
 - **Work hardware:** absolute SLOs, three-site quorum latency, async DR region.
 
@@ -269,7 +269,7 @@ Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overn
   | PyIceberg 0.12.0 | pass, except v3 data writes, which the client refuses ("Cannot write manifest for table version: 3"; the test asserts it) | pass |
   | SingleStore 10.9.0 | n/a: read-only client [D35] | pass, by pipeline; v3 reads too, though its docs say v1/v2 only |
 
-- **Load and resilience** (`catalog-tests-load`): two server processes from the exec jar, on PostgreSQL 18 with a synchronous standby. Results are in `target/m8/results/`.
+- **Load and resilience** (`catalog-tests-load`): two server processes from the exec jar, on PostgreSQL 18 with a synchronous standby. Results were in `target/m8/results/` (Maven); since the Gradle build, `build/m8/results/`.
 
   | Suite | Result |
   |---|---|

@@ -101,10 +101,13 @@ audit topic with the change.
 | `DELETE …/refs/{ref}` | Deletes a branch or tag, a branch's own pointers with it: 204. Its files are cleanup's once no ref names them. A DR freeze does not refuse it. |
 | `POST …/refs/{ref}/merge` | Merges a branch into main (below). `?dry-run=true` writes nothing. |
 
-The console's catalog page has the same under its **Branches and tags** tab: the list with the limits, make, renew,
-delete and merge, offered only when the caller may. Each catalog, namespace, table and view page reads through a ref
-from its **Reading main** selector (the page's address carries `r=`), and a ref has a page of its own with its changes
-and audit records. A table's own Iceberg refs are a separate panel, **Iceberg refs in this table**.
+The console has the same on its **Branches and tags** page in the rail (the catalog's address with `tab=refs`): the
+list with the limits, **Make a branch or tag**, and on each line **Read**, **Merge…**, **Renew** and **Delete**,
+offered only when the caller may. Each catalog, namespace, table and view page reads through a ref from the
+**Reading main** selector in the header (the page's address carries `r=`); the band under the title says "Reading the
+tag …" or "Reading the branch …", with **Read main instead**. A ref has a page of its own with its changes and audit
+records. A table's own Iceberg refs are apart: on its Overview, **Engine-level refs in this table's metadata**, and
+on its History tab, **Snapshots and Iceberg refs**.
 
 ## Merging a branch
 

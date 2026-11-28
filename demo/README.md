@@ -39,7 +39,7 @@ demo/demo.sh up
 - Run in the main checkout, where other sessions land all day, `up` builds one commit (backlog 274): the main
   checkout's HEAD when it starts. It runs from `~/.nuna-demo/checkout`, a worktree it keeps detached at that
   commit and locked, so a landing during its run neither stops it nor mixes commits into the images. `engines`,
-  `gen`, `ss`, `kafka`, `cdc`, `token`, `rate` and `scale <n>` do the same, each at the HEAD of its own start; one of them at a
+  `gen`, `ss`, `kafka`, `cdc`, `metrics`, `token`, `rate` and `scale <n>` do the same, each at the HEAD of its own start; one of them at a
   time holds that worktree, and another is refused until it ends. `up` says which commit it builds, and the URLs
   and tokens it prints (and `token`) start with the commit the demo runs. Run from any other worktree, `demo.sh`
   runs from that worktree's files as they are. `demo/test-pin.sh` checks this in a scratch repository.
@@ -98,7 +98,8 @@ demo/demo.sh up
   An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
   `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
   `s3.endpoint` to `https://<host>:8187`: the catalog vends one address per profile (D21, amended 2026-11-20).
-- Memory, with `gen` and `ss` on (the core alone asks about 3.8 GB: it leaves out SingleStore's 1.5 GB, Kafka's
+- Memory, with `gen` and `ss` on (the core's own pods alone ask 3,920 MiB, and the node 4,210 MiB with
+  Kubernetes' own 290 MiB, CoreDNS, etcd and kindnet, measured with `kubectl describe nodes` on 2026-11-28: it leaves out SingleStore's 1.5 GB, Kafka's
   640 MB, kafbat's 384 MB, Kafka Connect's 512 MB and the generator's 256 MB): about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
@@ -221,8 +222,8 @@ Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) k
 plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
 data in the catalog, and of the five people only `ana` changes it. Try the console as `ana` and as `gary`.
 Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token and ends
-Keycloak's session too (D16): Keycloak asks "Do you want to log out?" (the console keeps no ID token to skip
-that), then sends you back to the console, and the next sign-in asks for a password, so it changes user.
+Keycloak's session too (D16): the console names the session by the sign-in's ID token (`id_token_hint`,
+`auth.js`), so Keycloak ends it without asking, then sends you back to the console, and the next sign-in asks for a password, so it changes user.
 kafbat and CloudBeaver keep their own sign-in until you sign out of them, but sign in again only with a
 password. Keycloak's own page, <https://localhost:8180/realms/nuna/account>, shows who is
 signed in there; its users hold the realm's default roles (`default-roles-nuna` in
@@ -621,7 +622,7 @@ The maintenance worker (`catalog-maintenance/README.md`, D30) keeps catalog `lak
 Overview and Maintenance pages show a working estate: every table's mark, the queue, the night's jobs and the
 nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`, and starts the worker.
 
-- The policy (catalog level; Governance, a table's Settings tab): snapshot expiry, orphan removal, compaction and
+- The policy (catalog level; the console's Maintenance page, and "Policy for this table" on a table's Maintenance tab): snapshot expiry, orphan removal, compaction and
   manifest rewrite all on. Snapshots go once an hour old, the least the catalog allows, keeping each table's newest
   5; the rest as built in: a table needs compaction once a partition holds 5 data files under 384 MB (75% of the
   512 MB target), or more delete files than 30% of its data files, or any equality delete; manifests are rewritten
@@ -823,7 +824,7 @@ Catalog `lakehouse` has refs of its own (D33). A tag keeps every table as it was
 branch starts as the whole catalog at one moment and takes commits of its own, copying no file, until a merge
 moves what it changed onto main, every table in one transaction. An engine reaches a ref as a warehouse of its own,
 `lakehouse@<ref>`, so any Iceberg client can read it, and write to a branch. The console shows them on the
-catalog's tab **Branches and tags**. `docs/refs.md` says how refs work, for engine users and operators.
+console's **Branches and tags** page. `docs/refs.md` says how refs work, for engine users and operators.
 
 `up` makes two, through the management API as `ana`, whose group `demo-analysts` holds `create` on `lakehouse`, the
 right that making, merging and deleting a ref needs:
@@ -843,7 +844,8 @@ The tag has none: read it in the console or through the REST API (step 1).
 
 These are not the tables' own tags. The lake writer's tag `eod-2026-11-09` and branch `surveillance-review` in the
 trades table, and the brokerage world's tag `eod-<day>` on each table that changed that day, are Iceberg's refs
-inside one table: the console lists them on the table's Snapshots tab, under "Iceberg refs in this table". A
+inside one table: the console lists them on the table's Overview, under "Engine-level refs in this table's
+metadata", and on its History tab, under "Snapshots and Iceberg refs". A
 catalog ref such as `@sample` cuts every table at once, and the console shows it as a rounded `@` chip. How the two
 nest: `docs/refs.md`, "Catalog refs and Iceberg's refs inside a table".
 
@@ -852,12 +854,12 @@ nest: `docs/refs.md`, "Catalog refs and Iceberg's refs inside a table".
 Sign in to the console, <https://localhost:8181/ui/>, as `ana`, and to CloudBeaver, <https://localhost:8185>, where
 her connection "nuna (Trino, as ana)" runs the SQL below.
 
-1. **Read as of the tag.** In the console, open catalog `lakehouse`, tab **Branches and tags**
+1. **Read as of the tag.** In the console, open **Branches and tags** in the rail, with catalog `lakehouse` picked
    (<https://localhost:8181/ui/#c=lakehouse&tab=refs>). It lists `@dev`, a branch with 2 changed tables, and
    `@sample`, a tag, both made by `ana`. On `@sample`'s line, choose **Read**. The band under the title says
    "Reading the tag @sample", and the catalog lists its namespaces live, as main does, `brokerage` among them; the
    tables beneath are the tag's, the sample data's, and none of `brokerage`'s. Open `markets`, `fx`, `rates`: its
-   **Snapshots** tab lists the three the sample data made.
+   **History** tab lists the three the sample data made.
    **Read main instead** goes back to main. An engine reads the tag as the warehouse `lakehouse@sample`, as this
    call to the REST API does:
 
@@ -1147,15 +1149,18 @@ catalog, worker --OTLP--> OpenTelemetry collector --metrics--> Prometheus --> Gr
   UnderscoreEscapingWithSuffixes`, native histograms off, a 30-minute out-of-order window, exemplars kept. It loads
   the alert rules in `deploy/grafana/rules`; no Alertmanager runs, so they show in Grafana's Alerting page and in
   `ALERTS`, and page no one.
-- **Tempo** keeps the traces. While the switch is on the catalog and the worker record every trace (sampling 1,
-  against the chart's 0.1), and a worker's scan is one trace with the catalog's calls in it.
+- **Tempo** keeps the traces. While the switch is on the catalog and the worker send every trace (sampling 1,
+  against the chart's 0.1), and the collector tail-samples them (`k8s/metrics.yaml`): it keeps every trace with an
+  error span, every one slower than 300 ms, and 10% of the rest. A worker's scan is one trace with the catalog's
+  calls in it.
 - The catalog's logs still go to the audit table writer; the worker's copy of its logs reaches the collector and is
   dropped (`kubectl logs` has them).
 - The data stays: Prometheus keeps 7 days of series and Tempo 2 days of traces, each on a volume, and Grafana its own
   database on a third; `metrics stop` and `down` keep them, `wipe` deletes them.
-- Memory: the four pods ask for 704 MB (collector 64 MB, Prometheus 256 MB, Tempo 128 MB, Grafana 256 MB, which
-  stalled for minutes at a 384 MB limit and now has 768 MB). Turning the switch on rolls the catalog, so `metrics`
-  checks that the cluster has 1.5 GB no pod asks for, and refuses otherwise. It fits beside `gen` and `kafka`
+- Memory: the four pods ask for 704 MiB (collector 64 MiB, Prometheus 256 MiB, Tempo 128 MiB, Grafana 256 MiB, which
+  stalled for minutes at a 384 MiB limit and now has 768 MiB). Turning the switch on rolls the catalog, whose new pod
+  (768 MiB) starts before the old one stops, so `metrics` checks that the cluster has 1,472 MiB no pod asks for
+  (`METRICS_MIB` and `CATALOG_MIB` in `demo.sh`), and refuses otherwise. It fits beside `gen` and `kafka`
   (1.7 GB free before it, measured 2026-11-25) or beside `ss`, not beside `gen`, `kafka` and `ss` together; `ss`
   refuses to start beside it when SingleStore's 1.5 GB is not free. Windows itself had about 700 MB free with
   `gen`, `kafka` and `metrics` on, and paged: the demo answers slowly then, and the SLO burn-rate alerts fire.

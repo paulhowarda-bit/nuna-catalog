@@ -13,8 +13,9 @@ if work's Prometheus names them otherwise.
 | `dashboards/nuna-maintenance.json` | 16 panels: the worker's scans, failures, work done and compaction |
 | `dashboards/nuna-client-reports.json` | 13 panels: engines' scan and commit reports, by engine |
 | `rules/nuna-catalog.rules.yaml` | 19 alerts: two burn-rate alerts for each latency and each availability SLO, four absence alerts, one for each alert kind |
-| `rules/nuna-maintenance.rules.yaml` | 10 alerts: the worker's, as worker-metrics.md designs them |
+| `rules/nuna-maintenance.rules.yaml` | 11 alerts: the worker's, as worker-metrics.md designs them, `NunaMaintenanceSkipsClosedTables` (backlog 334) among them |
 | `tests/nuna-catalog.test.yaml` | promtool unit tests of the catalog's rules (backlog 261; "How they were checked") |
+| `tests/nuna-maintenance.test.yaml` | promtool unit tests of `NunaMaintenanceSkipsClosedTables` (backlog 334) |
 
 Each dashboard picks its Prometheus through a `datasource` variable and its deployment through `job`; the catalog's
 and the reports' dashboards also pick catalogs (`catalog`), and the reports' engines (`engine`). They use dashboard
@@ -250,7 +251,9 @@ Backlog 261 (2026-11-25) put promtool to work. `AlertRulesTest` in `catalog-serv
 and the overnight run run it, starts the Prometheus image the demo runs (`prometheus.image`, prom/prometheus:v3.16.0)
 and runs in it:
 
-- `promtool check rules` on both rule files: 19 and 10 rules, every expression parsed.
+- `promtool check rules` on both rule files: 19 and 10 rules then, every expression parsed (19 and 11, 30 in all, since
+  backlog 334 added `NunaMaintenanceSkipsClosedTables`, with its own promtool test, `tests/nuna-maintenance.test.yaml`,
+  run by the same `AlertRulesTest`).
 - `promtool test rules` on `tests/nuna-catalog.test.yaml`, eight cases. Every load answered 503 pages 2 minutes after
   the first failure and still at 15, while the latency page stays quiet. 409 conflicts on half the commits, and loads
   answered 404, page nothing. The only catalog falling silent pages at 10 minutes, `NunaCatalogGone` alone; one

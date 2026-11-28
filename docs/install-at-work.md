@@ -128,8 +128,10 @@ command line (`-Ppostgres.image=<registry>/postgres:18.7`); the rest are fixed i
 | `cockroachdb/cockroach:v25.4.20` | `gradle.properties` (`cockroachdb.image`) |
 | `ghcr.io/clyso/ceph-test:v20.2.5` | `gradle.properties` (`ceph.image`) |
 | `quay.io/keycloak/keycloak:26.8.2` | `gradle.properties` (`keycloak.image`) |
-| `mongo:8.0.34` | `catalog-store-mongo/build.gradle.kts` |
-| `gvenzl/oracle-free:23.26.3-slim-faststart` | `catalog-store-oracle/build.gradle.kts` |
+| `mongo:8.0.34` | `gradle.properties` (`mongo.image`) |
+| `gvenzl/oracle-free:23.26.3-slim-faststart` | `gradle.properties` (`oracle.image`) |
+| `selenium/standalone-chrome:4.43.0-20260404` | `gradle.properties` (`chrome.image`): the console's browser tests |
+| `prom/prometheus:v3.16.0` | `gradle.properties` (`prometheus.image`): promtool for `AlertRulesTest`; the demo's `PROMETHEUS_IMAGE` too |
 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | `ChangeFeedTest`, `EngineMatrixTest` |
 | `kafbat/kafka-ui:v1.5.0` | `EngineMatrixTest` |
 | `testcontainers/ryuk:0.14.0` | Testcontainers itself |
@@ -437,7 +439,7 @@ CloudBeaver's sign-in secrets once, in `~/.nuna-demo/keycloak`.
 |---|---|
 | `postgres:18.7`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`, `quay.io/keycloak/keycloak:26.8.2`, `kafbat/kafka-ui:v1.5.0` | the stack (also in section 2) |
 | `busybox:1.37.0` | the key server (Service `idp`) |
-| `eclipse-temurin:25.0.5_8-jre-noble` | the catalog image (`deploy/image/Dockerfile`) |
+| `eclipse-temurin:25.0.5_8-jre-noble` | the catalog, audit table writer and maintenance worker images (`deploy/image/`), and the brokerage world's generator (`demo/k8s/brokerage.Dockerfile`) |
 | `eclipse-temurin:25.0.5_8-jdk-noble` | the lake writer (`demo/k8s/lake.Dockerfile`) |
 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | SingleStore with the change-feed connector |
 | `trinodb/trino:484` | Trino |
@@ -446,11 +448,14 @@ CloudBeaver's sign-in secrets once, in `~/.nuna-demo/keycloak`.
 | `nginx:1.30.6-alpine` | the front door: HTTPS on every port (`demo/k8s/ports.yaml`) |
 | `gvenzl/oracle-free:23.26.3-slim-faststart` | the CDC leg's Oracle (`demo.sh cdc`; also in section 2) |
 | `cockroachdb/cockroach:v25.4.20` | the CDC leg's CockroachDB (`demo.sh cdc`; also in section 2) |
-| `maven:3.9.11-eclipse-temurin-21` | building the CDC leg's Kafka Connect image (`demo/k8s/connect.Dockerfile`) |
+| `maven:3.9.11-eclipse-temurin-21` | building the Kafka Connect image (`demo/k8s/connect.Dockerfile`) |
+| `apache/spark:4.1.4-scala2.13-java21-python3-ubuntu` | the Spark image the compaction Jobs run (`catalog-tests-engines/images/spark`, which `up` builds once; also in section 2) |
+| `otel/opentelemetry-collector-contrib:0.166.0`, `prom/prometheus:v3.16.0`, `grafana/tempo:2.10.10`, `grafana/grafana:13.3.2` | the switch `metrics` (`demo/k8s/metrics.yaml`) |
 
 What reaches beyond the machine (checked 2026-11-13):
 
-- **The CDC leg's Kafka Connect image** (`demo.sh cdc`) is built by Maven from Maven Central: the poms in
+- **The Kafka Connect image** (the CDC leg's, and the brokerage world's sinks'), which every `up` builds, is built by
+  Maven from Maven Central: the poms in
   `demo/cdc/plugins` name the Debezium 3.7.1 PostgreSQL, Oracle and CockroachDB connectors (with Oracle's JDBC
   driver `com.oracle.database.jdbc:ojdbc11`), the Apache Iceberg 1.12.0 sink and its transforms, and Hadoop's
   client. Point Maven at the internal repository: a `settings.xml` mirror copied into the build stage of

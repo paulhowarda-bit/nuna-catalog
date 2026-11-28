@@ -20,7 +20,7 @@ upserts in a v2 table of its own, which SingleStore reads. (Trino, Flink and Duc
 ```
 
 The test is tagged `overnight`: the fast and heavy builds compile it and start nothing; the overnight run
-(`-Pnightly`) runs it. It needs Docker, `kubectl` and
+(`-Pnightly`) runs it. It needs Podman, `kubectl` and
 `helm` on the PATH (and `kind` only with `-Pengines.cluster=kind`), and the internet the first time (images, Maven
 Central jars and PyPI packages are baked into local images). On its own, everything runs in namespace
 `nuna-engines`.
@@ -286,7 +286,7 @@ updated, 1 inserted) overwrites the changed row away, then appends it and the ne
 `a,c2,d2,e`; operations append, overwrite, overwrite, append, overwrite, append, append. SingleStore runs after
 PyIceberg and reads the same 4 rows.
 
-## Compaction by the maintenance worker (2026-11-13, not yet run)
+## Compaction by the maintenance worker (2026-11-13; passed in the overnight run of 2026-11-27)
 
 `EngineMatrixTest#compaction` runs the maintenance worker's own compaction Job (D30 (3)) right after Spark, before
 SingleStore takes its memory. The matrix's Spark first makes `m8.compaction.t` (`compaction_matrix.py setup`):
@@ -305,7 +305,7 @@ The Job's `compact.py` checks the table's id and runs `rewrite_data_files`: 32 f
 snapshot before it still reads all 32. So no replaced file was deleted: they wait for expiry. The catalog's
 database lists no pending deletion for the table. Not run against a stack already up (`-Pengines.stack`).
 
-## The queryable audit table (2026-11-20, not yet run)
+## The queryable audit table (2026-11-20; passed in the overnight run of 2026-11-27)
 
 `EngineMatrixTest#auditTables` reads the audit table of D23 (backlog 85) from Spark and PyIceberg, after PyIceberg's
 test and before SingleStore takes its memory. The matrix's catalog declares a third catalog, `nuna_audit`, and names
@@ -328,6 +328,18 @@ the grant records the server made at startup (principal `nuna-configuration`, ca
 the matrix's own commits in catalog `engines`; `own` 0, the writer's own requests left out; `offsets` `unique`, each
 row at a place of its own in the topic. Not against a stack already up (`-Pengines.stack`).
 
+## Catalog branches and tags (backlog 112; passed in the overnight run of 2026-11-27)
+
+`EngineMatrixTest#refs` checks the catalog's refs (D33, `docs/refs.md`) as a stock client names one: by the warehouse
+it asks `/v1/config` for, `engines@<ref>`. PyIceberg makes `m8.refs.a` (three rows) and `m8.refs.b` (one row) on main,
+tag `m8-tag`, a fourth row in `a`, then branch `m8-dev` (`images/python/refs_matrix.py setup`). Spark, then PyIceberg
+(`refs_matrix.py branch` in each image), read the tag as it was cut; are refused a write there by the store (the
+tag's credentials only read) and a change of properties by the client itself (the tag's endpoints leave out table
+commits); commit a row to both tables on the branch; and read the branch and main, which the branch's commits leave
+alone. The merge goes through the management API: its dry run moves both tables, the merge moves both, and the branch
+is gone after it (404). PyIceberg and Spark then read both engines' rows on main, and Spark reads the tag unchanged.
+The cleanup deletes the tag, purges the tables and drops the namespace.
+
 ## Kafka Connect upsert: not supported (2026-11-12)
 
 The Apache Iceberg 1.12.0 Kafka Connect sink has no upsert or equality-delete mode: its configuration
@@ -344,6 +356,10 @@ In the first, Spark 202 s, Kafka Connect 104 s, PyIceberg 100 s, SingleStore 82 
 37, the shared tables 13, row-level writes 36, schema 4, partition 6, time travel 3, branches and WAP 5,
 maintenance 27, upgrade 3, v3 features 5, replace 3, views 1, statistics 1. The rest of Spark's time is
 starting the pod and the session. Times vary by about a factor of two between runs on the shared laptop.
+
+In the overnight run of 2026-11-27 (`status/2026-11-27-overnight.md`), on the kind cluster on Podman, the class ran
+seven tests in 962 s, none failing: Spark 103 s, compaction 138 s, Kafka Connect 75 s, PyIceberg 12 s, the audit
+table 86 s, refs 89 s, SingleStore 225 s.
 
 ## Results (2026-11-09, docker compose, before the 2026-11-12 changes)
 
