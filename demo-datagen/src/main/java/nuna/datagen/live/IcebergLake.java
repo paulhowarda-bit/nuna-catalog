@@ -12,6 +12,7 @@ import nuna.datagen.kit.Kit;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.LakeSchemas;
 import nuna.datagen.world.MonthEnd;
+import nuna.datagen.world.Scale;
 import nuna.datagen.world.World;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Snapshot;
@@ -52,6 +53,8 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
      */
     static final String SEED = "world.seed", START = "world.start", ACCOUNTS = "world.accounts",
         SECURITIES = "world.securities", PACED_FROM = "world.paced-from", OFFSET = "world.offset.";
+    /** The scale dial's history (item 321, {@link Scale}): kept with the settings, so a restart replays each day at its own. */
+    static final String SCALE = "world.scale";
 
     /** Trino's name for the warehouse's catalog (demo/k8s/trino.yaml), which the views' SQL names. */
     static final String TRINO_CATALOG = "lakehouse";
@@ -225,6 +228,17 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
         Map<String, String> p = rootProperties();
         return new World.Settings(Long.parseLong(p.get(SEED)), LocalDate.parse(p.get(START)),
             Integer.parseInt(p.get(ACCOUNTS)), Integer.parseInt(p.get(SECURITIES)));
+    }
+
+    /** The scale dial's history, {@link Scale#ONE} while the dial has never moved. */
+    public Scale scale() {
+        return Scale.parse(rootProperties().get(SCALE));
+    }
+
+    /** Keeps the scale dial's history. */
+    public void scale(Scale scale) {
+        rootProperties();
+        namespaces.setProperties(ROOT, Map.of(SCALE, scale.toString()));
     }
 
     public LocalDate pacedFrom() {

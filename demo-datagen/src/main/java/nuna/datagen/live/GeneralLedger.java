@@ -71,7 +71,7 @@ final class GeneralLedger {
     /** The day's journal entries, one per control that moved, and the day's movements taken into the balances. */
     List<Map<String, Object>> journal(LocalDate date) {
         List<Map<String, Object>> out = new ArrayList<>();
-        Instant posted = date.atTime(LocalTime.of(17, 30)).atZone(World.NEW_YORK).toInstant();
+        Instant posted = date.atTime(LocalTime.of(20, 20)).atZone(World.NEW_YORK).toInstant();
         today.forEach((d, day) -> {
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("journal_id", "GLJ-" + date + "-" + d);

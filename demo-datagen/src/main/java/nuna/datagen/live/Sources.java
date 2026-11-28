@@ -258,7 +258,9 @@ public final class Sources implements AutoCloseable {
         /** A payment as the firm's bank sees it: ACH and wires only (cash and journals never reach the bank). */
         static Map<String, Object> bankPayment(Map<String, Object> p) {
             String method = (String) p.get("method");
-            if (!FIRM_BANK_ACCOUNTS.containsKey(method)) {
+            // A request the payments systems have not taken yet, or refused, never reached the bank (item 321).
+            if (!FIRM_BANK_ACCOUNTS.containsKey(method) || "requested".equals(p.get("status"))
+                    || "rejected".equals(p.get("status"))) {
                 return null;
             }
             Map<String, Object> bank = new HashMap<>();

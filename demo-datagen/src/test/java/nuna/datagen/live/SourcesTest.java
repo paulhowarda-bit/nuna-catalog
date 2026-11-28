@@ -126,7 +126,9 @@ class SourcesTest {
         Sources.Book book = book();
         Set<Object> bankable = new HashSet<>();
         for (Map<String, Object> r : Played.seeded().of(Feed.PAYMENTS)) {
-            if (r.get("method").equals("ach") || r.get("method").equals("wire")) {
+            // A request the payments systems have not taken, or refused, never reaches the bank (item 321).
+            if ((r.get("method").equals("ach") || r.get("method").equals("wire"))
+                && !List.of("requested", "rejected").contains(r.get("status"))) {
                 bankable.add(r.get("payment_id"));
             }
         }

@@ -2,27 +2,24 @@ package nuna.datagen.world;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
-import java.util.function.Function;
 import nuna.datagen.world.Market.Security;
 
 /**
  * The digital channels (item 154): sessions on the web site and the two apps, and their click events, about 0.35
- * sessions a business day per brokerage account (350 at 1,000 accounts, the design's 200 to 500), active traders and
- * short sellers far more often than dormant accounts, one session in ten a visitor who never logs in. A session starts
- * between 07:00 and 16:30, most around the open, and its last event is before 17:00, when the world's day ends. Each
- * event goes out as it happens; the session's own row goes out as it ends, with what it held. It draws from a source of
- * chance of its own, so the rest of the world draws as before.
+ * sessions per brokerage account in a business day's worth of customer activity (350 at 1,000 accounts, the design's
+ * 200 to 500), active traders and short sellers far more often than dormant accounts, one session in ten a visitor who
+ * never logs in. Sessions start at every hour of every day, on the customers' curve ({@link Activity}; D48, amended
+ * 2026-11-27), at least one in each half-hour, so the channels are never silent. Each event goes out as it happens;
+ * the session's own row goes out as it ends, with what it held. It draws from a source of chance of its own, so the
+ * rest of the world draws as before.
  */
 final class Digital {
 
-    static final LocalTime FIRST = LocalTime.of(7, 0), LAST_START = LocalTime.of(16, 30),
-        CLOSE = LocalTime.of(16, 59, 59);
     static final double SESSIONS_PER_ACCOUNT = 0.35;
 
     private static final List<String> PAGES = List.of("home", "portfolio", "positions", "activity", "balances",
@@ -36,7 +33,7 @@ final class Digital {
     private final List<Security> securities;
     private final Rng rng;
     private final Emitter out;
-    private final double[] accountWeights;
+    private double[] accountWeights;
     private final double[] securityWeights;
     private long nextSession = 1, nextEvent = 1;
 
@@ -45,53 +42,52 @@ final class Digital {
         this.securities = securities;
         this.rng = rng;
         this.out = out;
-        accountWeights = new double[accounts.size()];
-        double c = 0;
-        for (int i = 0; i < accounts.size(); i++) {
-            c += switch (accounts.get(i).persona()) {
-                case "dormant" -> 0.1;
-                case "buy_and_hold" -> 0.6;
-                default -> 2.0;
-            };
-            accountWeights[i] = c;
-        }
+        accountWeights = new double[0];
+        accountsChanged();
         securityWeights = new double[securities.size()];
-        c = 0;
+        double c = 0;
         for (int i = 0; i < securities.size(); i++) {
             c += 1 / Math.pow(i + 1, 0.9);
             securityWeights[i] = c;
         }
     }
 
-    /** Plans the day's sessions, each a task at its start. */
-    void plan(LocalDate day, Function<LocalTime, Instant> at, BiConsumer<Instant, Runnable> schedule) {
-        double mean = accounts.size() * SESSIONS_PER_ACCOUNT * (0.8 + 0.4 * rng.uniform());
-        int sessions = (int) Math.max(0, Math.round(mean + Math.sqrt(mean) * rng.normal()));
-        for (int i = 0; i < sessions; i++) {
-            LocalTime start = startTime();
-            schedule.accept(at.apply(start), () -> session(day, start, at, schedule));
-        }
+    /** A brokerage account opened (item 321): its weight among those whose holders log in. */
+    void opened(World.Account a) {
+        accountsChanged();
     }
 
-    /** Most sessions come around the open, more at lunch and before the close, the rest spread over the day. */
-    private LocalTime startTime() {
-        double u = rng.uniform();
-        int second;
-        if (u < 0.30) {
-            second = 9 * 3600 + 30 * 60 + (int) Math.abs(rng.normal() * 45 * 60);
-        } else if (u < 0.45) {
-            second = 12 * 3600 + rng.below(3600);
-        } else if (u < 0.60) {
-            second = 15 * 3600 + rng.below(3600);
-        } else {
-            second = FIRST.toSecondOfDay() + rng.below(LAST_START.toSecondOfDay() - FIRST.toSecondOfDay());
+    private void accountsChanged() {
+        int from = accountWeights.length;
+        double[] w = java.util.Arrays.copyOf(accountWeights, accounts.size());
+        double c = from == 0 ? 0 : w[from - 1];
+        for (int i = from; i < accounts.size(); i++) {
+            c += switch (accounts.get(i).persona()) {
+                case "dormant" -> 0.1;
+                case "buy_and_hold" -> 0.6;
+                default -> 2.0;
+            };
+            w[i] = c;
         }
-        return LocalTime.ofSecondOfDay(Math.min(second, LAST_START.toSecondOfDay()));
+        accountWeights = w;
+    }
+
+    /**
+     * Plans a stretch of time's sessions, each a task at its start: about {@code mean} of them, and at least one.
+     *
+     * @param day the business day they count to
+     */
+    void plan(LocalDate day, Instant from, Instant to, double mean, BiConsumer<Instant, Runnable> schedule) {
+        int sessions = Math.max(1, rng.count(mean));
+        int seconds = (int) java.time.Duration.between(from, to).toSeconds();
+        for (int i = 0; i < sessions; i++) {
+            Instant start = from.plusSeconds(rng.below(seconds));
+            schedule.accept(start, () -> session(day, start, schedule));
+        }
     }
 
     /** A session from its start: draws its events, each sent at its time, and its own row, sent at its end. */
-    private void session(LocalDate day, LocalTime start, Function<LocalTime, Instant> at,
-                         BiConsumer<Instant, Runnable> schedule) {
+    private void session(LocalDate day, Instant start, BiConsumer<Instant, Runnable> schedule) {
         long id = nextSession++;
         boolean visitor = rng.chance(0.1);
         World.Account account = visitor ? null : accounts.get(rng.zipf(accounts.size(), 0, accountWeights));
@@ -108,25 +104,25 @@ final class Digital {
         int n = visitor ? 1 + (int) Math.round(rng.lognormal(3, 0.6))
             : 2 + (int) Math.min(78, Math.round(rng.lognormal(10, 0.8)));
         List<Map<String, Object>> events = new ArrayList<>();
-        int second = start.toSecondOfDay();
+        Instant when = start;
         int pageViews = 0;
-        for (int i = 0; i < n && second <= CLOSE.toSecondOfDay(); i++) {
+        for (int i = 0; i < n; i++) {
             Map<String, Object> e = event(id, account, visitor, i, n);
             if ("page_view".equals(e.get("event_type")) || "quote_view".equals(e.get("event_type"))) {
                 pageViews++;
             }
             e.put("business_date", day);
-            e.put("event_time", at.apply(LocalTime.ofSecondOfDay(second)));
+            e.put("event_time", when);
             events.add(e);
-            second += 1 + (int) Math.round(rng.lognormal(18, 0.9));
+            when = when.plusSeconds(1 + Math.round(rng.lognormal(18, 0.9)));
         }
         Map<String, Object> last = events.getLast();
         Instant end = (Instant) last.get("event_time");
         for (Map<String, Object> e : events) {
-            Instant when = (Instant) e.get("event_time");
-            schedule.accept(when, () -> {
+            Instant at = (Instant) e.get("event_time");
+            schedule.accept(at, () -> {
                 e.put("event_id", nextEvent++);
-                out.emit(when, Feed.CLICK_EVENTS, reorder(e));
+                out.emit(at, Feed.CLICK_EVENTS, reorder(e));
             });
         }
         Map<String, Object> row = new LinkedHashMap<>();
@@ -136,7 +132,7 @@ final class Digital {
         row.put("channel", channel);
         row.put("device_os", os);
         row.put("client", client);
-        row.put("started_at", at.apply(start));
+        row.put("started_at", start);
         row.put("ended_at", end);
         row.put("ended_by", "logout".equals(last.get("event_type")) ? "logout" : "timeout");
         row.put("page_views", pageViews);

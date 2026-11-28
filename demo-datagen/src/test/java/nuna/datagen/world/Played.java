@@ -18,14 +18,14 @@ import nuna.datagen.live.Sources;
  */
 public final class Played implements Sink {
 
-    public static final World.Settings SETTINGS = World.Settings.of(160, LocalDate.of(2026, 9, 1), 400);
+    public static final World.Settings SETTINGS = World.Settings.of(163, LocalDate.of(2026, 9, 1), 400);
     public static final int DAYS = 10;
     private static final Kit KIT = Kit.load();
     /**
      * A world that crosses a month end (item 153): from 2026-09-21, ten business days, so September closes and the
      * seeded bust corrects it on 2026-10-01.
      */
-    public static final World.Settings CLOSING = World.Settings.of(160, LocalDate.of(2026, 9, 21), 400);
+    public static final World.Settings CLOSING = World.Settings.of(163, LocalDate.of(2026, 9, 21), 400);
     private static Played seeded, clean, closing, closingClean;
 
     public final Map<Feed, List<Map<String, Object>>> rows = new EnumMap<>(Feed.class);

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -19,8 +18,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The streams (item 154) at the demo's default scale, 1,000 accounts and 300 securities: the market's quotes through
- * the session, and the digital channels' sessions and click events, at the rates the design gives and in the shape
- * their tables hold (LakeSchemasTest checks every value fits its column).
+ * the regular session and, thinner and wider, the others (item 321), and the digital channels' sessions and click
+ * events at every hour, at the rates the design gives and in the shape their tables hold (LakeSchemasTest checks every
+ * value fits its column).
  */
 class StreamsTest {
 
@@ -28,6 +28,8 @@ class StreamsTest {
     private static final Map<Feed, List<Event>> sent = new EnumMap<>(Feed.class);
     private static final List<Feed> order = new ArrayList<>();
     private static double expectedQuotes;
+    /** The customer activity the days played held, in business days ({@link Activity}). */
+    private static double activity;
 
     @BeforeAll
     static void play() {
@@ -42,20 +44,29 @@ class StreamsTest {
                 }
             }
         };
+        MarketCalendar calendar = w.calendar();
         for (int i = 0; i < DAYS; i++) {
+            LocalDate d = w.day();
+            Instant from = calendar.previous(d).atTime(World.DAY_ENDS).atZone(World.NEW_YORK).toInstant();
+            Instant to = d.atTime(World.DAY_ENDS).atZone(World.NEW_YORK).toInstant();
+            for (Instant t = from; t.isBefore(to); t = t.plusSeconds(World.SLOT_SECONDS)) {
+                activity += Activity.customer(calendar, t, t.plusSeconds(World.SLOT_SECONDS));
+            }
             w.runDay(sink);
         }
-    }
-
-    private static LocalTime newYork(Object instant) {
-        return ((Instant) instant).atZone(World.NEW_YORK).toLocalTime();
     }
 
     @Test
     void quotesComeThroughTheSessionAtAboutThirtySevenThousandADayEachStraddlingItsPrice() {
         List<Event> quotes = sent.get(Feed.QUOTES);
         assertThat(expectedQuotes).isBetween(35_000.0, 40_000.0);
-        assertThat(quotes.size() / (double) DAYS).isBetween(expectedQuotes * 0.97, expectedQuotes * 1.03);
+        List<Event> regular = quotes.stream().filter(e -> Session.at((LocalDate) e.row().get("business_date"),
+            e.at()) == Session.REGULAR).toList();
+        assertThat(regular.size() / (double) DAYS).isBetween(expectedQuotes * 0.97, expectedQuotes * 1.03);
+        // Outside the regular session (item 321): the most popular securities only, far fewer quotes, and wider.
+        int thin = Market.thinCount(300);
+        assertThat(quotes.size() - regular.size()).isBetween(regular.size() / 20, regular.size() / 3);
+        Map<Session, BigDecimal> widest = new EnumMap<>(Session.class);
         long id = 0;
         Instant last = Instant.MIN;
         Set<Object> quoted = new HashSet<>();
@@ -64,22 +75,30 @@ class StreamsTest {
             assertThat((Long) q.get("quote_id")).isEqualTo(++id);
             assertThat(e.at()).isEqualTo(q.get("quoted_at")).isAfterOrEqualTo(last);
             last = e.at();
-            assertThat(newYork(q.get("quoted_at"))).isAfter(LocalTime.of(9, 30)).isBefore(LocalTime.of(16, 0));
+            Session session = Session.at((LocalDate) q.get("business_date"), e.at());
+            assertThat(session).as("quoted in a session of its trade date: " + q).isNotNull();
+            if (session.thin()) {
+                assertThat((Long) q.get("security_id")).isLessThanOrEqualTo(100000L + thin);
+            }
             BigDecimal bid = (BigDecimal) q.get("bid_price"), ask = (BigDecimal) q.get("ask_price");
             assertThat(bid).isPositive().isLessThan(ask);
-            assertThat(ask.subtract(bid)).as("the spread of " + q).isLessThan(bid.multiply(new BigDecimal("0.01"))
-                .max(new BigDecimal("0.05")));
+            BigDecimal relative = ask.subtract(bid).divide(bid, 6, java.math.RoundingMode.HALF_UP);
+            widest.merge(session, relative, BigDecimal::max);
+            assertThat(ask.subtract(bid)).as("the spread of " + q).isLessThan(bid.multiply(new BigDecimal("0.01")
+                .multiply(BigDecimal.valueOf(session.spread))).max(new BigDecimal("0.05")));
             assertThat((Long) q.get("bid_size") % 100).isZero();
             assertThat((Long) q.get("ask_size") % 100).isZero();
             quoted.add(q.get("security_id"));
         }
         assertThat(quoted).as("every security is quoted").hasSize(300);
+        assertThat(widest).containsOnlyKeys(Session.values());
+        assertThat(widest.get(Session.OVERNIGHT)).isGreaterThan(widest.get(Session.REGULAR));
     }
 
     @Test
-    void aBusinessDayHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow() {
+    void aBusinessDaysActivityHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow() {
         List<Event> sessions = sent.get(Feed.SESSIONS), clicks = sent.get(Feed.CLICK_EVENTS);
-        assertThat(sessions.size() / DAYS).isBetween(200, 500);
+        assertThat(sessions.size() / activity).isBetween(200.0, 500.0);
         assertThat(clicks.size() / (double) sessions.size()).as("events a session").isBetween(5.0, 20.0);
         Map<Long, List<Map<String, Object>>> bySession = new HashMap<>();
         long id = 0;
@@ -97,8 +116,6 @@ class StreamsTest {
             List<Map<String, Object>> events = bySession.get(session);
             assertThat(events).as("session " + session + "'s events").isNotNull().hasSize((Integer) s.get("events"));
             assertThat(e.at()).isEqualTo(s.get("ended_at")).isEqualTo(events.getLast().get("event_time"));
-            assertThat(newYork(s.get("started_at"))).isBetween(Digital.FIRST, Digital.LAST_START);
-            assertThat(newYork(s.get("ended_at"))).isBefore(LocalTime.of(17, 0));
             assertThat(events.getFirst().get("event_time")).isEqualTo(s.get("started_at"));
             long views = events.stream().filter(c -> List.of("page_view", "quote_view").contains(c.get("event_type")))
                 .count();
@@ -118,7 +135,15 @@ class StreamsTest {
             }
             ended.add(session);
         }
-        assertThat(ended).as("every session with events ends").isEqualTo(bySession.keySet());
+        // Every session with events ends, but those still open as the last day's stretch ended: the next day ends them.
+        assertThat(bySession.keySet()).containsAll(ended);
+        Instant last = sent.get(Feed.CLICK_EVENTS).getLast().at();
+        bySession.forEach((session, events) -> {
+            if (!ended.contains(session)) {
+                assertThat((Instant) events.getFirst().get("event_time")).as("session " + session + " still open")
+                    .isAfter(last.minusSeconds(3 * 3600));
+            }
+        });
         assertThat(visitors / (double) sessions.size()).as("visitors").isBetween(0.05, 0.15);
         assertThat(logouts).isPositive();
         // A session's row goes out after its last event: no event of a session follows its row in the stream.

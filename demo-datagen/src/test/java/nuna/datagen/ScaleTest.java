@@ -62,8 +62,8 @@ class ScaleTest {
         assertThat(large.get(Feed.ACCOUNTS)).isEqualTo(1500);
         assertThat(small.get(Feed.SECURITIES)).isEqualTo(60);
         assertThat(large.get(Feed.SECURITIES)).isEqualTo(400);
-        assertThat(small.get(Feed.BARS_5M)).isEqualTo(60 * Market.BARS);
-        assertThat(large.get(Feed.BARS_5M)).isEqualTo(400 * Market.BARS);
+        assertThat(small.get(Feed.BARS_5M)).isEqualTo(60 * Market.BARS + Market.THIN_BARS * Market.thinCount(60));
+        assertThat(large.get(Feed.BARS_5M)).isEqualTo(400 * Market.BARS + Market.THIN_BARS * Market.thinCount(400));
         // The streams and the books grow with it: sessions with the accounts, quotes with the securities.
         assertThat(large.get(Feed.SESSIONS)).isGreaterThan(3 * small.get(Feed.SESSIONS));
         assertThat(large.get(Feed.QUOTES)).isGreaterThan(2 * small.get(Feed.QUOTES));

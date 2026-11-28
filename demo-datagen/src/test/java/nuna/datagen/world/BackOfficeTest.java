@@ -3,6 +3,7 @@ package nuna.datagen.world;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -46,7 +47,9 @@ class BackOfficeTest {
 
     /**
      * Tie 5: each payment row is the ledger's financial transaction of its id, template, account and amount; the first
-     * carries the payment's id, each later one goes back to it; and every payment the ledger books has its row.
+     * carries the payment's id, each later one goes back to it; and every payment the ledger books has its row. A request
+     * made while the payments systems were shut (item 321) is recorded first, with no financial transaction, as version
+     * 1, and booked as version 2 or rejected.
      */
     @Test
     void everyPaymentIsTheLedgersWithItsIdTemplateAndAmount() {
@@ -54,9 +57,23 @@ class BackOfficeTest {
         Map<Long, Map<String, Object>> fts = transactions(p);
         Map<String, Long> started = new HashMap<>();
         Set<Long> paid = new HashSet<>();
+        Set<String> requested = new HashSet<>();
+        int rejected = 0;
         for (Map<String, Object> pay : p.of(Feed.PAYMENTS)) {
             String id = (String) pay.get("payment_id");
             if (pay.get("status").equals("blocked")) {
+                continue;
+            }
+            if (pay.get("status").equals("requested")) {
+                assertThat(pay.get("version")).as(id).isEqualTo(1);
+                assertThat(pay.get("financial_transaction_id")).as(id).isNull();
+                requested.add(id);
+                continue;
+            }
+            if (pay.get("status").equals("rejected")) {
+                assertThat(requested.remove(id)).as(id + " was requested").isTrue();
+                assertThat(pay.get("financial_transaction_id")).as(id).isNull();
+                rejected++;
                 continue;
             }
             Long ftId = (Long) pay.get("financial_transaction_id");
@@ -67,7 +84,7 @@ class BackOfficeTest {
             assertThat(ft.get("brokerage_account")).as(id).isEqualTo(pay.get("brokerage_account"));
             assertThat(dec(ft.get(column(template, 10)))).as(id).isEqualByComparingTo((BigDecimal) pay.get("amount"));
             if (STARTS.containsKey(template)) {
-                assertThat(pay.get("version")).as(id).isEqualTo(1);
+                assertThat(pay.get("version")).as(id).isEqualTo(requested.remove(id) ? 2 : 1);
                 assertThat(ft.get(column(template, STARTS.get(template)))).as(id).isEqualTo(id);
                 started.put(id, ftId);
             } else {
@@ -85,6 +102,15 @@ class BackOfficeTest {
         }
         assertThat(started).hasSizeGreaterThan(100);
         assertThat(p.of(Feed.PAYMENTS)).extracting(r -> r.get("method")).contains("cash", "ach", "wire");
+        assertThat(p.of(Feed.PAYMENTS)).extracting(r -> r.get("status")).contains("requested");
+        // What is still requested was asked for after the last day's cutoff (a wire's, the earliest): the next business
+        // day books it.
+        Instant cutoff = p.days.getLast().atTime(World.WIRE_CUTOFF).atZone(World.NEW_YORK).toInstant();
+        for (Map<String, Object> pay : p.of(Feed.PAYMENTS)) {
+            if (requested.contains(pay.get("payment_id"))) {
+                assertThat((Instant) pay.get("event_time")).as(pay.toString()).isAfterOrEqualTo(cutoff);
+            }
+        }
     }
 
     /** Each ACH return is the ledger's return of its payment, with its code; each ACATS transfer the ledger's by control. */

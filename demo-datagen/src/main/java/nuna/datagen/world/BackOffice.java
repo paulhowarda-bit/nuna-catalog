@@ -25,9 +25,11 @@ import java.util.TreeMap;
  * a range the ABA does not use; and sanctions entries that are invented, never OFAC's.
  *
  * <p>The accounts are the world's: their onboarding records are written once, at the world's first day, each dated as
- * its account opened. After that each business day brings changes of address, contact and employment, suitability
- * reviews, new trusted contacts and complaints. Each record of a party, a suitability profile, a trusted contact, a
- * payment, an alert, a case or a complaint is a new version of it ({@link LakeSchemas#VERSIONED}).
+ * its account opened, and a customer the scale dial brings (item 321) is onboarded the same way as its account opens.
+ * After that every hour of every day brings changes of address, contact and employment, suitability reviews, new
+ * trusted contacts and complaints, at the customers' rate for the hour ({@link Activity}). Each record of a party, a
+ * suitability profile, a trusted contact, a payment, an alert, a case or a complaint is a new version of it
+ * ({@link LakeSchemas#VERSIONED}).
  */
 final class BackOffice {
 
@@ -188,6 +190,8 @@ final class BackOffice {
     private final Map<Long, Account> accounts = new LinkedHashMap<>();
     private final List<Party> parties = new ArrayList<>();
     private final Map<Long, Payment> byInitiation = new HashMap<>();
+    /** Requests recorded and not yet booked, by payment id. */
+    private final Map<String, Payment> requested = new HashMap<>();
     private final Map<Long, List<Deposit>> cashDeposits = new HashMap<>();
     private final Map<Long, LocalDate> structuringAlerted = new HashMap<>();
     /** Each trade date's buys and sells, per account and security, for the next morning's surveillance. */
@@ -205,13 +209,7 @@ final class BackOffice {
         this.calendar = calendar;
         this.rng = rng;
         for (World.Account w : worldAccounts) {
-            Account a = new Account(w, registration(w), routingNumber(), digits(10));
-            accounts.put(w.id(), a);
-            onboardParties(a);
-            suitability(a, w.persona());
-            if (!a.registration.equals("entity") && !a.registration.equals("trust") && rng.chance(0.4)) {
-                trustedContact(a);
-            }
+            open(w);
         }
         List<Account> eligible = accounts.values().stream()
             .filter(a -> a.world.persona().equals("buy_and_hold") || a.world.persona().equals("active_trader"))
@@ -225,6 +223,17 @@ final class BackOffice {
     }
 
     // ---------------------------------------------------------------- drawing the parties
+
+    /** A brokerage account's parties, suitability and trusted contact, drawn as it opens; written by {@link #onboarded}. */
+    void open(World.Account w) {
+        Account a = new Account(w, registration(w), routingNumber(), digits(10));
+        accounts.put(w.id(), a);
+        onboardParties(a);
+        suitability(a, w.persona());
+        if (!a.registration.equals("entity") && !a.registration.equals("trust") && rng.chance(0.4)) {
+            trustedContact(a);
+        }
+    }
 
     private String registration(World.Account w) {
         double u = rng.uniform();
@@ -473,45 +482,55 @@ final class BackOffice {
         }
         Set<Party> written = new HashSet<>();
         for (Account a : accounts.values()) {
-            LocalDate opened = a.world.opened();
-            for (Party p : a.parties) {
-                if (written.add(p)) {
-                    party(p, "onboarding", opened);
-                    cip(p, a, opened);
-                    screen("onboarding", "party", String.valueOf(p.id), p.legalName, a, null, 0.01);
-                }
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("role_id", nextRole++);
-                row.put("brokerage_account", a.world.id());
-                row.put("party_id", p.id);
-                row.put("role", a.roles.get(p));
-                row.put("effective_date", opened);
-                row.put("event_time", now);
-                emit(Feed.ACCOUNT_ROLES, row);
+            onboardingRows(a, written);
+        }
+    }
+
+    /** A new customer's onboarding records (item 321), as its account opens. */
+    void onboarded(Instant at, LocalDate today, long account) {
+        at(at, today);
+        onboardingRows(accounts.get(account), new HashSet<>());
+    }
+
+    private void onboardingRows(Account a, Set<Party> written) {
+        LocalDate opened = a.world.opened();
+        for (Party p : a.parties) {
+            if (written.add(p)) {
+                party(p, "onboarding", opened);
+                cip(p, a, opened);
+                screen("onboarding", "party", String.valueOf(p.id), p.legalName, a, null, 0.01);
             }
-            suitabilityRow(a, "onboarding", opened);
-            for (Owner o : a.owners) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("owner_id", o.id());
-                row.put("brokerage_account", a.world.id());
-                row.put("entity_party_id", a.primary().id);
-                row.put("full_name", o.name());
-                row.put("birth_date", o.birth());
-                row.put("tax_id", o.taxId());
-                row.put("address_line", o.address());
-                row.put("city", o.city().city());
-                row.put("state", o.city().state());
-                row.put("postal_code", o.city().zip());
-                row.put("ownership_percent", o.percent());
-                row.put("control_person", o.control());
-                row.put("certified_on", opened);
-                row.put("event_time", now);
-                emit(Feed.BENEFICIAL_OWNERS, row);
-                screen("onboarding", "beneficial_owner", String.valueOf(o.id()), o.name(), a, null, 0.01);
-            }
-            if (a.contactId > 0) {
-                contactRow(a, "onboarding", opened);
-            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("role_id", nextRole++);
+            row.put("brokerage_account", a.world.id());
+            row.put("party_id", p.id);
+            row.put("role", a.roles.get(p));
+            row.put("effective_date", opened);
+            row.put("event_time", now);
+            emit(Feed.ACCOUNT_ROLES, row);
+        }
+        suitabilityRow(a, "onboarding", opened);
+        for (Owner o : a.owners) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("owner_id", o.id());
+            row.put("brokerage_account", a.world.id());
+            row.put("entity_party_id", a.primary().id);
+            row.put("full_name", o.name());
+            row.put("birth_date", o.birth());
+            row.put("tax_id", o.taxId());
+            row.put("address_line", o.address());
+            row.put("city", o.city().city());
+            row.put("state", o.city().state());
+            row.put("postal_code", o.city().zip());
+            row.put("ownership_percent", o.percent());
+            row.put("control_person", o.control());
+            row.put("certified_on", opened);
+            row.put("event_time", now);
+            emit(Feed.BENEFICIAL_OWNERS, row);
+            screen("onboarding", "beneficial_owner", String.valueOf(o.id()), o.name(), a, null, 0.01);
+        }
+        if (a.contactId > 0) {
+            contactRow(a, "onboarding", opened);
         }
     }
 
@@ -638,12 +657,16 @@ final class BackOffice {
                  String direction, String status, BigDecimal amount, LocalDate expected) {
         at(at, today);
         Account a = accounts.get(account);
+        Payment asked = requested.remove(id);
         String counterparty = null;
         if (method.equals("wire")) {
             counterparty = rng.chance(direction.equals("deposit") ? 0.8 : 0.85) ? a.primary().legalName
                 : COUNTERPARTIES.get(rng.below(COUNTERPARTIES.size()));
         }
         Payment p = new Payment(id, a, method, direction, amount, expected, counterparty);
+        if (asked != null) {
+            p.version = asked.version;
+        }
         byInitiation.put(initiation, p);
         paymentRow(p, status, initiation, template, null);
         if (method.equals("wire")) {
@@ -660,6 +683,25 @@ final class BackOffice {
         if (method.equals("cash")) {
             cashDeposits.computeIfAbsent(account, k -> new ArrayList<>()).add(new Deposit(today, amount, id));
         }
+    }
+
+    /**
+     * A customer's request made while the payments systems do not run (D48, amended 2026-11-27): recorded at once,
+     * status requested, and booked when they next run ({@link #payment}, {@link #journal}) or rejected
+     * ({@link #rejected}).
+     */
+    void requested(Instant at, LocalDate today, long account, String id, String method, String direction,
+                   BigDecimal amount) {
+        at(at, today);
+        Payment p = new Payment(id, accounts.get(account), method, direction, amount, null, null);
+        requested.put(id, p);
+        paymentRow(p, "requested", null, null, null);
+    }
+
+    /** A request the payments systems refused as they took it: the money is no longer there, or the account closed. */
+    void rejected(Instant at, LocalDate today, String id) {
+        at(at, today);
+        paymentRow(requested.remove(id), "rejected", null, null, null);
     }
 
     /** A later status of a payment the ledger booked the start of (templates 32, 34, 35, 72, 73). */
@@ -699,6 +741,10 @@ final class BackOffice {
     void journal(Instant at, LocalDate today, long from, long to, String journal, long ft, BigDecimal amount) {
         at(at, today);
         Payment p = new Payment(journal, accounts.get(from), "journal", "transfer", amount, null, null);
+        Payment asked = requested.remove(journal);
+        if (asked != null) {
+            p.version = asked.version;
+        }
         paymentRow(p, "settled", ft, 76, to);
     }
 
@@ -879,10 +925,7 @@ final class BackOffice {
         q[side.equals("buy") || side.equals("buy_to_cover") ? 0 : 1] += (Long) row.get("last_quantity");
     }
 
-    /**
-     * 07:15: the work due today (escalations, filings, reviews, complaints closed), then trade surveillance of the last
-     * trade date (FINRA 5270 and wash-trade review): an account that bought and sold the same security that day.
-     */
+    /** 08:30, as the analysts start: the work due today (escalations, filings, reviews, complaints closed). */
     void morning(Instant at, LocalDate today) {
         at(at, today);
         List<Runnable> work = due.remove(today);
@@ -891,7 +934,15 @@ final class BackOffice {
                 work.get(i).run();
             }
         }
-        LocalDate last = calendar.previous(today);
+    }
+
+    /**
+     * 20:10, in the overnight batch after the trade date's last session: trade surveillance of the trade date (FINRA
+     * 5270 and wash-trade review), an account that bought and sold the same security that day.
+     */
+    void surveil(Instant at, LocalDate today) {
+        at(at, today);
+        LocalDate last = today;
         Map<List<Long>, long[]> traded = fills.remove(last);
         fills.keySet().removeIf(d -> d.isBefore(last));
         if (traded == null) {
@@ -931,11 +982,14 @@ final class BackOffice {
     }
 
     /**
-     * 12:00: the day's changes to the parties (an address, a phone and email, an employer), rescreening a party whose
-     * address changed; suitability reviews (FINRA 4512, at least every 36 months); new trusted contacts; complaints.
+     * A half-hour's changes to the parties (an address, a phone and email, an employer), rescreening a party whose
+     * address changed; suitability reviews (FINRA 4512, at least every 36 months); new trusted contacts; complaints. Each
+     * at a business day's rate before times {@code share}, the half-hour's share of a business day's customer activity
+     * and the scale; each takes effect on the calendar day it is made, a Saturday's on Saturday.
      */
-    void servicing(Instant at, LocalDate today) {
-        at(at, today);
+    void servicing(Instant at, LocalDate businessDay, double share) {
+        at(at, businessDay);
+        LocalDate today = LocalDate.ofInstant(at, World.NEW_YORK);
         for (Account a : accounts.values()) {
             if (a.closed) {
                 continue;
@@ -945,7 +999,7 @@ final class BackOffice {
                     || a.roles.get(p).equals("authorized_trader")) {
                     continue;
                 }
-                double u = rng.uniform();
+                double u = rng.uniform() / share;
                 if (u < 0.0015) {
                     City c = CITIES.get(rng.below(CITIES.size()));
                     p.address = street();
@@ -966,28 +1020,28 @@ final class BackOffice {
                     party(p, "employment_change", today);
                 }
             }
-            if (rng.chance(0.0008)) {
+            if (rng.chance(0.0008 * share)) {
                 suitability(a, a.world.persona());
                 a.suitabilityVersion++;
                 suitabilityRow(a, "periodic_review", today);
             }
             if (a.contactId == 0 && (a.registration.equals("individual") || a.registration.equals("joint")
-                || a.registration.equals("ira")) && rng.chance(0.0003)) {
+                || a.registration.equals("ira")) && rng.chance(0.0003 * share)) {
                 trustedContact(a);
                 contactRow(a, "added", today);
-            } else if (a.contactId > 0 && rng.chance(0.0004)) {
+            } else if (a.contactId > 0 && rng.chance(0.0004 * share)) {
                 a.contactPhone = a.contactPhone.substring(0, 4) + "555-01" + String.format("%02d", rng.below(100));
                 a.contactVersion++;
                 contactRow(a, "phone_change", today);
             }
         }
-        if (rng.chance(0.12)) {
-            complaint();
+        if (rng.chance(0.12 * share)) {
+            complaint(today);
         }
     }
 
     /** A written complaint (SEA 17a-3(a)(18), FINRA 4530), closed five to fifteen business days later. */
-    private void complaint() {
+    private void complaint(LocalDate received) {
         List<Account> open = accounts.values().stream().filter(a -> !a.closed).toList();
         Account a = open.get(rng.below(open.size()));
         String id = "CMP-" + (43_000_000 + nextComplaint++);
@@ -995,7 +1049,6 @@ final class BackOffice {
         String category = rng.pick(List.of("service", "service", "fees", "transfer_delay", "execution_quality",
             "statement_error", "unauthorized_trading"));
         String product = category.equals("transfer_delay") || category.equals("fees") ? "account" : "equity";
-        LocalDate received = day;
         complaintRow(id, 1, a, channel, category, product, "open", received, null, null);
         later(5 + rng.below(11), () -> complaintRow(id, 2, a, channel, category, product, "closed", received, day,
             rng.chance(0.7) ? "resolved" : "denied"));
