@@ -586,6 +586,12 @@ const SHORT = ['operation', 'added-data-files', 'deleted-data-files', 'added-rec
 
 // ---- history: one row per commit, with the snapshot it made (Atelier, 2026-11-23; backlog 199) ----
 
+/**
+ * A snapshot id as History shows it, 4137…6884, cut from the id's own digits, as a parsed number rounds them; one of nine
+ * digits or fewer shows whole (backlog 326).
+ */
+const shortId = id => id.length > 9 ? `${id.slice(0, 4)}…${id.slice(-4)}` : id;
+
 const signed = (add, del) => {
   const a = Number(add) || 0;
   const d = Number(del) || 0;
@@ -622,7 +628,7 @@ function historyTab(target, t) {
     const id = String(sn['snapshot-id']);
     for (const tr of $$('tr[data-id]', tbody)) tr.classList.toggle('is-sel', tr.dataset.id === id);
     for (const c of $$('.lanes circle[data-id]', box)) c.classList.toggle('is-sel', c.dataset.id === id);
-    meta.textContent = `${id.slice(0, 4)}…${id.slice(-4)} · ${when(sn['timestamp-ms'])} · ${opOf(sn)}`;
+    meta.textContent = `${shortId(id)} · ${when(sn['timestamp-ms'])} · ${opOf(sn)}`;
     const summary = sn.summary || {};
     const shownSummary = whole ? Object.assign({'snapshot-id': sn['snapshot-id'], 'parent-snapshot-id': sn['parent-snapshot-id'],
       'sequence-number': sn['sequence-number'], 'schema-id': sn['schema-id'], 'manifest-list': sn['manifest-list']}, {summary})
@@ -648,7 +654,7 @@ function historyTab(target, t) {
       h('td', {class: 'num'}, line, fmt(e['new-version'])), h('td', {class: 'tnum'}, when(e['committed-at'])),
       h('td', {class: 'wrap'}, changeWords(e.updates, e['new-version'])),
       h('td', {class: 'name snap'}, sn ? [h('button', {class: 'row-pick', type: 'button', 'aria-label': `Snapshot ${id}, ${opOf(sn)}`,
-        onclick: () => select(sn)}, id), ' ', muted('· ' + opOf(sn))] : muted('–')),
+        title: id, onclick: () => select(sn)}, shortId(id)), ' ', muted('· ' + opOf(sn))] : muted('–')),
       h('td', {class: 'num'}, sn ? signed(sum['added-records'], sum['deleted-records']) : null),
       h('td', {class: 'by'}, byWords(e)),
       h('td', null, sn ? (refs.get(sn['snapshot-id']) || []).flatMap(([name, type], i) => [i ? ' ' : '', refBadge(name, type)]) : null),

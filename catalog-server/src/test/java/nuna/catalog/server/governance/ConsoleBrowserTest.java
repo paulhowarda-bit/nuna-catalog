@@ -765,6 +765,12 @@ class ConsoleBrowserTest {
             return found.isEmpty() ? null : found;
         });
         assertThat(rows).extracting(row -> row.getDomAttribute("data-id")).containsExactly(String.valueOf(first));
+        // The commit shows its snapshot shortened, cut from the id's own digits, and whole on hover (backlog 326): cut
+        // from a parsed number, 8809372496300770237 would show as 8809…0000.
+        WebElement pick = rows.getFirst().findElement(By.cssSelector("button.row-pick"));
+        assertThat(textContent(pick)).isEqualTo("8809…0237");
+        assertThat(pick.getDomAttribute("title")).isEqualTo(String.valueOf(first));
+        assertThat(textContent(driver.findElement(By.cssSelector("#selected-snapshot h2 .meta")))).startsWith("9007…0993 · ");
         assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]")))
                 .extracting(c -> c.getDomAttribute("data-id"))
                 .containsExactly(String.valueOf(first), String.valueOf(second));
@@ -1122,6 +1128,50 @@ class ConsoleBrowserTest {
                 + "'][data-privilege='select'][data-on='namespace']")).getDomAttribute("class")).isNull();
     }
 
+    /**
+     * The grids are measured against the content column, not the window (backlog 326). Beside the menu and the tree, at
+     * 1,280, 1,440 and 1,920 px, History stacks, so its Commits span the tab; each commit is one line, with no word broken,
+     * and its snapshot shows whole or shortened from the id's own digits. Governance's holds and freezes and its
+     * regulated areas fit their cards, with no word broken. Before, at 1,440 px the content beside the tree was about
+     * 870 px and History kept two columns, so the Commits broke "snapshots expired" letter by letter.
+     */
+    @Test
+    void besideTheMenuAndTheTreeHistoryAndGovernanceShowTheirTablesWhole() {
+        signIn(tester());
+        for (int width : new int[] {1280, 1440, 1920}) {
+            frameOf(width);
+            browser.open("/ui/#" + at("table", eu, "trades", "history"));
+            List<WebElement> snapshots = browser.await("the commits that added snapshots are not shown", d -> {
+                List<WebElement> found = d.findElements(By.cssSelector("#metadata-log tbody tr[data-id]"));
+                return found.size() == 3 ? found : null;
+            });
+            assertThat(driver.findElement(By.cssSelector(".browse > .tree")).isDisplayed()).as("the tree at %d px", width)
+                    .isTrue();
+            assertThat((Boolean) driver.executeScript("const tab = document.getElementById('history-tab').getBoundingClientRect();"
+                    + " const log = document.getElementById('metadata-log').getBoundingClientRect();"
+                    + " return Math.abs(tab.width - log.width) < 1"))
+                    .as("the Commits span the History tab at %d px", width).isTrue();
+            assertThat(cell(snapshots.get(0), 4)).isEqualTo(S3 + " · append");
+            assertThat((List<?>) driver.executeScript(LINES_BROKEN, "#metadata-log tbody tr[data-version] > td:not(:last-child)"))
+                    .as("the commits on more than one line at %d px", width).isEmpty();
+            assertThat((List<?>) driver.executeScript(BROKEN_WORDS, "#metadata-log tbody tr[data-version] > td"))
+                    .as("the words broken in the Commits at %d px", width).isEmpty();
+            assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
+
+            browser.open("/ui/#p=governance&c=trading");
+            browser.await(By.cssSelector("#regulated tr[data-on='" + top + ".ledger']"));
+            browser.await(By.cssSelector("#governance-summary tr[data-kind='freeze'][data-on='" + top + ".equities.eu']"));
+            for (String table : List.of("#governance-summary .grid-2 > .panel:first-child", "#regulated")) {
+                assertThat((Boolean) driver.executeScript("const w = document.querySelector(arguments[0] + ' .wrap-tbl');"
+                        + " return w.scrollWidth <= w.clientWidth + 1", table))
+                        .as("%s fits its card at %d px", table, width).isTrue();
+                assertThat((List<?>) driver.executeScript(BROKEN_WORDS, table + " tbody td"))
+                        .as("the words broken in %s at %d px", table, width).isEmpty();
+            }
+            assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
+        }
+    }
+
     @Test
     void theGovernanceSummaryCountsAndListsTheHoldTheFreezeAndTheRegulatedNamespace() {
         signIn(tester());
@@ -1241,9 +1291,10 @@ class ConsoleBrowserTest {
             """;
 
     /**
-     * Audit filters by kind, and each By kind row applies its kind (Atelier's review, F7; backlog 187): a grant admin
-     * reaches a grant's record in three steps, Audit (where they land), the grant row, its record. Every filter is in
-     * the link, so Back keeps it; the audit's own reads are hidden unless asked for; the range names both days.
+     * Audit filters by kind (Atelier's review, F7; backlog 187): a grant admin reaches a grant's record in three steps,
+     * Audit (where they land), the Grants chip, its record. Every filter is in the link, so Back keeps it; the audit's
+     * own reads are hidden unless asked for; the counts' range names both days. By kind, which repeated the chips'
+     * counts, is gone, and with no archive so is Hash chain (backlog 328).
      */
     @Test
     void auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads() {
@@ -1253,30 +1304,46 @@ class ConsoleBrowserTest {
         driver.executeScript(AUDIT_TABLES_IN_THE_PAGE);
         browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
         assertThat(feedTypes()).containsExactly("grant", "commit");
-        assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
-        assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
-                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\. Choose a kind to show its records in the feed\\. .*");
+        // All is every kind but Reads (backlog 328).
+        assertThat(asked(lastAsked())).contains("nuna.catalog.grant", "nuna.catalog.commit")
+                .doesNotContain("nuna.catalog.read", "nuna.catalog.audit-read", "nuna.catalog.export");
+        browser.await("the chips have no counts", d -> !textContent(d.findElement(By.cssSelector("#audit-feed p[data-counts]"))).isEmpty());
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed p[data-counts]"))))
+                .matches("Counts are of the last day, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\.");
+        assertThat(driver.findElements(By.cssSelector("#audit-kinds, #hash-chain"))).isEmpty();
 
-        // By kind uses the chips' words, so its counts add up to them; each badge is its chip's word, the raw type
-        // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
-        assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
-                .map(row -> cell(row, 1) + " " + cell(row, 2)).toList()).containsExactly("Grants 1", "Commits 1", "All 2");
+        // The chips' counts add up, the audit's own reads hidden and not counted; each badge is its chip's word, the raw
+        // type its title (Atelier's re-walk after phase 2, backlog 214).
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .chip")).stream().map(c -> textContent(c).strip()).toList())
+                .contains("All 2", "Grants 1", "Commits 1", "Reads 0");
+        // A chip's title is its record types and their counts, as By kind's rows gave them.
+        assertThat(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']")).getDomAttribute("title"))
+                .isEqualTo("grant 1 · commit 1");
         // The headline counts every record; the chips leave out the hidden reads, and the checkbox says how many
         // (Atelier's re-walk after 212 to 217, backlog 220).
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip())
                 .isEqualTo("Show audit reads · 2 records hidden");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("4");
-        // Most recorded keeps its number columns in its card at 1440 px: the long path wraps (backlog 220).
-        driver.manage().window().setSize(new Dimension(1440, 900));
+        // The tile says how the chips share its total, so the two add up (backlog 328).
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-d"))))
+                .isEqualTo("2 under All, 0 under Reads, 2 audit reads");
+        // Most recorded keeps its number columns in its card at 1280, 1440 and 1920 px: the long path wraps after a dot
+        // (backlog 220), never inside a word, as it broke letter by letter at 1440 (backlog 326).
         WebElement busiest = browser.await(By.cssSelector("#audit-busiest"));
-        browser.await("Most recorded overflows its card", d -> (Boolean) driver.executeScript(
-                "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+        for (int width : new int[] {1280, 1440, 1920}) {
+            frameOf(width);
+            browser.await("Most recorded overflows its card at " + width + " px", d -> (Boolean) driver.executeScript(
+                    "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+            assertThat((List<?>) driver.executeScript(BROKEN_WORDS, "#audit-busiest tbody td"))
+                    .as("the words broken in Most recorded at %d px", width).isEmpty();
+        }
+        driver.manage().window().setSize(new Dimension(1440, 900));
         assertThat(textContent(busiest.findElement(By.cssSelector("thead")))).contains("Records", "Reads");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='hold']")))).isEqualTo("Governance 0");
         WebElement grantBadge = driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .badge"));
         assertThat(textContent(grantBadge)).isEqualTo("Grant");
         assertThat(grantBadge.getDomAttribute("title")).isEqualTo("nuna.catalog.grant");
-        browser.await(By.cssSelector("#audit-kinds tr[data-kind='grant'] button")).click();
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='grant']")).click();
         browser.await("the feed did not show only grants", d -> feedTypes().equals(List.of("grant")));
         assertThat(lastAsked()).isEqualTo("nuna.catalog.grant");
         assertThat(driver.getCurrentUrl()).contains("p=audit", "kind=grant");
@@ -1305,7 +1372,7 @@ class ConsoleBrowserTest {
         driver.findElement(By.cssSelector("#audit-feed input[name='audit-reads']")).click();
         browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip()).isEqualTo("Show audit reads");
-        assertThat(lastAsked()).isNull();
+        assertThat(asked(lastAsked())).contains("nuna.catalog.audit-read", "nuna.catalog.grant").doesNotContain("nuna.catalog.read");
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
     }
 
@@ -1547,6 +1614,108 @@ class ConsoleBrowserTest {
     private List<String> feedTypes() {
         return driver.findElements(By.cssSelector("#audit-feed .feed-row")).stream()
                 .map(row -> row.getDomAttribute("data-type")).toList();
+    }
+
+    /** A type filter's types. */
+    private static List<String> asked(String types) {
+        assertThat(types).as("the feed's type filter").isNotNull();
+        return List.of(types.split(","));
+    }
+
+    /**
+     * One engine polling a table: the day's reads, and a page of them with one grant among them (backlog 328, from the
+     * review of 27 Nov, where 57,357 of 63,554 records were reads).
+     */
+    private static final String ENGINE_READS_IN_THE_PAGE = """
+            const real = window.fetch;
+            window.asked = [];
+            const now = Date.now();
+            let i = 0;
+            const rec = (secs, type, who, engine, path, data) => ({time: new Date(now - secs * 1000).toISOString(),
+              type: 'nuna.catalog.' + type, principal: who, engine, 'event-id': 'e' + (++i), partition: 0, offset: i,
+              'request-id': 'r' + i, object: {kind: 'TABLE', path}, event: {data}, chain: {status: 'no-archive'}});
+            const read = (secs, who, engine, path) => rec(secs, 'read', who, engine, path, {served: {version: 5}, branch: 'main'});
+            const rates = ['markets', 'fx', 'rates'];
+            const records = [];
+            for (let k = 0; k < 5; k++) records.push(read(10 + k * 3, 'singlestore', 'singlestore-demo', rates));
+            records.push(rec(40, 'grant', 'gina', null, ['equities', 'eu', 'trades'], {}));
+            records.push(read(50, 'spark', 'spark', ['equities', 'eu', 'trades']));
+            records.push(read(53, 'spark', 'spark', ['equities', 'eu', 'trades']));
+            for (let k = 0; k < 3; k++) records.push(read(60 + k * 3, 'singlestore', 'singlestore-demo', rates));
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/audit/summary')) {
+                return json({'by-type': {'nuna.catalog.read': 57357, 'nuna.catalog.audit-read': 8, 'nuna.catalog.grant': 1,
+                  'nuna.catalog.commit': 6196}, from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+              }
+              if (u.pathname.endsWith('/audit/archive')) return json({configured: false});
+              if (u.pathname.endsWith('/audit/feed')) {
+                window.asked.push(u.searchParams.get('type'));
+                const types = (u.searchParams.get('type') || '').split(',').filter(Boolean);
+                return json({records: records.filter(r => !types.length || types.includes(r.type))});
+              }
+              return real(url, init);
+            };
+            location.hash = '#p=audit&c=trading&kind=all';
+            """;
+
+    /**
+     * One engine's polling reads no longer drown the feed (Atelier's review of 27 Nov, item 4; backlog 328): All leaves
+     * the reads out and says so, the reads have their own chip, the tile says how the chips share its total, and a run of
+     * like records in a row is one row, which says how many and when, and opens its records beneath it. The fold covers
+     * only the page's own records, and the status line says so.
+     */
+    @Test
+    void anEnginesPollingReadsFoldIntoRunsUnderTheirOwnChip() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(ENGINE_READS_IN_THE_PAGE);
+        browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
+        browser.await("the chips have no counts", d -> !textContent(d.findElement(By.cssSelector("#audit-feed p[data-counts]"))).isEmpty());
+
+        assertThat(feedTypes()).containsExactly("grant");
+        assertThat(asked(lastAsked())).doesNotContain("nuna.catalog.read");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']"))).strip()).isEqualTo("All 6,197");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='read']"))).strip()).isEqualTo("Reads 57,357");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed p[data-counts]"))))
+                .endsWith(" All leaves out the 57,357 reads, which engines make every few seconds: they have their own chip.");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("63,562");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-d"))))
+                .isEqualTo("6,197 under All, 57,357 under Reads, 8 audit reads");
+
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='read']")).click();
+        browser.await("the feed did not show the reads", d -> feedTypes().size() == 4);
+        assertThat(asked(lastAsked())).containsExactly("nuna.catalog.read", "nuna.catalog.export");
+        assertThat(driver.getCurrentUrl()).contains("kind=read");
+        // Five singlestore reads in a row, two spark reads (too few to fold), then three singlestore reads.
+        List<WebElement> rows = driver.findElements(By.cssSelector("#audit-feed .feed-row"));
+        assertThat(rows.stream().map(r -> String.valueOf(r.getDomAttribute("data-run"))).toList())
+                .containsExactly("5", "null", "null", "3");
+        assertThat(textContent(rows.get(0).findElement(By.cssSelector(".what"))))
+                .matches("loaded version 5 of main · markets\\.fx\\.rates · 5 times, \\d\\d:\\d\\d:\\d\\d to \\d\\d:\\d\\d:\\d\\d");
+        assertThat(textContent(rows.get(0).findElement(By.cssSelector(".via")))).isEqualTo("via singlestore-demo");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-status"))))
+                .contains("Like records in a row are folded into one, among the 50 of each page only.");
+
+        // Nothing is hidden: the run opens its five records beneath it, each one a record, and closes again.
+        WebElement open = rows.get(0).findElement(By.cssSelector("button"));
+        assertThat(textContent(open)).isEqualTo("Show records");
+        open.click();
+        browser.await("the run did not open", d -> d.findElements(By.cssSelector("#audit-feed .feed-row.in-run")).size() == 5);
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row")).get(1).getDomAttribute("class")).contains("in-run");
+        assertThat(textContent(open)).isEqualTo("Hide records");
+        open.click();
+        browser.await("the run did not close", d -> d.findElements(By.cssSelector("#audit-feed .feed-row.in-run")).isEmpty());
+
+        // On a wide screen a record is one line.
+        frameOf(1920);
+        WebElement single = browser.await(By.cssSelector("#audit-feed .feed-row:not(.is-run)"));
+        assertThat((Boolean) driver.executeScript("return arguments[0].querySelector('.line').getBoundingClientRect().height < 32",
+                single))
+                .as("a record on one line at 1920 px").isTrue();
+        driver.manage().window().setSize(new Dimension(1440, 900));
     }
 
     /** The type filter of the feed's last request, null for none. */
@@ -1820,23 +1989,73 @@ class ConsoleBrowserTest {
      * asserts the header fits: no wider than the window, Sign out within it, and no part of it over another.
      */
     private void assertTheHeaderFits(int width, boolean frame) {
-        driver.manage().window().setSize(new Dimension(width, 900));
         if (frame) {
-            for (int i = 0; i < 3; i++) {
-                int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
-                if (now == width) {
-                    break;
-                }
-                Dimension size = driver.manage().window().getSize();
-                driver.manage().window().setSize(new Dimension(size.width + width - now, 900));
-            }
-            assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
-                    .as("the console's frame").isEqualTo(width);
+            frameOf(width);
+        } else {
+            driver.manage().window().setSize(new Dimension(width, 900));
         }
         assertThat(headerFits()).as("the header fits at %d px", width).isTrue();
         assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
         assertThat((String) driver.executeScript(HEADER_OVERLAPS)).as("the header's parts at %d px", width).isEmpty();
     }
+
+    /** Sizes the window so the console's frame, the window less its scroll bar, is {@code width} wide. */
+    private void frameOf(int width) {
+        driver.manage().window().setSize(new Dimension(width, 900));
+        for (int i = 0; i < 3; i++) {
+            int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
+            if (now == width) {
+                break;
+            }
+            Dimension size = driver.manage().window().getSize();
+            driver.manage().window().setSize(new Dimension(size.width + width - now, 900));
+        }
+        assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
+                .as("the console's frame").isEqualTo(width);
+    }
+
+    /**
+     * The words broken across two lines in the cells {@code arguments[0]} selects, each as the letters before the break,
+     * a bar, and the letter after it: a line may end at a space, a dot, an underscore, a hyphen or a {@code <br>}, never
+     * between two letters or digits (backlog 326).
+     */
+    private static final String BROKEN_WORDS = """
+            const out = [];
+            const word = c => /[\\p{L}\\p{N}]/u.test(c);
+            for (const cell of document.querySelectorAll(arguments[0])) {
+              const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+              let prev = null;
+              for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                if (n.nodeType === Node.ELEMENT_NODE) {
+                  if (n.tagName === 'BR') prev = null;
+                  continue;
+                }
+                for (let i = 0; i < n.data.length; i++) {
+                  const r = document.createRange();
+                  r.setStart(n, i);
+                  r.setEnd(n, i + 1);
+                  const box = r.getClientRects()[0];
+                  if (!box) continue;
+                  const c = n.data[i];
+                  if (prev && word(c) && word(prev.c) && box.top >= prev.bottom - 1) out.push(prev.text + '|' + c);
+                  prev = {c, bottom: box.bottom, text: word(c) ? (prev && word(prev.c) ? prev.text : '') + c : ''};
+                }
+              }
+            }
+            return out;
+            """;
+
+    /** The cells {@code arguments[0]} selects whose words run onto a second line, by their text. */
+    private static final String LINES_BROKEN = """
+            const out = [];
+            for (const cell of document.querySelectorAll(arguments[0])) {
+              const r = document.createRange();
+              r.selectNodeContents(cell);
+              const tops = [...r.getClientRects()].filter(x => x.width > 0 && x.height > 0).map(x => x.top);
+              if (tops.length && Math.max(...tops) - Math.min(...tops) > 8) out.push(cell.textContent);
+            }
+            return out;
+            """;
 
     /**
      * Returns the first overlap in the header, or an empty string: two shown parts of {@code #top} side by side that

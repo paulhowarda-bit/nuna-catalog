@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
-index 86eee6f0..8a9a2f44 100644
+index d4439899..fab68940 100644
 --- a/catalog-server/src/main/resources/nuna/ui/audit.js
 +++ b/catalog-server/src/main/resources/nuna/ui/audit.js
-@@ -183,7 +183,7 @@ function feedPanel(catalog, summary, own) {
-   upTo.value = st.upTo;
-   reads.checked = st.auditReads;
-   // The audit's own reads are each reader's look at the feed: hidden unless asked for, or they bury the rest.
--  const typesOf = kind => (KINDS.find(([k]) => k === kind)[3] || TYPES).filter(t => st.auditReads || t !== 'audit-read');
-+  const typesOf = kind => (KINDS.find(([k]) => k === kind)[3] || TYPES).filter(t => st.auditReads || t);
-   const status = h('p', {class: 'fine feed-status', role: 'status'});
-   const feed = h('div', {class: 'feed', 'data-feed': ''});
-   const more = h('p', {class: 'fine feed-more'});
+@@ -231,7 +231,7 @@ function feedPanel(catalog, summary, own) {
+   // The audit's own reads are each reader's look at the feed: hidden unless asked for, or they bury the rest. All is
+   // every kind but Reads, with the audit's reads when they are asked for (backlog 328).
+   const typesOf = kind => (KINDS.find(([k]) => k === kind)[3] || [...TYPES.filter(t => !READS.includes(t)), 'audit-read'])
+-    .filter(t => st.auditReads || t !== 'audit-read');
++    .filter(t => st.auditReads || t);
+   // What the chips' counts cover: the last day, and under All, every record but the reads (backlog 328).
+   const countNote = h('p', {class: 'fine', 'data-counts': '', title: 'The writer leaves its own records out, and a record '
+     + 'sent to the fallback log reaches no count. Service counts differently, so its figures may not match these.'});

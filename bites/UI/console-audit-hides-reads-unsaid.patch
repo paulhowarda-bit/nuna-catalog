@@ -1,17 +1,17 @@
-Breaks: the audit feed no longer says how many records it hides while the audit's reads are hidden, so its chips and headline disagree unexplained (backlog 220).
+Breaks: The audit feed no longer says how many records it hides while the audit's reads are hidden, so its chips and headline disagree unexplained (backlog 220).
 Module: catalog-server
 Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
-index 99c4ac9f..a449753e 100644
+index d4439899..0c82b76f 100644
 --- a/catalog-server/src/main/resources/nuna/ui/audit.js
 +++ b/catalog-server/src/main/resources/nuna/ui/audit.js
-@@ -243,7 +243,7 @@ function feedPanel(catalog, summary, own) {
-   const drawChips = () => {
-     drawKinds();
-     const n = counted && !st.auditReads && !refName() ? total(counted) - kindTotal(counted, typesOf('all')) : 0;
+@@ -246,7 +246,7 @@ function feedPanel(catalog, summary, own) {
+     // The day's counts are the whole catalog's: none is shown beside a ref's records (6.8).
+     const counts = Boolean(counted && !refName());
+     const n = counts && !st.auditReads ? kindTotal(counted, ['audit-read']) : 0;
 -    hidden.textContent = n ? ` · ${plural(n, 'record')} hidden` : '';
 +    hidden.textContent = '';
-     chipBox.replaceChildren(...KINDS.map(([k, label]) => chip(k, label)));
-   };
-   const chip = (k, label) => {
+     const left = counts ? kindTotal(counted, typesOf('read').filter(t => t !== 'audit-read')) : 0;
+     countNote.textContent = !counts ? '' : `Counts are of the last day, ${onDay(span.from)} to ${onDay(span.to)}.`
+       + (left ? ` All leaves out the ${plural(left, 'read')}, which engines make every few seconds: they have their own chip.` : '');

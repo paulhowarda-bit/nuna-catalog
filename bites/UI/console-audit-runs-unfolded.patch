@@ -1,0 +1,17 @@
+Breaks: A run of like records in a row is no longer folded into one row: every poll of an engine is a row of its own (backlog 328).
+Module: catalog-server
+Test: ConsoleBrowserTest#anEnginesPollingReadsFoldIntoRunsUnderTheirOwnChip
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index d4439899..8738ea9c 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -446,7 +446,7 @@ function runsOf(catalog, records) {
+     const o = r.object || {};
+     const key = typeof what === 'string'
+       ? JSON.stringify([r.principal, r['end-user'], r.engine, r.type, r.operation, o.kind, o.path, what]) : null;
+-    if (key !== null && key === last) runs[runs.length - 1].push(r);
++    if (false) runs[runs.length - 1].push(r);
+     else runs.push([r]);
+     last = key;
+   }
