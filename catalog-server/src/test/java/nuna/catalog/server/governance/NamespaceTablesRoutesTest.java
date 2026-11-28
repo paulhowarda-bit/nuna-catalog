@@ -144,7 +144,7 @@ class NamespaceTablesRoutesTest {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         AuditPublisher publisher = audit::add;
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
-        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
+        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of(WORKER));
         Denials denials = DenialsForTests.denials(publisher, settings, clock);
         Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
         Management management = new Management(store, request -> caller, settings, holdings);
@@ -269,6 +269,84 @@ class NamespaceTablesRoutesTest {
             assertThat(error.status()).isEqualTo(400);
             assertThat(error.type()).isEqualTo("BadRequestException");
         });
+    }
+
+    // ---- the last data change, and the worker's commits (backlog 330) ----
+
+    private static final String WORKER = "service-account-nuna-maintenance";
+    private static final String APPEND = "[{\"action\":\"add-snapshot\",\"snapshot\":{\"snapshot-id\":1,"
+            + "\"summary\":{\"operation\":\"append\"}}},{\"action\":\"set-snapshot-ref\",\"ref-name\":\"main\","
+            + "\"snapshot-id\":1,\"type\":\"branch\"}]";
+    private static final String COMPACTION = "[{\"action\":\"add-snapshot\",\"snapshot\":{\"snapshot-id\":2,"
+            + "\"summary\":{\"operation\":\"replace\"}}},{\"action\":\"set-snapshot-ref\",\"ref-name\":\"main\","
+            + "\"snapshot-id\":2,\"type\":\"branch\"}]";
+    private static final String EXPIRY = "[{\"action\":\"remove-snapshots\",\"snapshot-ids\":[1]}]";
+
+    /**
+     * journal_lines as the demo has it: cdc created it and appended, the worker compacted it, then expired its
+     * snapshots every five minutes. Its last commit is the worker's, marked maintenance; its last data change is
+     * cdc's append, and ledger's row names that as its newest data change.
+     */
+    @Test
+    void theLastDataChangeLooksPastCompactionAndExpiriesAndTheWorkerIsMarked() {
+        NamespaceRecord ledger = namespace(null, "ledger");
+        grant(new Securable(Securable.Kind.NAMESPACE, ledger.id()), "desk-readers", Privilege.DESCRIBE);
+        CatalogObject lines = table(ledger, "journal_lines");
+        List<JournalEntry> entries = new ArrayList<>(List.of(
+                new JournalEntry("cdc", null, "kafka-connect", "[]", "{\"name\":\"journal_lines\"}"),
+                new JournalEntry("cdc", null, "kafka-connect", "[]", APPEND),
+                new JournalEntry(WORKER, null, null, "[]", COMPACTION)));
+        for (int i = 0; i < 12; i++) {
+            entries.add(new JournalEntry(WORKER, null, null, "[]", EXPIRY));
+        }
+        commits(lines, 2, 1, entries);
+
+        JsonNode row = tables("ledger", null, null).get("tables").get(0);
+
+        assertThat(row.get("last-commit").get("version").asLong()).isEqualTo(15);
+        assertThat(row.get("last-commit").get("principal").asString()).isEqualTo(WORKER);
+        assertThat(row.get("last-commit").get("maintenance").asBoolean()).isTrue();
+        JsonNode data = row.get("last-data-change");
+        assertThat(data.get("version").asLong()).as("not the compaction, not the create").isEqualTo(2);
+        assertThat(data.get("principal").asString()).isEqualTo("cdc");
+        assertThat(data.get("engine").asString()).isEqualTo("kafka-connect");
+        assertThat(data.has("maintenance")).isFalse();
+
+        JsonNode ledgerRow = totals(null, null, null).get("namespaces").get(1);
+        assertThat(ledgerRow.get("name").asString()).isEqualTo("ledger");
+        assertThat(ledgerRow.get("newest-commit").get("maintenance").asBoolean()).isTrue();
+        JsonNode newest = ledgerRow.get("newest-data-change");
+        assertThat(newest.get("table").valueStream().map(JsonNode::asString)).containsExactly("journal_lines");
+        assertThat(newest.get("version").asLong()).isEqualTo(2);
+        assertThat(newest.get("principal").asString()).isEqualTo("cdc");
+
+        JsonNode deskRow = totals(null, null, null).get("namespaces").get(0);
+        assertThat(deskRow.has("newest-data-change")).as("desk's tables hold no data change").isFalse();
+        assertThat(tables("desk", null, null).get("tables").get(1).has("last-data-change")).isFalse();
+    }
+
+    /** A data change is looked for among the newest 200 commits: one just past them is not named. */
+    @Test
+    void theLastDataChangeIsLookedForAmongTheNewestTwoHundredCommits() {
+        NamespaceRecord ledger = namespace(null, "ledger");
+        grant(new Securable(Securable.Kind.NAMESPACE, ledger.id()), "desk-readers", Privilege.DESCRIBE);
+        CatalogObject within = table(ledger, "within");
+        CatalogObject beyond = table(ledger, "beyond");
+        List<JournalEntry> entries = new ArrayList<>(List.of(new JournalEntry("cdc", null, null, "[]", APPEND)));
+        for (int i = 1; i < NamespaceTablesRoutes.DATA_LOOK_BACK; i++) {
+            entries.add(new JournalEntry(WORKER, null, null, "[]", EXPIRY));
+        }
+        commits(within, 2, 1, entries);
+        entries.add(new JournalEntry(WORKER, null, null, "[]", EXPIRY));
+        commits(beyond, 2, 1, entries);
+
+        JsonNode rows = tables("ledger", null, null).get("tables");
+
+        assertThat(names(tables("ledger", null, null))).containsExactly("beyond", "within");
+        assertThat(rows.get(1).get("last-data-change").get("version").asLong()).isEqualTo(1);
+        assertThat(rows.get(0).get("last-commit").get("version").asLong())
+                .isEqualTo(NamespaceTablesRoutes.DATA_LOOK_BACK + 1);
+        assertThat(rows.get(0).has("last-data-change")).isFalse();
     }
 
     // ---- a child namespace's totals (backlog 147) ----

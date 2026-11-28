@@ -385,7 +385,7 @@ class LifecycleRoutes {
      * as the export does, and works for dropped objects too. {@code pageSize} is 25 by default, at most 100. A page's
      * token names the version it stopped before, so commits made meanwhile never shift the pages after the first; a
      * page holds fewer entries only where versions are missing, and the log goes on while {@code next-page-token} is
-     * present.
+     * present. An entry a maintenance principal made acting as itself has {@code "maintenance": true} (backlog 330).
      *
      * <p>With {@code ref}, the log as the catalog's branch or tag of that name reads the object (D33, backlog 109): the
      * versions a branch committed of its own, from its own journal, which number from 1 whatever the cut's version
@@ -421,7 +421,7 @@ class LifecycleRoutes {
             named(body, through);
             ArrayNode journal = body.putArray("journal");
             RefLogPage page = refLogPage(token.map(LifecycleRoutes::cursor), size, through.stretches());
-            page.entries().forEach(entry -> journal.add(journal(entry).put("branch", through.line(entry))));
+            page.entries().forEach(entry -> journal.add(logged(entry).put("branch", through.line(entry))));
             page.next().ifPresent(next -> body.put("next-page-token",
                     PageToken.encode(next.branch(), Long.toString(next.before()))));
             return GovernanceRoutes.json(200, body);
@@ -438,7 +438,7 @@ class LifecycleRoutes {
         Optional<Long> top = before.or(() -> pointer.map(p -> p.version() + 1));
         if (top.isPresent()) {
             LogPage page = logPage(top.get(), size, mains);
-            page.entries().forEach(entry -> journal.add(journal(entry)));
+            page.entries().forEach(entry -> journal.add(logged(entry)));
             page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
         }
         return GovernanceRoutes.json(200, body);
@@ -696,6 +696,18 @@ class LifecycleRoutes {
         object.purgeAfter().ifPresent(at -> node.put("purge-after", at.toString()));
         object.purgeClaimant().ifPresent(claimant -> node.put("purge-claimant", claimant));
         node.put("location", object.locationRoot());
+        return node;
+    }
+
+    /**
+     * A journal entry as the metadata log shows it: the export's form, with {@code "maintenance": true} on a commit a
+     * maintenance principal made acting as itself, which the console names "nuna maintenance" (backlog 330).
+     */
+    private ObjectNode logged(JournalRecord record) {
+        ObjectNode node = journal(record);
+        if (guard.maintenance(record.entry())) {
+            node.put("maintenance", true);
+        }
         return node;
     }
 

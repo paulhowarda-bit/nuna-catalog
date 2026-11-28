@@ -2,9 +2,9 @@
 // The catalog has Contents and Properties (item 131); its Governance, Grants and Audit are the rail's pages of those
 // names. A namespace has Contents, Access, Audit and Properties (Iceberg REST). Contents marks what is
 // held, frozen, regulated or closed until classified (item 128), and gives each table its format, snapshot count and
-// last commit from the catalog's own listing of them (backlog 137), which reads no metadata file on main; each child
-// namespace gets its totals over the tables beneath it: how many, their snapshots, and the newest commit (backlog
-// 147). Through a ref both read as the ref has each table (backlog 168).
+// last data change from the catalog's own listing of them (backlogs 137 and 330), which reads no metadata file on main;
+// each child namespace gets its totals over the tables beneath it: how many, their snapshots, and the newest data
+// change (backlog 147). Through a ref both read as the ref has each table (backlog 168).
 // Read through a catalog branch or tag (r=, item 109) the catalog, a namespace, a table and a view say so four
 // ways: the top chip, the first crumb catalog@ref, the "Reading @ref" selector and a band; the catalog has a
 // Branches and tags tab (refs.js).
@@ -97,14 +97,14 @@ const onRef = ref => ref ? '&ref=' + encodeURIComponent(ref) : '';
 
 /**
  * A namespace's tables as the catalog keeps them, on main or as a ref reads them:
- * [{name, format-version, snapshots, last-commit, ref: {pointer, version, line}}].
+ * [{name, format-version, snapshots, last-commit, last-data-change, ref: {pointer, version, line}}].
  */
 const tableFacts = (catalog, levels, ref) =>
   api.all(api.managed({catalog, namespace: levels}) + '/tables?pageSize=200' + onRef(ref), 'tables');
 
 /**
  * The child namespaces of a level with their totals over the tables beneath them:
- * [{name, tables, snapshots, complete, newest-commit}].
+ * [{name, tables, snapshots, complete, newest-commit, newest-data-change}].
  */
 const namespaceTotals = (catalog, levels, ref) =>
   api.all(api.managed({catalog, namespace: levels}) + '/namespaces?pageSize=200' + onRef(ref), 'namespaces');
@@ -142,18 +142,33 @@ function onRefCell(x, path, isNamespace, kept) {
     : line === 'main' ? ` · v${fmt(kept.ref.version)}` : ` · @${line}'s v${fmt(kept.ref.version)}`));
 }
 
-/** Whether a row read through a ref has no last commit because the line that wrote its version is unknown. */
+/** Whether a row read through a ref has no last data change because the line that wrote its version is unknown. */
 const lineUnknown = x => [...x.kept.values()].some(t => t.ref && !t.ref.line);
 
-/** A table's last commit: when, then by whom; an engine acting for someone names them both (12:49 by lake). */
-function lastCommit(c) {
-  if (!c) return muted('–');
-  const who = c['end-user'] ? `${c['end-user']} via ${c.principal}` : c.principal;
-  return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ', muted('by ' + who)];
+/** The maintenance worker's name on a commit it made as itself, its principal in the title (Atelier, 2026-11-27; backlog 330). */
+export const MAINTENANCE_NAME = 'nuna maintenance';
+
+/** Who made a commit, as the catalog marks it: a maintenance principal acting as itself is "nuna maintenance". */
+export const committer = c => c.maintenance ? MAINTENANCE_NAME : c.principal;
+
+/** No data change among the commits the catalog looked back over, though the table has commits. */
+const NO_DATA_CHANGE = 'No commit among the table\'s newest 200 added, changed or removed rows';
+
+/**
+ * A table's last data change (backlog 330): when, then by whom; an engine acting for someone names them both (12:49 by
+ * lake). A data change is a commit that added, changed or removed rows: not compaction, which rewrites the same rows, and
+ * not the worker's snapshot expiries.
+ */
+function lastDataChange(kept) {
+  const c = kept['last-data-change'];
+  if (!c) return kept['last-commit'] ? h('span', {class: 'muted', title: NO_DATA_CHANGE}, '–') : muted('–');
+  const who = c['end-user'] ? `${c['end-user']} via ${c.principal}` : committer(c);
+  return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ',
+    h('span', {class: 'muted', title: c.maintenance ? c.principal : null}, 'by ' + who)];
 }
 
-/** A namespace's newest commit beneath it: when, then in which table, by its path below the namespace (12:49 in rates). */
-function newestCommit(c) {
+/** A namespace's newest data change beneath it: when, then in which table, by its path below the namespace (12:49 in rates). */
+function newestDataChange(c) {
   if (!c) return muted('–');
   return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ',
     muted('in ' + c.table.join('.'))];
@@ -164,7 +179,7 @@ function totalsCells(t) {
   if (!t || !t.tables) return {count: null, snaps: muted('–'), last: muted('–'), title: null};
   const more = t.complete ? '' : '+';
   return {count: [' ', muted(`· ${fmt(t.tables)}${more} ${t.tables === 1 && !more ? 'table' : 'tables'}`)],
-    snaps: fmt(t.snapshots) + more, last: newestCommit(t['newest-commit']),
+    snaps: fmt(t.snapshots) + more, last: newestDataChange(t['newest-data-change']),
     title: t.complete ? null : 'Counted over the first 1,000 tables and namespaces beneath it'};
 }
 
@@ -190,7 +205,7 @@ function contentsTable(catalog, levels, x) {
           : muted('–')),
         h('td', {class: 'gov'}, markPills(x.gov.get('table:' + [...levels, name].join('.'))) || muted('–')),
         h('td', {class: 'num snaps'}, kept.snapshots === undefined ? muted('–') : fmt(kept.snapshots)),
-        h('td', {class: 'last'}, lastCommit(kept['last-commit'])), x.ref ? h('td', null, onRefCell(x, [...levels, name], false, kept)) : null);
+        h('td', {class: 'last'}, lastDataChange(kept)), x.ref ? h('td', null, onRefCell(x, [...levels, name], false, kept)) : null);
     }),
     ...x.views.map(name => h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'view', 'data-name': name},
       h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'view', namespace: levels, name, ref: x.ref})}, name)),
@@ -202,15 +217,15 @@ function contentsTable(catalog, levels, x) {
   if (!rows.length) return h('div', {class: 'empty'}, h('h3', null, levels.length ? 'Nothing in this namespace' : 'No namespace in this catalog'),
     h('p', null, 'Or nothing your groups may see. If you expected something here, ask a grant admin.'));
   const heads = ['Name', 'Kind', 'Format', 'Tonight\'s queue', 'Governance', ['Snapshots', 'num'],
-    x.ref ? 'Last commit here' : 'Last commit', x.ref ? `On @${x.ref}` : null].filter(Boolean);
+    x.ref ? 'Last data change here' : 'Last data change', x.ref ? `On @${x.ref}` : null].filter(Boolean);
   // A column with nothing on any row says nothing, so it goes (Atelier's review, F16; backlog 193).
   const blank = td => ['', '–', '—'].includes(td.textContent.trim());
   const empty = heads.map((_, i) => i > 1 && rows.every(r => blank(r.children[i])));
   for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
     h('p', {class: 'fine'}, 'Only what your groups may see is listed. ', x.ref
-      ? `Format, snapshots and last commit are as @${x.ref} has each table. Open one to read it through @${x.ref}.`
-        + (lineUnknown(x) ? ' A dash under Last commit means a ref this one came from has ended, so the catalog no longer knows which line wrote that version.' : '')
+      ? `Format, snapshots and last data change are as @${x.ref} has each table. Open one to read it through @${x.ref}.`
+        + (lineUnknown(x) ? ' A dash under Last data change means a ref this one came from has ended, so the catalog no longer knows which line wrote that version.' : '')
       : 'Open a table for its maintenance, access and history.'));
 }
 

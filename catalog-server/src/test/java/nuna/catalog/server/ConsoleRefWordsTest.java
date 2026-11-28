@@ -45,8 +45,8 @@ class ConsoleRefWordsTest {
         String browse = resource("browse.js");
 
         assertThat(browse).contains("'Only what your groups may see is listed. '",
-                "`Format, snapshots and last commit are as @${x.ref} has each table. Open one to read it through @${x.ref}.`",
-                "(lineUnknown(x) ? ' A dash under Last commit means a ref this one came from has ended, so the catalog"
+                "`Format, snapshots and last data change are as @${x.ref} has each table. Open one to read it through @${x.ref}.`",
+                "(lineUnknown(x) ? ' A dash under Last data change means a ref this one came from has ended, so the catalog"
                         + " no longer knows which line wrote that version.' : '')",
                 "const lineUnknown = x => [...x.kept.values()].some(t => t.ref && !t.ref.line);");
         assertThat(browse).doesNotContain("Each table as @");

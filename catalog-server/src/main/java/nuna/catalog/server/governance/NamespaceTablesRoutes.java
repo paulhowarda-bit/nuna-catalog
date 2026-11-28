@@ -93,6 +93,9 @@ class NamespaceTablesRoutes {
     private static final String TOTALS = "listNamespaceTotals";
     private static final Authorizer.Operation DESCRIBE_COUNTED = new Authorizer.Operation(TOTALS,
             Privilege.DESCRIBE, false);
+    /** Commits a search for a table's last data change reads at most, newest first, and how many each read holds. */
+    static final int DATA_LOOK_BACK = 200;
+    private static final int DATA_WINDOW = 50;
 
     /**
      * The catalog's own read of a metadata file, from the metadata cache, which holds only files that matched their
@@ -143,9 +146,14 @@ class NamespaceTablesRoutes {
 
     /**
      * {@code {"tables": [{"id", "name", "format-version", "snapshots", "last-commit": {"version", "committed-at",
-     * "principal", "end-user", "engine"}}], "next-page-token"}}, by name. Each page holds at most {@code pageSize} rows
+     * "principal", "end-user", "engine", "maintenance"}, "last-data-change": {...}}], "next-page-token"}}, by name. Each page holds at most {@code pageSize} rows
      * (100 by default, 1 to 200), and fewer when the caller may describe few of the tables it looks at (1,000 at
      * most); {@code next-page-token} is there while more may follow.
+     *
+     * <p>{@code last-data-change} is the newest commit that changed the table's rows ({@link DataChanges}; backlog
+     * 330), in {@code last-commit}'s form, found among the newest {@value #DATA_LOOK_BACK} commits of the journal that
+     * wrote the version the row reads, and left out when none of them did. {@code maintenance} is {@code true} on a
+     * commit a maintenance principal made acting as itself, and left out otherwise.
      *
      * <p>Through {@code ref}, each row also has {@code "ref": {"pointer", "version", "line"}}: {@code pointer} is
      * {@code own} for a branch's own pointer and {@code cut} for the one its cut took; {@code version} is that
@@ -202,9 +210,11 @@ class NamespaceTablesRoutes {
 
     /**
      * {@code {"namespaces": [{"name", "tables", "snapshots", "complete", "newest-commit": {"table", "version",
-     * "committed-at", "principal", "end-user", "engine"}}], "next-page-token"}}, by name: each child namespace the
+     * "committed-at", "principal", "end-user", "engine", "maintenance"}, "newest-data-change": {...}}],
+     * "next-page-token"}}, by name: each child namespace the
      * caller holds something on, above or in, with its totals over the tables beneath it, at every depth, that the
-     * caller may describe; {@code table} names the newest commit's table by its levels below the child. A page holds
+     * caller may describe; {@code table} names the newest commit's table by its levels below the child, and
+     * {@code newest-data-change} is the newest among the tables' {@code last-data-change}s, in the same form. A page holds
      * at most {@code pageSize} rows (100 by default, 1 to 200) and looks at 1,000 tables and namespaces at most: a
      * child whose walk would pass that waits for the next page, unless it is the page's first, whose totals then cover
      * what it looked at and say {@code "complete": false}.
@@ -425,6 +435,8 @@ class NamespaceTablesRoutes {
         long snapshots = 0;
         Counted newest = null;
         Read newestRead = null;
+        Counted newestData = null;
+        Read newestDataRead = null;
         for (Counted counted : walk.counted()) {
             Optional<Read> read = read(scope, counted.table());
             if (read.isEmpty()) {
@@ -437,6 +449,12 @@ class NamespaceTablesRoutes {
                 newest = counted;
                 newestRead = read.get();
             }
+            Optional<Read> data = read.get().dataChange();
+            if (data.isPresent() && (newestDataRead == null || data.get().entry().orElseThrow().committedAt()
+                    .isAfter(newestDataRead.entry().orElseThrow().committedAt()))) {
+                newestData = counted;
+                newestDataRead = data.get();
+            }
         }
         row.put("snapshots", snapshots);
         row.put("complete", walk.complete());
@@ -445,6 +463,12 @@ class NamespaceTablesRoutes {
             ArrayNode table = commit.putArray("table");
             newest.path().forEach(table::add);
             row.set("newest-commit", commit);
+        }
+        if (newestData != null) {
+            ObjectNode commit = commit(newestDataRead);
+            ArrayNode table = commit.putArray("table");
+            newestData.path().forEach(table::add);
+            row.set("newest-data-change", commit);
         }
         return row;
     }
@@ -458,7 +482,13 @@ class NamespaceTablesRoutes {
      * {@code entry} the journal's entry that wrote it.
      */
     private record Read(String pointer, long version, Optional<String> line, Optional<JsonNode> facts,
-                        Optional<JournalRecord> entry) {
+                        Optional<JournalRecord> entry, Optional<JournalRecord> data) {
+
+        /** The read with its last data change as its entry, on the same line; empty when none was found. */
+        Optional<Read> dataChange() {
+            return data.map(found -> new Read(pointer, found.newVersion(), line, facts, Optional.of(found),
+                    Optional.empty()));
+        }
     }
 
     /** The table's row: its format version and snapshot count, its last commit, and through a ref what it reads. */
@@ -484,6 +514,7 @@ class NamespaceTablesRoutes {
             if (read.entry().isPresent()) {
                 row.set("last-commit", commit(read));
             }
+            read.dataChange().ifPresent(data -> row.set("last-data-change", commit(data)));
         });
         return row;
     }
@@ -496,7 +527,7 @@ class NamespaceTablesRoutes {
     private Optional<Read> read(Scope scope, Listed listed) {
         CatalogObject table = listed.table();
         if (scope.ref().isEmpty()) {
-            return store.readPointer(table.mainKey()).map(pointer -> new Read(PointerKey.MAIN, pointer.version(),
+            return store.readPointer(table.mainKey()).map(pointer -> read(PointerKey.MAIN, pointer.version(),
                     Optional.empty(), Optional.of(Management.JSON.readTree(pointer.projection())),
                     entry(table.mainKey(), pointer.version(), Optional.empty())));
         }
@@ -504,15 +535,55 @@ class NamespaceTablesRoutes {
         if (ref.kind() == Ref.Kind.BRANCH) {
             Optional<Pointer> own = store.readPointer(ref.key(table.id()));
             if (own.isPresent()) {
-                return Optional.of(new Read("own", own.get().version(), Optional.of(ref.name().display()),
+                return Optional.of(read("own", own.get().version(), Optional.of(ref.name().display()),
                         Optional.of(Management.JSON.readTree(own.get().projection())),
                         entry(ref.key(table.id()), own.get().version(), Optional.of(own.get().metadataLocation()))));
             }
         }
         RefEntry.At cut = listed.cut().orElseThrow();
         Optional<Line> line = line(ref, table, cut);
-        return Optional.of(new Read("cut", cut.version(), line.map(Line::name),
+        return Optional.of(read("cut", cut.version(), line.map(Line::name),
                 facts(scope.target().catalog(), table, cut), line.map(Line::entry)));
+    }
+
+    /** A read whose journal entry is {@code entry}, with the last data change found at or below it. */
+    private Read read(String pointer, long version, Optional<String> line, Optional<JsonNode> facts,
+                      Optional<JournalRecord> entry) {
+        return new Read(pointer, version, line, facts, entry, entry.flatMap(this::dataChange));
+    }
+
+    /**
+     * The newest commit at or below {@code last} on its journal that changed the table's rows ({@link DataChanges}),
+     * reading the journal down from it {@value #DATA_WINDOW} versions at a time, {@value #DATA_LOOK_BACK} commits at
+     * most; empty when none of those did.
+     */
+    private Optional<JournalRecord> dataChange(JournalRecord last) {
+        if (changesData(last)) {
+            return Optional.of(last);
+        }
+        long before = last.newVersion();
+        int looked = 1;
+        while (before > 1 && looked < DATA_LOOK_BACK) {
+            long low = Math.max(1, before - Math.min(DATA_WINDOW, DATA_LOOK_BACK - looked));
+            List<JournalRecord> window = store.readJournal(last.key(), JournalStore.EARLIEST, JournalStore.LATEST,
+                    JournalStore.afterVersion(low - 1, (int) (before - low))).items();
+            for (int i = window.size() - 1; i >= 0; i--) {
+                JournalRecord entry = window.get(i);
+                if (entry.newVersion() >= before) {
+                    continue;
+                }
+                looked++;
+                if (changesData(entry)) {
+                    return Optional.of(entry);
+                }
+            }
+            before = low;
+        }
+        return Optional.empty();
+    }
+
+    private static boolean changesData(JournalRecord entry) {
+        return DataChanges.changesData(Management.JSON.readTree(entry.entry().updatesJson()));
     }
 
     /** The journal a cut's pointer is on, by the name a listing gives it, and its entry that wrote the pointer. */
@@ -576,8 +647,11 @@ class NamespaceTablesRoutes {
                 .findFirst();
     }
 
-    /** A commit as a row shows it: when, and by whom; through a ref, the line its version is on. */
-    private static ObjectNode commit(Read read) {
+    /**
+     * A commit as a row shows it: when, and by whom, with whether that was a maintenance principal acting as itself;
+     * through a ref, the line its version is on.
+     */
+    private ObjectNode commit(Read read) {
         JournalRecord entry = read.entry().orElseThrow();
         ObjectNode commit = Management.JSON.createObjectNode();
         commit.put("version", entry.newVersion());
@@ -589,6 +663,9 @@ class NamespaceTablesRoutes {
         }
         if (entry.entry().engine() != null) {
             commit.put("engine", entry.entry().engine());
+        }
+        if (authorizer.maintenance(entry.entry().principal(), entry.entry().endUser())) {
+            commit.put("maintenance", true);
         }
         return commit;
     }

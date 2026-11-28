@@ -527,10 +527,10 @@ class ConsoleBrowserTest {
     }
 
     /**
-     * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
-     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log, "12:49 by lake".
-     * Each child namespace gets its totals over the tables beneath it (backlog 147), its newest commit "12:49 in
-     * rates" (backlog 186).
+     * A namespace's Contents gives each table its format, snapshot count and last data change, as the catalog's
+     * listing of them answers (backlogs 137 and 330): here the newest entry of the table's metadata log, which
+     * appended rows, "12:49 by lake"; a table created and never written to has none. Each child namespace gets its
+     * totals over the tables beneath it (backlog 147), its newest data change "12:49 in rates" (backlog 186).
      */
     @Test
     void contentsShowEachTablesFormatSnapshotsAndLastCommit() {
@@ -541,6 +541,11 @@ class ConsoleBrowserTest {
         String committer = JsonPath.read(log.body(), "$.journal[0].principal");
         assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[1].last-commit.version"))
                 .isEqualTo(JsonPath.<Integer>read(log.body(), "$.journal[0].new-version"));
+        assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[1].last-data-change.version"))
+                .as("trades' last commit appended rows").isEqualTo(JsonPath.<Integer>read(log.body(),
+                        "$.journal[0].new-version"));
+        assertThat(JsonPath.<List<Object>>read(listed.body(), "$.tables[?(@.name == 'positions')].last-data-change"))
+                .as("positions was created and never written to").isEmpty();
 
         signIn(tester());
         browser.open("/ui/#" + at("namespace", eu, null, null));
@@ -549,7 +554,7 @@ class ConsoleBrowserTest {
         // what other tests leave, so only the columns these tables always fill are named.
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
                 .extracting(ConsoleBrowser::textContent).containsSubsequence("Name", "Kind", "Format", "Snapshots",
-                        "Last commit");
+                        "Last data change");
         WebElement trades = contentsRow("trades");
         assertThat(contentsCell(trades, "fmt")).isEqualTo("v2");
         assertThat(contentsCell(trades, "snaps")).isEqualTo("3");
@@ -558,6 +563,7 @@ class ConsoleBrowserTest {
         WebElement positions = contentsRow("positions");
         assertThat(contentsCell(positions, "fmt")).isEqualTo("v3");
         assertThat(contentsCell(positions, "snaps")).as("created, never appended to").isEqualTo("0");
+        assertThat(contentsCell(positions, "last")).as("no data change yet").isEqualTo("–");
 
         // A namespace's row counts the tables beneath it, sums their snapshots and names the newest commit by its
         // table's path below it, as the catalog's totals answer (backlog 147); it has no format of its own. A view
@@ -569,8 +575,8 @@ class ConsoleBrowserTest {
         assertThat(JsonPath.<Integer>read(totals.body(), "$.namespaces[0].tables")).isEqualTo(2);
         assertThat(JsonPath.<Integer>read(totals.body(), "$.namespaces[0].snapshots")).isEqualTo(3);
         assertThat(JsonPath.<Boolean>read(totals.body(), "$.namespaces[0].complete")).isTrue();
-        List<String> newest = JsonPath.read(totals.body(), "$.namespaces[0].newest-commit.table");
-        assertThat(newest).hasSize(1).isSubsetOf("trades", "positions");
+        List<String> newest = JsonPath.read(totals.body(), "$.namespaces[0].newest-data-change.table");
+        assertThat(newest).as("positions holds no data change").containsExactly("trades");
 
         browser.open("/ui/#" + at("namespace", equities, null, null));
         WebElement euRow = contentsRow("eu");
@@ -771,6 +777,62 @@ class ConsoleBrowserTest {
         browser.await(By.xpath("//button[normalize-space()='Show the whole summary']")).click();
         String whole = textContent(browser.await(By.cssSelector("#selected-snapshot pre.raw")));
         assertThat(whole).contains("\"snapshot-id\": " + second + ",", "\"parent-snapshot-id\": " + first + ",");
+    }
+
+    /**
+     * Snapshot expiries made one after another fold into one row of History, opened on click, and Contents names the
+     * append before them as the last data change, not the expiry (Atelier, 2026-11-27; backlog 330).
+     */
+    @Test
+    void expiriesFoldIntoOneRowAndContentsNamesTheLastDataChange() {
+        List<String> levels = List.of("fold_" + Api.suffix());
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":" + json(levels) + "}"), 200);
+        String location = create(levels, "lines", 2);
+        String root = location.substring(0, location.indexOf("/metadata/"));
+        long now = System.currentTimeMillis();
+        StringBuilder added = new StringBuilder();
+        for (int id = 1; id <= 4; id++) {
+            added.append("""
+                    {"action":"add-snapshot","snapshot":{"snapshot-id":%d,%s"sequence-number":%d,"timestamp-ms":%d,
+                      "manifest-list":"%s/metadata/snap-%d.avro","schema-id":0,"summary":{"operation":"append"}}},"""
+                    .formatted(id, id > 1 ? "\"parent-snapshot-id\":" + (id - 1) + "," : "", id, now - 5_000 + id,
+                            root, id));
+        }
+        expect(api.rest("POST", tableRest(levels, "lines"), "{\"requirements\":[],\"updates\":[" + added
+                + "{\"action\":\"set-snapshot-ref\",\"ref-name\":\"main\",\"snapshot-id\":4,\"type\":\"branch\"}]}"),
+                200);
+        for (int id = 1; id <= 3; id++) {
+            expect(api.rest("POST", tableRest(levels, "lines"), Api.removeSnapshot(id)), 200);
+        }
+        HttpResponse<String> listed = expect(api.manage("GET", "/namespaces/" + ns(levels)
+                + "/tables", null), 200);
+        assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[0].last-commit.version")).isEqualTo(5);
+        assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[0].last-data-change.version"))
+                .as("the append, not the expiries after it").isEqualTo(2);
+
+        signIn(tester());
+        browser.open("/ui/#" + at("table", levels, "lines", "history"));
+        WebElement fold = browser.await(By.cssSelector("#metadata-log tbody tr.mlog-fold"));
+        assertThat(textContent(fold)).contains("Snapshots expired 3 times", " to ");
+        assertThat(textContent(fold.findElement(By.xpath("./td[1]")))).isEqualTo("3–5");
+        List<WebElement> expiries = driver.findElements(By.cssSelector("#metadata-log tbody tr[data-version='3'],"
+                + " #metadata-log tbody tr[data-version='4'], #metadata-log tbody tr[data-version='5']"));
+        assertThat(expiries).hasSize(3).noneMatch(WebElement::isDisplayed);
+        assertThat(driver.findElement(By.cssSelector("#metadata-log tbody tr[data-version='2']")).isDisplayed())
+                .as("the data change leads, unfolded").isTrue();
+        WebElement open = fold.findElement(By.cssSelector("button[aria-expanded]"));
+        assertThat(textContent(open)).isEqualTo("Show 3");
+        open.click();
+        assertThat(open.getDomAttribute("aria-expanded")).isEqualTo("true");
+        assertThat(expiries).allMatch(WebElement::isDisplayed);
+        open.click();
+        assertThat(expiries).noneMatch(WebElement::isDisplayed);
+
+        browser.open("/ui/#" + at("namespace", levels, null, null));
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).contains("Last data change");
+        assertThat(textContent(contentsRow("lines").findElement(By.cssSelector("td.last"))))
+                .endsWith(" by " + JsonPath.read(listed.body(), "$.tables[0].last-data-change.principal"));
     }
 
     @Test
@@ -2097,11 +2159,14 @@ class ConsoleBrowserTest {
         WebElement fillsHere = contentsRow("fills");
         assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
         assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point · v1");
-        assertThat(textContent(fillsHere.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
+        // Neither has changed data, orders a property and fills only made, so Last data change here says nothing on
+        // any row and goes (backlogs 193 and 330).
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).doesNotContain("Last data change here");
         assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
-                .contains("Format, snapshots and last commit are as @" + branch + " has each table. Open one to read"
-                        + " it through @" + branch + ".")
-                .doesNotContain("A dash under Last commit");
+                .contains("Format, snapshots and last data change are as @" + branch + " has each table. Open one to"
+                        + " read it through @" + branch + ".")
+                .doesNotContain("A dash under Last data change");
 
         // A page that reads main only, Overview, keeps the control: it reads main, and a ref opens the catalog
         // through it.

@@ -16,7 +16,7 @@ import {policyKey, policyValue, sourceWords, tableHealthTab} from './health.js';
 import {accessTab, actionWords, auditTab, closedNotice, closedRefusal, exportDialog, flaggedHere, governanceSummary, TRINO_WORDS}
   from './panels.js';
 import {noteClosed} from './tree.js';
-import {copyLinkButton, crumbsFor} from './browse.js';
+import {committer, copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, describesHere, mayModify, readsHere, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
 import {fillKeptSlots, keptPanel} from './kept.js';
@@ -594,10 +594,24 @@ const signed = (add, del) => {
   return a ? '+' + fmt(a) : '0';
 };
 
+/** The update actions an expiry commits: its snapshots removed, and with them refs, statistics, schemas and specs. */
+const EXPIRY_ACTIONS = new Set(['remove-snapshots', 'remove-snapshot-ref', 'remove-statistics', 'remove-partition-statistics',
+  'remove-schemas', 'remove-partition-specs']);
+
+/** Whether a commit only expired snapshots: it removed some, and did nothing an expiry does not. */
+export const expiryOnly = e => Array.isArray(e.updates) && e.updates.some(u => u.action === 'remove-snapshots')
+  && e.updates.every(u => EXPIRY_ACTIONS.has(u.action));
+
+/** Rows History reads its way to on opening, at least, before it stops: folded expiries count one row a run. */
+const LEADING_ROWS = 10;
+
 /**
  * The table's history: each commit the catalog's journal keeps, newest first, with who made it and the snapshot it
  * added, if any; the snapshot lanes above, and the selected snapshot's summary and time-travel SQL beside. A commit
- * that added no snapshot (a schema or spec change, a property) shows none.
+ * that added no snapshot (a schema or spec change, a property) shows none. A run of two or more commits in a row that
+ * only expired snapshots, by one principal on one line, folds into one row, opened on click (Atelier, 2026-11-27;
+ * backlog 330), so the worker's expiry every few minutes does not bury the data changes; History reads on until it
+ * shows ten rows or four pages.
  */
 function historyTab(target, t) {
   const m = t.metadata;
@@ -663,11 +677,62 @@ function historyTab(target, t) {
     });
     return [tr, det];
   };
+  // A run of expiry-only commits by one principal on one line: its fold row once it holds two, and its members' rows.
+  let run = null;
+  let rows = 0;
+  const foldOpen = (r, open) => {
+    r.open = open;
+    r.btn.setAttribute('aria-expanded', String(open));
+    r.btn.textContent = open ? 'Hide' : `Show ${r.entries.length}`;
+    for (const [tr, det, btn] of r.members) {
+      tr.hidden = !open;
+      if (!open && !det.hidden) btn.click();
+    }
+  };
+  const foldWords = r => {
+    const newest = r.entries[0];
+    const oldest = r.entries[r.entries.length - 1];
+    r.version.replaceChildren(fmt(oldest['new-version']), '–', fmt(newest['new-version']));
+    r.span.replaceChildren(`${at(oldest['committed-at'])} to ${at(newest['committed-at'])}`);
+    r.change.replaceChildren(`Snapshots expired ${fmt(r.entries.length)} times`);
+    r.btn.setAttribute('aria-label', `${r.entries.length} snapshot expiries, each commit`);
+    if (!r.open) r.btn.textContent = `Show ${r.entries.length}`;
+    r.fold.classList.toggle('is-cur', r.entries.some(e => e['new-location'] === t['metadata-location']));
+  };
+  const place = e => {
+    const [tr, det] = row(e);
+    const member = [tr, det, tr.querySelector('td:last-child button')];
+    const key = expiryOnly(e) ? `${e.principal}\u0000${e['end-user'] || ''}\u0000${e.branch || ''}` : null;
+    if (!key || !run || run.key !== key) {
+      run = key ? {key, entries: [e], members: [member], fold: null} : null;
+      rows++;
+      tbody.append(tr, det);
+      return;
+    }
+    run.entries.push(e);
+    run.members.push(member);
+    if (!run.fold) {
+      const r = run;
+      r.version = h('td', {class: 'num'});
+      r.span = h('td', {class: 'tnum'});
+      r.change = h('td', {class: 'wrap'});
+      r.btn = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false', onclick: () => foldOpen(r, !r.open)});
+      r.fold = h('tr', {class: 'mlog-fold', 'data-fold': 'expiry'}, r.version, r.span, r.change, h('td', null, muted('–')), h('td'),
+        h('td', {class: 'by'}, byWords(e)), h('td'), h('td', null, r.btn));
+      r.members[0][0].before(r.fold);
+      r.open = false;
+      foldOpen(r, false);
+    } else {
+      tr.hidden = !run.open;
+    }
+    tbody.append(tr, det);
+    foldWords(run);
+  };
   let shown = 0;
   let id = null;
   const page = token => (id || (id = api.governance(target).then(g => g.target.id))).then(x => api.metadataLog(target.catalog, x, token, target.ref)).then(answer => {
     const entries = answer.journal || [];
-    tbody.append(...entries.flatMap(row));
+    entries.forEach(place);
     shown += entries.length;
     if (current) select(current);
     const next = answer['next-page-token'];
@@ -683,14 +748,16 @@ function historyTab(target, t) {
         page(next).catch(error => more.replaceChildren(failure(error, {compact: true})));
       }}, 'Show the next 25'));
     }
+    return answer;
   });
   const log = h('div', {class: 'panel', id: 'metadata-log'});
   load(log, async () => {
-    await page(null);
+    let answer = await page(null);
+    for (let read = 1; read < 4 && rows < LEADING_ROWS && answer['next-page-token']; read++) answer = await page(answer['next-page-token']);
     return [h('h2', null, 'Commits ', logMeta),
       tbl('stack-line mlog', [['Version', 'num'], 'Written', 'Change', 'Snapshot', ['Rows', 'num'], 'By', 'Iceberg refs', ''], tbody), more,
-      h('p', {class: 'fine'}, 'Each row is one commit: who made it, what it changed and the snapshot it added. The catalog keeps '
-        + 'every commit, even after the table\'s own list drops its file.')];
+      h('p', {class: 'fine'}, 'Each row is one commit: who made it, what it changed and the snapshot it added. Snapshot expiries '
+        + 'made one after another fold into one row; open it for each. The catalog keeps every commit, even after the table\'s own list drops its file.')];
   });
   const expiry = h('div');
   load(expiry, async () => {
@@ -812,7 +879,7 @@ async function snapshotCommits(target, ids) {
 }
 
 function byWords(e) {
-  return [h('b', null, e.principal || '–'), e['end-user'] ? [' for ', h('b', null, e['end-user'])] : null,
+  return [h('b', {title: e.maintenance ? e.principal : null}, committer(e) || '–'), e['end-user'] ? [' for ', h('b', null, e['end-user'])] : null,
     e.engine ? [' ', muted('via ' + e.engine)] : null];
 }
 
