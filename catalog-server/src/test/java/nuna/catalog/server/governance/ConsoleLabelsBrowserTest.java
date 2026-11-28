@@ -84,8 +84,15 @@ class ConsoleLabelsBrowserTest {
         api.table(ns, "trades");
         browser.signIn(steward);
 
-        // The owner, on the namespace.
+        // The owner, on the namespace. Its buttons are one row, a missing classification first and primary, the hold
+        // in the same row (backlog 329).
         browser.open("/ui/#" + at("namespace", ns, null));
+        assertThat(button("classification").getText()).isEqualTo("Set a classification");
+        List<WebElement> acts = driver.findElements(By.cssSelector("#governance [data-acts='labels'] > button"));
+        assertThat(acts.get(0).getDomAttribute("data-label")).isEqualTo("classification");
+        assertThat(acts.get(0).getDomAttribute("class")).contains("primary");
+        assertThat(acts).extracting(WebElement::getText).contains("Place a hold here");
+        assertThat(driver.findElements(By.cssSelector("#governance .refusal-acts"))).hasSize(1);
         String asked = dialog("owner");
         assertThat(asked).contains("person or team answerable", "Everything beneath this namespace inherits it",
                 "recorded as set from the console");
@@ -134,6 +141,8 @@ class ConsoleLabelsBrowserTest {
         new Select(browser.await(By.cssSelector("dialog.dlg select[name='cls']"))).selectByValue("internal");
         submit("is internal");
         awaitFact("Classification", "internal · this table · console");
+        browser.awaitText(labelButton("classification"), "Change the classification");
+        assertThat(button("classification").getDomAttribute("class")).doesNotContain("primary");
         expect(api.rest("GET", "/namespaces/" + Api.ns(ns) + "/tables/trades", null), 200);
         assertThat(own("/namespaces/" + Api.ns(ns) + "/tables/trades").get("classification"))
                 .containsEntry("value", "internal").containsEntry("provenance", "console");
@@ -155,7 +164,7 @@ class ConsoleLabelsBrowserTest {
 
         browser.open("/ui/#p=governance&c=trading&tab=holds");
         browser.await(labelButton("regulated"));
-        assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels'] button")))
+        assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels'] button[data-label]")))
                 .extracting(b -> b.getDomAttribute("data-label"))
                 .containsExactly("classification", "owner", "retention-class", "regulated");
     }

@@ -801,7 +801,10 @@ class ConsoleBrowserTest {
         browser.open("/ui/#" + at("table", eu, "trades", "governance"));
         WebElement frozen = browser.await(By.cssSelector("#governance .status-frozen"));
         assertThat(frozen.getText()).contains("DR freeze in force", FREEZE_REASON);
-        assertThat(browser.await(By.cssSelector("#governance .status-held")).getText()).startsWith("1 legal hold");
+        // The hold is said once, in its own panel (backlog 329): no pill in the status row.
+        assertThat(textContent(browser.await(By.cssSelector("#legal-holds h2")))).isEqualTo("Legal holds 1 hold · nearest level first");
+        assertThat(driver.findElements(By.cssSelector("#governance .status-held"))).isEmpty();
+        assertThat(textContent(browser.await(By.cssSelector("#governance .status-row")))).doesNotContainIgnoringCase("legal hold");
 
         assertThat(fact("Owner")).startsWith("desk-a ").contains("inherited from namespace " + top);
         assertThat(fact("Classification")).startsWith("internal ").contains("this table");
@@ -812,7 +815,13 @@ class ConsoleBrowserTest {
         assertThat(cell(holds.get(0), 1)).isEqualTo(HOLD_REASON);
         assertThat(cell(holds.get(0), 2)).isEqualTo("inherited from namespace " + top + ".equities");
         assertThat(cell(holds.get(0), 3)).endsWith("stella");
-        assertThat(rows(panel("Attributes"))).extracting(row -> row.get(0) + " = " + row.get(1) + " @ " + row.get(2))
+        // Where each value was set is folded inside the Governance panel, not a panel of its own (backlog 329).
+        assertThat(driver.findElements(By.xpath("//div[contains(@class,'nc-main')]//*[contains(concat(' ',@class,' '),"
+                + "' panel ')][h2[starts-with(normalize-space(),'Attributes')]]"))).isEmpty();
+        WebElement whereSet = browser.await(By.cssSelector("#governance details#where-set"));
+        assertThat(whereSet.getDomProperty("open")).isEqualTo("false");
+        whereSet.findElement(By.tagName("summary")).click();
+        assertThat(rows(whereSet)).extracting(row -> row.get(0) + " = " + row.get(1) + " @ " + row.get(2))
                 .contains("Classification = internal @ this table",
                         "Owner = desk-a @ inherited from namespace " + top);
 
@@ -822,6 +831,50 @@ class ConsoleBrowserTest {
         assertThat(cell(hold, 2)).isEqualTo("this namespace");
         assertThat(browser.await(By.cssSelector("#governance .status-row")).getText()).contains("No DR freeze");
         assertThat(driver.findElements(By.cssSelector("#governance .status-frozen"))).isEmpty();
+    }
+
+    /**
+     * The Access tab's "Your groups' grants here" lists only the grants that reach the object, the answer What you may
+     * do reads, and every grant of the caller's groups in the catalog is one click away, for anyone (the 27 Nov review,
+     * item 6; Atelier; backlog 329).
+     */
+    @Test
+    void yourGroupsGrantsListOnlyThoseThatReachTheObject() {
+        String desk = "desk-" + Api.suffix();
+        IssuerForTests.grant(jdbc, Api.CATALOG, desk, "describe");
+        for (List<String> levels : List.of(eu, ledger)) {
+            expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":" + json(levels)
+                    + "},\"group\":\"" + desk + "\",\"privilege\":\"select\"}", AUTH, api.grantAdmin()), 204);
+        }
+        signIn(person("dana", desk));
+        browser.open("/ui/#" + at("table", eu, "trades", "access"));
+        WebElement own = browser.await(By.cssSelector("#access-tab [data-grants='own']"));
+        assertThat(textContent(own.findElement(By.tagName("h2")))).isEqualTo("Your groups' grants here");
+        List<WebElement> here = browser.await("no grants listed here", d -> {
+            List<WebElement> found = d.findElements(By.cssSelector("#access-tab table.own-here tbody tr"));
+            return found.size() == 2 ? found : null;
+        });
+        assertThat(here).extracting(r -> r.getDomAttribute("data-privilege") + " " + textContent(r.findElements(By.tagName("td")).get(2)))
+                .as("the ledger's grant does not reach the table").containsExactly("describe catalog trading",
+                        "select namespace " + String.join(".", eu));
+
+        browser.await(By.cssSelector("#access-tab [data-act='own-grants-all']")).click();
+        WebElement all = browser.await(By.cssSelector("dialog.dlg #own-grants-all"));
+        assertThat(textContent(browser.await(By.cssSelector("dialog.dlg #dlg-h")))).isEqualTo("Your groups' grants in trading");
+        List<WebElement> every = browser.await("not every grant listed", d -> {
+            List<WebElement> found = all.findElements(By.cssSelector("tbody tr"));
+            return found.size() == 3 ? found : null;
+        });
+        assertThat(every).extracting(r -> textContent(r.findElements(By.tagName("td")).get(2)))
+                .contains("namespace " + String.join(".", ledger));
+
+        // A grant admin has the same list and link beside the grants that reach the table.
+        signIn(gary());
+        browser.open("/ui/#" + at("table", eu, "trades", "access"));
+        browser.await(By.cssSelector("#access-tab .grants-reach"));
+        browser.await(By.cssSelector("#access-tab .grants-here [data-act='own-grants-all']"));
+        assertThat(driver.findElements(By.xpath("//div[@id='access-tab']//h2[normalize-space()=\"Your groups' grants here\"]")))
+                .hasSize(1);
     }
 
     @Test
