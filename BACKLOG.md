@@ -1617,6 +1617,8 @@ forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 | [334](backlog/334.md) | Maintenance skips tables closed until classified without loading them, and alerts when it has for a day | done | 2026-11-28 |
 | [335](backlog/335.md) | ScaleTest still expects demo.sh's old scale line, so demo-datagen's tests fail | done | 2026-11-28 |
 | [336](backlog/336.md) | The overnight run misses Podman's Windows pipes going away: every container test fails with no Docker environment | done | 2026-11-28 |
+| [337](backlog/337.md) | Overnight run: Testcontainers found no Docker environment in the heavy and Ceph legs, while the nightly leg reached Podman seconds later | dropped | 2026-11-28 |
+| [338](backlog/338.md) | ScaleTest fails: demo.sh's scale line no longer reads as the test expects since 1fa8fd6f | dropped | 2026-11-28 |
 | [339](backlog/339.md) | SecurityGateTest looks for the grant export's audit record in the log, where its context never puts it | done | 2026-11-28 |
 | [340](backlog/340.md) | AlertRulesTest's promtool tests still expect "(backlog 261)" in the availability pages, which 314 took out | done | 2026-11-28 |
 | [341](backlog/341.md) | The console tests that failed in the heavy build of 2026-11-28: ConsoleBrandTest, ConsoleBrowserTest, ConsoleFlaggedTableBrowserTest, ConsoleHealthTest | done | 2026-11-28 |
