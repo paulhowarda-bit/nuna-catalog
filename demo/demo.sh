@@ -872,7 +872,7 @@ FLAGGED_MASKS="parties:birth_date,tax_id,address_line beneficial_owners:birth_da
 # through Trino every reader saw the tax ids (item 318). Setting them again changes nothing. Fails at the first table
 # the catalog does not have.
 flag_tables() {
-  local m=/management/v1/catalogs/$CATALOG table ns entry cols c masks spec
+  local m=/management/v1/catalogs/$CATALOG table ns entry cols c masks spec governance
   for table in $FLAGGED_TABLES; do
     [[ "$table" == "$1".* ]] || continue
     ns=${table%.*}
@@ -884,6 +884,15 @@ flag_tables() {
     for c in ${cols//,/ }; do
       masks+="${masks:+,}\"$c\":\"NULL\""
     done
+    # A table in a regulated area with no classification of its own (beneficial_owners until a steward classifies it,
+    # D27) is closed to everyone, rules included: the catalog refuses them with 403. Its rules wait for the next gen
+    # after it is classified; before this, the refusal stopped the back office's governance halfway (item 321).
+    governance=$(tls_curl -fs -H "Authorization: Bearer $(token_of stella)" \
+      "$URL$m/namespaces/${ns//./%1F}/tables/${table##*.}/governance") || return 1
+    if [[ "$governance" != *'"attribute":"classification","level":"table:'* ]]; then
+      say "$table is not classified yet, so it is closed and gets its rules at the first gen after it is"
+      continue
+    fi
     spec="{\"type\":\"table\",\"namespace\":[\"${ns//./\",\"}\"],\"name\":\"${table##*.}\"}"
     api gary POST "$m/row-column-rules" "{\"table\":$spec,\"group\":\"demo-analysts\",\"column-masks\":{$masks}}" &&
     api gary POST "$m/row-column-rules" "{\"table\":$spec,\"group\":\"demo-stewards\",\"row-filter\":\"true\"}" ||
