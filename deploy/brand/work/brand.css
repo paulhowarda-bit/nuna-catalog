@@ -1,18 +1,18 @@
-/* Fidelity mode for the console and the documentation (backlog 333 and 344; Paul, 2026-11-28, D56): the pack the
+/* Brand mode for the console and the documentation (backlog 333 and 344; Paul, 2026-11-28, D56): the pack the
    demo runs and work installs. It holds only what is not a licensed asset: the colours of Atelier's work mock-up
    (work item 011) as the brand slot's tokens, and a placeholder mark. The font and the word mark are licensed to
    associates and vendors only, so they never enter this repository. The pack already names both, so work adds only
    the two files beside this one (docs/brand-at-work.md):
-   - fidelity-sans.woff2: until it is there, the font falls back to Ice line's Instrument Sans (the browser notes one
+   - brand-sans.woff2: until it is there, the font falls back to Ice line's Instrument Sans (the browser notes one
      missing file);
-   - mark.svg: work's white word mark replaces the placeholder here, an Evergreen badge with the peak and "nuna".
+   - mark.svg: work's white word mark replaces the placeholder here, a dark green badge with the peak and "nuna".
 
    Light-only for now (--brand-light-only): whether the firm's design system has dark-mode tokens is open at work. With
    them, work drops --brand-light-only and adds the dark tokens under the two dark selectors configure/brand.html gives.
 
    Values marked "derived" are not in the mock-up's list; work's Brand Team may replace them. */
 
-@font-face { font-family: 'Fidelity Sans'; src: url('fidelity-sans.woff2') format('woff2'); font-weight: 400 700;
+@font-face { font-family: 'Brand Sans'; src: url('brand-sans.woff2') format('woff2'); font-weight: 400 700;
   font-display: swap; }
 
 :root {
@@ -21,21 +21,21 @@
   --brand-mark: 1;
   --brand-mark-w: 120px;  /* the most the slot allows; the mark is drawn left-aligned in it, never stretched */
   --mark-h: 20px;
-  --f-ui: 'Fidelity Sans', 'Instrument Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --f-ui: 'Brand Sans', 'Instrument Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
 
-  --bg: #f9f7f5;          /* Mist */
+  --bg: #f9f7f5;          /* warm off-white */
   --surface: #ffffff;
-  --surface-2: #f9f7f5;   /* Mist */
+  --surface-2: #f9f7f5;   /* warm off-white */
   --line: #e6e4e1;
   --line-strong: #cfccc8; /* derived: a step darker than the lines */
   --sky: #8c8a88;         /* derived: between the two text greys and the lines */
   --text: #141414;
   --text-2: #525150;
 
-  /* Fidelity Green marks; the dark green carries text and links, since Fidelity Green on white is about 4.5:1 */
+  /* the brand green marks; the dark green carries text and links, since the brand green on white is about 4.5:1 */
   --accent: #1e6f1d;
   --accent-wash: #edfaeb;
-  --accent-mark: #368727;  /* Fidelity Green */
+  --accent-mark: #368727;  /* the brand green */
   --on-accent: #ffffff;
 
   --ok-ink: #1e6f1d; --ok-wash: #edfaeb; --ok-mark: #368727;
@@ -43,8 +43,8 @@
   --bad-ink: #c31212; --bad-wash: #fff1f1; --bad-mark: #c31212;
   --frozen-ink: #2751c2; --frozen-wash: #f5faff; --frozen-mark: #2751c2;
 
-  /* the header band in Evergreen, white ink, for the white word mark */
-  --head-bg: #044014;      /* Evergreen */
+  /* the header band in dark green, white ink, for the white word mark */
+  --head-bg: #044014;      /* dark green */
   --head-ink: #ffffff;
   --head-ink-2: #d4e4d2;   /* derived: white softened toward the band */
   --head-field: #ffffff;

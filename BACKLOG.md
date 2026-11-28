@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**16 open:** 2 S, 7 M, 3 L, 4 XL.
+**17 open:** 3 S, 7 M, 3 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,6 +28,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
+| [345](backlog/345.md) | S | Brand mode starts off, and the work pack carries no firm's name | three scripts' default flipped with their browser test and bites, and a rename through the brand records | 2026-11-28 |
 
 ## Open items in full
 
@@ -1297,6 +1298,25 @@ than one collector, `telemetry.sampling` at 1.0 in work's values, README.md sayi
 tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
 forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
+### 345. Brand mode starts off, and the work pack carries no firm's name
+
+- Added: 2026-11-28 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
+- Decided: 2026-11-28, D59
+- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/ConsoleBrandTest.java, docs/site/assets/theme.js, docs/site/configure/brand.html, bites/UI/, deploy/brand/, deploy/README.md, demo/, docs/brand-at-work.md, docs/install-at-work.md, decision-ledger.md, backlog/333.md, backlog/344.md, status/
+- Effort: S, three scripts' default flipped with their browser test and bites, and a rename through the brand records
+
+Since item 344 the demo opens in the work pack: a pack starts on for every viewer (Atelier's call in D56), and the
+records and the button named the firm. Paul, 2026-11-28 (D59): the pack must not be the default, the button says
+"Brand mode", and the firm's name does not belong in the repository's brand records.
+
+Done when:
+
+- a pack starts off in the console and the documentation; the header's button turns it on, kept in the browser as
+  `nuna.brand=on`, and off again; `ConsoleBrandTest` checks it and its bites are recorded against the new test;
+- the button's words are the default "Brand mode" in the demo and in the work install's values;
+- the pack is `deploy/brand/work/` (font `brand-sans.woff2`), and no brand file, record or instruction names the firm;
+- checked live on the demo.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1624,4 +1644,4 @@ forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 | [341](backlog/341.md) | The console tests that failed in the heavy build of 2026-11-28: ConsoleBrandTest, ConsoleBrowserTest, ConsoleFlaggedTableBrowserTest, ConsoleHealthTest | done | 2026-11-28 |
 | [342](backlog/342.md) | KubernetesCompactionTest reads a cut-off Job's Failed condition before Kubernetes sets it | done | 2026-11-28 |
 | [343](backlog/343.md) | Podman's VM runs short of contiguous memory and Windows' connections to test containers hang: Cockroach and conformance tests fail together | done | 2026-11-28 |
-| [344](backlog/344.md) | The demo runs the Fidelity pack; work only adds the font and the logo | done | 2026-11-28 |
+| [344](backlog/344.md) | The demo runs the work pack; work only adds the font and the logo | done | 2026-11-28 |

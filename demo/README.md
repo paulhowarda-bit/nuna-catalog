@@ -192,9 +192,10 @@ makes the same two Secrets from its private CA.
 
 ## Sign in
 
-The console and the documentation wear the Fidelity pack (`deploy/brand/fidelity/`, backlog 344): Fidelity's colours,
-an Evergreen header band and a placeholder mark, light only. The header's **Fidelity mode** button, beside the theme
-switch (in the menu on a phone), turns it off and on for that browser; off, they are Ice line, dark mode included.
+The console and the documentation wear the work pack (`deploy/brand/work/`, backlog 344): the work colours,
+a dark green header band and a placeholder mark, light only. The header's **Brand mode** button, beside the theme
+switch (in the menu on a phone), turns it on for that browser, and off again. The pack starts off, so they are Ice
+line, dark mode included, until it is pressed.
 
 The console offers two ways in:
 

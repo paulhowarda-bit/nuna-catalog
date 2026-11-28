@@ -11,7 +11,7 @@
 - `local/`: try the chart on the local kind cluster on Podman (`kind/`), with throwaway PostgreSQL, Kafka and Silo.
 - `kind/`: that cluster, kind cluster `nuna` (context `kind-nuna`), which the demo and the tests that run pods
   share; `kind/kind.sh up` makes or starts it, `kind/kind.sh load` puts images Podman built on its node.
-- `brand/fidelity/`: the partial Fidelity mode brand pack, its colours only; work adds the font and word mark
+- `brand/work/`: the work brand pack, finished apart from the font and the word mark, which work adds
   (`docs/brand-at-work.md`) and mounts it with the chart's `brandConfigMap` (backlog 333).
 
 ## The image

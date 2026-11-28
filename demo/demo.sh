@@ -913,9 +913,9 @@ keycloak_realm() {
 # likewise (db_tls).
 catalog_release() {
   fill demo-values.yaml > "$RUN/demo-values.yaml"
-  # Fidelity mode (backlog 344, D56): the pack in deploy/brand/fidelity, which the chart mounts (brandConfigMap). A
+  # Brand mode (backlog 344, D56): the pack in deploy/brand/work, which the chart mounts (brandConfigMap). A
   # changed pack is served from the next page loaded, without a restart.
-  k create configmap nuna-brand --from-file="$REPO/deploy/brand/fidelity" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create configmap nuna-brand --from-file="$REPO/deploy/brand/work" --dry-run=client -o yaml | k apply -f - >/dev/null
   # shellcheck disable=SC2046 # telemetry_values prints flags, one a line, none with spaces
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/nuna-catalog" \
     -f "$STACK/catalog-values.yaml" -f "$RUN/demo-values.yaml" $(telemetry_values) \
