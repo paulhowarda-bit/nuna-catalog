@@ -1,13 +1,13 @@
-# A namespace's tables: format, snapshots and last commit
+# A namespace's tables: format, snapshots and last data change
 
 The console's namespace **Contents** (D45; `docs/design/console/prototype.html`, the namespace page) gives each table
-row its format, its snapshot count and its last commit (backlog 137). One read gives them for a namespace's tables, a
+row its format, its snapshot count and its last data change (backlogs 137 and 330). One read gives them for a namespace's tables, a
 page at a time, from what the catalog keeps of each table's current metadata. It reads no metadata file and loads no
 table, so it writes no audit record per table: a load through Iceberg REST would read one file from the object store
 and write one audit record for every row, each time someone opens the namespace.
 
 A child namespace's row has totals over the tables beneath it (backlog 147): how many, their snapshots summed, and
-the newest commit among them. A second read gives them for every child of a namespace, or of the catalog, from the
+the newest data change among them. A second read gives them for every child of a namespace, or of the catalog, from the
 same reads (below, "A child namespace's totals").
 
 ## The read
@@ -28,6 +28,13 @@ same reads (below, "A child namespace's totals").
         "principal": "trino",
         "end-user": "ana",
         "engine": "trino"
+      },
+      "last-data-change": {
+        "version": 7,
+        "committed-at": "2026-11-22T06:41:12.345Z",
+        "principal": "trino",
+        "end-user": "ana",
+        "engine": "trino"
       }
     }
   ],
@@ -40,6 +47,19 @@ same reads (below, "A child namespace's totals").
   every commit (D5): the format version and the number of snapshots in the metadata the pointer names.
 - `last-commit` is the commit journal's entry for the pointer's current version: when it was committed, the principal
   that committed it, and the end user a trusted engine asserted and the engine, when there were any (D17).
+- `last-data-change` is the newest commit, at or below that version on the same journal, that changed the table's
+  rows (backlog 330), in the same form. The console's column shows it, since on a table the maintenance worker keeps,
+  most commits are its snapshot expiries. A data change is a commit whose updates add a snapshot that appends,
+  overwrites or deletes rows (Iceberg's `append`, `overwrite` and `delete`, or a snapshot that names no operation);
+  one that merges a catalog branch; one that moves `main` to another snapshot without adding one (a rollback, or a
+  cherry-pick that fast-forwards); and a registration or revive of a metadata file. Not one: a `replace` snapshot,
+  which compaction and manifest rewrites add, holding the same rows in other files; a commit that adds no snapshot (an
+  expiry, a schema, spec, sort order or property change, a ref other than main moved); and a create. The read looks
+  at the newest 200 commits at most, 50 a read, and leaves `last-data-change` out when none of them changed data, or
+  the table has none. Through a branch's own pointer, it looks at the branch's own journal only.
+- `maintenance` is `true` on a commit a maintenance principal (`nuna.security.maintenance-principals`) made acting
+  as itself, and left out otherwise; the console names such a committer "nuna maintenance", with the principal in the
+  title. The table's metadata log (`GET …/objects/{id}/metadata-log`) marks its entries the same way.
 - `pageSize` is 100 by default, at most 200. `next-page-token` is there while more tables may follow; pass it back as
   `pageToken`. A page may hold fewer than `pageSize` rows, even none, when the caller may describe few of the tables
   it looked at (it looks at 1,000 at most), so keep reading while there is a token. A token the catalog did not issue
@@ -74,6 +94,14 @@ same reads (below, "A child namespace's totals").
         "principal": "spark",
         "end-user": "bo",
         "engine": "spark"
+      },
+      "newest-data-change": {
+        "table": ["xetra", "quotes"],
+        "version": 2,
+        "committed-at": "2026-11-22T06:59:50Z",
+        "principal": "spark",
+        "end-user": "bo",
+        "engine": "spark"
       }
     }
   ],
@@ -85,7 +113,8 @@ same reads (below, "A child namespace's totals").
   totals cover every table beneath the child, at every depth, not only the tables directly in it.
 - `tables` counts the active tables beneath it that the caller may `describe`; `snapshots` sums their projections'
   snapshot counts; `newest-commit` is the latest journal entry among their pointers' versions, with `table` naming
-  that table by its levels below the child (the console shows `xetra.quotes`). A child with no table counted has 0
+  that table by its levels below the child (the console shows `xetra.quotes`). `newest-data-change` is the newest of
+  their `last-data-change`s, in the same form, and is what the console shows. A child with no table counted has 0
   and 0, and no `newest-commit`. Views and dropped tables are not counted.
 - A table the caller may not describe is not counted, and nothing is audited for it. A child namespace the caller
   holds nothing on, above or in is not a row at all, so its name is not given.
@@ -141,7 +170,9 @@ from a branch also holds the branch's own pointers as they were then: `branch-ch
 ## The cost
 
 Each row of the tables read costs two reads of the catalog's database: the table's main pointer and one journal
-entry. A page of 200 rows is 400 such reads beside the listing itself, and no read of the object store.
+entry, and, unless that entry changed data, a read of up to 50 entries below it, at most four such reads. A page of
+200 rows is 600 such reads beside the listing itself on a table whose newest 50 commits hold a data change, and no
+read of the object store.
 
 The totals read costs the same two reads for every table it counts, plus a listing of the tables and of the
 namespaces in every namespace it walks: at most 1,000 tables and namespaces looked at a page, so at most about 2,000
@@ -159,16 +190,24 @@ goes stale. A page of 200 rows can read up to 200 files the first time; a totals
   fails any call it does not expect, the object store's among them. Each row's format, snapshots and last commit; a
   table the caller may not describe left out; a caller who holds nothing on the namespace answered as for one that
   does not exist, and audited; paging; the 200-row and 1,000-table bounds; a bad token. For the totals: each child's
-  totals over every level beneath it and the newest commit's path; a table the caller may not describe not counted,
+  totals over every level beneath it and the newest commit's path; the last data change past a compaction and twelve
+  of the worker's expiries, the worker's commit marked `maintenance`, and the newest data change of a child; a data
+  change looked for among the newest 200 commits and not past them; a table the caller may not describe not counted,
   and a child it holds nothing on, above or in not a row; the parent refused as for one that does not exist, and
   audited; paging; the 200-row bound; the 1,000 looked at, a child waiting for the next page and a first row marked
   incomplete; a bad token.
+- `DataChangesTest` (Java only): which commits are data changes. `MetadataLogRefTest#theMaintenancePrincipalsOwnCommitsAreMarked`:
+  the metadata log marks the worker's own commits, on main and on a branch's line, and not one it made for an end user.
 - `ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit` (heavy): the columns in a browser, against
-  the route's answer and the table's metadata log; a namespace row's count, snapshots and newest commit against the
-  totals read, and a top namespace's row on the catalog's Contents.
+  the route's answer and the table's metadata log; a namespace row's count, snapshots and newest data change against
+  the totals read, and a top namespace's row on the catalog's Contents.
+  `ConsoleBrowserTest#expiriesFoldIntoOneRowAndContentsNamesTheLastDataChange` (heavy): three expiries after an append
+  fold into one History row, opened and closed on click, and Contents names the append.
 - Bites in `bites/D45/`: `namespace-tables-lists-undescribable` (every table listed, describable or not),
   `namespace-tables-page-unbounded` (a page without its 200-row bound) and `namespace-totals-count-undescribable`
-  (every table beneath a child counted, describable or not); the two that filter bite through a ref too.
+  (every table beneath a child counted, describable or not); the two that filter bite through a ref too;
+  `namespace-tables-data-change-counts-compaction` (a `replace` snapshot counted as a data change) and
+  `metadata-log-maintenance-unmarked` (the worker's commits not marked).
 - Through a ref (backlog 168), `NamespaceTablesRoutesTest` checks a tag's tables at the cut (a file read for the one
   main moved past, main's projection for the rest, a table dropped on main since still listed), a branch's own
   pointer on its own line, a tag made from a branch on that branch's line after it ended, rights and refusals as on

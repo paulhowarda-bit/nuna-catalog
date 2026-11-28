@@ -122,7 +122,7 @@ class MetadataLogRefTest {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
         AuditPublisher publisher = event -> { };
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
-        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
+        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of("nuna-maintenance"));
         Denials denials = DenialsForTests.denials(publisher, settings, clock);
         Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
         Management management = new Management(store, request -> ANN, settings, holdings);
@@ -147,6 +147,38 @@ class MetadataLogRefTest {
         assertThat(log.get("pointer").get("version").asLong()).isEqualTo(5);
         assertThat(log.has("ref")).isFalse();
         assertThat(locations(log)).containsExactly("main-5", "main-4", "main-3", "main-2", "main-1");
+    }
+
+    /**
+     * A commit the maintenance principal made as itself is marked, so the console can name it "nuna maintenance"
+     * (backlog 330); one it made for an end user, and anyone else's, is not.
+     */
+    @Test
+    void theMaintenancePrincipalsOwnCommitsAreMarked() {
+        List<JournalRecord> main = new ArrayList<>(journals.get(staff.mainKey()));
+        main.set(4, worker(main.get(4), null));
+        main.set(3, worker(main.get(3), "ann"));
+        journals.put(staff.mainKey(), main);
+
+        JsonNode entries = log(null, null, null).get("journal");
+
+        assertThat(entries.get(0).get("principal").asString()).isEqualTo("nuna-maintenance");
+        assertThat(entries.get(0).get("maintenance").asBoolean()).isTrue();
+        assertThat(entries.get(1).has("maintenance")).as("acting for an end user").isFalse();
+        assertThat(entries.get(2).has("maintenance")).isFalse();
+        List<JournalRecord> own = new ArrayList<>(journals.get(dev.key(staffId)));
+        own.set(2, worker(own.get(2), null));
+        journals.put(dev.key(staffId), own);
+        JsonNode through = log("dev", null, null).get("journal");
+        assertThat(through.get(0).get("maintenance").asBoolean()).as("on a branch's own line too").isTrue();
+        assertThat(through.valueStream().filter(entry -> entry.has("maintenance")).count())
+                .as("main's at and below the cut are not the worker's").isEqualTo(1);
+    }
+
+    private static JournalRecord worker(JournalRecord record, String endUser) {
+        return new JournalRecord(record.commitId(), record.key(), record.committedAt(), new JournalEntry(
+                "nuna-maintenance", endUser, null, "[]", "[{\"action\":\"remove-snapshots\",\"snapshot-ids\":[1]}]"),
+                record.oldLocation(), record.newLocation(), record.newVersion());
     }
 
     @Test
