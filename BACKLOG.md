@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**17 open:** 3 S, 7 M, 3 L, 4 XL.
+**16 open:** 2 S, 7 M, 3 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,7 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [344](backlog/344.md) | S | The demo runs the Fidelity pack; work only adds the font and the logo | a finished pack file, a placeholder mark, a ConfigMap and a few settings in the demo, and the work instructions cut down to adding two files | 2026-11-28 |
 
 ## Open items in full
 
@@ -1298,29 +1297,6 @@ than one collector, `telemetry.sampling` at 1.0 in work's values, README.md sayi
 tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
 forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
-### 344. The demo runs the Fidelity pack; work only adds the font and the logo
-
-- Added: 2026-11-28 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
-- Decided: 2026-11-28, D56 (amended)
-- Touches: deploy/brand/fidelity/, demo/demo.sh, demo/k8s/demo-values.yaml, demo/README.md, docs/brand-at-work.md, docs/install-at-work.md, decision-ledger.md
-- Effort: S, a finished pack file, a placeholder mark, a ConfigMap and a few settings in the demo, and the work instructions cut down to adding two files
-
-Item 333 left the Fidelity pack partial and outside the demo: the demo runs with no pack, so the "Fidelity mode"
-button never shows there, and finishing the pack at work meant editing `brand.css` and the settings by hand. Paul,
-2026-11-28, on not finding the switch: "I want it to run with the pack we created. At work it should just install the
-logo and fonts."
-
-Done when:
-
-- `deploy/brand/fidelity/brand.css` already names the font (`fidelity-sans.woff2`, falling back to Instrument Sans
-  while it is missing) and the mark, and the pack holds a placeholder `mark.svg` that work replaces with the licensed
-  one;
-- `demo/demo.sh up` mounts the pack (ConfigMap `nuna-brand`) with the words "Fidelity mode", so the demo's console
-  and documentation show the pack and the button that turns it off and on;
-- `docs/brand-at-work.md` asks work only to put the font and the logo beside the pack's files, with the settings
-  already in `docs/install-at-work.md`'s values;
-- checked live on the rebuilt demo, in both states of the button.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1648,3 +1624,4 @@ Done when:
 | [341](backlog/341.md) | The console tests that failed in the heavy build of 2026-11-28: ConsoleBrandTest, ConsoleBrowserTest, ConsoleFlaggedTableBrowserTest, ConsoleHealthTest | done | 2026-11-28 |
 | [342](backlog/342.md) | KubernetesCompactionTest reads a cut-off Job's Failed condition before Kubernetes sets it | done | 2026-11-28 |
 | [343](backlog/343.md) | Podman's VM runs short of contiguous memory and Windows' connections to test containers hang: Cockroach and conformance tests fail together | done | 2026-11-28 |
+| [344](backlog/344.md) | The demo runs the Fidelity pack; work only adds the font and the logo | done | 2026-11-28 |
