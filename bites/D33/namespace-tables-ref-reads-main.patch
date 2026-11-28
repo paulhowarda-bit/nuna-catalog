@@ -2,15 +2,15 @@ Breaks: through a branch or tag, the listing and its totals read each table's ma
 Module: catalog-server
 Test: NamespaceTablesRoutesTest#throughATagEachTableReadsAsTheCutHasIt+throughARefTotalsCountEachTableAsTheRefHasIt
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
-index e2e70266..b7ff0e4a 100644
+index abacaca8..b8bfd4aa 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
-@@ -483,7 +483,7 @@ class NamespaceTablesRoutes {
+@@ -526,7 +526,7 @@ class NamespaceTablesRoutes {
       */
      private Optional<Read> read(Scope scope, Listed listed) {
          CatalogObject table = listed.table();
 -        if (scope.ref().isEmpty()) {
 +        if (true) {
-             return store.readPointer(table.mainKey()).map(pointer -> new Read(PointerKey.MAIN, pointer.version(),
+             return store.readPointer(table.mainKey()).map(pointer -> read(PointerKey.MAIN, pointer.version(),
                      Optional.empty(), Optional.of(Management.JSON.readTree(pointer.projection())),
                      entry(table.mainKey(), pointer.version(), Optional.empty())));

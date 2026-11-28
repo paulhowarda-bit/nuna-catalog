@@ -2,10 +2,10 @@ Breaks: through a branch, a table it changed reads the cut's pointer, not the br
 Module: catalog-server
 Test: NamespaceTablesRoutesTest#throughABranchATableItChangedReadsItsOwnPointer+throughARefTotalsCountEachTableAsTheRefHasIt
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
-index e2e70266..ecf6fd48 100644
+index abacaca8..1ffc6b20 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
-@@ -489,7 +489,7 @@ class NamespaceTablesRoutes {
+@@ -532,7 +532,7 @@ class NamespaceTablesRoutes {
                      entry(table.mainKey(), pointer.version(), Optional.empty())));
          }
          Ref ref = scope.ref().get();
@@ -13,4 +13,4 @@ index e2e70266..ecf6fd48 100644
 +        if (false) {
              Optional<Pointer> own = store.readPointer(ref.key(table.id()));
              if (own.isPresent()) {
-                 return Optional.of(new Read("own", own.get().version(), Optional.of(ref.name().display()),
+                 return Optional.of(read("own", own.get().version(), Optional.of(ref.name().display()),
