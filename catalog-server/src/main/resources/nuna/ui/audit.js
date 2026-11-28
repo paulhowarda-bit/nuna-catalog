@@ -190,8 +190,9 @@ function objectLink(catalog, kind, path, tab) {
   if (k === 'catalog' || !levels.length) return code(catalog);
   const target = k === 'namespace' ? {catalog, kind: k, namespace: levels}
     : {catalog, kind: k, namespace: levels.slice(0, -1), name: levels[levels.length - 1]};
-  // The path breaks after each dot, so a long one wraps and the number columns beside it stay in view (backlog 220).
-  return h('a', {href: objectHref(target, tab)}, levels.flatMap((x, i) => i < levels.length - 1 ? [x + '.', h('wbr')] : [x]));
+  // The path breaks after each dot, and a long name after an underscore, never inside a word, so a long one wraps and the
+  // number columns beside it stay in view (backlogs 220, 326).
+  return h('a', {href: objectHref(target, tab)}, levels.join('.').split(/(?<=[._])/).flatMap((x, i) => i ? [h('wbr'), x] : [x]));
 }
 
 // ---- the feed ----

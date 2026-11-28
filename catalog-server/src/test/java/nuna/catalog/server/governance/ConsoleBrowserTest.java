@@ -1758,12 +1758,12 @@ class ConsoleBrowserTest {
 
     /**
      * The words broken across two lines in the cells {@code arguments[0]} selects, each as the letters before the break,
-     * a bar, and the letter after it: a line may end at a space, a dot, a hyphen or a {@code <br>}, never between two
-     * letters or digits (backlog 326).
+     * a bar, and the letter after it: a line may end at a space, a dot, an underscore, a hyphen or a {@code <br>}, never
+     * between two letters or digits (backlog 326).
      */
     private static final String BROKEN_WORDS = """
             const out = [];
-            const word = c => /[\\p{L}\\p{N}_]/u.test(c);
+            const word = c => /[\\p{L}\\p{N}]/u.test(c);
             for (const cell of document.querySelectorAll(arguments[0])) {
               const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
               let prev = null;
