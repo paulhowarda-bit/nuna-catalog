@@ -1,6 +1,7 @@
 package nuna.maintenance;
 
 import static nuna.maintenance.CompactionCluster.await;
+import static nuna.maintenance.CompactionCluster.awaitFailedReason;
 import static nuna.maintenance.CompactionCluster.kubectl;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -137,11 +138,7 @@ class KubernetesCompactionTest {
                 assertThat(compactor.launch(cutWork, need, closing)).isEqualTo(Compactor.Launch.STARTED);
                 String cutJob = KubernetesJobs.jobName(cutWork, closing);
                 assertThat(await(jobs, cutJob)).as("failed").isEqualTo(",1");
-                assertThat(kubectl(Duration.ofMinutes(1), null, "get", "job", cutJob, "-n", jobs, "-o",
-                        // Single quotes: Java on Windows passes double quotes inside an argument unescaped, and
-                        // the process receives them stripped.
-                        "jsonpath={.status.conditions[?(@.type=='Failed')].reason}").strip())
-                        .isEqualTo("DeadlineExceeded");
+                assertThat(awaitFailedReason(jobs, cutJob)).isEqualTo("DeadlineExceeded");
                 assertThat(compactor.state(cutWork, closing)).isEqualTo(Compactor.State.CUT_OFF);
             }
         }
