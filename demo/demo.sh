@@ -1856,7 +1856,7 @@ Studio's too.
 The console:  $URL/ui/   (catalogs lakehouse and engines)
 Sign in, or paste one of these tokens (valid until $expires).
 
-Data user  ana   (group demo-analysts: select on both catalogs, but not lakehouse's compliance namespaces)
+Data user  ana   (group demo-analysts: create and modify on both catalogs, but not lakehouse's compliance namespaces)
 $(token_of ana)
 
 Grant admin  gary  (groups demo-grant-admins: manage grants and read the audit trail, no data access; and
