@@ -16,6 +16,10 @@ through its tables, purges and due deletions (`catalog-maintenance/README.md`, "
 - A job that fails inside it (one table's expiry, one purge, one object's deletions) is counted under
   `nuna.maintenance.failures` by its kind and tried again at the next scan. The scan still succeeds: the worker did
   scan, and the failure has its own count.
+- A table closed until classified (D27: a regulated area's table with no classification) is not a failure. The
+  catalog marks its work-list entries `closed`, the worker skips them without loading the table (its load would be
+  refused, and audited as a denial, at every scan), names the table in the scan's `failed-jobs` with reason `closed`
+  (table-health.md), and counts the entries in `nuna.maintenance.tables.closed` (backlog 334).
 - A scan **fails** when a page of the work list cannot be read (the catalog down or unreachable, the worker's token
   refused, its identity provider down), or when it stops on an unexpected error. What it did before that is counted.
 
@@ -31,6 +35,7 @@ tables" below).
 | `nuna.maintenance.scan` | timer | `outcome`: `success`, `failure` | Each scan's duration. Its count is the number of scans by outcome. | Scans slower than the interval; the scans panel |
 | `nuna.maintenance.scan.last.success` | gauge, seconds since the epoch | none | When the last successful scan ended, by the worker's clock. `0` until the worker's first succeeds. | Worker not scanning; worker gone |
 | `nuna.maintenance.failures` | counter | `kind`, below | Failed jobs and work list reads. | A job failing at every scan; purges failing; deletions failing |
+| `nuna.maintenance.tables.closed` | gauge | none | How many work-list entries (tables and requests) the last finished scan found closed until classified (D27), skipped without being loaded. `0` until a scan has finished. | Tables closed until classified |
 | `nuna.maintenance.tables` | counter | none | Tables the work list named, summed over scans. | Panel: tables per scan (divided by the scan count) |
 | `nuna.maintenance.snapshots.expired` | counter | none | Snapshots expired. | Panel |
 | `nuna.maintenance.manifests.rewritten` | counter | none | Manifests rewritten. | Panel |
@@ -137,6 +142,7 @@ receiver, with their default translation, dots become underscores, the unit is a
 | `nuna.maintenance.scan` | `nuna_maintenance_scan_milliseconds_count`, `_sum`, by `outcome`. Over OTLP Micrometer sends times in its base time unit, milliseconds (`management.otlp.metrics.export.base-time-unit`); `TelemetryTest` checks the unit. |
 | `nuna.maintenance.scan.last.success` | `nuna_maintenance_scan_last_success_seconds` |
 | `nuna.maintenance.failures` | `nuna_maintenance_failures_total`, by `kind` |
+| `nuna.maintenance.tables.closed` | `nuna_maintenance_tables_closed` |
 | `nuna.maintenance.tables.needing.compaction` | `nuna_maintenance_tables_needing_compaction_total`, by `reason` |
 | `nuna.maintenance.table.compaction.need` | `nuna_maintenance_table_compaction_need`, by `catalog`, `namespace`, `table` |
 | `nuna.maintenance.tables` and the other counters | `nuna_maintenance_tables_total` and so on |
@@ -195,6 +201,18 @@ sum by (job) (increase(nuna_maintenance_failures_total{kind="deletion"}[1h])) > 
 ```
 sum by (job, kind) (increase(nuna_maintenance_failures_total[30m])) > 0
 ```
+
+**Tables closed until classified** (ticket; backlog 334). For a whole day the worker has skipped tables closed until
+classified (D27): a table in a regulated area with no classification gets no snapshot expiry, orphan removal or
+compaction until a tag steward classifies it. The maintenance principal is refused by the closure like anyone else
+(catalog-security's choice, 2026-11-28); the Maintenance page names the tables. The rule's `for: 1d`:
+
+```
+max by (job) (nuna_maintenance_tables_closed) > 0
+```
+
+`deploy/grafana/tests/nuna-maintenance.test.yaml` checks it with promtool: it fires after a day at 1 and stays silent
+at 0.
 
 **Scans slower than the interval** (ticket). On average over an hour a scan takes longer than the interval, so the
 worker spends most of its time scanning and the next scan starts late (a scan never overlaps the next). The work list
@@ -261,6 +279,7 @@ worker-spans.md) built on these.
 | `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, finds a table needing compaction for its small files and starts its Job, purges and skips a purge is counted as its report says and dated by the worker's clock, and the needy table has its gauge; one whose token source fails is a failure of kind `work-list`, cannot report itself to the catalog either (`report`), and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
 | `NightlyCleanupTest` | Scans across a cleanup window: tables assessed once a night, needs by reason, one Job at a time, the neediest first, the Job cut off and the table left over at the window's end, the needy tables' gauges; the catalog keeps each assessment, Job and scan the worker reports. |
 | `TelemetryTest` | The worker's meters, from Boot's registry, arrive over OTLP: the failed first scan's `work-list` failures, its timer in milliseconds, the last success at `0`. |
+| `FailedJobsReportTest` | A scan names each failed job on a table with the table and why (backlog 327); an entry the catalog marks closed until classified is not loaded, not counted as a failure, read by `nuna.maintenance.tables.closed` and named with reason `closed` (backlog 334). |
 | `DrVerifierTest` | The DR verifier's meters read zero before the first pass; a pass sets the tables behind, the largest lag and the last success, counts versions verified and failed checks, and a pass that cannot read the work list leaves the gauges; this page lists every DR meter. |
 
 Each guarded rule's bite is in `bites/OBS-40/`; those of compaction on need are in `bites/D30/`; the DR verifier's

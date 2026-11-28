@@ -68,6 +68,18 @@ final class GovernanceSummary {
     }
 
     static GovernanceSummary read(CatalogStore store, CatalogRecord catalog) {
+        return read(store, catalog, true);
+    }
+
+    /**
+     * The walk and its attributes, with no hold read: for a platform operator's list of the DR freezes he may lift
+     * (D55, item 323), so no legal hold can reach his answer. Only {@link #drFreezes} is asked of it.
+     */
+    static GovernanceSummary readFreezes(CatalogStore store, CatalogRecord catalog) {
+        return read(store, catalog, false);
+    }
+
+    private static GovernanceSummary read(CatalogStore store, CatalogRecord catalog, boolean withHolds) {
         Map<Securable, Level> levels = new LinkedHashMap<>();
         Securable root = new Securable(Securable.Kind.CATALOG, catalog.id());
         levels.put(root, new Level(root, List.of(), null));
@@ -78,7 +90,9 @@ final class GovernanceSummary {
         for (int from = 0; from < all.size(); from += BATCH) {
             Set<Securable> batch = Set.copyOf(all.subList(from, Math.min(all.size(), from + BATCH)));
             attributes.addAll(store.attributesOf(batch));
-            holds.addAll(store.holdsOn(batch));
+            if (withHolds) {
+                holds.addAll(store.holdsOn(batch));
+            }
         }
         return new GovernanceSummary(store, catalog, levels, attributes, holds);
     }
@@ -217,15 +231,34 @@ final class GovernanceSummary {
         for (GovernanceAttribute freeze : freezes()) {
             ObjectNode node = Management.JSON.createObjectNode();
             node.put("kind", "freeze");
-            node.set("on", on(levels.get(freeze.target())));
-            node.put("reason", freeze.value());
-            node.put("placed-by", freeze.setBy());
-            node.put("placed-at", freeze.setAt().toString());
+            node.setAll(freeze(freeze));
             standing.add(new Standing(freeze.setAt(), node));
         }
         ArrayNode list = Management.JSON.createArrayNode();
         standing.stream().sorted(Comparator.comparing(Standing::at).reversed()).forEach(s -> list.add(s.node()));
         return list;
+    }
+
+    /**
+     * The DR freezes standing now, the newest placed first, each as {@link #standing} gives it without its kind: what
+     * it is on, the reason as recorded, who placed it and when (D55, item 323). Nothing about holds, lifts, or the
+     * tables beneath a frozen level.
+     */
+    ArrayNode drFreezes() {
+        ArrayNode list = Management.JSON.createArrayNode();
+        freezes().stream().sorted(Comparator.comparing(GovernanceAttribute::setAt).reversed())
+                .forEach(freeze -> list.add(freeze(freeze)));
+        return list;
+    }
+
+    /** A freeze's node: what it is on, the reason as recorded, who placed it and when. */
+    private ObjectNode freeze(GovernanceAttribute freeze) {
+        ObjectNode node = Management.JSON.createObjectNode();
+        node.set("on", on(levels.get(freeze.target())));
+        node.put("reason", freeze.value());
+        node.put("placed-by", freeze.setBy());
+        node.put("placed-at", freeze.setAt().toString());
+        return node;
     }
 
     private List<GovernanceAttribute> freezes() {

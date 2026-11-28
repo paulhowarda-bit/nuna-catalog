@@ -1,0 +1,17 @@
+Breaks: The operators' list of DR freezes serves the standing holds and freezes, legal holds among them.
+Module: catalog-server
+Test: GovernanceSummaryTest#anOperatorListsTheStandingFreezesNewestFirstAndNoHold
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+index 825ce054..156a36b3 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+@@ -165,7 +165,7 @@ class GovernanceRoutes {
+         guard.requireOperatorOn(request, target, "listDrFreezes");
+         ObjectNode body = Management.JSON.createObjectNode();
+         body.put("catalog", target.catalog().name());
+-        body.set("freezes", GovernanceSummary.readFreezes(store, target.catalog()).drFreezes());
++        body.set("freezes", GovernanceSummary.read(store, target.catalog()).standing());
+         return json(200, body);
+     }
+

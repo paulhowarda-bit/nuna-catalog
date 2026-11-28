@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 2 S, 10 M, 4 L, 4 XL.
+**19 open:** 2 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -29,7 +29,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
-| [323](backlog/323.md) | M | Platform operators list the standing DR freezes they may lift | a read route or a change to one, its authorization and audit, and the Governance page for an operator | 2026-11-27 |
 | [332](backlog/332.md) | M | Sign-in screen: the identity provider's name in words, and the developer token box folded | the code is small, but the docs screenshot needs the demo rebuilt | 2026-11-27 |
 | [333](backlog/333.md) | L | A brand slot for the console and the docs site: Ice line by default, an install's pack by settings | 2 to 5 days; it waits on nothing, the real pack is work's job | 2026-11-27 |
 
@@ -1323,30 +1322,6 @@ The documentation site was written from the code; these internal documents say o
 What done looks like: each corrected from the code. The public documentation is `docs/site/`; where an internal
 document only repeats it, it may point there instead.
 
-### 323. Platform operators list the standing DR freezes they may lift
-
-- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Decided: 2026-11-27, D55
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/resources/nuna/ui/,
-- catalog-server/src/test/java/nuna/catalog/server/governance/, docs/site/
-- Effort: M, a read route or a change to one, its authorization and audit, and the Governance page for an operator
-
-A platform operator may place a DR freeze and lift one (`requireOperatorOn`), but may not list them:
-`listHoldsAndFreezes` needs `describe` (`GovernanceRoutes.java:127`), which an operator holds nowhere. So a freeze he
-did not place himself, or whose path he forgot, stays in force unseen, and a freeze refuses every commit beneath it.
-The 27 Nov console review (item 3) asked; Atelier recommended yes, for DR freezes only.
-
-Paul's decision, 2026-11-27 (D55): yes.
-
-- A platform operator reads the standing DR freezes in a catalog: each one's path, reason, who placed it and when.
-- Legal holds stay behind `describe` (or `manage-tags`): their reasons are legal matter.
-- Before it is built, catalog-security confirms that listing the frozen paths to an operator is acceptable (he can
-  already type any path to place or lift one), and says what the read records in the audit trail.
-- The console's Governance page shows an operator the freezes he may lift, with Lift beside each.
-
-Done when the route lets an operator list the freezes and refuses him the holds, tested and audited, and the
-Governance page lists them for him.
-
 ### 332. Sign-in screen: the identity provider's name in words, and the developer token box folded
 
 - Added: 2026-11-27 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
@@ -1750,6 +1725,7 @@ from disk stays Ice line.
 | [320](backlog/320.md) | demo.sh's aml_cases hold check fails at random under pipefail | done | 2026-11-27 |
 | [321](backlog/321.md) | The brokerage world runs 24x7: customers act at any hour, every day, and trading follows Nasdaq's 24x5 session | done | 2026-11-27 |
 | [322](backlog/322.md) | Console quick wins from the 27 Nov drop's review: policy values in words, the Grafana link's own icon, the Service page's words, times in tables, the health figures' gap | done | 2026-11-27 |
+| [323](backlog/323.md) | Platform operators list the standing DR freezes they may lift | done | 2026-11-28 |
 | [324](backlog/324.md) | Console: a table closed until classified says so on its page, in the tree and in What you may do, and leads a steward to classify it | done | 2026-11-27 |
 | [325](backlog/325.md) | Console: stop asking the catalog for what the caller's own grants show they cannot have, so browsing writes no audited refusals | done | 2026-11-27 |
 | [326](backlog/326.md) | Console: measure the grids against the content column, not the window, so tables beside the tree are not crushed | done | 2026-11-27 |
@@ -1758,3 +1734,4 @@ from disk stays Ice line.
 | [329](backlog/329.md) | Console: the Access tab says each governance fact once and lists only the grants that reach the object | done | 2026-11-27 |
 | [330](backlog/330.md) | Console: History shows data changes, not only the worker's expiry commits | done | 2026-11-27 |
 | [331](backlog/331.md) | Console: the smaller polish from the 27 Nov review | done | 2026-11-27 |
+| [334](backlog/334.md) | Maintenance skips tables closed until classified without loading them, and alerts when it has for a day | done | 2026-11-28 |

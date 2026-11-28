@@ -2,13 +2,13 @@ Breaks: the worker runs expiry and the orphan scan whenever the policy names the
 Module: catalog-maintenance
 Test: GuardrailsTest#heldFrozenAndUnregisteredTablesAreUntouched
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-index 6e5d46d..7d69fe7 100644
+index 82ca0d1e..5bb857dc 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-@@ -156,10 +156,10 @@ final class Worker implements AutoCloseable {
-      */
-     void maintain(Management.TableWork work, Instant now, ScanReport report) {
-         report.tables++;
+@@ -323,10 +323,10 @@ final class Worker implements AutoCloseable {
+         if (work.closed()) {
+             report.closed++;
+         }
 -        boolean expire = work.runs("snapshot-expiry.enabled");
 +        boolean expire = work.policy().containsKey("snapshot-expiry.enabled");
          boolean rewrite = work.runs("manifest-rewrite.enabled");

@@ -69,6 +69,17 @@ groups:
           summary: "Maintenance jobs of kind {{ $labels.kind }} fail at every scan ({{ $labels.job }})"
           description: >-
             The worker's WARN lines name the table or object. worker-metrics.md, "Alerts".
+      - alert: NunaMaintenanceSkipsClosedTables
+        # Tables closed until classified (D27), skipped by every scan without being loaded, for a day (backlog 334).
+        expr: max by (job) (nuna_maintenance_tables_closed) > 0
+        for: 1d
+        labels:
+          severity: warning
+        annotations:
+          summary: "Maintenance has skipped {{ $value }} table(s) closed until classified for a day ({{ $labels.job }})"
+          description: >-
+            A table in a regulated area with no classification gets no snapshot expiry, orphan removal or
+            compaction until a tag steward classifies it (D27). The Maintenance page names them.
       - alert: NunaScansSlowerThanInterval
         expr: |
           sum by (job) (rate(nuna_maintenance_scan_milliseconds_sum[1h]))

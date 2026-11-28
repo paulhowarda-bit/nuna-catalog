@@ -1,0 +1,41 @@
+# promtool unit tests of rules/nuna-maintenance.rules.yaml (backlog 334). AlertRulesTest (catalog-server, tagged
+# heavy) runs them in the Prometheus image the demo runs; by hand, from the repo root:
+#
+#   docker run --rm -v "$PWD/deploy/grafana:/grafana:ro" --entrypoint promtool prom/prometheus:v3.16.0 \
+#     test rules /grafana/tests/nuna-maintenance.test.yaml
+#
+# Series stand for what one maintenance worker pushes each minute, named as docs/observability/worker-metrics.md
+# ("Names in Prometheus") assumes. An alertname listed with no alerts must not fire at that time.
+rule_files:
+  - ../rules/nuna-maintenance.rules.yaml
+evaluation_interval: 1m
+tests:
+  - name: a table skipped as closed until classified for a day opens a ticket
+    # Every scan for 25 hours finds one work-list entry closed until classified (D27).
+    interval: 1m
+    input_series:
+      - series: nuna_maintenance_tables_closed{job="nuna/nuna-maintenance", instance="worker-0"}
+        values: 1x1500
+    alert_rule_test:
+      # Pending, not firing, short of its day.
+      - eval_time: 1430m
+        alertname: NunaMaintenanceSkipsClosedTables
+        exp_alerts: []
+      - eval_time: 1450m
+        alertname: NunaMaintenanceSkipsClosedTables
+        exp_alerts:
+          - exp_labels: {job: nuna/nuna-maintenance, severity: warning}
+            exp_annotations:
+              summary: "Maintenance has skipped 1 table(s) closed until classified for a day (nuna/nuna-maintenance)"
+              description: >-
+                A table in a regulated area with no classification gets no snapshot expiry, orphan removal or
+                compaction until a tag steward classifies it (D27). The Maintenance page names them.
+  - name: no table closed, no ticket
+    interval: 1m
+    input_series:
+      - series: nuna_maintenance_tables_closed{job="nuna/nuna-maintenance", instance="worker-0"}
+        values: 0x1500
+    alert_rule_test:
+      - eval_time: 1450m
+        alertname: NunaMaintenanceSkipsClosedTables
+        exp_alerts: []
