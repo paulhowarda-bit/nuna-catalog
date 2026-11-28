@@ -170,12 +170,13 @@ export function tablePage(target, tab, route) {
   const afterChange = () => {
     forget(target);
     metadata = loadIfRead(target, reads, loadTable);
-    // A classification set opens a closed table: its mark goes once it loads.
-    metadata.then(() => {
-      const shut = $('.pill[data-closed]', title);
-      if (shut) shut.remove();
+    // A classification set opens a closed table: its marks go once its load no longer answers closed. A flagged table
+    // still refuses the console its load, to be read through Trino, so a refusal of another kind opens it too.
+    metadata.then(() => false, error => closedRefusal(error)).then(shut => {
+      if (shut) return;
+      $('.pill[data-closed]', title)?.remove();
       noteClosed(target, false);
-    }, () => {});
+    });
     show();
   };
   // Whether the table is closed until classified, from its own load's answer (backlog 324): null when another refusal

@@ -587,8 +587,10 @@ function grantsPart(target) {
   const manages = may(target.catalog, 'manage-grants');
   // Only the grants that reach the object, the answer What you may do reads; every one in the catalog is a click away,
   // for everyone (Atelier, backlog 329).
+  // Listed from the catalog down, as Grants that reach it are: the catalog answers them in the order of its own ids.
+  const depth = s => s.type === 'catalog' ? 0 : (s.namespace || []).length + (s.type === 'namespace' ? 0 : 1);
   const ownGrants = () => load(mine, async () => {
-    const list = await heldHere(target);
+    const list = (await heldHere(target)).slice().sort((a, b) => depth(a.securable) - depth(b.securable));
     return [list.length ? tbl('stack-line own-here', ['Group', 'Privilege', 'Granted on', 'Granted'], list.map(g => h('tr',
       {'data-group': g.group, 'data-privilege': g.privilege}, h('td', {class: 'name'}, g.group), privilegeCell(g),
       h('td', null, grantedOn(target, g.securable)[1]),

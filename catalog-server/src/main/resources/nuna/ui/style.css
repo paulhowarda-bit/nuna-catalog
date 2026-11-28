@@ -571,6 +571,9 @@ pre.raw { margin: 0 0 12px; }
 .grants-filter label { display: grid; gap: 5px; font-size: var(--t-12); color: var(--text-2); font-weight: 600; min-width: 0; }
 .grants-filter .field { width: 100%; color: var(--text); }
 .access-acts { justify-content: flex-start; }
+/* The Access tab's slots that stay empty (the closed notice on an open table, the reader's view on a closed one) take
+   no place in the stack, so What you may do leads with no gap above it (backlog 341). */
+#access-tab > :empty { display: none; }
 /* The Grant access dialog (Atelier, 2026-11-24; backlog 248): groups with their duties, the access in words with its
    wire name, the object, and the live line before Grant. */
 .grp-pick { display: grid; gap: 2px; max-height: 208px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
@@ -1343,12 +1346,15 @@ details.tech[open] > summary { margin-bottom: 4px; }
   .nc-go > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @container frame (min-width: 761px) and (max-width: 1100px) {
-  .nc-top { gap: 10px; }
+  /* 8 px, not 10: with the Docs button (item 307), a branch chip and the note that a page shows main only, 10 px left
+     the header 4 px wider than a 901 px frame (backlog 341) */
+  .nc-top { gap: 8px; }
   .nc-top .nc-pick .lbl, .nc-top .ref-pick .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 10ch; }
 }
 @container frame (min-width: 761px) and (max-width: 900px) {
-  .nc-top { gap: 8px; }
+  /* 6 px, not 8: with the same three, 8 px left the header 6 px wider than a 761 px frame (backlog 341) */
+  .nc-top { gap: 6px; }
   .nc-go kbd { display: none; }
   .nc-top .signout .tw, .nc-top .nc-docs .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 8ch; }
