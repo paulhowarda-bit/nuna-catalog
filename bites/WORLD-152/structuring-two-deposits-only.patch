@@ -2,13 +2,13 @@ Breaks: the seeded structuring makes two deposits, not three, so no structuring 
 Module: demo-datagen
 Test: BackOfficeTest#theSeededDepositsAndTheSanctionedWireMakeExactlyTheirAlertsAndCases
 diff --git a/demo-datagen/src/main/java/nuna/datagen/world/World.java b/demo-datagen/src/main/java/nuna/datagen/world/World.java
-index 47ce2fb9..064e6f33 100644
+index d0e16656..603a38de 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/world/World.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/world/World.java
-@@ -499,7 +499,7 @@ public final class World {
-         schedule(at(LocalTime.of(7, 15)), () -> office.morning(current, day));
-         schedule(at(LocalTime.of(12, 0)), () -> office.servicing(current, day));
-         schedule(at(LocalTime.of(17, 30)), () -> office.monitor(current, day));
+@@ -717,7 +717,7 @@ public final class World {
+         schedule(at(LocalTime.of(8, 30)), () -> office.morning(current, day));
+         schedule(at(LocalTime.of(20, 10)), () -> office.surveil(current, day));
+         schedule(at(LocalTime.of(20, 15)), () -> office.monitor(current, day));
 -        if (BackOffice.STRUCTURING_DAYS_PLAYED.contains(played)) {
 +        if (BackOffice.STRUCTURING_DAYS_PLAYED.contains(played) && played < 3) {
              Account a = account(office.structurer());
