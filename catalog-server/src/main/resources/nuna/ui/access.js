@@ -17,9 +17,12 @@ export function keepAccess(body) {
   deployment = body.may || {};
 }
 
+/** Whether the catalog holds the audit tables, which are an auditor's work on Audit, not data to land on (backlog 200). */
+export const holdsAudit = name => auditCatalogs.has(name);
+
 /** The catalogs a sign-in may land on: every one but the audit tables' own, unless that is all there is (backlog 200). */
-export const landingCatalogs = names => names.filter(n => !auditCatalogs.has(n)).length
-  ? names.filter(n => !auditCatalogs.has(n)) : names;
+export const landingCatalogs = names => names.filter(n => !holdsAudit(n)).length
+  ? names.filter(n => !holdsAudit(n)) : names;
 
 /** Whether the caller's groups hold `privilege` (select, modify, manage-grants, manage-tags) somewhere in the catalog. */
 export const may = (catalog, privilege) => !!(byCatalog.get(catalog) || {})[privilege];

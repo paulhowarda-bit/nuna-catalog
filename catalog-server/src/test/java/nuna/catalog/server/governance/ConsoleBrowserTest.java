@@ -209,6 +209,188 @@ class ConsoleBrowserTest {
     }
 
     /**
+     * The empty headline never sends anyone to the audit tables' catalog, a dead end for data and maintenance, as a
+     * sign-in's landing leaves it out too (the 27 Nov review: gary was told "nuna_audit has 1 table"; backlog 331).
+     * This server has no audit tables, so the page is answered one, nuna_audit, holding a table the caller may select.
+     */
+    @Test
+    void theEmptyHeadlineNamesNoAuditCatalog() {
+        HasCdp cdp = (HasCdp) new Augmenter().augment(driver);
+        cdp.executeCdpCommand("Page.addScriptToEvaluateOnNewDocument", Map.of("source", AN_AUDIT_CATALOG));
+        signIn(gary());
+        browser.open("/ui/#p=overview&c=trading");
+        browser.awaitText(By.cssSelector("#overview h1"), "Nothing in trading you may read.");
+        assertThat((Boolean) driver.executeScript("return window.auditAnswered === 2"))
+                .as("the catalog list and the estate were both answered with nuna_audit").isTrue();
+        assertThat(driver.findElements(By.cssSelector("#overview h1 a[data-other-catalog]"))).isEmpty();
+    }
+
+    /** Answers the catalog list and the estate each with the audit tables' catalog, nuna_audit, and one table in it. */
+    private static final String AN_AUDIT_CATALOG = """
+            (() => {
+              const real = window.fetch;
+              window.auditAnswered = 0;
+              const add = (url, init, edit) => real(url, init).then(async answer => {
+                if (!answer.ok) return answer;
+                const body = await answer.json();
+                edit(body);
+                window.auditAnswered++;
+                return new Response(JSON.stringify(body), {status: 200, headers: {'Content-Type': 'application/json'}});
+              });
+              window.fetch = (url, init) => {
+                const path = new URL(url, location.origin).pathname;
+                if (path.endsWith('/management/v1/catalogs')) {
+                  return add(url, init, b => b.catalogs.push({name: 'nuna_audit', audit: true, may: {select: true}}));
+                }
+                if (path.endsWith('/management/v1/maintenance/estate')) {
+                  return add(url, init, b => { b.tables = (b.tables || []).concat([{catalog: 'nuna_audit',
+                    namespace: ['audit'], name: 'events'}]); });
+                }
+                return real(url, init);
+              };
+            })();
+            """;
+
+    /**
+     * Signing in draws no rail item until the catalog list has said what the caller's groups may use, and the loading
+     * line sits inside the page's padding, not in its corner (the 27 Nov review: gary's landing sat on an unstyled
+     * "Loading…" with all eight rail items drawn; backlog 331). The list is held here until both are seen.
+     */
+    @Test
+    void signInDrawsNoRailItemBeforeTheCatalogListAnswers() {
+        HasCdp cdp = (HasCdp) new Augmenter().augment(driver);
+        cdp.executeCdpCommand("Page.addScriptToEvaluateOnNewDocument", Map.of("source", HOLD_THE_CATALOG_LIST));
+        signIn(gary());
+        browser.open("/ui/");
+        browser.await("the console did not ask for the catalog list",
+                d -> (Boolean) driver.executeScript("return window.heldList.asked"));
+        WebElement line = browser.await(By.cssSelector("#slot > .loading-line"));
+        assertThat(driver.findElements(By.cssSelector("#nav a[data-k]"))).hasSize(8).noneMatch(WebElement::isDisplayed);
+        assertThat(List.of(line.getCssValue("padding-top"), line.getCssValue("padding-left")))
+                .as("the page's padding").containsExactly("24px", "28px");
+        driver.executeScript("window.heldList.release()");
+        browser.await("gary did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance", "grants");
+    }
+
+    /** Holds the console's catalog list until {@code window.heldList.release()}. */
+    private static final String HOLD_THE_CATALOG_LIST = """
+            (() => {
+              const real = window.fetch;
+              let release;
+              const gate = new Promise(done => release = done);
+              window.heldList = {asked: false, release};
+              window.fetch = (url, init) => {
+                if (!new URL(url, location.origin).pathname.endsWith('/management/v1/catalogs')) return real(url, init);
+                window.heldList.asked = true;
+                return gate.then(() => real(url, init));
+              };
+            })();
+            """;
+
+    /**
+     * The overview's tiles fill their rows: a presenter's six sit as three columns of two rows at 1,440 px and two
+     * columns of three at 1,280, each row's first tile with no left border and every row after the first ruled above
+     * (the 27 Nov review; backlog 331). And the estate's namespace labels never run together, as "markets 5reference 1"
+     * did: one too long for the room beside its marks is left out, its marks naming it on hover.
+     */
+    @Test
+    void overviewTilesFillTheirRowsAndTheEstatesLabelsNeverRunTogether() {
+        String crowded = "a_namespace_named_far_too_long_for_one_mark_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + crowded + "\"]}"), 200);
+        api.table(crowded, "lonely");
+        signIn(api.everyDuty());
+        for (int[] at : new int[][] {{1440, 2}, {1280, 3}, {1920, 2}}) {
+            frameOf(at[0]);
+            browser.open("/ui/#p=overview&c=trading");
+            browser.await("the six tiles did not come",
+                    d -> d.findElements(By.cssSelector("#overview-kpis > .kpi")).size() == 6);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tiles = (Map<String, Object>) driver.executeScript(TILE_ROWS);
+            assertThat(tiles.get("rows")).as("rows of tiles at %d px", at[0]).isEqualTo((long) at[1]);
+            assertThat(tiles.get("wrong")).as("the tiles' rows and rules at %d px", at[0]).isEqualTo("");
+
+            browser.await(By.cssSelector("#overview [data-iceline='estate'] svg .labs"));
+            assertThat((String) driver.executeScript(LABELS_RUN_TOGETHER)).as("the estate's labels at %d px", at[0])
+                    .isEmpty();
+            assertThat(driver.findElements(By.cssSelector("#overview [data-iceline='estate'] .labs text.lab-strong")))
+                    .extracting(ConsoleBrowser::textContent).as("the long name has no room beside its one mark")
+                    .doesNotContain(crowded);
+            WebElement group = driver.findElement(By.cssSelector("#overview [data-iceline='estate'] a.ga[aria-label^='"
+                    + crowded + ",']"));
+            assertThat(textContent(group.findElement(By.tagName("title")))).startsWith(crowded + ", 1 table");
+        }
+    }
+
+    /** The overview's tiles by row: how many rows, and each tile whose rules are wrong for its place. */
+    private static final String TILE_ROWS = """
+            const tiles = [...document.querySelectorAll('#overview-kpis > .kpi')];
+            const tops = [...new Set(tiles.map(t => Math.round(t.getBoundingClientRect().top)))];
+            const rows = tops.map(y => tiles.filter(t => Math.round(t.getBoundingClientRect().top) === y));
+            const wrong = [];
+            if (new Set(rows.map(r => r.length)).size !== 1) wrong.push('rows of ' + rows.map(r => r.length).join(', '));
+            rows.forEach((r, i) => r.forEach((t, j) => {
+              const cs = getComputedStyle(t);
+              if ((cs.borderLeftWidth !== '0px') !== (j > 0)) wrong.push(`row ${i + 1}, tile ${j + 1}: left ${cs.borderLeftWidth}`);
+              if ((cs.borderTopWidth !== '0px') !== (i > 0)) wrong.push(`row ${i + 1}, tile ${j + 1}: top ${cs.borderTopWidth}`);
+            }));
+            return {rows: rows.length, wrong: wrong.join('; ')};
+            """;
+
+    /** The estate's labels that touch another, or run past the next namespace's first mark, as "a and b". */
+    private static final String LABELS_RUN_TOGETHER = """
+            const svg = document.querySelector('#overview [data-iceline="estate"] svg');
+            const texts = [...svg.querySelectorAll('.labs text.lab-strong, .labs text.lab:not([text-anchor])')];
+            const boxes = texts.map(t => ({t: t.textContent, b: t.getBoundingClientRect()}));
+            const hits = [];
+            for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+              const a = boxes[i].b, b = boxes[j].b;
+              if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) hits.push(boxes[i].t + ' and ' + boxes[j].t);
+            }
+            return hits.join('; ');
+            """;
+
+    /**
+     * Every row action is one ghost button, alike on Branches and tags and on Governance: Read, Merge… and Renew as
+     * Lift and Release are, and Delete last, set apart and in the bad ink (the 27 Nov review; backlog 331).
+     */
+    @Test
+    void rowActionsLookAlikeWithDeleteLastAndSetApart() {
+        String branch = "acts_" + Api.suffix();
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + branch + "\",\"kind\":\"branch\"}"), 201);
+        try {
+            signIn(api.everyDuty());
+            browser.open("/ui/#c=trading&tab=refs");
+            WebElement acts = browser.await(By.cssSelector("tr[data-ref='" + branch + "'] .row-acts"));
+            List<WebElement> buttons = acts.findElements(By.cssSelector(":scope > .btn"));
+            assertThat(buttons).extracting(ConsoleBrowser::textContent).containsExactly("Read", "Merge…", "Renew", "Delete");
+            WebElement delete = buttons.getLast();
+            assertThat(delete.getAccessibleName()).isEqualTo("Delete @" + branch);
+            List<String> look = look(buttons.getFirst());
+            assertThat(buttons).allSatisfy(b -> assertThat(look(b)).as(textContent(b)).isEqualTo(look));
+            assertThat(delete.getCssValue("color")).isNotEqualTo(buttons.getFirst().getCssValue("color"));
+            int gap = buttons.get(2).getRect().getX() - (buttons.get(1).getRect().getX() + buttons.get(1).getRect().getWidth());
+            int apart = delete.getRect().getX() - (buttons.get(2).getRect().getX() + buttons.get(2).getRect().getWidth());
+            assertThat(apart).as("delete set apart").isGreaterThan(gap);
+
+            browser.open("/ui/#p=governance&c=trading&tab=holds");
+            WebElement lift = browser.await(By.cssSelector("#holds-standing tr[data-kind='freeze'][data-on='" + top
+                    + ".equities.eu'] .row-acts > .btn"));
+            assertThat(textContent(lift)).isEqualTo("Lift");
+            assertThat(look(lift)).isEqualTo(look);
+        } finally {
+            api.manage("DELETE", "/refs/" + branch, null);
+        }
+    }
+
+    /** What makes a row action look as it does, but its ink: its outline, ground, size, type and corners. */
+    private static List<String> look(WebElement button) {
+        return List.of("border-top-style", "border-top-width", "border-top-color", "background-color", "height",
+                "font-size", "font-weight", "padding-left", "border-top-left-radius").stream()
+                .map(button::getCssValue).toList();
+    }
+
+    /**
      * Each role sees only the pages, tabs and buttons its groups can use, and lands where its work is (Atelier's
      * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Service; a grant admin
      * on Audit, with no Overview or Maintenance; a platform operator on Service, with no catalog to pick.
@@ -551,10 +733,13 @@ class ConsoleBrowserTest {
         browser.open("/ui/#" + at("namespace", eu, null, null));
         browser.await(By.cssSelector("#namespace-page table.contents tr[data-name='trades']"));
         // A column with nothing on any row is dropped (backlog 193): the queue and governance columns come and go with
-        // what other tests leave, so only the columns these tables always fill are named.
+        // what other tests leave, so only the columns these tables always fill are named. Kind says "table" on both
+        // rows, so it goes too (the 27 Nov review; backlog 331); Format stays, v2 beside v3.
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
-                .extracting(ConsoleBrowser::textContent).containsSubsequence("Name", "Kind", "Format", "Snapshots",
-                        "Last data change");
+                .extracting(ConsoleBrowser::textContent).containsSubsequence("Name", "Format", "Snapshots",
+                        "Last data change")
+                .doesNotContain("Kind");
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents td.kind"))).isEmpty();
         WebElement trades = contentsRow("trades");
         assertThat(contentsCell(trades, "fmt")).isEqualTo("v2");
         assertThat(contentsCell(trades, "snaps")).isEqualTo("3");
@@ -582,8 +767,15 @@ class ConsoleBrowserTest {
         WebElement euRow = contentsRow("eu");
         assertThat(contentsCell(euRow, 1)).isEqualTo("eu · 2 tables");
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
-                .extracting(ConsoleBrowser::textContent).doesNotContain("Format");
+                .extracting(ConsoleBrowser::textContent).doesNotContain("Format").contains("Kind");
         assertThat(euRow.findElements(By.cssSelector("td.fmt"))).isEmpty();
+        // A namespace beside a view keeps Kind, each drawn as the tree draws it, its icon then its word, with no chip
+        // around it (backlog 331).
+        WebElement euKind = euRow.findElement(By.cssSelector("td.kind"));
+        assertThat(textContent(euKind).trim()).isEqualTo("namespace");
+        assertThat(euKind.findElements(By.cssSelector(".badge"))).isEmpty();
+        assertThat(euKind.findElement(By.cssSelector("svg.ico-n use")).getDomAttribute("href")).isEqualTo("#i-ns");
+        assertThat(contentsRow("daily").findElement(By.cssSelector("td.kind svg.ico-v")).isDisplayed()).isTrue();
         assertThat(textContent(driver.findElement(By.cssSelector("#namespace-page .title-row code"))))
                 .isEqualTo(top + ".equities");
         assertThat(contentsCell(euRow, "snaps")).isEqualTo("3");
@@ -653,6 +845,14 @@ class ConsoleBrowserTest {
             browser.awaitText(By.cssSelector("[data-ref-band='" + tag + "']"), "Reading the tag");
             WebElement folded = browser.await(By.cssSelector("details#engine-refs"));
             assertThat(folded.getDomAttribute("open")).isNull();
+            // Folded, its caption keeps the panel's meta style, not the heading's bold, so the two do not run together
+            // (the 27 Nov review; backlog 331).
+            WebElement caption = folded.findElement(By.cssSelector("summary h2 .meta"));
+            assertThat(textContent(caption)).isEqualTo("Iceberg's own, not the catalog's");
+            assertThat(caption.getCssValue("font-weight")).isEqualTo("400");
+            assertThat(folded.findElement(By.cssSelector("summary h2")).getCssValue("font-weight")).isEqualTo("600");
+            assertThat(caption.getCssValue("color"))
+                    .isNotEqualTo(folded.findElement(By.cssSelector("summary h2")).getCssValue("color"));
         } finally {
             api.manage("DELETE", "/refs/" + tag, null);
         }
@@ -2422,21 +2622,24 @@ class ConsoleBrowserTest {
 
         // The namespace's Contents through the branch fills its columns as the branch has each table (backlog 168):
         // orders changed here at the branch's own version 1, fills as at the point at main's version 1, both with
-        // their format and snapshots.
+        // their snapshots. Both are format v2, so Format says one thing on every row and goes, said once beneath the
+        // table instead (the 27 Nov review; backlog 331).
         browser.open("/ui/#" + at("namespace", List.of(ns), null, null) + "&r=" + branch);
         WebElement ordersHere = contentsRow("orders");
-        assertThat(contentsCell(ordersHere, "fmt")).startsWith("v");
         assertThat(contentsCell(ordersHere, "snaps")).isEqualTo("0");
         assertThat(textContent(ordersHere.findElement(By.cssSelector(".on-ref")))).contains("changed here");
         WebElement fillsHere = contentsRow("fills");
-        assertThat(contentsCell(fillsHere, "fmt")).startsWith("v");
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents td.fmt"))).isEmpty();
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).doesNotContain("Format", "Kind");
         assertThat(textContent(fillsHere.findElement(By.cssSelector(".on-ref")))).isEqualTo("as at the point · v1");
         // Neither has changed data, orders a property and fills only made, so Last data change here says nothing on
         // any row and goes (backlogs 193 and 330).
         assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
                 .extracting(ConsoleBrowser::textContent).doesNotContain("Last data change here");
         assertThat(textContent(driver.findElement(By.cssSelector("#contents .fine"))))
-                .contains("Format, snapshots and last data change are as @" + branch + " has each table. Open one to"
+                .contains("Every table here is Iceberg format v2. Format, snapshots and last data change are as @"
+                        + branch + " has each table. Open one to"
                         + " read it through @" + branch + ".")
                 .doesNotContain("A dash under Last data change");
 

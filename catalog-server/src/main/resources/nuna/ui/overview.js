@@ -4,7 +4,7 @@
 // 125); and the governance figures for those who may describe the catalog (item 128).
 
 import * as api from './api.js';
-import {auditOpen, operates} from './access.js';
+import {auditOpen, holdsAudit, operates} from './access.js';
 import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
 import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
 import {objectHref, pageHref} from './route.js';
@@ -113,11 +113,13 @@ export function unassessedNames(tables) {
 
 /**
  * The headline of a catalog with no table the caller may read: it says so, and names the catalog with the most
- * tables the caller may read, linked to the same page there (Atelier's review, F2).
+ * tables the caller may read, linked to the same page there (Atelier's review, F2). Never the audit tables' catalog,
+ * which holds no maintenance or data of the caller's own: a dead end, as a sign-in's landing leaves it out too (the
+ * 27 Nov review; backlog 331).
  */
 export function nothingToRead(catalog, everywhere, page) {
   const counts = new Map();
-  for (const t of everywhere) if (t.catalog !== catalog) counts.set(t.catalog, (counts.get(t.catalog) || 0) + 1);
+  for (const t of everywhere) if (t.catalog !== catalog && !holdsAudit(t.catalog)) counts.set(t.catalog, (counts.get(t.catalog) || 0) + 1);
   const [other, n] = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
   return [`Nothing in ${catalog} you may read.`, other ? [' ', h('a', {href: pageHref(page, other), 'data-other-catalog': other},
     `${other} has ${plural(n, 'table')}`, ' →')] : null];

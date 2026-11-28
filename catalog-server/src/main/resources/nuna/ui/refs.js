@@ -667,10 +667,10 @@ function refRow(c, r, list, may) {
   const n = r['changed-count'] || 0;
   const acts = h('div', {class: 'row-acts'},
     h('a', {class: 'btn sm ghost', href: href({c, r: r.name})}, 'Read'),
-    may && r.kind === 'branch' ? h('a', {class: 'btn sm', href: refHref(c, r.name, 'merge')}, 'Merge…') : null,
+    may && r.kind === 'branch' ? h('a', {class: 'btn sm ghost', href: refHref(c, r.name, 'merge')}, 'Merge…') : null,
     may && r.kind === 'branch' ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => renewDialog(c, r)}, 'Renew') : null,
     may ? h('button', {class: 'btn sm ghost danger', type: 'button', 'aria-label': `Delete @${r.name}`,
-      onclick: () => deleteDialog(c, r, list)}, icon('x')) : null);
+      onclick: () => deleteDialog(c, r, list)}, icon('x'), 'Delete') : null);
   const fromBranch = r.kind === 'tag' && !isMain(r.from);
   return h('tr', {'data-kind': r.kind, 'data-ref': r.name, class: expiring(r) ? 'is-warn' : null},
     h('td', {class: 'name'}, h('a', {href: refHref(c, r.name)}, cref(r)),

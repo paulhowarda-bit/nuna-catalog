@@ -183,13 +183,17 @@ function totalsCells(t) {
     title: t.complete ? null : 'Counted over the first 1,000 tables and namespaces beneath it'};
 }
 
+/** A row's kind, as the tree draws it: its icon, then its word, with no chip around it (backlog 331). */
+const kindCell = kind => h('td', {class: 'kind'}, icon(kind === 'namespace' ? 'ns' : kind,
+  'ic ' + (kind === 'namespace' ? 'ico-n' : kind === 'view' ? 'ico-v' : 'ico-t')), ' ', kind);
+
 function contentsTable(catalog, levels, x) {
   const rows = [
     ...x.ns.map(n => {
       const t = totalsCells(x.totals.get(n[n.length - 1]));
       return h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'namespace', 'data-name': n[n.length - 1], title: t.title},
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'namespace', namespace: n, ref: x.ref})}, n[n.length - 1]), t.count),
-        h('td', null, badge([icon('ns'), 'namespace'])), h('td', {class: 'fmt'}, muted('–')),
+        kindCell('namespace'), h('td', {class: 'fmt'}, muted('–')),
         h('td', {class: 'queue'}, queuePill(queuedUnder(x.q, n))),
         h('td', {class: 'gov'}, markPills(x.gov.get('namespace:' + n.join('.'))) || muted('–')),
         h('td', {class: 'num snaps'}, t.snaps), h('td', {class: 'last'}, t.last), x.ref ? h('td', null, onRefCell(x, n, true)) : null);
@@ -199,8 +203,8 @@ function contentsTable(catalog, levels, x) {
       const kept = x.kept.get(name) || {};
       return h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'table', 'data-name': name},
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref})}, name)),
-        h('td', null, badge([icon('table'), 'table'])),
-        h('td', {class: 'fmt'}, kept['format-version'] ? badge('v' + kept['format-version'], 'strong') : muted('–')),
+        kindCell('table'),
+        h('td', {class: 'fmt'}, kept['format-version'] ? 'v' + kept['format-version'] : muted('–')),
         h('td', {class: 'queue'}, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref}, 'maintenance')}, queuePill(mine))
           : muted('–')),
         h('td', {class: 'gov'}, markPills(x.gov.get('table:' + [...levels, name].join('.'))) || muted('–')),
@@ -209,7 +213,7 @@ function contentsTable(catalog, levels, x) {
     }),
     ...x.views.map(name => h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'view', 'data-name': name},
       h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'view', namespace: levels, name, ref: x.ref})}, name)),
-      h('td', null, badge([icon('view'), 'view'])), h('td', {class: 'fmt'}, muted('–')), h('td', {class: 'queue'}, muted('–')),
+      kindCell('view'), h('td', {class: 'fmt'}, muted('–')), h('td', {class: 'queue'}, muted('–')),
       h('td', {class: 'gov'}, markPills(x.gov.get('view:' + [...levels, name].join('.'))) || muted('–')),
       h('td', {class: 'num snaps'}, muted('–')), h('td', {class: 'last'}, muted('–')),
       x.ref ? h('td', null, onRefCell(x, [...levels, name], false)) : null)),
@@ -220,10 +224,16 @@ function contentsTable(catalog, levels, x) {
     x.ref ? 'Last data change here' : 'Last data change', x.ref ? `On @${x.ref}` : null].filter(Boolean);
   // A column with nothing on any row says nothing, so it goes (Atelier's review, F16; backlog 193).
   const blank = td => ['', '–', '—'].includes(td.textContent.trim());
-  const empty = heads.map((_, i) => i > 1 && rows.every(r => blank(r.children[i])));
+  // Kind and Format go too when every row says the same, as a namespace's Kind did on every row of a catalog and
+  // every Format said v2 (the 27 Nov review; backlog 331): the one format a namespace's tables share is said beneath.
+  const said = i => new Set(rows.map(r => r.children[i].textContent.trim()).filter(t => !['', '–', '—'].includes(t)));
+  const formats = said(2);
+  const empty = heads.map((_, i) => i > 0 && (rows.every(r => blank(r.children[i]))
+    || (i === 1 && said(1).size === 1) || (i === 2 && formats.size === 1)));
   for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
-    h('p', {class: 'fine'}, 'Only what your groups may see is listed. ', x.ref
+    h('p', {class: 'fine'}, 'Only what your groups may see is listed. ',
+      formats.size === 1 ? `Every table here is Iceberg format ${[...formats][0]}. ` : null, x.ref
       ? `Format, snapshots and last data change are as @${x.ref} has each table. Open one to read it through @${x.ref}.`
         + (lineUnknown(x) ? ' A dash under Last data change means a ref this one came from has ended, so the catalog no longer knows which line wrote that version.' : '')
       : 'Open a table for its maintenance, access and history.'));

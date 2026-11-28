@@ -508,7 +508,7 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
   .ph .side { grid-column: 1; grid-row: auto; justify-content: flex-start; }
   .ph h1 { font-size: 20px; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpi:nth-child(3) { border-left: 0; }
+  .kpi:nth-child(2n+1) { border-left: 0; }
   .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
   .kpi { padding: 12px 14px; }
   .kpi-v { font-size: 24px; }
@@ -840,6 +840,8 @@ dialog { color: var(--text); }
 .goto-list .gin .gc { font-family: var(--f-mono); }
 .goto-list .gx { display: inline-flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .goto-list .ico-t { color: var(--accent); } .goto-list .ico-v { color: var(--held-ink); } .goto-list .ico-n { color: var(--text-2); }
+/* Contents draws a kind as the tree does: its icon in the tree's colour, then its word (backlog 331). */
+.contents td.kind { color: var(--text-2); white-space: nowrap; } .contents td.kind .ico-t { color: var(--accent); } .contents td.kind .ico-v { color: var(--held-ink); }
 .goto-list li.none { grid-template-columns: minmax(0, 1fr); color: var(--text-2); cursor: default; }
 .goto-list li.none:hover { background: none; }
 .goto-foot { padding: 10px 16px; border-top: 1px solid var(--line); }
@@ -1066,6 +1068,10 @@ tr[data-line]:not([data-line="main"]) .mlog-line { color: var(--cref-ink); }
 .tree .tree-err { padding: 4px 8px; }
 .tree .tree-err .refusal { padding: 8px 10px; gap: 4px; }
 .loading-line { color: var(--text-2); font-size: var(--t-13); }
+/* A page's loading line, and the one before sign-in answers, sit where the page will, inside its padding, not in the
+   corner (the 27 Nov review; backlog 331). */
+#booting, .slot > .loading-line { padding: 24px 28px 32px; }
+@media (max-width: 760px) { #booting, .slot > .loading-line { padding: 16px 14px 24px; } }
 .tab-body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .waiting { color: var(--text-2); }
 .signin-form .notice { margin: 0; }
@@ -1280,6 +1286,8 @@ td.acts { width: 1%; white-space: nowrap; }
 details.panel.fold > summary { cursor: pointer; list-style: none; }
 details.panel.fold > summary::-webkit-details-marker { display: none; }
 details.panel.fold > summary h2 { display: inline; font: 600 var(--t-14)/1.3 var(--f-ui); margin: 0; }
+/* A folded panel's caption keeps the panel's meta style, not its heading's bold (the 27 Nov review; backlog 331). */
+details.panel.fold > summary h2 .meta { margin-left: 6px; font: 400 var(--t-12)/1.3 var(--f-ui); font-variant-numeric: tabular-nums; color: var(--text-2); }
 details.panel.fold > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--text-2); }
 details.panel.fold[open] > summary::before { content: '\25BE'; }
 
@@ -1425,12 +1433,12 @@ details.setup-fold[open] > summary { margin-bottom: 6px; }
 @container frame (min-width: 761px) {
   @container page (max-width: 832px) {
     .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .kpi:nth-child(3) { border-left: 0; }
+    .kpi:nth-child(2n+1) { border-left: 0; }
     .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
   }
   @container page (max-width: 1092px) {
     .kpis:has(.kpi-list) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .kpis:has(.kpi-list) .kpi:nth-child(3) { border-left: 0; }
+    .kpis:has(.kpi-list) .kpi:nth-child(2n+1) { border-left: 0; }
     .kpis:has(.kpi-list) .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
   }
 }
@@ -1446,4 +1454,20 @@ details.setup-fold[open] > summary { margin-bottom: 6px; }
 }
 @container page (min-width: 833px) {
   #audit-page > .grid-21 { grid-template-columns: minmax(0, 2fr) minmax(400px, 1fr); }
+}
+
+/* Row actions look alike (the 27 Nov review; backlog 331): every one a ghost button with a quiet outline, the same on
+   Branches and tags as on Governance, and delete last, set apart and in the bad ink. */
+.row-acts .btn, .row-acts .btn.ghost { border-color: var(--line); background: transparent; color: var(--text-2); }
+.row-acts .btn:hover { background: var(--surface-2); border-color: var(--line-strong); color: var(--text); }
+.row-acts .btn.danger { margin-left: 10px; color: var(--bad-ink, var(--warn-ink)); }
+.row-acts .btn.danger:hover { background: var(--bad-wash); border-color: var(--bad-ink); }
+
+/* The overview's tiles fill their rows (the 27 Nov review; backlog 331): a presenter's six sat in four columns, two empty
+   cells left in the second row and its first tile's left border breaking the line. Five or six sit as three columns
+   where the four would stand, each row's first tile with no left border and every row after the first ruled above. */
+@container page (min-width: 1093px) {
+  #overview-kpis:has(> .kpi:nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #overview-kpis:has(> .kpi:nth-child(5)) > .kpi:nth-child(3n+1) { border-left: 0; }
+  #overview-kpis:has(> .kpi:nth-child(5)) > .kpi:nth-child(n+4) { border-top: 1px solid var(--line); }
 }

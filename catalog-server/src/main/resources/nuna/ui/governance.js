@@ -113,9 +113,9 @@ function standingTable(catalog, standing, reload) {
       h('td', {class: 'name'}, onLink(catalog, x.on)),
       h('td', {class: 'wrap'}, x.reason || muted('–')),
       h('td', null, h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'] || '')),
-      h('td', null, x.kind === 'hold'
+      h('td', null, h('div', {class: 'row-acts'}, x.kind === 'hold'
         ? may(catalog, 'manage-tags') ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => releaseHold(level, x, reload)}, 'Release') : null
-        : operates() ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => drFreeze(level, true, reload)}, 'Lift') : null));
+        : operates() ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => drFreeze(level, true, reload)}, 'Lift') : null)));
   }));
 }
 
@@ -195,7 +195,8 @@ export function grantsPage(catalog, group) {
           'data-privilege': x.privilege, 'data-path': pathOf(x.securable), 'data-branch': x.branch || null, class: isMade(x) ? 'is-new' : null},
         h('td', {class: 'name'}, x.group), privilegeCell(x), h('td', null, onWords(x.securable)),
         h('td', null, h('span', {class: 'tnum'}, at(x['granted-at'])), ' ', muted(x['granted-by'])),
-        h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(catalog, x, () => showList())}, 'Revoke')))))
+        h('td', null, h('div', {class: 'row-acts'}, h('button', {class: 'btn sm ghost', type: 'button',
+          onclick: () => revokeDialog(catalog, x, () => showList())}, 'Revoke'))))))
           : h('p', {class: 'muted'}, g ? `${g} holds no grant in ${catalog}.` : `Your groups hold no grant in ${catalog}.`)];
     });
   };
@@ -328,7 +329,7 @@ function freezePage(catalog) {
     eyebrow: `${catalog} · governance`,
     title: `DR freezes in ${catalog}`,
     sub: 'A freeze stops every cleanup and write in its namespace until it is lifted. As a platform operator you freeze a '
-      + 'namespace here by its path. The catalog's holds, classifications and summary are for those whose groups hold a '
+      + 'namespace here by its path. The catalog\'s holds, classifications and summary are for those whose groups hold a '
       + 'grant in it.',
     side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'freeze-path', onclick: () => freezeOnPath(catalog, () => {})},
       icon('snow'), 'Freeze a namespace for DR'),

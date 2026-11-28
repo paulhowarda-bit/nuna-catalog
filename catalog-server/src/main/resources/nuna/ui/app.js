@@ -820,6 +820,9 @@ async function start() {
   consoleEl.hidden = false;
   $('#booting').hidden = true;
   showWho();
+  // No rail item is drawn until the catalog list says what the caller's groups may use, nor one left from whoever
+  // signed in before (the 27 Nov review; backlog 331): setChrome draws them once it has answered.
+  for (const a of $$('a[data-k]', navEl)) a.hidden = true;
   fill(slot, h('p', {class: 'loading-line'}, 'Loading…'));
   try {
     const listed = await api.catalogs();
