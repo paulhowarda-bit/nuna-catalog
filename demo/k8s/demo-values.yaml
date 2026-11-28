@@ -76,6 +76,15 @@ config:
         # What the sign-in button names, instead of the issuer's host (backlog 332). The token box stays on
         # (catalog-values.yaml): demo.sh prints tokens to paste, and it folds under "Developer sign-in".
         name: the demo's Keycloak
+      # Fidelity mode (backlog 344, D56): the pack's words. Its mark spells the name, so the name does not sit beside it.
+      brand:
+        show-name: false
+        toggle-label: Fidelity mode
+
+# The Fidelity pack (deploy/brand/fidelity), which demo.sh puts in this ConfigMap; the chart mounts it at
+# /etc/nuna/brand and sets nuna.ui.brand.dir there (backlog 344).
+brandConfigMap:
+  name: nuna-brand
 
 # The catalog's logs, the audit log nuna.audit among them, go over OTLP to the audit table writer's receiver, which
 # keeps nuna.audit's records for the Audit page (audit-tables-values.yaml); metrics and traces go nowhere. The
