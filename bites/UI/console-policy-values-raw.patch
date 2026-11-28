@@ -1,0 +1,17 @@
+Breaks: A maintenance policy value shows as stored (true, P14D, 536870912) instead of in words.
+Module: catalog-server
+Test: ConsoleHealthTest#policyKeysShowTheirLabelsWithTheKeyInTheirTitle
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/health.js b/catalog-server/src/main/resources/nuna/ui/health.js
+index fa97238e..d90501a8 100644
+--- a/catalog-server/src/main/resources/nuna/ui/health.js
++++ b/catalog-server/src/main/resources/nuna/ui/health.js
+@@ -450,7 +450,7 @@ export function policyValue(key, value) {
+     : key.endsWith('-bytes') && number !== null ? sizeWords(number)
+     : key.endsWith('-ratio') && number !== null ? fmt(Math.round(number * 1000) / 10) + '%'
+     : durationWords(raw);
+-  if (!words || words === raw) return raw;
++  if (!words || words === raw || true) return raw;
+   return h('span', {title: key.endsWith('-bytes') ? plural(number, 'byte') : raw, 'data-raw': raw}, words);
+ }
+ 

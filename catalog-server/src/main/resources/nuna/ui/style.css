@@ -212,6 +212,8 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .grid-21 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* The Service page's panels, a gap between each row (the 27 Nov review, item 1; backlog 322). */
+.health-figures { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 /* KPI groups */
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); position: relative; }

@@ -198,6 +198,11 @@ class ConsoleHealthTest {
         assertThat(grafana.getAttribute("href")).isEqualTo(GRAFANA);
         assertThat(grafana.getAttribute("target")).isEqualTo("_blank");
         assertThat(grafana.getAttribute("rel")).isEqualTo("noopener");
+        assertThat(grafana.findElement(By.cssSelector("svg use")).getDomAttribute("href"))
+                .as("a new tab's own symbol, not Sign out's (the 27 Nov review, item 7)").isEqualTo("#i-newtab");
+        // This server started minutes ago, so its figures count from then, and the page says so.
+        assertThat(driver.findElement(By.cssSelector("#catalog-health .ph .eyebrow")).getText())
+                .matches("(?i)all catalogs · since \\d\\d:\\d\\d, when a server started");
         List<WebElement> servers = driver.findElements(By.cssSelector("#health-servers > div[data-server]"));
         assertThat(servers).hasSize(3);
         assertThat(servers.get(0).getText()).contains("this server", "answered");
@@ -371,9 +376,14 @@ class ConsoleHealthTest {
         browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=orders&tab=maintenance");
         assertLabel(By.cssSelector("[data-policy] dt [data-key='compaction.enabled']"), "Compaction");
         assertLabel(By.cssSelector("[data-policy] dt [data-key='orphan-removal.older-than']"), "Remove orphans older than");
+        // Its values in words too, each as stored in its title (the 27 Nov review, item 5; backlog 322).
+        assertValue(factValue("compaction.enabled"), "On", "true");
+        assertValue(factValue("orphan-removal.older-than"), "14 days", "P14D");
         browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=orders&tab=history");
         assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.max-snapshot-age']"), "Keep snapshots for");
         assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.min-snapshots-to-keep']"), "Keep at least");
+        assertValue(factValue("snapshot-expiry.max-snapshot-age"), "5 days", "P5D");
+        assertValue(factValue("snapshot-expiry.enabled"), "Off", "false");
 
         // The catalog's policy needs describe on the catalog, which select on a namespace does not give.
         String describers = "health-describers-" + Api.suffix();
@@ -385,12 +395,28 @@ class ConsoleHealthTest {
                 "Target file size");
         assertLabel(By.cssSelector("#policy tr[data-key='manifest-rewrite.min-manifests'] [data-key]"), "Fewest manifests");
         assertThat(driver.findElements(By.cssSelector("#policy td code"))).as("no key shown as a name").isEmpty();
+        assertValue(By.cssSelector("#policy tr[data-key='compaction.target-file-size-bytes'] td.name [data-raw]"), "512 MB",
+                "536,870,912 bytes");
+        assertValue(By.cssSelector("#policy tr[data-key='compaction.delete-file-ratio'] td.name [data-raw]"), "30%", "0.3");
+        assertThat(browser.await(By.cssSelector("#policy tr[data-key='compaction.min-input-files'] td.name")).getText())
+                .as("a count stays as stored").isEqualTo("5");
         driver.findElement(By.xpath("//div[@id='policy']//button[normalize-space()=\"Edit the catalog's policy\"]")).click();
         browser.awaitText(By.cssSelector("dialog.dlg h2"), "Policy for trading");
         WebElement field = driver.findElement(By.xpath("//dialog//label[.//input[@name='compaction.delete-file-ratio']]"));
         assertThat(field.findElement(By.cssSelector("[data-key]")).getText()).isEqualTo("Delete-file share");
         assertThat(field.findElement(By.cssSelector("[data-key]")).getDomAttribute("title"))
                 .isEqualTo("compaction.delete-file-ratio");
+    }
+
+    /** The value beside a policy key's label in a facts list. */
+    private static By factValue(String key) {
+        return By.xpath("//dt[.//*[@data-key='" + key + "']]/following-sibling::dd[1]//*[@data-raw]");
+    }
+
+    private void assertValue(By value, String words, String title) {
+        WebElement shown = browser.await(value);
+        assertThat(shown.getText()).isEqualTo(words);
+        assertThat(shown.getDomAttribute("title")).isEqualTo(title);
     }
 
     private void assertLabel(By label, String words) {

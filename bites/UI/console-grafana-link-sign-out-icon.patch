@@ -1,0 +1,17 @@
+Breaks: The Grafana link takes Sign out's symbol again.
+Module: catalog-server
+Test: ConsoleHealthTest#anOperatorSeesTheWholeDeploymentsHealth
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/health.js b/catalog-server/src/main/resources/nuna/ui/health.js
+index fa97238e..0d4170ba 100644
+--- a/catalog-server/src/main/resources/nuna/ui/health.js
++++ b/catalog-server/src/main/resources/nuna/ui/health.js
+@@ -81,7 +81,7 @@ export function healthPage(tab, profile, grafana) {
+ 
+ /** The way on to Grafana's charts, the same figures over time, when the server names a Grafana (backlog 319). */
+ const grafanaLink = url => url ? h('a', {class: 'btn ghost sm', href: url, target: '_blank', rel: 'noopener', 'data-grafana': ''},
+-  icon('newtab'), h('span', {class: 'hide-sm'}, 'Charts over time in Grafana'), h('span', {class: 'only-sm'}, 'Grafana')) : null;
++  icon('ext'), h('span', {class: 'hide-sm'}, 'Charts over time in Grafana'), h('span', {class: 'only-sm'}, 'Grafana')) : null;
+ 
+ async function catalogHealth(focus, grafana) {
+   let health;
