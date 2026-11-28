@@ -118,6 +118,38 @@ export const flaggedHere = g => (g.attributes || []).some(a => a.attribute === '
 /** What a flagged table's Overview, Schema and History say in place of the refused load (Atelier, 2026-11-24; backlog 241). */
 export const TRINO_WORDS = 'Its data is read through Trino, which applies each group\'s rule. The console shows no rows.';
 
+/**
+ * Whether a table's load was refused because the table is closed until classified (D27): in a regulated area, with no
+ * classification of its own. Told from the table's own answer, not from the catalog's marks, which need describe on
+ * the catalog (Atelier, 2026-11-27; backlog 324). The catalog answers it as a ForbiddenException, as every refusal.
+ */
+export const closedRefusal = error => !!error && error.status === 403
+  && /closed until it is classified/.test(String(error.message || ''));
+
+/** The regulated area a closed table is in, in words: its nearest level marked regulated, or null when unread. */
+async function regulatedArea(target) {
+  const {g, levels} = await governanceOf(target);
+  const a = (g.attributes || []).find(x => x.attribute === 'regulated' && String(x.value).toLowerCase() === 'true');
+  const t = a && levels.get(String(a.level).split(':')[1]);
+  return t ? (t.kind === 'catalog' ? t.catalog : what(t)) : null;
+}
+
+/**
+ * The one notice a closed table's tabs show in place of its load (backlog 324): closed, why, and who opens it; for a
+ * caller who may manage tags, Set a classification, the Access tab's dialog. `reload` runs once it is set.
+ */
+export async function closedNotice(target, reload) {
+  const area = await regulatedArea(target).catch(() => null);
+  const tags = may(target.catalog, 'manage-tags');
+  return h('div', {class: 'notice warn-note', id: 'closed-until-classified'}, icon('lock'),
+    h('div', {class: 'stack'},
+      h('span', null, h('b', null, 'Closed until classified.'), ` ${target.name} is in `,
+        area ? ['the regulated area ', h('b', null, area)] : 'a regulated area', ' and has no classification of its own, so nobody can read or change it. ',
+        'A steward opens it by setting a classification.'),
+      tags ? h('div', null, h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'classify-closed',
+        onclick: () => classify(target, null, reload)}, 'Set a classification')) : null));
+}
+
 /** The governance facts on a table's overview: its holds, a DR freeze, its classification and owner, with where each was set. */
 export async function governanceSummary(target) {
   const {g, levels} = await governanceOf(target);
@@ -485,8 +517,11 @@ const RUNG_WORDS = {
   modify: 'Read and write its data, and change it: its schema, properties and maintenance',
 };
 
-/** What the caller's groups' grants allow on the object, in words (Atelier, 2026-11-23: Access leads with it). */
-async function youMay(target) {
+/**
+ * What the caller's groups' grants allow on the object, in words (Atelier, 2026-11-23: Access leads with it); on a
+ * table closed until classified, nothing until it is (backlog 324).
+ */
+async function youMay(target, closed = false) {
   const held = await heldHere(target);
   const privileges = new Set(held.map(g => g.privilege));
   const rung = RUNGS.filter(x => privileges.has(x)).pop();
@@ -497,6 +532,7 @@ async function youMay(target) {
   if (privileges.has('manage-grants') || may(target.catalog, 'manage-grants')) lines.push('Grant on it, and see who holds what');
   const groups = [...new Set(held.map(g => g.group))].sort();
   return h('div', {class: 'panel', id: 'you-may'}, h('h2', null, 'What you may do ', h('span', {class: 'meta'}, `on this ${target.kind}`)),
+    closed && lines.length ? h('p', {'data-closed': ''}, h('b', null, 'Nothing until it is classified; then:')) : null,
     lines.length ? h('ul', {class: 'may-list'}, lines.map(l => h('li', null, icon('check'), l + '.')))
       : h('p', {class: 'muted'}, `Your groups hold no grant that reaches this ${target.kind}.`),
     h('p', {class: 'fine'}, groups.length ? `Through your groups' grants: ${groups.join(', ')}. ` : '',
@@ -506,13 +542,21 @@ async function youMay(target) {
 /**
  * A table's, view's or namespace's Access tab: Grant access at its top for those who manage the catalog's grants
  * (backlog 248), what the caller may do, a reader's view of a flagged table, then its governance, a table's row
- * filters and column masks (backlog 243), then its grants.
+ * filters and column masks (backlog 243), then its grants. A table closed until classified (`closed`, its load's
+ * answer) shows the closed notice in place of the reader's view, and a classification set here reloads through
+ * `reopen`, which reads the table again (backlog 324).
  */
-export function accessTab(target, reload) {
+export function accessTab(target, reload, {closed = Promise.resolve(false), reopen = reload} = {}) {
   const you = h('div');
   const gov = h('div');
-  load(you, () => youMay(target));
-  load(gov, () => governanceTab(target, reload));
+  const shut = h('div');
+  const view = h('div');
+  load(you, async () => youMay(target, await closed));
+  load(gov, async () => governanceTab(target, await closed ? reopen : reload));
+  closed.then(async isClosed => {
+    if (isClosed) fill(shut, await closedNotice(target, reopen));
+    else fill(view, yourView(target, heldHere(target)));
+  });
   // Which branches and tags keep a table or view, after its governance (item 279): from item 170's read alone.
   const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;
   if (kept) load(kept, () => keptPanel(target));
@@ -527,7 +571,7 @@ export function accessTab(target, reload) {
   const acts = may(target.catalog, 'manage-grants') ? h('div', {class: 'refusal-acts access-acts'},
     h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'grant-access', onclick: () => grantAccess(target,
       {after: made => { listed = listAgain(made); }, closed: showMade})}, icon('key'), 'Grant access')) : null;
-  return h('div', {class: 'stack', id: 'access-tab'}, acts, you, yourView(target, heldHere(target)), gov, kept, rulesPanel(target), grants);
+  return h('div', {class: 'stack', id: 'access-tab'}, acts, shut, you, view, gov, kept, rulesPanel(target), grants);
 }
 
 /** The Access tab's grants, and what lists them again once the dialog makes one, marking it. */

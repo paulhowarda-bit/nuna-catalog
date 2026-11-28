@@ -743,11 +743,16 @@ class ConsoleBrowserTest {
 
     @Test
     void refusalsAreShownExactlyAsTheCatalogAnswered() {
-        // D27: an unclassified table in a regulated namespace is refused everything but describe.
+        // D27: an unclassified table in a regulated namespace is refused everything but describe. The console says it
+        // is closed until classified in its own notice instead of the refusal (backlog 324; the notice's words are
+        // ConsoleFlaggedTableBrowserTest's).
         signIn(tester());
         browser.open("/ui/#" + at("table", ledger, "accounts", null));
-        assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
-                + "/tables/accounts?snapshots=all", null, AUTH, tester(), "X-Iceberg-Access-Delegation", "none"));
+        assertThat(textContent(browser.await(By.id("closed-until-classified")))).startsWith("Closed until classified.");
+        assertThat(driver.findElements(By.cssSelector("#table-page .tab-body .refusal"))).isEmpty();
+        assertThat(JsonPath.<String>read(expect(api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
+                + "/tables/accounts?snapshots=all", null, AUTH, tester(), "X-Iceberg-Access-Delegation", "none"), 403)
+                .body(), "$.error.message")).endsWith("it is closed until it is classified");
 
         // Reading an object's audit trail needs manage-grants: the tab is not offered, and a link to it says so
         // without asking the catalog (backlog 184), which would refuse it.

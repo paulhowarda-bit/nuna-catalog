@@ -1,6 +1,7 @@
 // The catalog's tree, on the left of every browse page: namespaces, tables and views, each level listed from
 // Iceberg REST when it is first opened. A table in tonight's queue carries a mark, and so does whatever a hold, a DR
-// freeze or a regulated flag is set on, from the catalog's governance summary and holds list (item 128). Read through
+// freeze or a regulated flag is set on, from the catalog's governance summary and holds list (item 128), and a table
+// closed until classified, from that summary or from the table's own load (backlog 324). Read through
 // a catalog branch or tag (r=, item 109), the tree lists each level through catalog@ref, names the ref beside the
 // catalog, and its links keep it (item 173); each ref has a tree of its own, which marks the tables the branch changed
 // and the namespaces above them (backlog 201).
@@ -26,10 +27,10 @@ export function treeOf(catalog, ref = null) {
   const el = h('div', {class: 'tree', 'data-catalog': catalog, 'data-ref': ref || null}, h('div', {class: 'tree-in'},
     h('label', {class: 'field'}, icon('search'), input), ul,
     h('p', {class: 'tree-key'}, [['m-bad', 'equality deletes'], ['m-warn', 'small files or deletes'], ['m-held', 'held'],
-      ['m-frozen', 'DR freeze'], ['m-reg', 'regulated'], ref ? ['m-chg', `changed on @${ref}`] : null].filter(Boolean)
+      ['m-frozen', 'DR freeze'], ['m-reg', 'regulated'], ['m-closed', 'closed until classified'], ref ? ['m-chg', `changed on @${ref}`] : null].filter(Boolean)
       .map(([c, w]) => h('span', null, h('i', {class: c}), w)))));
   st = {catalog, ref, el, ul, input, got: new Map(), asked: new Map(), open: new Set(), cur: 'catalog', marks: new Map(), gov: new Map(),
-    changed: new Set()};
+    changed: new Set(), closed: new Map()};
   trees.set(id, st);
   input.addEventListener('input', () => draw(st));
   queue().then(rows => {
@@ -44,6 +45,19 @@ export function treeOf(catalog, ref = null) {
     }, () => {});
   }
   return st;
+}
+
+/**
+ * What a table's own load answered of it being closed until classified (backlog 324), for every tree of its catalog:
+ * it outranks the catalog's marks, which a caller without describe on the catalog does not get.
+ */
+export function noteClosed(target, closed) {
+  const node = 'table:' + [...target.namespace, target.name].join('.');
+  for (const st of trees.values()) {
+    if (st.catalog !== target.catalog || st.closed.get(node) === closed) continue;
+    st.closed.set(node, closed);
+    draw(st);
+  }
 }
 
 /** A dot on a table the branch read changed, or on a namespace above one. */
@@ -104,13 +118,15 @@ function markOf(st, key, isNamespace, node) {
     }
   }
   const g = st.gov.get(node) || {};
+  const closed = st.closed.get(node) ?? !!g.closed;
   const words = [eq && 'queued with equality deletes', other && 'queued with small files or deletes', g.held && 'held',
-    g.frozen && 'DR freeze', g.regulated && 'regulated'].filter(Boolean);
+    g.frozen && 'DR freeze', g.regulated && 'regulated', closed && 'closed until classified'].filter(Boolean);
   if (!words.length) return null;
   const label = words.join(', ').replace(/^./, c => c.toUpperCase()) + '.';
   return h('span', {class: 'mk', role: 'img', 'aria-label': label, title: label},
     eq ? h('i', {class: 'm-bad'}) : null, other ? h('i', {class: 'm-warn'}) : null, g.held ? h('i', {class: 'm-held'}) : null,
-    g.frozen ? h('i', {class: 'm-frozen'}) : null, g.regulated ? h('i', {class: 'm-reg'}) : null);
+    g.frozen ? h('i', {class: 'm-frozen'}) : null, g.regulated ? h('i', {class: 'm-reg'}) : null,
+    closed ? h('i', {class: 'm-closed'}) : null);
 }
 
 function draw(st) {

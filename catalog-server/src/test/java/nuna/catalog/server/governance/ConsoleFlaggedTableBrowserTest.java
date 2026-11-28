@@ -31,7 +31,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * A table flagged for row and column rules in the console, in a real browser (D20; Atelier, 2026-11-24; backlog 241):
  * its Overview, Schema and History say it is read through Trino instead of the catalog's refusal; a steward flags it
  * and removes the flag from its Access tab, and is told in words that the rules stand while they do; and a rule change
- * has its own kind and a sentence in the object's trail and on the Audit page.
+ * has its own kind and a sentence in the object's trail and on the Audit page. A flagged table that is closed until
+ * classified says that instead, and leads a steward to classify it (backlog 324).
  */
 @Tag("heavy")
 @GovernanceServer
@@ -139,6 +140,72 @@ class ConsoleFlaggedTableBrowserTest {
         expect(api.send("GET", "/v1/trading" + table, null, AUTH, tester()), 200);
     }
 
+    /**
+     * A flagged table in a regulated area with no classification of its own is closed (D27), and the console says so
+     * from the table's own answer, not as read through Trino (the 27 Nov review, item 2; backlog 324): one notice on
+     * each tab that needs its load, a pill in the header, a mark in the tree and its legend, and "nothing until it is
+     * classified" in What you may do, with no reader's-view refusal; a steward who reads it sets its classification
+     * from the notice, and the table opens, to the Trino words.
+     */
+    @Test
+    void aTableClosedUntilClassifiedSaysSoAndAStewardClassifiesItFromTheNotice() {
+        String ns = api.namespace();
+        api.table(ns, "owners");
+        String table = "/namespaces/" + Api.ns(ns) + "/tables/owners";
+        expect(api.manage("PUT", table + "/attributes/" + FLAG, "{\"value\":\"true\",\"provenance\":\"test\"}", AUTH,
+                steward), 200);
+        expect(api.manage("PUT", "/namespaces/" + Api.ns(ns) + "/attributes/regulated",
+                "{\"value\":\"true\",\"provenance\":\"test\"}", AUTH, steward), 200);
+        assertThat(JsonPath.<String>read(expect(api.send("GET", "/v1/trading" + table, null, AUTH, tester()), 403).body(),
+                "$.error.message")).endsWith("it is closed until it is classified");
+        String closed = "Closed until classified. owners is in the regulated area " + ns + " and has no classification"
+                + " of its own, so nobody can read or change it. A steward opens it by setting a classification.";
+
+        // A reader: one notice on each tab that needs the load, never the Trino words or the refusal, and no button.
+        browser.signIn(tester());
+        for (String tab : new String[] {null, "schema", "history"}) {
+            browser.open("/ui/#" + at(ns, "owners", tab));
+            assertThat(textContent(browser.await(By.id("closed-until-classified")))).as(tab).isEqualTo(closed);
+            assertThat(driver.findElements(By.id("read-through-trino"))).as(tab).isEmpty();
+            assertThat(driver.findElements(By.cssSelector("#table-page .tab-body .refusal"))).as(tab).isEmpty();
+            assertThat(driver.findElements(By.cssSelector("[data-act='classify-closed']"))).as(tab).isEmpty();
+        }
+        assertThat(textContent(browser.await(By.cssSelector("#table-page .title-row .pill[data-closed]"))))
+                .isEqualTo("Closed until classified");
+        browser.await(By.cssSelector(".tree a.node[data-node='table:" + ns + ".owners'] .mk i.m-closed"));
+        assertThat(driver.findElements(By.cssSelector(".tree-key span")).stream().map(ConsoleBrowser::textContent))
+                .contains("closed until classified");
+
+        // Its Access tab: the notice in place of the reader's view, and nothing until it is classified.
+        browser.open("/ui/#" + at(ns, "owners", "access"));
+        assertThat(textContent(browser.await(By.cssSelector("#access-tab #closed-until-classified")))).isEqualTo(closed);
+        assertThat(textContent(browser.await(By.cssSelector("#you-may [data-closed]"))))
+                .isEqualTo("Nothing until it is classified; then:");
+        assertThat(driver.findElements(By.id("your-view"))).isEmpty();
+        assertThat(driver.findElements(By.xpath("//div[@id='access-tab']//div[contains(@class,'refusal')]"
+                + "[contains(., 'closed until it is classified')]"))).isEmpty();
+
+        // A steward who reads it: Set a classification in the notice, the Access tab's dialog; the table opens.
+        browser.signIn(readingSteward());
+        browser.open("/ui/#" + at(ns, "owners", "overview"));
+        WebElement set = browser.await(By.cssSelector("#closed-until-classified button[data-act='classify-closed']"));
+        assertThat(set.getText()).isEqualTo("Set a classification");
+        assertThat(set.getDomAttribute("class")).contains("primary");
+        set.click();
+        assertThat(browser.await(By.cssSelector("dialog.dlg .dlg-body")).getText())
+                .contains("A table in a regulated area stays closed until it has a classification of its own.");
+        new org.openqa.selenium.support.ui.Select(browser.await(By.cssSelector("dialog.dlg select[name='cls']")))
+                .selectByValue("internal");
+        submit("is internal");
+        assertThat(textContent(browser.await(By.id("read-through-trino")))).isEqualTo(TRINO);
+        assertThat(driver.findElements(By.id("closed-until-classified"))).isEmpty();
+        browser.await("the header still says closed", d -> d.findElements(
+                By.cssSelector("#table-page .title-row .pill[data-closed]")).isEmpty());
+        browser.await("the tree still marks it closed", d -> d.findElements(
+                By.cssSelector(".tree a.node[data-node='table:" + ns + ".owners'] .mk i.m-closed")).isEmpty());
+        assertThat(own(table).get("classification")).containsEntry("value", "internal").containsEntry("provenance", "console");
+    }
+
     /** A rule set and removed is its own kind in the table's trail, each with who did it, for which group, on which table. */
     @Test
     void aRuleChangeHasItsOwnKindAndASentenceInTheTablesTrail() {
@@ -232,6 +299,16 @@ class ConsoleFlaggedTableBrowserTest {
     private String tester() {
         Instant now = clock.instant();
         return IssuerForTests.sign(IssuerForTests.claims("tester", "nuna-console", IssuerForTests.GROUP)
+                .issueTime(Date.from(now.minusSeconds(5)))
+                .expirationTime(Date.from(now.plus(Duration.ofHours(1))))
+                .build());
+    }
+
+    /** A steward who also reads, as the demo's stella does: the tester's grants and manage-tags. */
+    private String readingSteward() {
+        Instant now = clock.instant();
+        return IssuerForTests.sign(IssuerForTests.claims("stella", "nuna-console", IssuerForTests.GROUP,
+                        GovernanceServer.STEWARDS)
                 .issueTime(Date.from(now.minusSeconds(5)))
                 .expirationTime(Date.from(now.plus(Duration.ofHours(1))))
                 .build());

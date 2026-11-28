@@ -13,7 +13,9 @@ import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, f
 import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {policyKey, policyValue, sourceWords, tableHealthTab} from './health.js';
-import {accessTab, actionWords, auditTab, exportDialog, flaggedHere, governanceSummary, TRINO_WORDS} from './panels.js';
+import {accessTab, actionWords, auditTab, closedNotice, closedRefusal, exportDialog, flaggedHere, governanceSummary, TRINO_WORDS}
+  from './panels.js';
+import {noteClosed} from './tree.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
@@ -154,9 +156,18 @@ export function tablePage(target, tab, route) {
   const afterChange = () => {
     forget(target);
     metadata = loadTable(target);
+    // A classification set opens a closed table: its mark goes once it loads.
+    metadata.then(() => {
+      const shut = $('.pill[data-closed]', title);
+      if (shut) shut.remove();
+      noteClosed(target, false);
+    }, () => {});
     show();
   };
-  headMarks(target, title);
+  // Whether the table is closed until classified, from its own load's answer (backlog 324): null when another refusal
+  // leaves it unknown.
+  const closedOf = () => metadata.then(() => false, error => closedRefusal(error) || null);
+  headMarks(target, title, closedOf());
   // Compact now is main's: the worker compacts main only.
   if (!target.ref) mayModify(target).then(may => {
     if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
@@ -168,7 +179,7 @@ export function tablePage(target, tab, route) {
     } else if (key === 'maintenance') {
       load(body, () => throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload)));
     } else if (key === 'access') {
-      load(body, () => throughRef(target, () => metadata, 'access', () => accessTab(target, reload)));
+      load(body, () => throughRef(target, () => metadata, 'access', () => accessTab(target, reload, {closed: closedOf(), reopen: afterChange})));
     } else if (key === 'audit' && !trailOpen(target.catalog)) {
       fill(body, closedNote(trailWords(target.catalog)));
     } else if (key === 'audit') {
@@ -179,6 +190,7 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
+          if (closedRefusal(error)) return closedNotice(target, afterChange);
           return await flaggedLoad(error, target) || await missingLoad(error, target, title)
             || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
         }
@@ -194,8 +206,15 @@ export function tablePage(target, tab, route) {
   return main;
 }
 
-/** The marks beside a table's name: tonight's queue, a hold, a DR freeze and its classification, as the catalog says them. */
-function headMarks(target, title) {
+/**
+ * The marks beside a table's name: tonight's queue, a hold, a DR freeze and its classification, as the catalog says
+ * them; and Closed until classified, as its load answers (`closed`), which the tree marks too (backlog 324).
+ */
+function headMarks(target, title, closed) {
+  closed.then(shut => {
+    if (shut !== null) noteClosed(target, shut);
+    if (shut) title.append(h('span', {class: 'pill bad', 'data-closed': ''}, 'Closed until classified'));
+  });
   queue().then(rows => {
     const row = queueOf(rows, target.catalog).find(r => keyOfRow(r) === [target.catalog, pathOf(target)].join('.'));
     if (row) {

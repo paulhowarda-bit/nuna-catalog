@@ -440,6 +440,7 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .tree .mk { margin-left: auto; display: inline-flex; gap: 3px; }
 .tree .mk i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .mk .m-warn { background: var(--warn-mark); } .mk .m-bad { background: var(--bad-mark); } .mk .m-held { background: var(--held-mark); } .mk .m-frozen { background: var(--frozen-mark); } .mk .m-reg { background: var(--text-2); }
+.mk .m-closed, .tree-key .m-closed { box-shadow: inset 0 0 0 2px var(--bad-mark); }
 .browse { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 640px; }
 .browse .nc-main { padding-top: 20px; }
 
