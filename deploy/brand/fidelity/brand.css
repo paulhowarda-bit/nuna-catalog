@@ -1,23 +1,27 @@
-/* Fidelity mode for the console and the documentation (backlog 333; Paul, 2026-11-28, D56): the partial pack.
-   It holds only what is not a licensed asset: the colours of Atelier's work mock-up (work item 011) as the brand slot's
-   tokens. The fonts, the word mark and the favicon are licensed to associates and vendors only, so they never enter
-   this repository: the work install adds them, as docs/brand-at-work.md says. Until then the pack keeps Ice line's
-   fonts (Instrument Sans, Geist Mono) and the peak mark, drawn white on the Evergreen header band.
+/* Fidelity mode for the console and the documentation (backlog 333 and 344; Paul, 2026-11-28, D56): the pack the
+   demo runs and work installs. It holds only what is not a licensed asset: the colours of Atelier's work mock-up
+   (work item 011) as the brand slot's tokens, and a placeholder mark. The font and the word mark are licensed to
+   associates and vendors only, so they never enter this repository. The pack already names both, so work adds only
+   the two files beside this one (docs/brand-at-work.md):
+   - fidelity-sans.woff2: until it is there, the font falls back to Ice line's Instrument Sans (the browser notes one
+     missing file);
+   - mark.svg: work's white word mark replaces the placeholder here, an Evergreen badge with the peak and "nuna".
 
    Light-only for now (--brand-light-only): whether the firm's design system has dark-mode tokens is open at work. With
    them, work drops --brand-light-only and adds the dark tokens under the two dark selectors configure/brand.html gives.
 
    Values marked "derived" are not in the mock-up's list; work's Brand Team may replace them. */
 
-/* Work adds, beside this file (docs/brand-at-work.md):
-   @font-face { font-family: 'Fidelity Sans'; src: url('fidelity-sans.woff2') format('woff2'); font-weight: 400 700;
-     font-display: swap; }
-   and in :root below: --f-ui: 'Fidelity Sans', 'Instrument Sans', system-ui, sans-serif; --brand-mark: 1;
-   --brand-mark-w: <the word mark's width at 20 px high, at most 120px>; --mark-h: 20px; */
+@font-face { font-family: 'Fidelity Sans'; src: url('fidelity-sans.woff2') format('woff2'); font-weight: 400 700;
+  font-display: swap; }
 
 :root {
   --brand-pack: 1;
   --brand-light-only: 1;
+  --brand-mark: 1;
+  --brand-mark-w: 120px;  /* the most the slot allows; the mark is drawn left-aligned in it, never stretched */
+  --mark-h: 20px;
+  --f-ui: 'Fidelity Sans', 'Instrument Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
 
   --bg: #f9f7f5;          /* Mist */
   --surface: #ffffff;

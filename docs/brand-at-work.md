@@ -5,85 +5,60 @@ The console and the documentation can wear an install's own look through a brand
 pack and give instructions to work to complete it. Add the button." This repository is on Paul's personal GitHub, and
 the firm's fonts and logo are licensed to associates and vendors only, so they never enter it. What could come here
 did: `deploy/brand/fidelity/brand.css`, the colours of Atelier's work mock-up (work item 011) as the slot's tokens.
-The work install adds the rest, below, and keeps those files at work only.
+Paul, 2026-11-28 (backlog 344): "I want it to run with the pack we created. At work it should just install the logo
+and fonts." So the pack in `deploy/brand/fidelity/` is finished apart from two licensed files: its `brand.css` already
+names the font and the mark, its `mark.svg` is a placeholder, and the demo runs it as it stands. Work adds the font,
+replaces the placeholder with the logo, and keeps both files at work only.
 
-Until it does, the partial pack already works: Fidelity's colours, an Evergreen header band with the peak drawn white,
-Ice line's fonts, Ice line's tab icon, and the "Fidelity mode" button beside the theme switch, which turns the pack
-off and on for each viewer.
+Until it does, the pack already works: Fidelity's colours, an Evergreen header band, a placeholder mark (an Evergreen
+badge with the peak and "nuna"), Ice line's fonts (the browser notes the one missing font file), Ice line's tab icon,
+and the "Fidelity mode" button beside the theme switch, which turns the pack off and on for each viewer.
 
-## 1. Gather the licensed files (work only)
+## 1. Add the font and the logo (work only)
 
-Into a folder on a work machine, beside a copy of `deploy/brand/fidelity/brand.css`:
+Copy `deploy/brand/fidelity/` to a folder on a work machine, and put in it:
 
-- `fidelity-sans.woff2` (and a bold cut if it ships separately): Fidelity Sans, from the Brand Team's font
-  distribution. `woff2` only if you can; `woff`, `ttf` and `otf` are served too, but are larger.
-- `mark.svg`: the white word mark, for the Evergreen header band. The slot draws it in a fixed box at most 20 px high
-  and 120 px wide, left-aligned, never squashed or cropped; export it with its own clear space trimmed, at a ratio of
-  6:1 or narrower. Note its width when drawn 20 px high.
-- `favicon.svg`: only if the Brand Team allows the firm's symbol as a browser tab icon on an internal tool. Without it
-  the tab keeps Ice line's peak, which is fine.
+- `fidelity-sans.woff2`: Fidelity Sans, from the Brand Team's font distribution, a variable font covering weights 400
+  to 700 if there is one. If the regular and bold cuts ship as separate files, also add `fidelity-sans-bold.woff2` and
+  in `brand.css` give the first `@font-face` `font-weight: 400` and copy it for the bold file with `font-weight: 700`;
+  that is the one edit a split font needs.
+- `mark.svg`, over the placeholder: the white word mark, for the Evergreen header band. The slot draws it left-aligned
+  in a box 20 px high and at most 120 px wide, never squashed or cropped; export it with its own clear space trimmed,
+  at a ratio of 6:1 or narrower. The sign-in page draws the same file on the light Mist background, where a white mark
+  disappears: ask the Brand Team for a version that holds on both (the placeholder sits on its own Evergreen badge
+  for that reason), or give Atelier the sign-in page to draw on the band.
+- `favicon.svg`, optional: only if the Brand Team allows the firm's symbol as a browser tab icon on an internal tool.
+  Without it the tab keeps Ice line's peak.
 
-File names are lower case letters, digits and hyphens: the server serves nothing else from the pack.
+File names are lower case letters, digits and hyphens: the server serves nothing else from the pack. Leave `--f-mono`
+as Ice line's Geist Mono unless the Brand Team names a monospace face: table names, snapshot ids and SQL need one whose
+digits and punctuation are unambiguous.
 
-## 2. Finish `brand.css`
+## 2. Mount the pack
 
-The file's own comment shows the lines to add. In short:
-
-```css
-@font-face { font-family: 'Fidelity Sans'; src: url('fidelity-sans.woff2') format('woff2'); font-weight: 400 700;
-  font-display: swap; }
-
-:root {
-  /* beside the tokens already there */
-  --f-ui: 'Fidelity Sans', 'Instrument Sans', system-ui, sans-serif;
-  --brand-mark: 1;
-  --brand-mark-w: 104px;  /* the mark's width at 20 px high, at most 120px */
-  --mark-h: 20px;
-}
+```bash
+kubectl -n <namespace> create configmap nuna-brand --from-file=<the folder>
 ```
 
-Leave `--f-mono` as Ice line's Geist Mono unless the Brand Team names a monospace face: table names, snapshot ids and
-SQL need one whose digits and punctuation are unambiguous.
-
-## 3. The settings
-
-Under the chart's `config` (`docs/install-at-work.md`, section 5):
+`kubectl` puts the font in `binaryData` itself. A ConfigMap holds 1 MiB in all, enough for one or two `woff2` cuts.
+The chart's values in `docs/install-at-work.md` (section 5) already name it (`brandConfigMap.name: nuna-brand`) and
+set the words, which need nothing from work unless the names change (Open at work, below):
 
 ```yaml
 nuna:
   ui:
     brand:
-      name: Nuna                    # in titles, on the sign-in page and in messages
-      show-name: false              # the word mark spells the name; drop this line until mark.svg is in the pack
-      mark-label: Nuna              # what a screen reader says for the header mark
+      show-name: false              # the word mark spells the name
       toggle-label: Fidelity mode   # the button beside the theme switch
     oidc:
       name: Fidelity single sign-on # the sign-in button: "Sign in with Fidelity single sign-on"
 ```
 
-`nuna.ui.oidc.name` is item 332's setting and works with or without the pack. The chart sets `nuna.ui.brand.dir`
-itself (step 4).
+The chart mounts the pack at `/etc/nuna/brand` and sets `NUNA_UI_BRAND_DIR`. A later change to the ConfigMap's files
+(`kubectl create configmap ... --dry-run=client -o yaml | kubectl apply -f -`) reaches the next page loaded without a
+restart, once the kubelet has synced the mount (about a minute).
 
-## 4. Mount the pack
-
-```bash
-kubectl -n <namespace> create configmap nuna-brand \
-  --from-file=brand.css --from-file=mark.svg --from-file=fidelity-sans.woff2 [--from-file=favicon.svg]
-```
-
-`kubectl` puts the font in `binaryData` itself. A ConfigMap holds 1 MiB in all, enough for one or two `woff2` cuts.
-Then set the chart's value and upgrade:
-
-```yaml
-brandConfigMap:
-  name: nuna-brand
-```
-
-The chart mounts it at `/etc/nuna/brand` and sets `NUNA_UI_BRAND_DIR`. The words need a restart (the upgrade gives
-one); a later change to the ConfigMap's files reaches the next page loaded without one, once the kubelet has synced
-the mount (about a minute).
-
-## 5. Check it
+## 3. Check it
 
 - `/ui/brand/brand.css` and `/docs/assets/brand/brand.css` answer with the pack, and `/ui/config.json` carries
   `brand` with the words above.

@@ -192,6 +192,10 @@ makes the same two Secrets from its private CA.
 
 ## Sign in
 
+The console and the documentation wear the Fidelity pack (`deploy/brand/fidelity/`, backlog 344): Fidelity's colours,
+an Evergreen header band and a placeholder mark, light only. The header's **Fidelity mode** button, beside the theme
+switch (in the menu on a phone), turns it off and on for that browser; off, they are Ice line, dark mode included.
+
 The console offers two ways in:
 
 - **Sign in with the demo's Keycloak**: Keycloak's login page, by username and password, standing in for a
