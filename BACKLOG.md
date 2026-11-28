@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 2 S, 9 M, 3 L, 4 XL.
+**26 open:** 3 S, 15 M, 3 L, 4 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,6 +30,14 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
 | [317](backlog/317.md) | M | Internal documents disagree with the code | many small corrections across the internal Markdown, each checked against the code | 2026-11-27 |
 | [323](backlog/323.md) | M | Platform operators list the standing DR freezes they may lift | a read route or a change to one, its authorization and audit, and the Governance page for an operator | 2026-11-27 |
+| [324](backlog/324.md) | M | Console: a table closed until classified says so on its page, in the tree and in What you may do, and leads a steward to classify it | a state the console mistakes for another on three surfaces, and an action for the steward | 2026-11-27 |
+| [325](backlog/325.md) | M | Console: stop asking the catalog for what the caller's own grants show they cannot have, so browsing writes no audited refusals | the rail and every table tab decide from the caller's own grants before asking | 2026-11-27 |
+| [326](backlog/326.md) | M | Console: measure the grids against the content column, not the window, so tables beside the tree are not crushed | one container added and every content grid rule moved to it, checked at four widths | 2026-11-27 |
+| [327](backlog/327.md) | M | Maintenance: name the table each failed job of a scan failed on, and show it on Service and Maintenance | the scan report carries each failed job's table and refusal, and the console names them | 2026-11-27 |
+| [328](backlog/328.md) | M | Console: make the audit feed readable when one engine polls | one feed folds runs, one panel goes, and the counts say what they count | 2026-11-27 |
+| [329](backlog/329.md) | S | Console: the Access tab says each governance fact once and lists only the grants that reach the object | one tab: facts said once, the grants list filtered to the object, the buttons laid out | 2026-11-27 |
+| [330](backlog/330.md) | M | Console: History shows data changes, not only the worker's expiry commits | a server field for the last data change and History folding the worker's commits | 2026-11-27 |
+| [331](backlog/331.md) | ? | Console: the smaller polish from the 27 Nov review | eight small fixes across the console, each a few lines | 2026-11-27 |
 
 ## Open items in full
 
@@ -1344,6 +1352,285 @@ Paul's decision, 2026-11-27 (D55): yes.
 
 Done when the route lets an operator list the freezes and refuses him the holds, tested and audited, and the
 Governance page lists them for him.
+
+### 324. Console: a table closed until classified says so on its page, in the tree and in What you may do, and leads a steward to classify it
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/tree.js, catalog-server/src/main/resources/nuna/ui/panels.js, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/UI/
+- Effort: M, a state the console mistakes for another on three surfaces, and an action for the steward
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 2. `brokerage.party.beneficial_owners` is both flagged for row and column rules and closed until
+classified (a regulated area, no classification of its own), so its load answers 403, "table beneficial_owners is in
+a regulated area and has no classification; it is closed until it is classified".
+
+- Its Overview (presenter, ana, stella) shows only "Its data is read through Trino, which applies each group's rule.
+  The console shows no rows." `flaggedLoad` (table.js) takes any 403 on a flagged table to mean "read through Trino".
+  The real refusal, "closed until it is classified", is never shown.
+- The header has no Closed pill, though the namespace's Contents shows "Closed until classified" on that row.
+- The tree gives it no mark; its legend has no closed mark at all.
+- As stella, the steward the demo asks to classify it, the Access tab shows a red "Refused by the catalog" box. The
+  one action she needs, "Set a classification", is one of five small buttons further down.
+- "What you may do" tells ana "Read and write its data, and change it" and stella "Read its data", though nobody
+  can read the table while it is closed.
+
+Change:
+- When the table is closed, every tab that needs the load shows one amber notice: "Closed until classified.
+  beneficial_owners is in the regulated area brokerage.party and has no classification of its own, so nobody can
+  read or change it. A steward opens it by setting a classification."
+- For a caller who may manage tags, a primary "Set a classification" button in that notice, opening the same dialog
+  as on the Access tab.
+- Keep the Trino words for a flagged table that is open.
+- A `pill('bad', 'Closed until classified')` in the header's marks, and a closed mark in the tree and its legend.
+- In "What you may do", when the table is closed: "Nothing until it is classified; then:" before the list.
+- Drop the red reader's-view box on a closed table.
+
+Atelier's amendment (2026-11-27): decide "closed" from the table's own answer (its load's refusal, better a distinct
+server error type), not from `governanceMarks`, which needs describe on the catalog that ana and stella may lack.
+
+Done when a closed table reads as closed on its page, its header, the tree and What you may do, a steward reaches
+Set a classification from the notice, tested, with a bite.
+
+### 325. Console: stop asking the catalog for what the caller's own grants show they cannot have, so browsing writes no audited refusals
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/access.js, catalog-server/src/main/resources/nuna/ui/requests.js, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/UI/
+- Effort: M, the rail and every table tab decide from the caller's own grants before asking
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 3. Browsing as a grant admin, a compliance reader or a platform operator still asks the server for
+things the console already knows they cannot have, so every page they open writes audited refusals: the Overview's
+audit tile went from 36 to 103 during the review's walk.
+
+- Data tabs refuse when the caller cannot read. gary holds no select; opening `journal_lines` rightly lands him on
+  Access, but the page still loads the table (for the format badge and the schema count) and its health. The
+  Overview, Schema, History and Maintenance tabs stay on offer and each refuses. cora holds select only in some
+  namespaces and gets the same refusals on `journal_lines` and `beneficial_owners`: `may()` answers "somewhere in the
+  catalog", not "on this object".
+- Every rail item but one is a dead end for oscar. His rail is Service, Catalog, Branches and tags, Governance:
+  `open` sets `catalog: true` and `governance: true` for everyone (app.js `setChrome`). Catalog and Branches and tags
+  each show "Refused by the catalog: oscar holds no privilege that gives describe for listNamespaces"; Governance
+  shows two red boxes (listHoldsAndFreezes, loadGovernanceSummary) under a working "Freeze a namespace for DR" button.
+
+Change:
+- Draw Catalog, Branches and tags and Governance only for a caller who holds some privilege in the catalog; the
+  catalog list's `may` already carries this. For a platform operator who holds none, Governance shows only the DR
+  freeze (and, once item 323 lands, the freezes he may lift), without the summary or the list.
+- On a table or view, decide per object from the caller's own grants that reach it (requests.js `heldHere`, as
+  `youMay` does). Without select there, skip `loadTable` and the health call.
+- Atelier's amendment (2026-11-27): keep the tabs and show the closed note without asking the server, rather than
+  hiding tabs: hiding changes the page's shape from person to person and hides that the data exists.
+- Put the format badge, if it is wanted, from the catalog's own listing.
+
+Done when gary, cora and oscar can walk their pages with no refusal written for a call the console could have known
+would be refused, tested, with a bite.
+
+### 326. Console: measure the grids against the content column, not the window, so tables beside the tree are not crushed
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/audit.js, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/test/java/nuna/catalog/server/, bites/UI/
+- Effort: M, one container added and every content grid rule moved to it, checked at four widths
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 1. `.app` is the only size container (`container: frame`), so a two-column grid stays two columns
+at 1440 even though the rail and the tree leave the content about 870 px.
+
+- On a table's History tab (presenter, `journal_lines`), the Commits table breaks words mid-word ("snapsh / ots /
+  expire / d"); its By column is cut off ("servic accou nuna- maint"), and each row is about 130 px tall. The same
+  at 1920.
+- On Governance (presenter, 1440), the Regulated areas table runs out of its card: its last column is cut to "Tabl"
+  and "0 clos". At 1280 that column and the Release and Lift column are gone entirely.
+- On Audit, "Most recorded" breaks every name letter by letter, because of `#audit-busiest td.name {
+  overflow-wrap: anywhere }`.
+- On the History tab the "Snapshots and Iceberg refs" strip clips its first tag label at the panel's left edge.
+
+Change:
+- Make the content column a container, for example `container: page / inline-size` on `.nc-main`, and move only
+  the content grid rules (`.grid-2`, `.grid-21`, `.kpis`) to it; keep `frame` for the chrome and the phone layout
+  (Atelier). Check any fixed drawer or tooltip inside `.nc-main`: a size container becomes the containing block for
+  fixed boxes.
+- In tables, never break a word. Keep Written, Change and By on one line (`white-space: nowrap`) and let
+  `.wrap-tbl` scroll sideways instead.
+- Show a snapshot id as `4137…6884`, as the Selected snapshot panel already does, from the id's string, never a
+  parsed number (JSON.parse rounds them).
+- Drop `overflow-wrap: anywhere` from `#audit-busiest td.name`. Break paths after a dot, as `.tx-steps` does.
+
+Done when, at 1280, 1440 and 1920 with the tree open, History, Governance and Audit show their tables whole, tested,
+with a bite.
+
+### 327. Maintenance: name the table each failed job of a scan failed on, and show it on Service and Maintenance
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-maintenance/src/main/java/, catalog-maintenance/src/test/java/, catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/main/resources/nuna/ui/overview.js, catalog-server/src/main/resources/nuna/ui/maintenance.js, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/
+- Effort: M, the scan report carries each failed job's table and refusal, and the console names them
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 8. Every scan since at least 19:35 on 27 Nov, one every 5 minutes, reads "Succeeded, some jobs failed"
+with "table-load 1", and "Failed jobs in the last day: table-load 33". The failing table is never named: the scan
+record carries only counts by kind (`failures: {table-load: n}`). No headline mentions it: the Overview and
+Maintenance headlines say "3 not assessed yet", and nothing links that to the failures. Unconfirmed: the failing load
+is probably the closed `beneficial_owners` (item 324).
+
+Change:
+- Server: carry the table and the refusal in each failed job of a scan.
+- Console: show "1 table could not be loaded: brokerage.party.beneficial_owners, closed until classified", linked to
+  the table. Name the not-assessed tables from the Overview headline.
+
+Atelier's note (2026-11-27): ask catalog-security and the observability expert too. If the worker cannot load closed
+tables, maintenance silently skips them, which is more than wording.
+
+Done when a failed job names its table and why, kept by the catalog, shown on Service and Maintenance, tested, with
+a bite.
+
+### 328. Console: make the audit feed readable when one engine polls
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/audit.js, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/UI/
+- Effort: M, one feed folds runs, one panel goes, and the counts say what they count
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 4. One engine's polling reads drown the audit feed.
+
+- Under the default All chip (presenter, gary, lakehouse), the 50 rows shown were almost all "singlestore via
+  singlestore-demo · Read · loaded version 5 of main · markets.fx.rates", one every 2 to 3 seconds. Reads were 57,357
+  of 63,554 records in the day. Each row is about 80 px tall for one line of facts.
+- The same counts appear twice: the By kind panel repeats the chips' counts row for row. The day's total is stated
+  three times: 63,562 in the tile, 63,554 on the All chip and again on By kind's All row, differing by the 8 hidden
+  audit reads with nothing on the page saying so.
+- "No archive is configured" appears in both the Archive checked tile and the Hash chain panel.
+
+Change:
+- Fold a run of records that share principal, kind, action and object into one row: "singlestore read
+  markets.fx.rates 27 times, 19:56:01 to 19:57:07", with Show records to open them. Nothing is hidden; say the fold
+  covers only the rows on this page (Atelier).
+- Atelier's amendment: make engine reads their own chip rather than fold them silently under All.
+- Tighten each row to one line on a wide screen.
+- Drop or shrink the By kind panel (note backlog 214 made it match the chips on purpose); give Most recorded the full
+  width of the side column.
+- Show the Hash chain panel only when an archive is configured.
+- Count the tile the way the chips count, or say in the tile's caption that it includes the audit's own reads.
+
+Done when the feed under All reads as a few folded runs, each total said once and consistently, tested, with a
+bite.
+
+### 329. Console: the Access tab says each governance fact once and lists only the grants that reach the object
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/panels.js, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/UI/
+- Effort: S, one tab: facts said once, the grants list filtered to the object, the buttons laid out
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 6.
+
+- The same facts appear twice on a table's Access tab (presenter and gary on `journal_lines`). Classification, owner
+  and regulated area each appear in the Governance panel with where it was set and its provenance, and again in the
+  Attributes table below it.
+- Legal holds are stated three times: the "No legal hold" pill, the Legal holds panel ("None, here or above.") and
+  the enforcement panel.
+- "Your groups' grants" lists every grant in the catalog, not those on this table: `grantsPart` fills it with
+  `api.grantsOfGroups(target.catalog, [])`, so it runs to 24 rows for stella. For presenter it ran past 5,000 px in a
+  one-third column, with its On column cut off. For a grant admin it sits beside "Grants that reach this table",
+  which already answers the question.
+- The five governance buttons wrap unevenly under the Governance panel.
+
+Change:
+- Keep the Governance panel, and turn the Attributes table into a "Show where each value was set" disclosure inside
+  it.
+- Show legal holds once.
+- In "Your groups' grants", list only the grants that reach the object (the same answer `youMay` reads), title it
+  "Your groups' grants here", and link to the catalog-wide list (Atelier: for everyone, not only grant admins).
+- Lay the buttons out in one row that wraps evenly, with "Set a classification" first when there is none.
+
+Done when each governance fact appears once and the grants list fits the object, tested, with a bite.
+
+### 330. Console: History shows data changes, not only the worker's expiry commits
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/browse.js, catalog-server/src/main/java/, catalog-server/src/test/java/nuna/catalog/server/, bites/
+- Effort: M, a server field for the last data change and History folding the worker's commits
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 9.
+
+- The worker's commits fill History. On `journal_lines`, most of the 25 commits shown are "snapshots expired" by
+  `service-account-nuna-maintenance`, one every 5 minutes.
+- Contents names the worker as the last committer. On `brokerage.ledger` it gives "19:45 by
+  service-account-nuna-maintenance" for `journal_lines`, whose last data change (commit 924) was by `cdc`, and the long
+  name wraps.
+
+Change:
+- Atelier's amendment (2026-11-27): rather than a "Hide maintenance commits" switch, fold the expiry-only commits
+  into one row by default ("snapshots expired 12 times, 19:00 to 19:55, by nuna maintenance"), opened on click.
+- Make Contents' column "Last data change": the last commit that added or replaced data. That needs a server field:
+  today `last-commit` is any commit.
+- Show the maintenance principal as "nuna maintenance", with the full name in the title.
+
+Done when History leads with data changes and Contents names who last changed the data, tested, with a bite.
+
+### 331. Console: the smaller polish from the 27 Nov review
+
+- Added: 2026-11-27 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/overview.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/main/resources/nuna/ui/browse.js, catalog-server/src/main/resources/nuna/ui/refs.js, catalog-server/src/main/resources/nuna/ui/governance.js, catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/panels.js, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/UI/
+- Effort: S to M, eight small fixes across the console, each a few lines
+
+From the console review of the 27 Nov drop, made at work by Atelier walking the console as presenter, ana, gary,
+stella, oscar and cora at 390, 1280, 1440 and 1920 wide (at work: `for-paul/pending/010-console-review-of-the-27-
+nov-drop-crushed-tables-b.md`). Atelier, here, checked it against main at 69c83310 and agreed it still applies;
+Paul asked on 2026-11-27 to add the review's items and do them. Item 322 did its quick wins.
+
+Review item 10, the smaller polish:
+
+- Overview tiles: six tiles sit in the four-column `.kpis` grid (`overview.js`, `overview-kpis`). The second row
+  leaves two empty cells, and the left border breaks where the rows meet. Use three columns of two rows, or give the
+  second row's first tile `border-left: 0`.
+- Overview chart labels collide: "Every table, one mark" prints "markets 5reference 1" at 1440. Drop a namespace
+  label that does not fit, as the 23 Nov review asked for the phone.
+- Row actions do not look alike. On Branches and tags, Read and Renew are plain text, Merge… is a bordered button
+  and Delete is a red-bordered ×. On Governance, Release and Lift are plain text. Use one ghost-button style for every
+  row action, with delete last and set apart. Delete already asks first, which is right.
+- Columns that say one thing on every row: the catalog's Contents has a Kind column that says "namespace" on every
+  row; a namespace's has Kind and Format columns, every Format "v2". Their chips are bordered like buttons. Leave a
+  column out when every row has the same value, and draw kinds as the tree's icons, not as bordered chips.
+- The engine-level refs heading runs into its caption when folded, in bold ("Engine-level refs in this table's
+  metadata Iceberg's own, not the catalog's"). Keep the caption in the panel's meta style.
+- The sign-in landing: once, gary's landing sat 7 seconds on an unstyled "Loading…" at the top-left corner of the
+  page, with all eight rail items drawn before his access was known. Draw no rail items until the catalog list has
+  answered; give the loading line the page's padding.
+- A dead-end suggestion: gary, following a link to Maintenance, is told "Nothing in lakehouse you may read.
+  nuna_audit has 1 table →". Leave the audit tables' catalog out of that suggestion, as `landingCatalogs` already
+  does.
+- Not this one: the review's optional change of the large figures' typeface. Atelier (2026-11-27): the Geist Mono
+  figures are part of the Ice line look Paul approved; keep them.
+
+Done when each is fixed, tested where a test can see it, with a bite for each that can bite.
 
 ## Done and dropped
 
