@@ -8,7 +8,7 @@ import * as api from './api.js';
 import {may, operates} from './access.js';
 import {$$, badge, code, dialogForm, facts, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
   muted, openDialog, panel, pill, plural, select, tbl, techDetails, text, when, at, copyButton} from './dom.js';
-import {dotted, objectHref} from './route.js';
+import {dotted, objectHref, pageHref} from './route.js';
 import {liveRefLink, refWords} from './refs.js';
 import {heldHere} from './requests.js';
 import {rulesPanel, yourView} from './rules.js';
@@ -19,11 +19,14 @@ const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
 const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', 'row-column-policy'];
 /** Each attribute in words, its key one hover away (Atelier's words table, T10). */
 const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'retention-class': 'Retention class',
-  regulated: 'Regulated area', 'row-column-policy': 'Flagged for row and column rules'};
+  regulated: 'Regulated area', 'row-column-policy': 'Flagged for row and column rules', 'maintenance-policy': 'Maintenance policy'};
 const attributeLabel = name => ATTRIBUTE_LABELS[name] ? h('span', {title: name}, ATTRIBUTE_LABELS[name]) : name;
 /** An attribute's value in words: the two flags are Yes or No, not true or false (backlog 213; Atelier, 2026-11-24). */
 const attributeValue = (name, v) => (name === 'regulated' || name === 'row-column-policy') && /^(true|false)$/i.test(String(v))
   ? (String(v).toLowerCase() === 'true' ? 'Yes' : 'No') : String(v);
+/** The maintenance policy is a link to where it reads in words, its stored form in the title (the 27 Nov review, item 5). */
+const policyLink = (target, v) => h('a', {href: target.kind === 'table' ? objectHref(target, 'maintenance') : pageHref('maintenance', target.catalog),
+  title: String(v), 'data-act': 'see-policy'}, 'See the policy');
 
 const what = target => target.kind === 'catalog' ? target.catalog : dotted(target);
 const lastWord = target => target.name || (target.namespace.length ? target.namespace[target.namespace.length - 1] : target.catalog);
@@ -193,7 +196,7 @@ export async function governanceTab(target, reload) {
     : h('p', {class: 'muted'}, 'None, here or above.'));
   const attributes = panel('Attributes', 'nearest level first', attrs.length
     ? tbl('attributes stack-line', ['Attribute', 'Value', 'Level', 'Provenance', 'Set'], attrs.map(a => h('tr', null,
-      h('td', {class: ATTRIBUTE_LABELS[a.attribute] ? null : 'name'}, attributeLabel(a.attribute)), h('td', {class: 'wrap'}, attributeValue(a.attribute, a.value)), h('td', null, levelLabel(a.level, here, levels)),
+      h('td', {class: ATTRIBUTE_LABELS[a.attribute] ? null : 'name'}, attributeLabel(a.attribute)), h('td', {class: 'wrap'}, a.attribute === 'maintenance-policy' ? policyLink(target, a.value) : attributeValue(a.attribute, a.value)), h('td', null, levelLabel(a.level, here, levels)),
       h('td', {class: 'muted wrap'}, a.provenance), h('td', null, h('span', {class: 'tnum'}, at(a['set-at'])), ' ', muted(a['set-by'])))))
     : h('p', {class: 'muted'}, 'No attribute set here or above.'));
   const enforced = panel('What the catalog enforces', target.kind === 'namespace' || target.kind === 'catalog' ? 'beneath it' : 'on every call',

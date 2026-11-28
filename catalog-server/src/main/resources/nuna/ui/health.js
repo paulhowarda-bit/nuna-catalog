@@ -5,7 +5,7 @@
 // too; their panels are left out for anyone the catalog refuses them to.
 
 import * as api from './api.js';
-import {at, code, facts, failure, fmt, h, icon, load, muted, pageHead, panel, pill, s, sized, tbl, took, when} from './dom.js';
+import {at, code, facts, failure, fmt, h, icon, load, muted, pageHead, panel, pill, s, sized, sizeWords, tbl, took, when} from './dom.js';
 import {objectHref} from './route.js';
 import {REASONS, compactionWords, estate, iceQueue, keyOfRow, maintenanceOff, queue, queueOf, reasonPill} from './queue.js';
 import {mayModify, requestButtons, requestsBox} from './requests.js';
@@ -81,7 +81,7 @@ export function healthPage(tab, profile, grafana) {
 
 /** The way on to Grafana's charts, the same figures over time, when the server names a Grafana (backlog 319). */
 const grafanaLink = url => url ? h('a', {class: 'btn ghost sm', href: url, target: '_blank', rel: 'noopener', 'data-grafana': ''},
-  icon('ext'), h('span', {class: 'hide-sm'}, 'Charts over time in Grafana'), h('span', {class: 'only-sm'}, 'Grafana')) : null;
+  icon('newtab'), h('span', {class: 'hide-sm'}, 'Charts over time in Grafana'), h('span', {class: 'only-sm'}, 'Grafana')) : null;
 
 async function catalogHealth(focus, grafana) {
   let health;
@@ -109,8 +109,8 @@ async function catalogHealth(focus, grafana) {
   load(storage, () => workerStoragePanel(focus));
   return [
     pageHead({
-      eyebrow: 'all catalogs · the last day',
-      title: [health.silent ? `${health.answered} of ${total} servers answered. ` : `All ${plural(health.answered)} answered. `,
+      eyebrow: 'all catalogs · ' + windowLabel(servers),
+      title: [health.silent ? `${health.answered} of ${total} servers answered. ` : answeredWords(health.answered),
         !judged.length ? 'No request was timed in the window.' : missed
           ? h('span', {class: 'q'}, `${missed} latency objective${missed === 1 ? ' was' : 's were'} missed.`)
           : 'Every latency objective was met.'],
@@ -138,6 +138,20 @@ async function catalogHealth(focus, grafana) {
       storage,
       h('div', {class: 'grid-2'}, dr, store)),
   ];
+}
+
+/** "The one server answered.", "Both servers answered.", "All 3 servers answered." (the 27 Nov review, item 7). */
+const answeredWords = n => (n === 1 ? 'The one server' : n === 2 ? 'Both servers' : `All ${plural(n)}`) + ' answered. ';
+
+/**
+ * The window the figures cover: the last day, or since the latest start of a server that answered, when one started
+ * within it and so counts only from then (the 27 Nov review, item 7). A start in the day's first minutes is the day.
+ */
+function windowLabel(servers) {
+  const starts = servers.filter(srv => srv.answered && srv.from).map(srv => new Date(srv.from).getTime())
+    .filter(t => Date.now() - t < DAY_MS - 10 * 60_000);
+  if (!starts.length) return 'the last day';
+  return `since ${at(Math.max(...starts))}, when ${servers.length === 1 ? 'the' : 'a'} server started`;
 }
 
 function serversPanel(health, servers) {
@@ -328,7 +342,7 @@ export async function workerPanel() {
   const latestFailed = scans.find(x => x.outcome === 'failed');
   const shown = h('tbody');
   const rowOf = x => h('tr', {class: x.outcome === 'failed' ? 'is-refused' : null},
-    h('td', {class: 'tnum'}, when(x['started-at'])),
+    h('td', {class: 'tnum', title: when(x['started-at'])}, at(x['started-at'], true)),
     h('td', {class: 'tnum'}, x['ended-at'] ? took(new Date(x['ended-at']) - new Date(x['started-at'])) : muted('running or stopped')),
     h('td', null, x.outcome === 'failed' ? pill('bad', 'Failed') : x.outcome ? (failureCounts(x.failures)
       ? pill('warn', 'Succeeded, some jobs failed') : pill('ok', 'Succeeded')) : muted('–')),
@@ -414,6 +428,32 @@ export const POLICY_LABELS = {
 /** A policy key as its label, the key itself in its title; a key the console has no label for stays a name. */
 export const policyKey = key => POLICY_LABELS[key] ? h('span', {title: key, 'data-key': key}, POLICY_LABELS[key]) : code(key);
 
+const DURATION = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
+
+/** An ISO-8601 duration in words, "PT1H" as "1 hour", "P14D" as "14 days"; null for anything else. */
+function durationWords(iso) {
+  const m = DURATION.exec(iso);
+  if (!m) return null;
+  const parts = [[m[1], 'week'], [m[2], 'day'], [m[3], 'hour'], [m[4], 'minute'], [m[5], 'second']].filter(([n]) => Number(n));
+  return parts.length ? parts.map(([n, word]) => plural(Number(n), word)).join(' ') : null;
+}
+
+/**
+ * A policy value in words, as the server stores it in its title (the 27 Nov review, item 5; backlog 322): On and Off
+ * for the switches, durations and byte sizes in words, the delete-file share as a percentage. A value it cannot read
+ * stays as stored.
+ */
+export function policyValue(key, value) {
+  const raw = String(value ?? '');
+  const number = raw.trim() !== '' && Number.isFinite(Number(raw)) ? Number(raw) : null;
+  const words = key.endsWith('.enabled') && /^(true|false)$/i.test(raw) ? (raw.toLowerCase() === 'true' ? 'On' : 'Off')
+    : key.endsWith('-bytes') && number !== null ? sizeWords(number)
+    : key.endsWith('-ratio') && number !== null ? fmt(Math.round(number * 1000) / 10) + '%'
+    : durationWords(raw);
+  if (!words || words === raw) return raw;
+  return h('span', {title: key.endsWith('-bytes') ? plural(number, 'byte') : raw, 'data-raw': raw}, words);
+}
+
 /** The policy in force on a table: each key with where it was set. */
 async function policyFacts(target) {
   const p = await api.policy(target);
@@ -423,9 +463,9 @@ async function policyFacts(target) {
   const resolved = Object.entries(p.resolved || {}).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
   return h('div', {'data-policy': ''}, panel('Policy for this table', 'each setting with where it was set', h('dl', {class: 'facts one'},
     resolved.map(([key, setting]) => [h('dt', null, policyKey(key)),
-      h('dd', null, setting.source === 'guardrail' ? [h('b', null, setting.value), ' · guardrail',
+      h('dd', null, setting.source === 'guardrail' ? [h('b', null, policyValue(key, setting.value)), ' · guardrail',
         setting.reason ? [h('br'), h('span', {class: 'fine'}, setting.reason)] : null]
-        : [setting.value, ' · ', sourceWords(setting.source)])]))));
+        : [policyValue(key, setting.value), ' · ', sourceWords(setting.source)])]))));
 }
 
 /** Where a policy key was set: built in, the server's default, a guardrail, or the level's kind. */
