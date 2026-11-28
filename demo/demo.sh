@@ -155,7 +155,8 @@ BROKERAGE_ACCOUNTS="${NUNA_DEMO_ACCOUNTS:-1000}"
 BROKERAGE_SECURITIES="${NUNA_DEMO_SECURITIES:-300}"
 BROKERAGE_CATCH_UP_DAYS="${NUNA_DEMO_CATCH_UP_DAYS:-3}"
 # The scale dial (item 321; the header above), kept in $RUN/scale: 1 until it is set.
-BROKERAGE_SCALE=$(tr -d '\r\n' < "$RUN/scale" 2>/dev/null || true)
+# 2> before <: the shell reports a missing file as it opens it, so after < the message got out.
+BROKERAGE_SCALE=$(tr -d '\r\n' 2>/dev/null < "$RUN/scale" || true)
 [[ "$BROKERAGE_SCALE" =~ ^[0-9]+$ ]] || BROKERAGE_SCALE=1
 for scale in "NUNA_DEMO_ACCOUNTS=$BROKERAGE_ACCOUNTS" "NUNA_DEMO_SECURITIES=$BROKERAGE_SECURITIES" \
     "NUNA_DEMO_CATCH_UP_DAYS=$BROKERAGE_CATCH_UP_DAYS"; do
