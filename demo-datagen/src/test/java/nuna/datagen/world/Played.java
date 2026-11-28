@@ -26,7 +26,13 @@ public final class Played implements Sink {
      * seeded bust corrects it on 2026-10-01.
      */
     public static final World.Settings CLOSING = World.Settings.of(163, LocalDate.of(2026, 9, 21), 400);
-    private static Played seeded, clean, closing, closingClean;
+    /**
+     * The scale dial turned up to 3 on the world's second day and down to 2 on its sixth (item 321): the firm onboards
+     * customers, then stops, and every account's activity rises and falls.
+     */
+    public static final Scale SCALED = Scale.ONE.with(World.at(LocalDate.of(2026, 9, 2), java.time.LocalTime.NOON), 3)
+        .with(World.at(LocalDate.of(2026, 9, 8), java.time.LocalTime.NOON), 2);
+    private static Played seeded, clean, closing, closingClean, scaled;
 
     public final Map<Feed, List<Map<String, Object>>> rows = new EnumMap<>(Feed.class);
     public final List<LocalDate> days = new ArrayList<>();
@@ -71,12 +77,24 @@ public final class Played implements Sink {
         return closingClean;
     }
 
+    /** The clean world with the scale dial turned up, then down ({@link #SCALED}). */
+    public static synchronized Played scaled() {
+        if (scaled == null) {
+            scaled = play(SETTINGS, false, SCALED);
+        }
+        return scaled;
+    }
+
     private static Played play(boolean withBreak) {
         return play(SETTINGS, withBreak);
     }
 
     private static Played play(World.Settings settings, boolean withBreak) {
-        World w = new World(settings, KIT);
+        return play(settings, withBreak, Scale.ONE);
+    }
+
+    private static Played play(World.Settings settings, boolean withBreak, Scale scale) {
+        World w = new World(settings, KIT).withScale(scale);
         if (!withBreak) {
             w.withoutSeededFail();
             w.withoutSeededBust();

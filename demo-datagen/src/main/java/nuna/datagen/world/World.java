@@ -306,7 +306,7 @@ public final class World {
         return at(day, t);
     }
 
-    private static Instant at(LocalDate d, LocalTime t) {
+    static Instant at(LocalDate d, LocalTime t) {
         return d.atTime(t).atZone(NEW_YORK).toInstant();
     }
 
