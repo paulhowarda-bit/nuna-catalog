@@ -264,9 +264,9 @@ class WorkerMetricsTest {
         Set<String> names = meters.getMeters().stream().map(meter -> meter.getId().getName())
                 .filter(name -> name.startsWith(WorkerMetrics.PREFIX)).collect(Collectors.toSet());
         assertThat(names).allSatisfy(name -> assertThat(docs).as(name).contains("`" + name + "`"));
-        // The counts, the scan timer, the last success, failures, tables needing compaction, the table gauge and the
-        // files kept for refs.
-        assertThat(names).hasSize(COUNTED.size() + 6);
+        // The counts, the scan timer, the last success, failures, tables needing compaction, the table gauge, the
+        // files kept for refs and the tables closed until classified.
+        assertThat(names).hasSize(COUNTED.size() + 7);
     }
 
     /** Puts {@link #COUNTED}'s and {@link #NEEDS}' numbers in a report, as a scan's jobs would. */
