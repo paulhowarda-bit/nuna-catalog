@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 4 S, 7 M, 3 L, 4 XL.
+**16 open:** 2 S, 7 M, 3 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,8 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [335](backlog/335.md) | S | ScaleTest still expects demo.sh's old scale line, so demo-datagen's tests fail | one assertion | 2026-11-28 |
-| [336](backlog/336.md) | S | The overnight run misses Podman's Windows pipes going away: every container test fails with no Docker environment | one check before each leg | 2026-11-28 |
 
 ## Open items in full
 
@@ -1299,47 +1297,6 @@ than one collector, `telemetry.sampling` at 1.0 in work's values, README.md sayi
 tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
 forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
-### 335. ScaleTest still expects demo.sh's old scale line, so demo-datagen's tests fail
-
-- Added: 2026-11-28 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
-- Touches: demo-datagen/src/test/java/nuna/datagen/ScaleTest.java
-- Effort: S, one assertion
-
-The overnight run of 2026-11-28 (heavy build, main at ce73c9d0) failed
-`ScaleTest#demoShFillsTheScaleIntoTheGeneratorsManifests` in `demo-datagen`: it expects `demo/demo.sh` to contain
-`BROKERAGE_SCALE=$(tr -d '\r\n' < "$RUN/scale"`, but 1fa8fd6f (item 321's fix-up, so `demo.sh` prints no "No such
-file" before a scale is set) made the line `BROKERAGE_SCALE=$(tr -d '\r\n' 2>/dev/null < "$RUN/scale" || true)`. The
-test is not tagged `heavy`, so the fast build runs it too.
-
-Done when the assertion accepts the line with or without the `2>/dev/null` and `./gradlew :demo-datagen:test --tests
-ScaleTest` passes.
-
-### 336. The overnight run misses Podman's Windows pipes going away: every container test fails with no Docker environment
-
-- Added: 2026-11-28 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
-- Touches: overnight.sh
-- Effort: S, one check before each leg
-
-The run of 2026-11-28 (by hand at 01:37, `./overnight.sh --force`, main at ce73c9d0) failed its heavy build in every
-module that starts a container: 191 tests with "Previous attempts to find a Docker environment failed", 13 with
-"Could not find a valid Docker environment", and the Spring contexts built on them (catalog-server alone 179 of 714).
-The midnight run before it failed the same way.
-
-Cause: Podman's `win-sshproxy.exe` had died. It serves `\\.\pipe\docker_engine` and `\\.\pipe\podman-machine-default`,
-which Testcontainers uses (`FreshPipeStrategy`); neither pipe existed. `podman` itself talks to the machine over SSH
-and kept answering, so the run's checks (`podman info` at the start and in `settle()`) passed.
-`podman machine stop` warned "Could not stop API forwarding service (win-sshproxy.exe)"; `podman machine stop` and
-`start` brought both pipes back (01:49). `deploy/kind/kind.sh up` then timed out: the node was Ready inside the
-machine, but its API port (127.0.0.1:52188) answered Windows with EOF and a TLS handshake timeout, until
-`podman restart nuna-control-plane` (02:30).
-
-Change: `settle()`, which runs before each leg, checks the Docker pipe on Windows; if it is gone it restarts the Podman
-machine and the kind cluster (the node's container too, if Windows cannot reach its API), and says so in the log.
-
-Done when `overnight.sh` restarts the machine when the pipe is missing before a leg (checked: the PowerShell test gives 0
-with the pipe and 1 for a missing one; `bash -n` clean), and a run after it lands passes its container tests or fails
-them for another reason.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1658,6 +1615,8 @@ them for another reason.
 | [332](backlog/332.md) | Sign-in screen: the identity provider's name in words, and the developer token box folded | done | 2026-11-28 |
 | [333](backlog/333.md) | A brand slot for the console and the docs site: Ice line by default, an install's pack by settings | done | 2026-11-28 |
 | [334](backlog/334.md) | Maintenance skips tables closed until classified without loading them, and alerts when it has for a day | done | 2026-11-28 |
+| [335](backlog/335.md) | ScaleTest still expects demo.sh's old scale line, so demo-datagen's tests fail | done | 2026-11-28 |
+| [336](backlog/336.md) | The overnight run misses Podman's Windows pipes going away: every container test fails with no Docker environment | done | 2026-11-28 |
 | [339](backlog/339.md) | SecurityGateTest looks for the grant export's audit record in the log, where its context never puts it | done | 2026-11-28 |
 | [340](backlog/340.md) | AlertRulesTest's promtool tests still expect "(backlog 261)" in the availability pages, which 314 took out | done | 2026-11-28 |
 | [341](backlog/341.md) | The console tests that failed in the heavy build of 2026-11-28: ConsoleBrandTest, ConsoleBrowserTest, ConsoleFlaggedTableBrowserTest, ConsoleHealthTest | done | 2026-11-28 |
