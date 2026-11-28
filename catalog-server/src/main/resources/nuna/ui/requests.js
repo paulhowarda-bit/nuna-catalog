@@ -7,6 +7,7 @@
 import * as api from './api.js';
 import {at, code, dialogForm, field, fill, granted, h, icon, openDialog, pill} from './dom.js';
 import {REASONS} from './queue.js';
+import {may} from './access.js';
 
 export const JOBS = {
   'compaction': {noun: 'Compaction', button: 'Compact now', verb: 'Compact'},
@@ -28,19 +29,41 @@ function reaches(on, target) {
 
 const grantsKept = new Map();
 
-/** The caller's own groups' grants in the catalog, asked once a minute at most; none when the catalog refuses. */
-export function ownGrants(catalog) {
+/** The caller's own groups' grants in the catalog as the catalog answered, asked once a minute at most. */
+function grantsAnswer(catalog) {
   const hit = grantsKept.get(catalog);
   if (hit && Date.now() - hit.at < 60_000) return hit.promise;
-  const promise = api.grantsOfGroups(catalog, []).catch(() => []);
+  const promise = api.grantsOfGroups(catalog, []);
+  promise.catch(() => {});
   grantsKept.set(catalog, {at: Date.now(), promise});
   return promise;
 }
+
+/** The caller's own groups' grants in the catalog, asked once a minute at most; none when the catalog refuses. */
+export const ownGrants = catalog => grantsAnswer(catalog).catch(() => []);
 
 /** The caller's own groups' grants that reach the object, for what its Access tab says they may do (backlog 199). */
 export async function heldHere(target) {
   return (await ownGrants(target.catalog)).filter(g => reaches(g.securable, target));
 }
+
+/** The privileges that read an object's data: select, and the rungs above it. */
+const READS = new Set(['select', 'write', 'modify']);
+
+/**
+ * Whether the caller's groups' own grants read the table or view (backlog 325): a grant of select or above that
+ * reaches it. Its load and health are asked only then, so browsing writes no refusal the console could have known;
+ * when the grants cannot be read, it is asked as before and the catalog decides.
+ */
+export const readsHere = target => grantsAnswer(target.catalog)
+  .then(grants => grants.some(g => READS.has(g.privilege) && reaches(g.securable, target)), () => true);
+
+/**
+ * Whether the caller's groups may describe the object, which its governance needs: any grant that reaches it, every
+ * privilege implying describe, or managing the catalog's grants, which a grant admin does on every catalog (backlog 325).
+ */
+export const describesHere = target => may(target.catalog, 'manage-grants') ? Promise.resolve(true) : grantsAnswer(target.catalog)
+  .then(grants => grants.some(g => reaches(g.securable, target)), () => true);
 
 /** Whether the caller's groups hold modify on the table, which a request needs. */
 export async function mayModify(target) {

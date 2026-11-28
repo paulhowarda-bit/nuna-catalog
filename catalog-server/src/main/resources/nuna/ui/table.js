@@ -17,11 +17,11 @@ import {accessTab, actionWords, auditTab, closedNotice, closedRefusal, exportDia
   from './panels.js';
 import {noteClosed} from './tree.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
-import {askDialog, mayModify, requestPills} from './requests.js';
+import {askDialog, describesHere, mayModify, readsHere, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
 import {fillKeptSlots, keptPanel} from './kept.js';
 import {droppedThroughRef, missingWords, readingRef, readOnlyNote, refChrome, refNote, replacedGuard} from './refs.js';
-import {closedNote, openingTab, trailOpen, trailWords} from './access.js';
+import {closedNote, openingTab, trailOpen, trailWords, unreadWords} from './access.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
 
@@ -46,6 +46,18 @@ function loadOnce(target, loader) {
 
 const loadTable = target => loadOnce(target, () => api.table(warehouseOf(target), target.namespace, target.name));
 const loadView = target => loadOnce(target, () => api.view(warehouseOf(target), target.namespace, target.name));
+
+/**
+ * What a load stands in for when the caller's own grants hold no read of the object (backlog 325): it is never asked,
+ * since the catalog would refuse it and record the refusal, and its data tabs say so in a closed note.
+ */
+const UNREAD = Object.freeze({status: 0, unread: true});
+
+/** The object's load when the caller's grants read it, else UNREAD, without asking (backlog 325). */
+const loadIfRead = (target, reads, loader) => reads.then(yes => yes ? loader(target) : Promise.reject(UNREAD));
+
+/** A data tab's closed note for a caller who may not read the object; Atelier, 2026-11-27: the tabs stay. */
+const unreadNote = target => closedNote(unreadWords(target));
 
 /** What a load that failed leaves: the catalog's answer, and that the other tabs are checked on their own. */
 /** The catalog's answer for a ref that is not live (item 109): the band shows it, so no tab draws it again. */
@@ -144,7 +156,9 @@ export function tablePage(target, tab, route) {
   main.append(head, tabs);
   const body = tabBody(main);
   refChrome(route, head);
-  let metadata = loadTable(target);
+  // Read only when the caller's grants that reach it read it (backlog 325).
+  const reads = readsHere(target);
+  let metadata = loadIfRead(target, reads, loadTable);
   metadata.then(t => {
     const m = t.metadata;
     title.insertBefore(badge(`iceberg v${m['format-version']}`, 'strong'), title.children[2] || null);
@@ -155,7 +169,7 @@ export function tablePage(target, tab, route) {
   const reload = () => show();
   const afterChange = () => {
     forget(target);
-    metadata = loadTable(target);
+    metadata = loadIfRead(target, reads, loadTable);
     // A classification set opens a closed table: its mark goes once it loads.
     metadata.then(() => {
       const shut = $('.pill[data-closed]', title);
@@ -167,7 +181,7 @@ export function tablePage(target, tab, route) {
   // Whether the table is closed until classified, from its own load's answer (backlog 324): null when another refusal
   // leaves it unknown.
   const closedOf = () => metadata.then(() => false, error => closedRefusal(error) || null);
-  headMarks(target, title, closedOf());
+  headMarks(target, title, closedOf(), reads);
   // Compact now is main's: the worker compacts main only.
   if (!target.ref) mayModify(target).then(may => {
     if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
@@ -177,7 +191,8 @@ export function tablePage(target, tab, route) {
     if (key === null) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
     } else if (key === 'maintenance') {
-      load(body, () => throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload)));
+      load(body, async () => await reads ? throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload))
+        : unreadNote(target));
     } else if (key === 'access') {
       load(body, () => throughRef(target, () => metadata, 'access', () => accessTab(target, reload, {closed: closedOf(), reopen: afterChange})));
     } else if (key === 'audit' && !trailOpen(target.catalog)) {
@@ -190,6 +205,7 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
+          if (error === UNREAD) return unreadNote(target);
           if (closedRefusal(error)) return closedNotice(target, afterChange);
           return await flaggedLoad(error, target) || await missingLoad(error, target, title)
             || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
@@ -208,9 +224,10 @@ export function tablePage(target, tab, route) {
 
 /**
  * The marks beside a table's name: tonight's queue, a hold, a DR freeze and its classification, as the catalog says
- * them; and Closed until classified, as its load answers (`closed`), which the tree marks too (backlog 324).
+ * them; and Closed until classified, as its load answers (`closed`), which the tree marks too (backlog 324). Its
+ * requests are asked only of a caller who reads it (`reads`), its governance of one who may describe it (backlog 325).
  */
-function headMarks(target, title, closed) {
+function headMarks(target, title, closed, reads) {
   closed.then(shut => {
     if (shut !== null) noteClosed(target, shut);
     if (shut) title.append(h('span', {class: 'pill bad', 'data-closed': ''}, 'Closed until classified'));
@@ -222,8 +239,10 @@ function headMarks(target, title, closed) {
       title.append(h('a', {href: objectHref(target, 'maintenance'), class: 'pill ' + (eq ? 'bad' : 'warn')}, 'Needs compaction'));
     }
   }, () => {});
-  api.tableHealth(target).then(health => title.append(...requestPills(health.requests)), () => {});
-  api.governance(target).then(g => {
+  reads.then(yes => yes && api.tableHealth(target).then(health => title.append(...requestPills(health.requests))))
+    .catch(() => {});
+  describesHere(target).then(yes => yes && api.governance(target)).then(g => {
+    if (!g) return;
     if ((g.holds || []).length) title.append(heldPill());
     const e = g.effective || {};
     if (e['dr-freeze']) title.append(frozenPill());
@@ -812,9 +831,9 @@ export function viewPage(target, tab, route) {
   main.append(head, tabs);
   const body = tabBody(main);
   refChrome(route, head);
-  const loaded = loadView(target);
+  title.append(badge('view', 'strong'));
+  const loaded = loadIfRead(target, readsHere(target), loadView);
   loaded.then(v => {
-    title.append(badge('view', 'strong'));
     addCount(tabs, 'versions', (v.metadata.versions || []).length);
   }, () => {});
   const show = () => {
@@ -828,6 +847,7 @@ export function viewPage(target, tab, route) {
         try {
           v = await loaded;
         } catch (error) {
+          if (error === UNREAD) return unreadNote(target);
           return refusedLoad(error, 'Access and Audit', target.ref);
         }
         return key === 'versions' ? versionsTab(v) : viewOverview(target, v);

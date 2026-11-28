@@ -5,6 +5,8 @@ import static nuna.catalog.server.governance.Api.expect;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
+import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.Denial;
 import nuna.catalog.server.ConsoleBrowser;
 import nuna.catalog.server.IssuerForTests;
 import java.net.http.HttpResponse;
@@ -61,6 +63,9 @@ class ConsoleBrowserTest {
     private static final String AUTH = "Authorization";
     private static final String HOLD_REASON = "console test: litigation hold";
     private static final String FREEZE_REASON = "console test: DR reconcile in progress";
+    /** A table's data tabs to a caller whose groups do not read it (backlog 325). */
+    private static final String UNREAD_TABLE = "Reading this table's data needs select on it, which your groups do not"
+            + " hold. Its grants and governance are on Access.";
     private static final long S1 = 7_001;
     private static final long S2 = 7_002;
     private static final long S3 = 7_003;
@@ -241,12 +246,16 @@ class ConsoleBrowserTest {
         signIn(api.operator());
         browser.open("/ui/");
         browser.await("the operator did not land on Service", d -> d.getCurrentUrl().endsWith("#p=service"));
-        assertThat(rail()).containsExactly("service", "catalog", "refs", "governance");
+        // He holds nothing in the catalog: Catalog and Branches and tags are not drawn, and his Governance is the DR
+        // freeze alone (backlog 325).
+        assertThat(rail()).containsExactly("service", "governance");
         // Service is the whole deployment's: it offers no catalog to pick (backlog 200).
         assertThat(driver.findElement(By.cssSelector(".pick-wrap")).isDisplayed()).isFalse();
-        // An operator freezes a namespace from Holds and freezes, not only from its Access tab (backlog 221).
+        // An operator freezes a namespace from Governance, not only from its Access tab (backlog 221), where neither
+        // the summary nor the holds list, which need describe, is asked for (backlog 325).
         browser.open("/ui/#p=governance&c=trading&tab=holds");
-        browser.await(By.cssSelector("#governance-holds [data-act='freeze-path']")).click();
+        browser.await(By.cssSelector("#governance-freeze [data-act='freeze-path']")).click();
+        assertThat(driver.findElements(By.cssSelector("#governance-holds, #governance-summary, .nc-main .refusal"))).isEmpty();
         WebElement named = browser.await(By.cssSelector("dialog.dlg"));
         named.findElement(By.cssSelector("input[name='path']")).sendKeys(top + ".equities.eu");
         named.findElement(By.cssSelector("button[type='submit']")).click();
@@ -299,7 +308,9 @@ class ConsoleBrowserTest {
         assertThat(overview.getDomAttribute("href")).isEqualTo("#" + at("table", eu, "trades", "overview"));
         overview.click();
         browser.await(By.cssSelector("#table-page nav.tabs a[data-tab='overview'][aria-current='page']"));
-        refusal("#table-page .tab-body");
+        // It stays on offer and says, without asking the catalog, that his groups do not read it (backlog 325).
+        assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                .isEqualTo(UNREAD_TABLE);
         // So does a view.
         browser.open("/ui/#" + at("view", equities, "daily", null));
         browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='access'][aria-current='page']"));
@@ -319,6 +330,78 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector("#overview-tab"));
         browser.open("/ui/#" + at("view", equities, "daily", null));
         browser.await(By.cssSelector("#view-page nav.tabs a[data-tab='overview'][aria-current='page']"));
+    }
+
+    /**
+     * Browsing writes no refusal the console could have known from the caller's own grants (the 27 Nov review, item 3;
+     * backlog 325), as the demo's gary, cora and oscar: a table's or view's data tabs stay on offer and say in a closed
+     * note that the caller's groups do not read it, without asking for its load or its health; a platform operator
+     * who holds nothing in the catalog is not offered its namespaces or branches and tags, and his Governance is the
+     * DR freeze alone. One refusal asked for on purpose at the end shows the audit log is being read.
+     */
+    @Test
+    void browsingWritesNoRefusalTheCallersOwnGrantsForetell() {
+        String compliance = "compliance-" + Api.suffix();
+        IssuerForTests.grant(jdbc, Api.CATALOG, compliance, "describe");
+        expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":" + json(eu)
+                + "},\"group\":\"" + compliance + "\",\"privilege\":\"select\"}", AUTH, api.grantAdmin()), 204);
+        try (AuditLogCapture log = new AuditLogCapture()) {
+            // gary manages grants and reads nothing.
+            signIn(gary());
+            for (String tab : new String[] {"overview", "schema", "history", "maintenance"}) {
+                browser.open("/ui/#" + at("table", eu, "trades", tab));
+                assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                        .as(tab).isEqualTo(UNREAD_TABLE);
+            }
+            assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab]")))
+                    .as("every tab stays on offer (Atelier, 2026-11-27)").extracting(a -> a.getDomAttribute("data-tab"))
+                    .containsExactly("overview", "schema", "history", "access", "maintenance", "audit");
+
+            // cora reads eu only: elsewhere she is told per object, not from what she may do somewhere in the catalog.
+            signIn(person("cora", compliance));
+            browser.open("/ui/#" + at("table", eu, "trades", "overview"));
+            browser.await(By.cssSelector("#overview-tab"));
+            for (String tab : new String[] {"overview", "maintenance"}) {
+                browser.open("/ui/#" + at("table", ledger, "accounts", tab));
+                assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                        .as(tab).isEqualTo(UNREAD_TABLE);
+            }
+            browser.open("/ui/#" + at("view", equities, "daily", "overview"));
+            assertThat(textContent(browser.await(By.cssSelector("#view-page .tab-body [data-closed] h3"))))
+                    .isEqualTo("Reading this view's data needs select on it, which your groups do not hold. Its grants and"
+                            + " governance are on Access.");
+
+            // oscar operates the deployment and holds nothing in trading.
+            signIn(person("oscar", GovernanceServer.PLATFORM_OPS));
+            browser.open("/ui/#p=governance&c=trading");
+            browser.await(By.cssSelector("#governance-freeze [data-act='freeze-path']"));
+            assertThat(driver.findElements(By.cssSelector("#governance-summary, #governance-holds"))).isEmpty();
+            assertThat(driver.findElement(By.id("operator-freezes")).getText()).isEmpty();
+            assertThat(rail()).containsExactly("service", "governance");
+            browser.open("/ui/#c=trading");
+            assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                    .isEqualTo("trading's namespaces, tables, branches and tags are open to those whose groups hold a"
+                            + " grant in it.");
+            browser.open("/ui/#c=trading&tab=refs");
+            browser.awaitText(By.cssSelector("#closed-page h1"), "Branches and tags");
+
+            // The one refusal asked for: once it is in the log, nothing before it was refused to any of them.
+            expect(api.send("GET", "/v1/trading/namespaces/" + ns(eu) + "/tables/trades", null, AUTH, gary()), 403);
+            long deadline = System.nanoTime() + ConsoleBrowser.WAIT.toNanos();
+            while (denials(log, "gary").isEmpty() && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertThat(denials(log, "gary")).extracting(Denial::operation).containsExactly("loadTable");
+            assertThat(denials(log, "cora")).isEmpty();
+            assertThat(denials(log, "oscar")).isEmpty();
+        }
+    }
+
+    /** The refusals the audit log holds for {@code principal}, in order. */
+    private static List<Denial> denials(AuditLogCapture log, String principal) {
+        return log.records().stream().map(CatalogEvent::data)
+                .filter(d -> d instanceof Denial denial && denial.actor().principal().equals(principal))
+                .map(Denial.class::cast).toList();
     }
 
     /**
@@ -763,10 +846,14 @@ class ConsoleBrowserTest {
         expect(api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null, AUTH, tester()), 403);
 
         // Grant administrators are kept away from the data itself (D18): a table opens on Access for them (backlog
-        // 245), and its Overview shows the refusal.
+        // 245), and its Overview says so without asking (backlog 325). Exporting its metadata, which they ask for
+        // themselves, shows the catalog's refusal of its load.
         signIn(api.grantAdmin());
         browser.open("/ui/#" + at("table", eu, "trades", "overview"));
-        assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
+        assertThat(textContent(browser.await(By.cssSelector("#table-page .tab-body [data-closed] h3"))))
+                .isEqualTo(UNREAD_TABLE);
+        browser.await(By.cssSelector("#table-page [data-act='export-meta']")).click();
+        assertShownVerbatim(refusal("dialog.dlg"), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
                 + "/tables/trades?snapshots=all", null, AUTH, api.grantAdmin(), "X-Iceberg-Access-Delegation", "none"));
     }
 

@@ -27,6 +27,14 @@ export const may = (catalog, privilege) => !!(byCatalog.get(catalog) || {})[priv
 /** A platform operator: the Service page and the DR freeze. */
 export const operates = () => !!deployment.operate;
 
+/**
+ * Whether the caller's groups hold some privilege in the catalog, so its namespaces, branches and tags and governance
+ * may be listed to them (backlog 325). The list names a catalog only to one who holds something in it, except to a
+ * platform operator, who sees every one for its DR freeze: for them, a privilege it names must be held.
+ */
+export const holdsIn = catalog => byCatalog.has(catalog)
+  && (!operates() || Object.values(byCatalog.get(catalog)).some(Boolean));
+
 /** Whether the caller reads data in any catalog, which Overview and Maintenance are about; reading the audit tables
  * is an auditor's work, on Audit, not data of their own (Atelier's re-walk, 2026-11-23; backlog 200). */
 export const readsData = () => [...byCatalog].some(([name, m]) => m.select && !auditCatalogs.has(name));
@@ -49,6 +57,10 @@ export function groupWords() {
 /** A tab the caller's groups cannot use, reached by a link: plain words, and the catalog is never asked. */
 export const closedNote = words => h('div', {class: 'empty', 'data-closed': ''}, h('h3', null, words),
   h('p', null, `Your groups: ${groupWords()}. Ask a grant admin if your work needs it.`));
+
+/** The words for a table's or view's data tabs, to a caller whose groups hold no grant that reads it (backlog 325). */
+export const unreadWords = target => `Reading this ${target.kind}'s data needs select on it, which your groups do not hold. `
+  + 'Its grants and governance are on Access.';
 
 /** The words for an object's Audit tab, closed to the caller. */
 export const trailWords = catalog => `An object's audit trail is open to those who manage ${catalog}'s grants.`;

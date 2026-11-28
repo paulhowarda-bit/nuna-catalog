@@ -4,7 +4,7 @@
 import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startAgain, startSignIn, useToken, whenSignedOut}
   from './auth.js';
 import * as api from './api.js';
-import {auditOpen, groupWords, keepAccess, landingCatalogs, may, operates, readsData} from './access.js';
+import {auditOpen, groupWords, holdsIn, keepAccess, landingCatalogs, may, operates, readsData} from './access.js';
 import {$, $$, at, failure, fill, fmt, h, icon, pill, plural, techDetails} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
@@ -225,8 +225,10 @@ function setChrome(navKey, ref) {
     grants: href({page: 'grants', c: cat, r: ref}), audit: href({page: 'audit', c: cat, r: ref}), service: pageHref('service')};
   // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
   // read, Grants is for those who manage the catalog's grants (backlog 245), Audit for audit readers and them, Service
-  // for platform operators. Branches and tags are listed to anyone who holds anything in the catalog (backlog 221).
-  const open = {overview: readsData(), catalog: true, refs: !!cat, maintenance: readsData(), governance: true,
+  // for platform operators. Catalog, Branches and tags and Governance are for anyone who holds anything in the catalog
+  // (backlog 221), which a platform operator need not: his Governance is the DR freeze alone (backlog 325).
+  const holds = !!cat && holdsIn(cat);
+  const open = {overview: readsData(), catalog: holds, refs: holds, maintenance: readsData(), governance: holds || (!!cat && operates()),
     grants: !!cat && may(cat, 'manage-grants'), audit: !!cat && auditOpen(cat), service: operates()};
   // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
   const home = cat ? homeKey(cat) : 'service';
@@ -780,7 +782,9 @@ function render() {
     // Branches and tags, and a ref's own page, are the rail's Branches and tags (Atelier, 2026-11-24; backlog 221).
     const refs = r.k === 'ref' || (r.k === 'catalog' && r.tab === 'refs');
     navKey = refs ? 'refs' : 'catalog';
-    content = browse(slot, r);
+    // A platform operator who holds nothing in the catalog may not list it: said without asking (backlog 325).
+    content = holdsIn(cat) ? browse(slot, r) : closedPage(refs ? 'Branches and tags' : cat,
+      `${cat}'s namespaces, tables, branches and tags are open to those whose groups hold a grant in it.`);
     title = r.k === 'ref' && r.n ? '@' + r.n : refs ? 'Branches and tags' : r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat);
   } else {
     navKey = null;
