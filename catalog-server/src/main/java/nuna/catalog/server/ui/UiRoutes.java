@@ -98,6 +98,7 @@ class UiRoutes {
             oidc.put("scopes", settings.oidc().scopes());
             oidc.put("redirect-uri", settings.oidc().redirectUri() == null ? null
                     : settings.oidc().redirectUri().toString());
+            oidc.put("name", settings.oidc().name());
             out.put("oidc", oidc);
         }
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_JSON)

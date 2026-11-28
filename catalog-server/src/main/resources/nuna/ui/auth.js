@@ -166,6 +166,9 @@ export function endSessionUrl(meta, oidc, idToken) {
   return url.toString();
 }
 
+/** The IdP as the sign-in screen names it: nuna.ui.oidc.name, such as "the demo's Keycloak", else the issuer's host. */
+export const idpName = oidc => oidc.name || new URL(oidc.issuer).host;
+
 /**
  * Signs out: forgets the token, then sends the browser to the IdP to end the person's session there, so the next
  * sign-in asks for a password again; resolves to null as the browser leaves. Resolves to a message, and stays,
@@ -176,16 +179,17 @@ export async function signOut(oidc) {
   const idToken = sessionStorage.getItem(ID_TOKEN);
   sessionStorage.clear();
   if (!oidc) return 'Signed out.';
-  const host = new URL(oidc.issuer).host;
+  const idp = idpName(oidc);
   let url;
   try {
     url = endSessionUrl(await discovery(oidc), oidc, idToken);
   } catch (error) {
-    return `Signed out of nuna, but ${host} did not end your session there (${error.message}). `
+    return `Signed out of nuna, but ${idp} did not end your session there (${error.message}). `
       + 'Signing in again may not ask for a password.';
   }
   if (!url) {
-    return `Signed out of nuna. ${host} offers no way to end your session there, so signing in again may not ask `
+    // The name leads no sentence, so a name in words ("the demo's Keycloak") needs no capital (backlog 332).
+    return `Signed out of nuna, but ${idp} offers no way to end your session there, so signing in again may not ask `
       + 'for a password.';
   }
   sessionStorage.setItem(SIGNING_OUT, 'true');

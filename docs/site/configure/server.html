@@ -188,7 +188,7 @@
           <dt>Read by</dt><dd>the server</dd>
           <dt>Restart</dt><dd>Needed</dd>
         </dl>
-        <p>Offers a box to paste a bearer token into, for local development only.</p>
+        <p>Offers a box to paste a bearer token into, for local development only. When <code>nuna.ui.oidc.issuer</code> is also set, the box sits folded, closed, under <b class="ui">Developer sign-in</b>, below the identity provider's button.</p>
       </section>
 
       <section class="setting">
@@ -267,6 +267,19 @@
           <dt>Restart</dt><dd>Needed</dd>
         </dl>
         <p>Where the identity provider sends the browser back, after signing in and after signing out. The client must allow it as a redirect URI and as a post-logout redirect URI.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-oidc-name"><code>nuna.ui.oidc.name</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>none: the issuer's host</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_OIDC_NAME</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.oidc.name</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The identity provider's name in words, as the console's sign-in page shows it: on the button (<b class="ui">Sign in with the demo's Keycloak</b>), in <b class="ui">Going to…</b>, and in the messages when signing out cannot end the session there. It reads after "with", so write it as it reads mid-sentence. Unset, those places show the issuer's host and port.</p>
       </section>
 
       <h2 id="nuna-health-group">nuna.health</h2>

@@ -193,7 +193,7 @@ makes the same two Secrets from its private CA.
 
 The console offers two ways in:
 
-- **Sign in with localhost:8180**: Keycloak's login page, by username and password, standing in for a
+- **Sign in with the demo's Keycloak**: Keycloak's login page, by username and password, standing in for a
   directory (AD, Entra ID) until one is configured. The console signs in as it would with any IdP (OIDC
   authorization code with PKCE, `nuna.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
   It names a user by `preferred_username`, so `ana` from Keycloak is the same user as `ana`'s token below.

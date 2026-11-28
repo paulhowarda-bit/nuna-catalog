@@ -60,8 +60,11 @@ public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc
      * @param redirectUri where the IdP sends the browser back, after signing in and after signing out (so its client
      *                    must allow it as a redirect URI and as a post-logout redirect URI); empty means the
      *                    console's own {@code /ui/} URL
+     * @param name        the IdP's name in words, such as "the demo's Keycloak", which the sign-in button, "Going to…"
+     *                    and the sign-out messages show; empty means the issuer's host (backlog 332)
      */
-    public record Oidc(URI issuer, String clientId, @DefaultValue("openid") List<String> scopes, URI redirectUri) {
+    public record Oidc(URI issuer, String clientId, @DefaultValue("openid") List<String> scopes, URI redirectUri,
+                       String name) {
 
         public Oidc {
             Objects.requireNonNull(issuer, "nuna.ui.oidc.issuer");
@@ -70,6 +73,7 @@ public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc
                 throw new IllegalArgumentException("nuna.ui.oidc.issuer must be an http(s) URL, not " + issuer);
             }
             scopes = List.copyOf(scopes);
+            name = name == null || name.isBlank() ? null : name.strip();
         }
 
         /** The issuer's origin, which the console's Content-Security-Policy lets it connect to. */

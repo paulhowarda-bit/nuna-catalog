@@ -1,8 +1,8 @@
 // The console: sign-in, the shell (top bar, menu, catalog picker, theme, Go to a path) and the router. Each page
 // lives in its own module and asks the catalog's own routes for what it shows; the server decides every permission.
 
-import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startAgain, startSignIn, useToken, whenSignedOut}
-  from './auth.js';
+import {backFromSignOut, claims, finishSignIn, idpName, signedIn, signedOut, signOut, startAgain, startSignIn, useToken,
+  whenSignedOut} from './auth.js';
 import * as api from './api.js';
 import {auditOpen, groupWords, holdsIn, keepAccess, landingCatalogs, may, operates, readsData} from './access.js';
 import {$, $$, at, failure, fill, fmt, h, icon, pill, plural, techDetails} from './dom.js';
@@ -351,24 +351,23 @@ function signInPage(message, again) {
     message ? h('p', {class: 'notice', role: 'status'}, icon('info'), h('span', null, message)) : null,
     again ? startAgainButton() : null);
   if (config.oidc) {
-    const host = new URL(config.oidc.issuer).host;
+    const idp = idpName(config.oidc);
     const status = h('div', {'aria-live': 'polite'});
     form.append(h('p', {class: 'muted'}, 'Your organisation\'s sign-in page opens, then brings you back here. Your sign-in lasts in '
       + 'this tab only.'),
     h('button', {class: 'btn primary lg', type: 'button', 'data-act': 'signin', onclick: async () => {
-      fill(status, h('p', {class: 'loading-line'}, 'Going to ' + host + '…'));
+      fill(status, h('p', {class: 'loading-line'}, 'Going to ' + idp + '…'));
       try {
         await startSignIn(config.oidc);
       } catch (error) {
         fill(status, failure(error, {title: 'Sign-in did not start'}), startAgainButton());
       }
-    }}, icon('key'), 'Sign in with ' + host), status);
+    }}, icon('key'), 'Sign in with ' + idp), status);
   }
   if (config['dev-token-login']) {
     const box = h('textarea', {class: 'tokenbox', rows: 4, spellcheck: 'false', placeholder: 'eyJhbGciOi…', 'aria-label': 'Bearer token'});
     const status = h('div', {'aria-live': 'polite'});
-    if (config.oidc) form.append(h('div', {class: 'or'}, 'development only'));
-    form.append(h('div', null,
+    const parts = [h('div', null,
       h('p', {class: 'fine', title: 'nuna.ui.dev-token-login=true'}, h('b', null, 'Paste a bearer token.'),
         ' For development only: this server allows signing in with one.'),
       box, h('p', {class: 'fine'}, 'Kept in this tab only.')),
@@ -379,7 +378,10 @@ function signInPage(message, again) {
       } catch (error) {
         fill(status, failure(error, {title: 'That token cannot be used'}));
       }
-    }}, 'Use this token'), status);
+    }}, 'Use this token'), status];
+    // Beside an identity provider the box folds away, closed (backlog 332); with none it is the only way in, so open.
+    form.append(...(config.oidc ? [h('details', {class: 'dev-signin', 'data-dev-signin': ''}, h('summary', null, 'Developer sign-in'),
+      parts)] : parts));
   }
   if (!config.oidc && !config['dev-token-login']) {
     form.append(h('div', {class: 'notice'}, icon('info'), h('div', null, 'No sign-in is set up on this server. Ask whoever runs nuna '

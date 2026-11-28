@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.openqa.selenium.By;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -99,6 +100,8 @@ class ConsoleSignInTest {
             properties.put("nuna.security.issuers[0].client-id-claim", "azp");
             properties.put("nuna.ui.oidc.issuer", ISSUER);
             properties.put("nuna.ui.oidc.client-id", "nuna-console");
+            // Beside the IdP, as the demo has it: the token box folds under "Developer sign-in" (backlog 332).
+            properties.put("nuna.ui.dev-token-login", "true");
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("console-idp", properties));
         }
     }
@@ -240,6 +243,32 @@ class ConsoleSignInTest {
         driver.findElement(By.cssSelector("main [data-act='start-again']")).click();
         browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080");
         assertThat(driver.findElements(By.cssSelector("main .refusal"))).isEmpty();
+    }
+
+    /**
+     * Beside an identity provider, the developer token box sits closed under "Developer sign-in", so the sign-in button
+     * is what the page offers first (Atelier's brand review; backlog 332). The IdP's name in words, when set, stands
+     * where its host stands here.
+     */
+    @Test
+    void theTokenBoxFoldsUnderDeveloperSignInBesideTheIdp() {
+        RemoteWebDriver driver = browser.session();
+        browser.open("/ui/");
+        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080");
+        WebElement fold = driver.findElement(By.cssSelector("main details[data-dev-signin]"));
+        assertThat(fold.getAttribute("open")).as("the fold starts closed").isNull();
+        assertThat(fold.findElement(By.tagName("summary")).getText()).isEqualTo("Developer sign-in");
+        assertThat(driver.findElements(By.cssSelector("main .tokenbox"))).hasSize(1).allSatisfy(box ->
+                assertThat(box.isDisplayed()).as("the box, folded away").isFalse());
+        assertThat(driver.findElement(By.cssSelector("main [data-act='signin-token']")).isDisplayed()).isFalse();
+        fold.findElement(By.tagName("summary")).click();
+        browser.await("the token box shown once the fold opens", d -> d.findElement(By.cssSelector("main .tokenbox"))
+                .isDisplayed());
+
+        Object named = driver.executeAsyncScript("const done = arguments[arguments.length - 1];"
+                + "import('/ui/auth.js').then(m => done([m.idpName({issuer: '" + ISSUER + "', name: \"the demo's Keycloak\"}),"
+                + " m.idpName({issuer: '" + ISSUER + "', name: null})]));");
+        assertThat(named).isEqualTo(List.of("the demo's Keycloak", "keycloak:8080"));
     }
 
     /**

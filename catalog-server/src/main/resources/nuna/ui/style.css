@@ -490,8 +490,10 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .signin-form { padding: 64px 56px; display: flex; flex-direction: column; gap: 18px; justify-content: center; max-width: 480px; }
 .signin-form h1 { font: 600 26px/1.2 var(--f-ui); letter-spacing: -0.02em; }
 .signin-form .btn.lg { width: 100%; }
-.or { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: var(--t-12); }
-.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+/* The developer token box beside an identity provider: folded, closed, under a quiet line (backlog 332). */
+details.dev-signin { border-top: 1px solid var(--line); padding-top: 14px; }
+details.dev-signin > summary { cursor: pointer; width: max-content; font-size: var(--t-13); color: var(--text-2); }
+details.dev-signin[open] > * + * { margin-top: 12px; }
 .tokenbox { min-height: 86px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); padding: 10px 12px; font: 400 var(--t-12)/1.5 var(--f-mono); color: var(--text-2); }
 .fine { font-size: var(--t-12); color: var(--text-2); }
 

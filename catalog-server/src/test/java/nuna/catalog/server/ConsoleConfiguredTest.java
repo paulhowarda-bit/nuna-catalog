@@ -22,6 +22,7 @@ import org.springframework.test.context.ContextConfiguration;
         "nuna.ui.oidc.issuer=https://login.example.com/tenant-1/v2.0",
         "nuna.ui.oidc.client-id=nuna-console",
         "nuna.ui.oidc.scopes=openid,api://nuna-catalog/catalog.access",
+        "nuna.ui.oidc.name= the example sign-in ",
         "nuna.ui.docs-url=https://docs.nuna.example/catalog",
         "nuna.ui.grafana-url=https://grafana.nuna.example",
 })
@@ -45,7 +46,9 @@ class ConsoleConfiguredTest {
         assertThat(JsonPath.<Boolean>read(response.body(), "$['dev-token-login']")).isTrue();
         assertThat(JsonPath.<String>read(response.body(), "$['docs-url']")).isEqualTo("https://docs.nuna.example/catalog/");
         Map<String, Object> oidc = JsonPath.read(response.body(), "$.oidc");
-        assertThat(oidc).containsOnlyKeys("issuer", "client-id", "scopes", "redirect-uri");
+        assertThat(oidc).containsOnlyKeys("issuer", "client-id", "scopes", "redirect-uri", "name");
+        // The IdP's name in words, for the sign-in screen, trimmed (backlog 332).
+        assertThat(oidc.get("name")).isEqualTo("the example sign-in");
         assertThat(oidc.get("issuer")).isEqualTo("https://login.example.com/tenant-1/v2.0");
         assertThat(oidc.get("client-id")).isEqualTo("nuna-console");
         assertThat(JsonPath.<List<String>>read(response.body(), "$.oidc.scopes"))
