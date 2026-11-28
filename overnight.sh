@@ -268,7 +268,13 @@ main() {
         if [ "$(uname -o 2>/dev/null)" = Msys ] && ! pipe_up; then
             say "Podman's Docker pipe is gone (win-sshproxy died); restarting the Podman machine"
             { podman machine stop; podman machine start; } >>"$runs/overnight.log" 2>&1
-            [ "$context" = kind-nuna ] && timeout 600 bash "$repo/deploy/kind/kind.sh" up >/dev/null 2>&1
+            if [ "$context" = kind-nuna ]; then
+                timeout 600 bash "$repo/deploy/kind/kind.sh" up >/dev/null 2>&1
+                # After the machine restart of 2026-11-28 the node ran, but its API port answered Windows with EOF
+                # until the node's container was restarted.
+                timeout 30 kubectl --context "$context" get nodes >/dev/null 2>&1 ||
+                    { podman restart nuna-control-plane >/dev/null 2>&1; sleep 60; }
+            fi
             pipe_up || say "Podman's Docker pipe is still gone after the restart"
         fi
         local until=$(( $(date +%s) + 180 ))
