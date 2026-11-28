@@ -1,6 +1,6 @@
 # Build a thin catalog with thick controls
 
-Fidelity can build an enterprise Iceberg REST catalog from scratch, and the protocol is the small part of the job. The server has to do four things well. It advertises an explicit endpoint list. It applies every metadata-update type through iceberg-core's own validation code. It swaps one pointer per table. And it keeps a strict rule about which commit failures return 409 and which return 5xx. Every serious implementation has converged on this, and the work is bounded. Most of the effort goes into enterprise layers that no open-source catalog has finished for a regulated firm:
+The firm can build an enterprise Iceberg REST catalog from scratch, and the protocol is the small part of the job. The server has to do four things well. It advertises an explicit endpoint list. It applies every metadata-update type through iceberg-core's own validation code. It swaps one pointer per table. And it keeps a strict rule about which commit failures return 409 and which return 5xx. Every serious implementation has converged on this, and the work is bounded. Most of the effort goes into enterprise layers that no open-source catalog has finished for a regulated firm:
 
 - an audit trail that records denials and survives failures (Polaris says its own events "are not a complete audit trail");
 - retention holds enforced at commit time;
@@ -8,9 +8,9 @@ Fidelity can build an enterprise Iceberg REST catalog from scratch, and the prot
 - credential vending scoped per table, with location guardrails;
 - a multi-region disaster-recovery design that handles a table pointer replicating ahead of its files.
 
-The Java lean is well supported. Reusing iceberg-core's metadata builder gives the server the same behaviour as every client on the riskiest code path. The MongoDB lean is defensible but not favoured. A three-site replica set with majority writes and one pointer document per table is a correct commit store that loses no acknowledged commits. But both public MongoDB Iceberg catalogs (Nessie, and Polaris's beta backend) use the catalog-wide pointer this report rejects. And keeping the commit, its audit record, and grant changes consistent is an ordinary transaction on CockroachDB or PostgreSQL, but needs workarounds on MongoDB. The database choice should therefore follow Fidelity's disaster-recovery standard and which database its DBAs already run across three sites.
+The Java lean is well supported. Reusing iceberg-core's metadata builder gives the server the same behaviour as every client on the riskiest code path. The MongoDB lean is defensible but not favoured. A three-site replica set with majority writes and one pointer document per table is a correct commit store that loses no acknowledged commits. But both public MongoDB Iceberg catalogs (Nessie, and Polaris's beta backend) use the catalog-wide pointer this report rejects. And keeping the commit, its audit record, and grant changes consistent is an ordinary transaction on CockroachDB or PostgreSQL, but needs workarounds on MongoDB. The database choice should therefore follow the firm's disaster-recovery standard and which database its DBAs already run across three sites.
 
-The claim that open-source catalogs are bloated by vendor needs holds for Polaris's periphery: multi-tenant realms, a built-in token issuer, a NoSQL storage stack that is about a quarter of its server code, federation, and non-Iceberg tables. It fails for Polaris's security core. It also misses the other direction: vendor economics remove features too. Lakekeeper sells table maintenance separately, and hosted endpoints block views, create-table-as-select, or external maintenance. Of the 34 decisions logged below, 26 can proceed now. The other 8 wait on Fidelity answers, of which the most consequential are:
+The claim that open-source catalogs are bloated by vendor needs holds for Polaris's periphery: multi-tenant realms, a built-in token issuer, a NoSQL storage stack that is about a quarter of its server code, federation, and non-Iceberg tables. It fails for Polaris's security core. It also misses the other direction: vendor economics remove features too. Lakekeeper sells table maintenance separately, and hosted endpoints block views, create-table-as-select, or external maintenance. Of the 34 decisions logged below, 26 can proceed now. The other 8 wait on the firm's answers, of which the most consequential are:
 
 - which tables count as required records under SEC Rule 17a-4;
 - how much committed catalog state may be lost on failover (RPO), and how fast service must recover (RTO);
@@ -49,7 +49,7 @@ Iceberg 1.12 adds a safety net. **The Java client now retries POST requests that
 
 Authentication is equally narrow. The spec defines only OAuth2 and bearer tokens. It marks the catalog-hosted `/v1/oauth/tokens` endpoint "DEPRECATED for REMOVAL… _not_ recommended to implement" ([REST spec](https://github.com/apache/iceberg/blob/main/open-api/rest-catalog-open-api.yaml)), because it "pushes operators of Iceberg REST endpoints into the authorization service business" ([issue #10537](https://github.com/apache/iceberg/issues/10537)). The catch is that clients still default to it. Java's `oauth2-server-uri` defaults to the catalog's own token path ([rest-catalog.md](https://github.com/apache/iceberg/blob/main/docs/docs/rest-catalog.md)). Snowflake assumes the catalog is the identity provider unless `OAUTH_TOKEN_URI` is set ([Snowflake catalog integration](https://docs.snowflake.com/en/sql-reference/sql/create-catalog-integration-rest)). Correct per-engine client configuration is therefore part of the deliverable, not an afterthought.
 
-Several optional features are de facto requirements at Fidelity's scale.
+Several optional features are de facto requirements at the firm's scale.
 
 - **ETags with 304 Not Modified, and `snapshots=refs`.** ClickHouse measured about **535 bytes per snapshot** in a loadTable response. At 10,000 snapshots that means 5.3–6.0 MB and 356–512 ms per load. With `snapshots=refs`, the response falls to 10–12 KB ([ClickHouse #128348](https://github.com/ClickHouse/ClickHouse/issues/128348)). The same test found that Polaris 1.8.0 and the reference fixture return HTTP 400 for `refs` when statistics files sit on unreferenced snapshots, and Trino writes such a file on every insert.
 - **Cheap listings and 304s.** Snowflake catalog-linked databases poll the remote catalog every 30 seconds by default ([Snowflake docs](https://docs.snowflake.com/en/user-guide/tables-iceberg-catalog-linked-database)), which makes cheap lists and 304s a capacity requirement (inference).
@@ -70,7 +70,7 @@ A from-scratch catalog therefore needs a permanent team function that tracks the
 
 Raw scale is not what makes this hard. **Netflix reports more than 3 million Iceberg tables, 600 peak commits per second and 12,000 peak table loads per second** ([Trino Summit 2024 deck](https://trino.io/assets/blog/trino-summit-2024/trino-summit-2024-netflix.pdf)). A discrete-event simulation by Chris Douglas, which the researcher read only through a tool's summary, puts the sustainable ceiling for one table at about 1–2 commits per second. The limit comes from the client's own metadata reads and writes, not from the catalog ([Douglas](https://cdouglas.github.io/posts/2026/03/catalog)).
 
-The persistence researcher estimated about 50 commits per second in aggregate for a Fidelity-like mix of streaming and batch tables. That is an estimate, not a measurement. The same researcher used ClickHouse's per-snapshot size to estimate metadata growth (inference). A Flink job that commits every 10 seconds, under the default 5-day snapshot expiry ([TableProperties.java](https://github.com/apache/iceberg/blob/main/core/src/main/java/org/apache/iceberg/TableProperties.java)), keeps about 43,200 snapshots. That gives a metadata.json of roughly 26 MB. None of this strains any candidate database. What does bite is:
+The persistence researcher estimated about 50 commits per second in aggregate for a mix of streaming and batch tables like the firm's. That is an estimate, not a measurement. The same researcher used ClickHouse's per-snapshot size to estimate metadata growth (inference). A Flink job that commits every 10 seconds, under the default 5-day snapshot expiry ([TableProperties.java](https://github.com/apache/iceberg/blob/main/core/src/main/java/org/apache/iceberg/TableProperties.java)), keeps about 43,200 snapshots. That gives a metadata.json of roughly 26 MB. None of this strains any candidate database. What does bite is:
 
 - correctness when the database fails over;
 - discipline on metadata size;
@@ -111,7 +111,7 @@ SEC Rule 17a-4(f)(2) lets a broker-dealer meet its storage requirement in either
 
 Iceberg's snapshot history resembles that audit trail only while snapshots are retained. Expiring snapshots, compaction cleanup and orphan-file removal destroy it. Under S3 Object Lock in compliance mode, a simple DELETE returns 200 and adds a delete marker while the locked version remains ([Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)). Maintenance jobs therefore report success while storage is never reclaimed.
 
-The security researcher found that neither Polaris nor Lakekeeper documents **commit-time enforcement of retention holds**. That feature is the most important one a Fidelity catalog needs. It is also cheap to build, because removing snapshots happens through commits the catalog already sees.
+The security researcher found that neither Polaris nor Lakekeeper documents **commit-time enforcement of retention holds**. That feature is the most important one the firm's catalog needs. It is also cheap to build, because removing snapshots happens through commits the catalog already sees.
 
 **Disaster recovery has a hazard that commit stores alone cannot fix.** S3 Replication Time Control replicates "99.9 percent of those objects within 15 minutes" ([S3 RTC](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication-time-control.html)). A synchronously replicated pointer can therefore reach the DR region before the files it references. The persistence researcher's designs, all inference, handle this in three ways:
 
@@ -196,7 +196,7 @@ Sources not linked in the table: [Polaris metastores](https://github.com/apache/
 
 DynamoDB global tables are disqualified in their default multi-region mode. Concurrent cross-region writes resolve as "last writer wins" ([DynamoDB global tables](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/V2globaltables_HowItWorks.html)), which can silently discard the winner of a CAS (inference).
 
-**The verdict:** MongoDB is acceptable but not preferred. The evidence does not single it out over CockroachDB, and it does not disqualify it. The lean should prevail only if Fidelity's DBA organisation runs MongoDB as a tier-1 platform across three sites (decision D7). If it does, the persistence invariants in decision D8 make it safe.
+**The verdict:** MongoDB is acceptable but not preferred. The evidence does not single it out over CockroachDB, and it does not disqualify it. The lean should prevail only if the firm's DBA organisation runs MongoDB as a tier-1 platform across three sites (decision D7). If it does, the persistence invariants in decision D8 make it safe.
 
 ## The bloat thesis holds at the edges and fails at the core
 
@@ -234,7 +234,7 @@ The features a regulated firm needs most are ones no open-source catalog has bui
 
 **Verdict: a from-scratch build saves less code than the thesis implies.** It can drop roughly a quarter of Polaris's code and most of its configuration. But it must add enterprise layers that no vendor has had a commercial reason to finish.
 
-The matrix below classifies each feature as essential (the spec or clients require it), enterprise (an operator at Fidelity's scale needs it) or vendor (it exists mainly for a commercial model). It then gives a keep, defer or drop call and a phase.
+The matrix below classifies each feature as essential (the spec or clients require it), enterprise (an operator at the firm's scale needs it) or vendor (it exists mainly for a commercial model). It then gives a keep, defer or drop call and a phase.
 
 | Feature | Class | Call | Phase | Evidence |
 |---|---|---|---|---|
@@ -288,14 +288,14 @@ The matrix below classifies each feature as essential (the spec or clients requi
 
 ## Decisions log
 
-The eight notes each ended with a "Decisions this implies" section. They are merged and de-duplicated below into 34 decisions. **26 can proceed now and 8 are blocked on Fidelity input.** IDs such as PLT-1 refer to the open questions in the next section. Where researchers disagreed, the disagreement is laid out and a call is made.
+The eight notes each ended with a "Decisions this implies" section. They are merged and de-duplicated below into 34 decisions. **26 can proceed now and 8 are blocked on the firm's input.** IDs such as PLT-1 refer to the open questions in the next section. Where researchers disagreed, the disagreement is laid out and a call is made.
 
 ### Strategy and stack
 
 #### D1. Build from scratch, adopt Polaris, or fork another catalog?
 **Options.**
 - (a) Build a single-tenant Java catalog.
-- (b) Adopt Apache Polaris and switch off what Fidelity does not need.
+- (b) Adopt Apache Polaris and switch off what the firm does not need.
 - (c) Fork Lakekeeper, or buy Lakekeeper Plus.
 - (d) Adopt or fork Nessie.
 - (e) Adopt Gravitino or Unity Catalog OSS.
@@ -309,7 +309,7 @@ The eight notes each ended with a "Decisions this implies" section. They are mer
 
 **Where researchers disagreed.**
 - The other-implementations researcher would build, with Polaris as the explicit fallback the build must beat.
-- The Polaris researcher proposed a side-by-side benchmark at Fidelity scale.
+- The Polaris researcher proposed a side-by-side benchmark at the firm's scale.
 - The Nessie researcher suggested evaluating Polaris's NoSQL/MongoDB modules as a reusable component.
 
 **Recommendation.** Build (a). Run a time-boxed bake-off of upstream Polaris 1.8 on PostgreSQL, with external OIDC and every optional feature off. It serves as the performance baseline, and as the fallback if the from-scratch v1 misses the gates in D31.
@@ -346,9 +346,9 @@ Do not reuse Polaris's MongoDB modules. They are beta, built around the catalog-
 
 **Evidence.** JEP 491 lets virtual threads use `synchronized` without pinning, so blocking I/O scales ([JEP 491](https://openjdk.org/jeps/491)). Polaris pins Quarkus 3.40.1.1 ([libs.versions.toml](https://github.com/apache/polaris/blob/main/gradle/libs.versions.toml)) with about 20 Quarkus extensions, and ships a 418 MB image. The researcher argued native image is not worth it for a 24×7 service with reflection-heavy Jackson and Iceberg code (inference).
 
-**Recommendation.** JDK 25 LTS, virtual threads and blocking I/O, on whichever framework Fidelity's platform team already curates (likely Spring Boot 4.x). Otherwise use Helidon SE or Javalin. Do not use native image. Avoid Quarkus unless its extension ecosystem is already curated.
+**Recommendation.** JDK 25 LTS, virtual threads and blocking I/O, on whichever framework the firm's platform team already curates (likely Spring Boot 4.x). Otherwise use Helidon SE or Javalin. Do not use native image. Avoid Quarkus unless its extension ecosystem is already curated.
 
-**Status:** Blocked on Fidelity input (PLT-6).
+**Status:** Blocked on the firm's input (PLT-6).
 
 ### State, persistence and commits
 
@@ -412,11 +412,11 @@ Do not reuse Polaris's MongoDB modules. They are beta, built around the catalog-
 **Where researchers disagreed.**
 - *Persistence researcher:* MongoDB, with CockroachDB "equally valid" if the DBAs run it. PostgreSQL only if lost commits measured in seconds are acceptable.
 - *Other-implementations researcher:* PostgreSQL, unless the MongoDB team can guarantee multi-document transactions, majority write concern and case-insensitive unique indexes.
-- *Polaris researcher:* decide on which platform Fidelity operates, not on developer preference.
+- *Polaris researcher:* decide on which platform the firm operates, not on developer preference.
 - *Tabular researcher:* judge any store against four criteria: single-table compare-and-swap, atomic multi-entity commit, cross-region consistency, and in-house expertise.
 - *Security researcher:* the database must write commit, grant and audit-outbox records in one transaction.
 
-**Recommendation.** Choose the zero-loss-capable store that Fidelity's DBAs already run across three sites.
+**Recommendation.** Choose the zero-loss-capable store that the firm's DBAs already run across three sites.
 - **If the DR standard demands zero lost commits and automatic regional failover:**
   - Use MongoDB if it is the operated platform, under the invariants in D8.
   - Use CockroachDB if it is the operated platform. Where both are operated, CockroachDB edges ahead. The commit, outbox and grant writes and multi-table commits are ordinary serializable transactions, and REGIONAL BY ROW gives each table a home region. The cost is a client-side retry loop for serialization errors (SQLSTATE 40001).
@@ -425,7 +425,7 @@ Do not reuse Polaris's MongoDB modules. They are beta, built around the catalog-
 
 The MongoDB lean should prevail only if PLT-2 confirms it is the tier-1, three-site platform.
 
-**Status:** Blocked on Fidelity input (PLT-1, PLT-2).
+**Status:** Blocked on the firm's input (PLT-1, PLT-2).
 
 #### D8. What persistence rules must any chosen database meet?
 **Options.** Leave durability and consistency settings to configuration, as Nessie does; or set them in code as explicit invariants.
@@ -599,7 +599,7 @@ Later phases:
 ### Security
 
 #### D16. How do clients authenticate?
-**Options.** The catalog issues its own tokens (the legacy endpoint); the catalog validates tokens issued by Fidelity's identity provider; mTLS; AWS SigV4.
+**Options.** The catalog issues its own tokens (the legacy endpoint); the catalog validates tokens issued by the firm's identity provider; mTLS; AWS SigV4.
 
 **Evidence.**
 - The spec deprecates the catalog token endpoint, and Polaris's external mode answers it with HTTP 501 ([Polaris external IdP](https://github.com/apache/polaris/blob/main/site/content/in-dev/unreleased/managing-security/external-idp/_index.md)).
@@ -631,7 +631,7 @@ Later phases:
 
 **Recommendation.** (c), with a registry of trusted engines. Reject commits to retention-class tables that carry no end-user identity, if CMP-7 confirms the individual's identity is required.
 
-**Status:** Blocked on Fidelity input (SEC-1, SEC-2, CMP-7).
+**Status:** Blocked on the firm's input (SEC-1, SEC-2, CMP-7).
 
 #### D18. What authorization model does the catalog use?
 **Options.**
@@ -658,7 +658,7 @@ Later phases:
 - **Inheritance** flows down from catalog to namespace to table or view, which also covers objects created later.
 - **Separation of duties:** grant admin, data/DDL admin, tag steward, and a platform operator with no data access.
 - **Ownership** is recorded for accountability, but in regulated catalogs it confers no re-grant rights. No superuser bypass.
-- **No DENY in v1.** Additive grants plus default-deny keeps access reviews tractable (inference). Revisit if Fidelity's entitlement model requires DENY (SEC-3).
+- **No DENY in v1.** Additive grants plus default-deny keeps access reviews tractable (inference). Revisit if the firm's entitlement model requires DENY (SEC-3).
 - **Day-one APIs:** listing by principal and by object, and batch permission checks.
 - **Audit:** every decision is audited (D23).
 
@@ -671,9 +671,9 @@ Later phases:
 - Polaris's OPA integration is a "preview feature and may undergo breaking changes" ([Polaris OPA](https://github.com/apache/polaris/blob/main/site/content/in-dev/unreleased/managing-security/external-pdp/opa.md)).
 - Lakekeeper's OPA bridge serves Trino. Lakekeeper says Trino is the only engine it knows "flexible enough to honor external permissions via OPA" ([Lakekeeper OPA](https://github.com/lakekeeper/lakekeeper/blob/main/docs/docs/opa.md)).
 
-**Recommendation.** Define an internal authorizer interface from day one, batched and aware of the full object path. Build an adapter only for the system Fidelity mandates. Prefer syncing entitlements in over calling out on every request, for latency (inference).
+**Recommendation.** Define an internal authorizer interface from day one, batched and aware of the full object path. Build an adapter only for the system the firm mandates. Prefer syncing entitlements in over calling out on every request, for latency (inference).
 
-**Status:** Blocked on Fidelity input (SEC-3, SEC-4).
+**Status:** Blocked on the firm's input (SEC-3, SEC-4).
 
 #### D20. Who enforces row and column controls?
 **Options.**
@@ -694,7 +694,7 @@ Later phases:
 - **Design (b) now,** and ship it once Java 1.13 support lands and the spec adds a way for clients to declare they enforce restrictions.
 - **Consider (c) or (d) only** if untrusted tools such as notebooks need sensitive data.
 
-**Status:** Blocked on Fidelity input (SEC-5, CMP-8).
+**Status:** Blocked on the firm's input (SEC-5, CMP-8).
 
 #### D21. How are storage credentials vended, and what guardrails apply?
 **Options.** Engines keep their own storage credentials; the catalog vends short-lived credentials scoped to each table; or the catalog signs each storage request (D22).
@@ -735,7 +735,7 @@ Guardrails:
 
 **Recommendation.** Implement the current spec's `/sign` endpoint (not the legacy signer) only where a store lacks AssumeRole with session policies, or where a data class requires a record of every object read. The signer sits in the data path, so load-test it accordingly. Sign only requests the catalog recognises, as Lakekeeper's hardened signer does.
 
-**Status:** Blocked on Fidelity input (PLT-3, SEC-7).
+**Status:** Blocked on the firm's input (PLT-3, SEC-7).
 
 ### Governance and compliance
 
@@ -790,7 +790,7 @@ Delivery:
 
 Prefer (a) or (d) for most data. Use (c) only for tables that must themselves be the record, and accept that storage is never reclaimed and that compaction roughly doubles stored bytes for rewritten data (researcher inference). Counsel picks the path for each class of table.
 
-**Status:** Blocked on Fidelity input (CMP-1, CMP-2, CMP-3).
+**Status:** Blocked on the firm's input (CMP-1, CMP-2, CMP-3).
 
 #### D25. How do drop and purge work?
 **Options.** Delete files immediately when `purgeRequested=true`; soft-delete with a retention window and a later audited purge; or reject purges.
@@ -883,7 +883,7 @@ Either way, build:
 - **retention settings tied to the database's point-in-time-recovery window:** snapshot age, the orphan-removal age threshold, retention of non-current object versions, and `previous-versions-max`;
 - **restore drills** that check a sample of tables have every file they reference.
 
-**Status:** Blocked on Fidelity input (PLT-1, PLT-3, PLT-4).
+**Status:** Blocked on the firm's input (PLT-1, PLT-3, PLT-4).
 
 #### D30. Who owns table maintenance?
 **Options.** Each team runs its own jobs; the catalog only stores policy (Polaris); the catalog runs maintenance itself (S3 Tables, Lakekeeper Plus); or a separate worker tier triggered by catalog events (OpenHouse, Amoro).
@@ -965,7 +965,7 @@ Either way, build:
 
 **Status:** Recommended — can proceed.
 
-## Open questions for Fidelity, grouped by who must answer
+## Open questions for the firm, grouped by who must answer
 
 The questions below merge and de-duplicate the eight notes' "open questions" sections. Each lists the decisions it unblocks or refines.
 
@@ -973,8 +973,8 @@ The questions below merge and de-duplicate the eight notes' "open questions" sec
 
 | ID | Question | Unblocks |
 |---|---|---|
-| CMP-1 | Which Fidelity legal entities will use the catalog, and which regimes apply to each? Broker-dealer rules (17a-3/17a-4, FINRA 4511, 17a-5 internal control over compliance), adviser rule 204-2, fund rules (31a-2, N-CSR certifications), NYDFS Part 500 (including Class A status), Reg S-P "larger entity" status, FTC jurisdiction, SOX issuer status. | D24, D17, D23, D26 |
-| CMP-2 | Will any Iceberg table be a required record, or the only copy of one, under 17a-4, 204-2 or 31a-2? If so, does Fidelity rely on the WORM path or the audit-trail path, and who signs the 17a-4(f)(3)(v) undertaking? | D24, D25, D29, D30 |
+| CMP-1 | Which of the firm's legal entities will use the catalog, and which regimes apply to each? Broker-dealer rules (17a-3/17a-4, FINRA 4511, 17a-5 internal control over compliance), adviser rule 204-2, fund rules (31a-2, N-CSR certifications), NYDFS Part 500 (including Class A status), Reg S-P "larger entity" status, FTC jurisdiction, SOX issuer status. | D24, D17, D23, D26 |
+| CMP-2 | Will any Iceberg table be a required record, or the only copy of one, under 17a-4, 204-2 or 31a-2? If so, does the firm rely on the WORM path or the audit-trail path, and who signs the 17a-4(f)(3)(v) undertaking? | D24, D25, D29, D30 |
 | CMP-3 | Does compliance accept Iceberg snapshot history plus the catalog commit log as a "complete time-stamped audit trail" under 17a-4(f)(2)(i)(A)? What export format will examiners expect? | D24, D23 |
 | CMP-4 | What retention applies to catalog audit logs (at least 5 years under NYDFS 500.6, or the record period), the commit journal, prior metadata files, and dropped tables? Must drops be reversible, and for how long? | D23, D25, D5, D30 |
 | CMP-5 | How are deletion requests (privacy, Reg S-P disposal, contractual) reconciled with retention holds, and who approves a physical purge? | D25, D24 |
@@ -1028,10 +1028,10 @@ The questions below merge and de-duplicate the eight notes' "open questions" sec
 
 | ID | Question | Unblocks |
 |---|---|---|
-| PO-1 | Will Fidelity commit a standing team to own the catalog as a tier-1 service for its whole life? That includes 2–3 iceberg-core upgrades a year and a voted REST feature every few weeks. | D1, D32 |
+| PO-1 | Will the firm commit a standing team to own the catalog as a tier-1 service for its whole life? That includes 2–3 iceberg-core upgrades a year and a voted REST feature every few weeks. | D1, D32 |
 | PO-2 | Is commercial support acceptable (Vakamo for Lakekeeper; Snowflake or Dremio for Polaris), or must the catalog be fully in-house? | D1 |
 | PO-3 | Will you fund a time-boxed bake-off against upstream Polaris on PostgreSQL, with every optional feature off, as the baseline the build must beat? | D1, D31 |
-| PO-4 | Will Fidelity take part in dev@iceberg (v4 catalog-managed metadata, the v2 load endpoint, events, fine-grained access control) rather than maintain private extensions? | D32, D12 |
+| PO-4 | Will the firm take part in dev@iceberg (v4 catalog-managed metadata, the v2 load endpoint, events, fine-grained access control) rather than maintain private extensions? | D32, D12 |
 
 ## Phased scope: v1, v1.x, later, never
 
@@ -1126,10 +1126,10 @@ The question "build or adopt?" turns out to be mostly a question of who builds t
 - Nessie is effectively maintained by one engineer.
 - Hosted catalogs restrict the spec to suit their vendors.
 
-That makes the from-scratch path more reasonable than it first appears, but also more expensive than "drop the vendor bloat" implies. The protocol core can be small precisely because Iceberg moved the hard metadata work into clients. Fidelity's real build is audit, retention, authorization, credential scoping and DR, and those would be needed on top of Polaris anyway.
+That makes the from-scratch path more reasonable than it first appears, but also more expensive than "drop the vendor bloat" implies. The protocol core can be small precisely because Iceberg moved the hard metadata work into clients. The firm's real build is audit, retention, authorization, credential scoping and DR, and those would be needed on top of Polaris anyway.
 
 Two further points change how the remaining choices should be framed.
 
-First, the database decision is a disaster-recovery decision in disguise. Object storage replicates asynchronously, so no database can make table contents loss-free across regions. A zero-loss database matters because it keeps audit records and grants intact and stops garbage collection from destroying the files of "forgotten" commits. MongoDB, CockroachDB and PostgreSQL should be judged on that, and on what Fidelity's DBAs already run, rather than on the user's preference or on the open-source precedent.
+First, the database decision is a disaster-recovery decision in disguise. Object storage replicates asynchronously, so no database can make table contents loss-free across regions. A zero-loss database matters because it keeps audit records and grants intact and stops garbage collection from destroying the files of "forgotten" commits. MongoDB, CockroachDB and PostgreSQL should be judged on that, and on what the firm's DBAs already run, rather than on the user's preference or on the open-source precedent.
 
-Second, the commit journal that 17a-4 pushes Fidelity to build is the same structure Iceberg v4's "catalog-managed metadata" would need. Compliance and future-proofing point to one design. The v4 shape is being decided on the dev list right now, so taking part (PO-4) is the cheapest way to make sure Fidelity's design and the spec converge.
+Second, the commit journal that 17a-4 pushes the firm to build is the same structure Iceberg v4's "catalog-managed metadata" would need. Compliance and future-proofing point to one design. The v4 shape is being decided on the dev list right now, so taking part (PO-4) is the cheapest way to make sure the firm's design and the spec converge.

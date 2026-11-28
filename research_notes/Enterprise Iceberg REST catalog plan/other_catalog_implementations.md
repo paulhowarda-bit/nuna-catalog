@@ -2,7 +2,7 @@
 
 Provenance key: **[read: URL]** = I fetched and read the primary source in this session (raw Markdown/source via curl where exact text mattered, otherwise WebFetch, which paraphrases); **[secondary: URL]** = search-engine summary or third-party page I did not read in full; **[inference]** = my reasoning, not stated by a source. Raw downloads are in `C:/Users/paulh/AppData/Local/Temp/claude/d9ac3f89f5ec51f6/2eb8cba6-c503-4baa-9e18-b3df89b0f733/scratchpad/downloads/others/`.
 
-Lens throughout: (a) what the Iceberg REST spec and clients require, (b) what an enterprise operator (Fidelity: regulated, thousands of tables, many engines, multi-region HA) needs, (c) what exists for a vendor's commercial model.
+Lens throughout: (a) what the Iceberg REST spec and clients require, (b) what an enterprise operator (the firm: regulated, thousands of tables, many engines, multi-region HA) needs, (c) what exists for a vendor's commercial model.
 
 ---
 
@@ -80,8 +80,8 @@ Lakekeeper is the most complete *open-source, non-Java* Iceberg REST catalog: Ru
 ### Inferences
 - [inference] Lakekeeper's commit design (row lock ordered by id + CAS on `metadata_location` in one SQL transaction) is the cleanest public reference for a server-side multi-table commit, and maps naturally to any store with multi-row transactions; in MongoDB it would need multi-document transactions for multi-table commits, while single-table commits can be a single conditional `findOneAndUpdate` on `metadata_location`.
 - [inference] The open-core line falls exactly where an enterprise operator's day-2 needs start (maintenance, IdP group sync, policy-as-code, admission control). Adopting OSS Lakekeeper means either paying Vakamo or building those pieces anyway.
-- [inference] The bus factor (one maintainer authors most code) and pre-1.0 status are material risks for a regulated firm's system of record, even though Apache-2.0 makes a fork legally possible. Forking a Rust codebase only makes sense if Fidelity has, or will build, Rust capacity.
-- [inference] Lakekeeper's explicit statement that a writer can corrupt any file of a table and that revocation only takes effect when tokens expire is true of *every* vending catalog; it is not a Lakekeeper weakness, but Fidelity's design must state its own revocation latency (token TTL) and file-level recovery story (bucket versioning / object lock).
+- [inference] The bus factor (one maintainer authors most code) and pre-1.0 status are material risks for a regulated firm's system of record, even though Apache-2.0 makes a fork legally possible. Forking a Rust codebase only makes sense if the firm has, or will build, Rust capacity.
+- [inference] Lakekeeper's explicit statement that a writer can corrupt any file of a table and that revocation only takes effect when tokens expire is true of *every* vending catalog; it is not a Lakekeeper weakness, but the firm's design must state its own revocation latency (token TTL) and file-level recovery story (bucket versioning / object lock).
 
 ### Gaps
 - No published performance/scale numbers; no stated max tables per warehouse.
@@ -110,7 +110,7 @@ Gravitino is a federated "metadata lake" (Java, Apache TLP since 2025) whose Ice
 
 ### Inferences
 - [inference] Gravitino is the "vendor-neutral platform" analogue of Unity Catalog; most of its surface (Lance, models, filesets, relational DB federation) serves an AI/metadata-lake product vision (Datastrato), not the Iceberg REST contract.
-- [inference] Missing multi-table transactions and the auxiliary-mode-only authz make it a weak fit as Fidelity's *authoritative* Iceberg catalog, but its federation and geo-proxy patterns are worth studying.
+- [inference] Missing multi-table transactions and the auxiliary-mode-only authz make it a weak fit as the firm's *authoritative* Iceberg catalog, but its federation and geo-proxy patterns are worth studying.
 
 ### Gaps
 - No published scale limits or benchmarks found.
@@ -140,7 +140,7 @@ Unity Catalog OSS (LF AI & Data sandbox, Java/Hibernate) only gained **full Iceb
 
 ### Inferences
 - [inference] Blocking external maintenance and the read-only treatment of Delta/foreign tables are commercial-control choices (Databricks runs predictive optimization itself); they are not spec requirements.
-- [inference] UC OSS's Iceberg write path is one month old; it is not a credible production Iceberg catalog for Fidelity in 2026.
+- [inference] UC OSS's Iceberg write path is one month old; it is not a credible production Iceberg catalog for the firm in 2026.
 
 ### Gaps
 - Databricks page did not state GA/preview status for Iceberg REST writes or list view/multi-table-transaction support.
@@ -211,9 +211,9 @@ Every hyperscaler and warehouse vendor now exposes an IRC, but all restrict it: 
 - Built-in Iceberg REST catalog; "doesn't support credential vending for customer-managed storage buckets"; tables exposed via catalog sync are read-only; Snowflake Horizon can federate to it via a catalog-linked database; Tableflow automates compaction/cleanup of small streaming files — [read: https://docs.confluent.io/cloud/current/topics/tableflow/how-to-guides/catalog-integration/overview.md; https://docs.confluent.io/cloud/current/topics/tableflow/overview.md]
 
 ### Inferences
-- [inference] BigLake's 1 MB metadata.json cap vs. S3 Tables' 50 MB cap shows hosted vendors push metadata size discipline onto users; a Fidelity catalog must decide whether to store metadata JSON in the DB (size limits bite) or in object storage (pointer only).
+- [inference] BigLake's 1 MB metadata.json cap vs. S3 Tables' 50 MB cap shows hosted vendors push metadata size discipline onto users; the firm's catalog must decide whether to store metadata JSON in the DB (size limits bite) or in object storage (pointer only).
 - [inference] Per-call billing (Snowflake) and blocked external maintenance (Databricks) show the IRC is becoming a monetized/controlled access point, not just a protocol.
-- [inference] The Cloudera numbers are a longevity test, not a capacity ceiling, but they show that a JVM catalog fronting a metastore can be heap-bound at tens of req/s; Fidelity should load-test its own design at 100× its forecast.
+- [inference] The Cloudera numbers are a longevity test, not a capacity ceiling, but they show that a JVM catalog fronting a metastore can be heap-bound at tens of req/s; the firm should load-test its own design at 100× its forecast.
 
 ### Gaps
 - No published request-rate quotas for Glue, S3 Tables, BigLake, Snowflake, OneLake or Databricks IRC endpoints.
@@ -238,7 +238,7 @@ The Iceberg JDBC catalog shows the irreducible core of an Iceberg catalog: one c
 
 ### Inferences
 - [inference] Every self-hosted design surveyed (JDBC, Hive, Lakekeeper, Gravitino-JDBC, UC, DuckLake) puts catalog state in a relational database; I found none using MongoDB. (Whether Polaris' NoSQL persistence supports MongoDB is for the Polaris researcher to confirm.)
-- [inference] DuckLake is not an IRC alternative for Fidelity (engines would need DuckLake support), but it is evidence that a SQL database can carry far more metadata than a pointer, and that commit contention is minimized by keeping the critical section to one DB transaction.
+- [inference] DuckLake is not an IRC alternative for the firm (engines would need DuckLake support), but it is evidence that a SQL database can carry far more metadata than a pointer, and that commit contention is minimized by keeping the critical section to one DB transaction.
 
 ### Gaps
 - Hive IRC credential vending and its scale behavior not documented in the page read.
@@ -292,7 +292,7 @@ Legend: Y = documented; N = documented absent; P = partial/conditional; Plus = c
 - [inference] **Essential (spec + clients):** config endpoint, namespaces, table load/create/commit with requirement checks, rename/drop/purge semantics, vended credentials with `expires-at-ms`, OAuth2/OIDC bearer auth. Every catalog surveyed has these; clients break without them.
 - [inference] **Essential for an enterprise operator (converged across serious catalogs, though not spec):** hierarchical privileges with ownership and inheritance; per-request audit; a tenancy unit that is also a storage boundary (warehouse/bucket/catalog); a maintenance owner (in-catalog or adjacent); events or a log for downstream lineage/governance; location-overlap enforcement so vended creds cannot reach another table.
 - [inference] **Spec-optional features hosted vendors omit:** views (S3 Tables, OneLake), multi-table transactions (Gravitino, OneLake), multi-level namespaces (Glue, S3 Tables, OneLake), CTAS staging (S3 Tables, Snowflake external). These are real gaps for multi-engine users; Lakekeeper and Hive support them.
-- [inference] **Vendor-driven:** row/column enforcement for external engines (tied to the vendor's engine), multi-format/AI assets, platform federation, per-call billing, blocking external maintenance, read-only treatment of the vendor's native format. A from-scratch Fidelity catalog can skip these.
+- [inference] **Vendor-driven:** row/column enforcement for external engines (tied to the vendor's engine), multi-format/AI assets, platform federation, per-call billing, blocking external maintenance, read-only treatment of the vendor's native format. A from-scratch catalog of the firm's own can skip these.
 - [inference] **Unique to one implementation:** case-insensitive/case-preserving identifiers, ContractVerification veto hook, OPA bridge, remote signing hardening (Lakekeeper); explicit DENY and geo-proxy IRC (Gravitino); z-order compaction by default (S3 Tables).
 
 ### Gaps
@@ -303,17 +303,17 @@ Legend: Y = documented; N = documented absent; P = partial/conditional; Plus = c
 ## Decisions this implies
 
 ### Takeaway
-The evidence supports building a **thin, Java, relational-backed core** that copies Lakekeeper's design patterns and keeps maintenance, policy and FGAC as separate services, rather than adopting Lakekeeper (Rust, open-core, single-vendor) or forking it. Polaris remains the "adopt" alternative to beat; Gravitino and UC are poor fits as Fidelity's authoritative Iceberg catalog.
+The evidence supports building a **thin, Java, relational-backed core** that copies Lakekeeper's design patterns and keeps maintenance, policy and FGAC as separate services, rather than adopting Lakekeeper (Rust, open-core, single-vendor) or forking it. Polaris remains the "adopt" alternative to beat; Gravitino and UC are poor fits as the firm's authoritative Iceberg catalog.
 
 ### D1. Build vs adopt vs fork
 - **Options:** (a) adopt OSS Lakekeeper (+ optionally buy Plus); (b) fork Lakekeeper; (c) adopt Polaris; (d) adopt Gravitino or UC OSS; (e) build from scratch.
 - **Evidence:** Lakekeeper OSS covers the spec, multi-table commits, vending, remote signing, soft delete, CloudEvents and OpenFGA authz (§1); day-2 features are Plus-only (§1); one maintainer dominates commits, 0.x versions, Rust, Postgres-only (§1). Gravitino lacks multi-table transactions and has authz only in auxiliary mode (§2). UC OSS gained Iceberg writes in Oct 2026 (§3). Hosted catalogs all restrict the spec (§4–5).
-- **Recommendation:** (e) build, scoped strictly to the converged core (§7 "Essential" rows), with Lakekeeper as the reference design and as a conformance/benchmark baseline in a PoC. Reject (b) unless Fidelity commits to Rust ownership; reject (d). Keep (c) Polaris as the explicit fallback, and require the build plan to beat it on scope and operability. [inference]
+- **Recommendation:** (e) build, scoped strictly to the converged core (§7 "Essential" rows), with Lakekeeper as the reference design and as a conformance/benchmark baseline in a PoC. Reject (b) unless the firm commits to Rust ownership; reject (d). Keep (c) Polaris as the explicit fallback, and require the build plan to beat it on scope and operability. [inference]
 
 ### D2. Metadata store (PostgreSQL vs MongoDB)
 - **Options:** PostgreSQL (or Aurora/AlloyDB-class managed PG); MongoDB; distributed SQL (CockroachDB/Spanner-class).
 - **Evidence:** Every self-hosted catalog surveyed uses an RDBMS; Lakekeeper relies on row locks, multi-table transactions, ICU collation and replica-lag-bounded reads; the JDBC catalog needs only a conditional UPDATE; DuckLake requires "ACID operations and primary keys" (§1, §6).
-- **Recommendation:** PostgreSQL unless Fidelity's MongoDB platform team can guarantee multi-document transactions, majority write concern and case-insensitive unique indexes at the required HA level. MongoDB can do single-table CAS cleanly; multi-table commits and cross-entity invariants are where it costs more. [inference]
+- **Recommendation:** PostgreSQL unless the firm's MongoDB platform team can guarantee multi-document transactions, majority write concern and case-insensitive unique indexes at the required HA level. MongoDB can do single-table CAS cleanly; multi-table commits and cross-entity invariants are where it costs more. [inference]
 
 ### D3. Commit protocol
 - **Evidence:** the converged mechanism is CAS on `metadata_location` (JDBC, Lakekeeper backstop, S3 Tables `UpdateTableMetadataLocation`, OneLake requirements) (§1, §4–6); Lakekeeper adds ordered row locks for multi-table commits and returns 409 under contention.
@@ -322,7 +322,7 @@ The evidence supports building a **thin, Java, relational-backed core** that cop
 ### D4. Authorization model
 - **Options:** embedded ReBAC (OpenFGA-style), RBAC tables in the catalog DB, external PDP (OPA/Cedar/Ranger/enterprise entitlement service).
 - **Evidence:** all serious catalogs converge on hierarchical privileges + ownership + inheritance; Gravitino adds DENY; Lakekeeper's OpenFGA is additive-only and needs a co-located extra service; no OSS catalog enforces row/column filters for external engines (§1, §2, §5).
-- **Recommendation:** RBAC with inheritance, ownership and explicit DENY stored in the catalog DB, behind a pluggable decision interface so Fidelity's entitlement system can be the PDP. Leave row/column filtering to engines (or a later FGAC layer) rather than the catalog. [inference]
+- **Recommendation:** RBAC with inheritance, ownership and explicit DENY stored in the catalog DB, behind a pluggable decision interface so the firm's entitlement system can be the PDP. Leave row/column filtering to engines (or a later FGAC layer) rather than the catalog. [inference]
 
 ### D5. Storage access: vending vs remote signing
 - **Evidence:** vending is near-universal; remote signing is documented only in Lakekeeper; revocation latency = token TTL (1 h default in Lakekeeper and Databricks) (§1, §3).
@@ -345,7 +345,7 @@ The evidence supports building a **thin, Java, relational-backed core** that cop
 ## Open questions for the enterprise
 
 ### Takeaway
-The build decision depends less on catalog features than on Fidelity's entitlement source of truth, its RPO/RTO, its retention obligations, and which engines must write.
+The build decision depends less on catalog features than on the firm's entitlement source of truth, its RPO/RTO, its retention obligations, and which engines must write.
 
 - Which system is the entitlement source of truth (AD/Entra groups, SailPoint, Ranger, an internal service), and must the catalog defer to it per request (as in Lakekeeper Plus admission gates) or sync from it?
 - Is row/column-level security required for *external* engines, or can FGAC stay in the engines (Trino/Snowflake/Databricks) that support it?
@@ -354,6 +354,6 @@ The build decision depends less on catalog features than on Fidelity's entitleme
 - How do SEC 17a-4 / FINRA retention and legal hold interact with soft delete, purge, snapshot expiry and orphan-file removal? Who may skip soft deletion?
 - Acceptable credential-revocation latency (vended-token TTL), and is per-request remote signing needed for any data class?
 - Expected peak commit rate per table (streaming) and total catalog request rate; is metadata.json size (1 MB BigLake, 50 MB S3 Tables caps) a concern for wide/high-churn tables?
-- Is there an existing PostgreSQL or MongoDB platform team with HA SLAs, and which offers multi-document/multi-row transactions at Fidelity's required availability?
-- Is Rust an acceptable language for a critical service at Fidelity (determines whether a Lakekeeper fork is even an option)?
-- Would Fidelity buy commercial support (Vakamo, Snowflake/Dremio for Polaris) for a catalog, or must it be fully in-house?
+- Is there an existing PostgreSQL or MongoDB platform team with HA SLAs, and which offers multi-document/multi-row transactions at the firm's required availability?
+- Is Rust an acceptable language for a critical service at the firm (determines whether a Lakekeeper fork is even an option)?
+- Would the firm buy commercial support (Vakamo, Snowflake/Dremio for Polaris) for a catalog, or must it be fully in-house?

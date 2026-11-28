@@ -4,7 +4,7 @@ Research date: 2026-11-06. Lens: a from-scratch Iceberg REST catalog for a large
 
 **Provenance tags.** `[read: URL]` means I fetched and read the source myself. Where a curl'd copy was used for exact text, the copy is in `C:/Users/paulh/AppData/Local/Temp/claude/d9ac3f89f5ec51f6/2eb8cba6-c503-4baa-9e18-b3df89b0f733/scratchpad/downloads/security/`. `[read (WebFetch summary): URL]` means I read the page only through WebFetch's paraphrase. `[secondary: URL]` means the source is a search-result excerpt or someone else's account that I could not read directly. `[inference]` is my own reasoning.
 
-**This is not legal advice.** Regulatory text is quoted or paraphrased from primary sources. Whether a rule applies to a given Fidelity entity, and whether Iceberg tables are "records" under it, are decisions for Fidelity's counsel and compliance teams.
+**This is not legal advice.** Regulatory text is quoted or paraphrased from primary sources. Whether a rule applies to a given entity of the firm's, and whether Iceberg tables are "records" under it, are decisions for the firm's counsel and compliance teams.
 
 **Versions in force on 2026-11-06.**
 - Apache Iceberg 1.12.0 was released 2026-09-30 [read: https://api.github.com/repos/apache/iceberg/releases]. Its REST spec file already contains `read-restrictions`, `labels`, `remote-signing-config`, the `/sign` endpoint, and `loadCredentials` with `planId`. The `none` value for `X-Iceberg-Access-Delegation` is only on `main`, merged 2026-10-29 [read: https://raw.githubusercontent.com/apache/iceberg/apache-iceberg-1.12.0/open-api/rest-catalog-open-api.yaml; https://api.github.com/repos/apache/iceberg/commits?path=open-api/rest-catalog-open-api.yaml].
@@ -16,7 +16,7 @@ Research date: 2026-11-06. Lens: a from-scratch Iceberg REST catalog for a large
 ## 1. Authentication: enterprise IdP, workload identity, token handling, mTLS, Kerberos
 
 ### Takeaway
-The Iceberg REST spec defines only OAuth2 and Bearer security schemes. It deprecates the catalog-hosted `/v1/oauth/tokens` endpoint and recommends that servers not implement it. A new catalog should therefore be a pure OAuth2 resource server that validates JWTs from Fidelity's IdP and never issues tokens itself.
+The Iceberg REST spec defines only OAuth2 and Bearer security schemes. It deprecates the catalog-hosted `/v1/oauth/tokens` endpoint and recommends that servers not implement it. A new catalog should therefore be a pure OAuth2 resource server that validates JWTs from the firm's IdP and never issues tokens itself.
 
 The catch is identity propagation. Iceberg's built-in Java OAuth2 manager supports client credentials and RFC 8693 token exchange. Microsoft Entra ID's on-behalf-of flow is not RFC 8693, and the richer flows (authorization code, device code, JWT bearer, mTLS client authentication) exist only in third-party AuthManagers such as Dremio's.
 
@@ -197,7 +197,7 @@ Unity Catalog and Lake Formation handle the same problem by refusing to vend cre
   - (a) A trusted serving engine. Users get SQL or Arrow results, never files.
   - (b) A Lake Formation-style "central enforcement" data API that the catalog fronts.
 
-  For Fidelity, (a) means Trino or Spark platform clusters registered as trusted engines. PyIceberg and notebook users get no direct file access to sensitive tables.
+  For the firm, (a) means Trino or Spark platform clusters registered as trusted engines. PyIceberg and notebook users get no direct file access to sensitive tables.
 - Session policies cannot express per-file scoping beyond a handful of files (2048-character limit, section 4). Plan-scoped enforcement on AWS therefore realistically requires remote signing.
 
 ### Gaps
@@ -273,7 +273,7 @@ For on-prem storage, remote signing is the portable fallback because it needs on
   - Monitor throttling.
 - **Role chaining.** A catalog running on EKS or EC2 already holds role credentials, so AssumeRole into the vending role is role chaining, capped at 1 hour. That fits short TTLs but rules out long-lived batch credentials.
 - **Policy size.** A per-table session policy covering read, list and write for one table location fits easily. Tables whose files span several prefixes (`write.data.path` separate from metadata, object-storage hashed layouts across buckets, or multi-region replicas) can approach the 2,048-character limit. The catalog should constrain where table files may live.
-- **Applying this to Fidelity's on-prem estate:**
+- **Applying this to the firm's on-prem estate:**
   - MinIO (or its forks) and Ceph support AssumeRole with session policies.
   - StorageGRID 12.0 supports AssumeRole, with session policies unverified.
   - FlashBlade has no AssumeRole.
@@ -295,7 +295,7 @@ Neither leading OSS catalog provides a regulator-grade audit trail out of the bo
 - Polaris says outright that its events "are not a complete audit trail": no denials, asynchronous, best-effort, droppable.
 - Lakekeeper logs every authorization decision, allowed and denied, with a versioned schema, and publishes CloudEvents change events to Kafka or NATS. It still leaves retention and tamper evidence to the receiving system.
 
-A Fidelity catalog should write audit records in the same transaction as the state change and ship them to an immutable store and the SIEM.
+The firm's catalog should write audit records in the same transaction as the state change and ship them to an immutable store and the SIEM.
 
 ### Cited Findings
 
@@ -356,7 +356,7 @@ A Fidelity catalog should write audit records in the same transaction as the sta
 ### Takeaway
 The obligations that most constrain the catalog are:
 - **SEC Rule 17a-4(f)** for broker-dealer records (with FINRA 4511 pointing to it, and Advisers Act 204-2 for the asset manager).
-- **Data-security rules** (Reg S-P for SEC registrants; FTC Safeguards as a benchmark; NYDFS Part 500 if a Fidelity entity is a NY-licensed covered entity), which require least privilege, annual access review, MFA, encryption and audit trails.
+- **Data-security rules** (Reg S-P for SEC registrants; FTC Safeguards as a benchmark; NYDFS Part 500 if one of the firm's entities is a NY-licensed covered entity), which require least privilege, annual access review, MFA, encryption and audit trails.
 
 17a-4(f) allows either WORM storage or, since the 2022 amendments (compliance date 2023-05-03), a "complete time-stamped audit trail" that can re-create any modified or deleted record. Iceberg's snapshot model resembles that audit trail only while snapshots are retained. Routine snapshot expiration, compaction cleanup and orphan removal destroy it, and S3 Object Lock in compliance mode silently prevents storage reclamation.
 
@@ -460,11 +460,11 @@ The obligations that most constrain the catalog are:
 - A legal-hold flag.
 - Audit records preserved as long as the underlying records (17a-4(f)(3)(iii)(B)).
 
-Of these, commit-time enforcement is the most important feature a Fidelity catalog needs that Polaris and Lakekeeper do not document.
+Of these, commit-time enforcement is the most important feature the firm's catalog needs that Polaris and Lakekeeper do not document.
 
 **Deletion vs retention.** The disposal duties (FTC 314.4(c)(6), NYDFS 500.13(b), Reg S-P disposal) explicitly carve out data "required to be retained by law or regulation". Where deletion requests and retention collide, retention wins for in-scope records. Outside them, deletion must be physical: expire the snapshots that reference the deleted rows, then remove the files. The catalog must therefore track which tables may and may not be physically purged.
 
-**Change control (SOX-like).** SOX 404 attaches to "issuers". For Fidelity entities, the analogous regimes are fund N-CSR certifications and broker-dealer 17a-5 ICOC; counsel must map which datasets feed those. For the catalog this means:
+**Change control (SOX-like).** SOX 404 attaches to "issuers". For the firm's entities, the analogous regimes are fund N-CSR certifications and broker-dealer 17a-5 ICOC; counsel must map which datasets feed those. For the catalog this means:
 - Schema, partition and property changes, grants, and storage-profile changes on in-scope tables go through approved paths (CI/CD service principals, branch / write-audit-publish workflows).
 - Changes are attributable and reviewable.
 - The catalog can enforce "who may commit to `main`" separately from "who may write to a branch".
@@ -478,9 +478,9 @@ Of these, commit-time enforcement is the most important feature a Fidelity catal
 **Data classification and lineage.** Classification tags are an input to authorization (ABAC) and to retention class. Ownership and classification are mandated asset-inventory attributes (500.13). Lineage (OpenLineage) is emitted by engines. The catalog's part is to be identifiable in lineage events through `CatalogDatasetFacet` and to emit change events.
 
 ### Gaps
-- Not read: Investment Company Act Rule 31a-2 (fund records retention), CFTC 1.31 (if any Fidelity entity is CFTC-registered), FINRA Regulatory Notices on 17a-4 cloud storage, and the Cohasset assessment of S3 Object Lock itself (only AWS's reference to it).
+- Not read: Investment Company Act Rule 31a-2 (fund records retention), CFTC 1.31 (if any of the firm's entities is CFTC-registered), FINRA Regulatory Notices on 17a-4 cloud storage, and the Cohasset assessment of S3 Object Lock itself (only AWS's reference to it).
 - No authoritative source found on whether an Iceberg snapshot history meets the 17a-4(f)(2)(i)(A) audit-trail standard. That is a compliance and counsel judgement.
-- Which Fidelity entities are NYDFS covered entities, FTC-jurisdiction institutions, or SOX issuers is not determinable from public rule text.
+- Which of the firm's entities are NYDFS covered entities, FTC-jurisdiction institutions, or SOX issuers is not determinable from public rule text.
 - No source read on how on-prem stores (MinIO, ECS, StorageGRID, FlashBlade) are assessed for 17a-4 WORM.
 
 ---
@@ -571,7 +571,7 @@ The Iceberg spec's new `labels` field is the sanctioned channel for projecting g
   - Roles sourced from IdP groups.
   - Ownership without re-grant by default in regulated namespaces.
   - An `Authorizer` SPI with a batch-check endpoint, and per-principal and per-object enumeration APIs for access reviews.
-  - Add an OPA or Ranger adapter only if Fidelity's enterprise standard mandates one (open question).
+  - Add an OPA or Ranger adapter only if the firm's enterprise standard mandates one (open question).
 
 ### D4. Fine-grained access control
 - **Options:**
@@ -643,7 +643,7 @@ The Iceberg spec's new `labels` field is the sanctioned channel for projecting g
 ## Open questions for the enterprise
 
 **Legal and compliance (only counsel and compliance can answer)**
-1. Which Fidelity legal entities would use the catalog? For each, which regimes apply:
+1. Which of the firm's legal entities would use the catalog? For each, which regimes apply:
    - broker-dealer (17a-3/17a-4, FINRA 4511, 17a-5 ICOC);
    - investment adviser (204-2);
    - registered funds (31a-2, N-CSR certifications);
@@ -651,7 +651,7 @@ The Iceberg spec's new `labels` field is the sanctioned channel for projecting g
    - Reg S-P "larger entity" status;
    - any FTC-jurisdiction affiliate;
    - SOX issuer status.
-2. Will any Iceberg table be a required record, or the only copy of one, under 17a-4, 204-2 or 31a-2? If so, does Fidelity rely on the WORM path or the audit-trail path, and which designated executive officer or third party signs the 17a-4(f)(3)(v) undertaking for this system?
+2. Will any Iceberg table be a required record, or the only copy of one, under 17a-4, 204-2 or 31a-2? If so, does the firm rely on the WORM path or the audit-trail path, and which designated executive officer or third party signs the 17a-4(f)(3)(v) undertaking for this system?
 3. Does compliance accept Iceberg snapshot history plus a catalog commit log as satisfying 17a-4(f)(2)(i)(A)'s "complete time-stamped audit trail"? What download format will examiners expect?
 4. Are on-prem object stores assessed (Cohasset or equivalent) for 17a-4 WORM? Which cloud providers have 17a-4(i) undertakings on file?
 5. How are deletion requests (privacy, Reg S-P disposal, contractual) reconciled with retention holds? Who approves a physical purge?

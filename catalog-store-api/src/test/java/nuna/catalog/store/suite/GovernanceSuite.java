@@ -51,7 +51,7 @@ public abstract class GovernanceSuite extends GroupSuite {
         StorageProfile profile = newProfile(List.of("s3://lake/"));
         UUID id = UUID.randomUUID();
         Name name = name("Finance-" + id);
-        CatalogSettings settings = new CatalogSettings(profile.id(), "kms-finance", "Fidelity Finance Ltd");
+        CatalogSettings settings = new CatalogSettings(profile.id(), "kms-finance", "Example Finance Ltd");
         Change change = fullChange();
 
         assertThat(store.createCatalog(new CatalogRecord(id, name.normalized(), name.display()), settings, change))

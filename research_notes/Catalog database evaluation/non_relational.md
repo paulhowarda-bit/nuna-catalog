@@ -381,7 +381,7 @@ Ratings: **S** strong, **A** adequate, **W** weak, **X** fails or disqualified. 
 - Its D37 topology is a documented, first-class mode.
 - The atomic unit, multi-table commits and the gap-free outbox all fall out of one primitive.
 - **Its precedent is the closest to this exact use:** Snowflake's catalog and metadata.
-- **The decision hinges on whether Fidelity will staff or contract FDB expertise, and accept:**
+- **The decision hinges on whether the firm will staff or contract FDB expertise, and accept:**
   - a few seconds of outage per minor upgrade;
   - network-level isolation in place of database access control;
   - the chunking and pre-staging design work.

@@ -1,6 +1,6 @@
 # 2026-11-25, credential-shaped literals out of the tests, the docs and the Job, and a build check that keeps them out (backlog 280)
 
-- Source: work's note `docs/from-work/005-github-secret-scanning.md` (Fidelity's GitHub push protection refused the
+- Source: work's note `docs/from-work/005-github-secret-scanning.md` (the firm's GitHub push protection refused the
   2026-11-24 drop), reviewed by catalog-security, whose sweep found about twice what the note named. Items 280 to 285
   came from it; this branch is 280.
 - Tests make each value at run time: PrivateCa, OracleFree (package-visible, so the Oracle UnavailableFailuresTest

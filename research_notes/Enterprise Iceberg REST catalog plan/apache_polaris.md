@@ -449,7 +449,7 @@ It exposes about 200 documented config properties, 63 feature flags and 6 behavi
 
 ### Inferences
 - About 60–70% of the config surface (federation, NoSQL, OPA, events, metrics, realms, internal token broker) would not exist in a single-tenant, single-backend, external-IdP build. I have not counted this property by property. [inference]
-- The "no Java API stability" stance means forking Polaris and tracking upstream is expensive. A fork for Fidelity would diverge quickly. [inference]
+- The "no Java API stability" stance means forking Polaris and tracking upstream is expensive. A fork for the firm would diverge quickly. [inference]
 
 ### Gaps
 - No measured cold-start time, steady-state heap or per-request CPU. The project publishes none, and I did not run it.
@@ -703,7 +703,7 @@ Each decision lists the options, the evidence, and a recommendation.
 - **Evidence:** Polaris uses Quarkus 3.40 and about 20 extensions; the image is 418 MB compressed (§2, §6).
 - **Recommendation:** use the firm's standard Java service framework. Spring Boot or Quarkus are both fine; nothing in Polaris's value depends on Quarkus. Keep the dependency set small for vulnerability-management reasons.
 
-### Keep / defer / drop: Polaris features for a Fidelity-scale single-enterprise catalog
+### Keep / defer / drop: Polaris features for a firm-scale single-enterprise catalog
 
 | Polaris feature | Verdict | Why (evidence section) |
 |---|---|---|
@@ -752,4 +752,4 @@ Each decision lists the options, the evidence, and a recommendation.
 9. **Formats.** Are there Delta or Hudi tables that must be cataloged? This decides whether generic tables are needed.
 10. **Migration.** What legacy catalogs exist (Hive Metastore, Glue, others)? Is a federated read-through period needed, or a one-time migration with `iceberg-catalog-migrator`-style tooling?
 11. **Table maintenance.** Who runs compaction, snapshot expiry and orphan removal? A catalog-hosted policy store is useful only if a maintenance service consumes it.
-12. **Build vs. adopt.** Would the firm accept running upstream Polaris on JDBC in external-auth mode with everything else disabled, as a baseline to benchmark the from-scratch design against? Polaris's own benchmarks are sparse, so a side-by-side test at Fidelity scale would settle the "bloat costs performance" question with data.
+12. **Build vs. adopt.** Would the firm accept running upstream Polaris on JDBC in external-auth mode with everything else disabled, as a baseline to benchmark the from-scratch design against? Polaris's own benchmarks are sparse, so a side-by-side test at the firm's scale would settle the "bloat costs performance" question with data.
