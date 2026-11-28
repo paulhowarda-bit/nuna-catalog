@@ -6,7 +6,7 @@
 image:
   repository: nuna-maintenance
   tag: local
-  # Docker Desktop's cluster runs images straight from the local Docker engine.
+  # run.sh builds the image with Podman and puts it on the kind cluster's node (kind_load): the node never pulls.
   pullPolicy: Never
 
 resources:
@@ -37,7 +37,7 @@ config:
         silo:
           kind: minio
           access-key-id: nuna-maintenance
-      # The engine matrix's Spark image (catalog-tests-engines/images/spark), from the local Docker engine.
+      # The engine matrix's Spark image (catalog-tests-engines/images/spark), built with Podman and put on the node.
       compaction:
         image: nuna-engines/spark:4.1.4-iceberg-1.12.0
         image-pull-policy: Never

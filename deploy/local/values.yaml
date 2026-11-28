@@ -6,7 +6,7 @@ replicaCount: 2
 image:
   repository: nuna-catalog
   tag: local
-  # Docker Desktop's cluster runs images straight from the local Docker engine.
+  # run.sh builds the image with Podman and puts it on the kind cluster's node (kind_load): the node never pulls.
   pullPolicy: Never
 
 resources:

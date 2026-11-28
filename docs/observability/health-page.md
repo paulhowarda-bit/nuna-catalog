@@ -2,8 +2,11 @@
 
 The console's health dashboard (D38, backlog 48): catalog health for the whole deployment, for platform operators;
 the tables that need compaction, for anyone, each shown only to those who may read it; and on each table's page, its
-health. The page is `health.js` in `catalog-server/src/main/resources/nuna/ui/` (the **Health** button in the top
-bar, `#p=health`); the server side is `catalog-server`, package `nuna.catalog.server.health`.
+health. The page is `health.js` in `catalog-server/src/main/resources/nuna/ui/`: **Service** in the console's rail,
+`#p=service` (named Health before item 192), shown to platform operators. The tables that need compaction are on the
+rail's **Maintenance** page ("Tonight's queue", `maintenance.js`), and a table's health is on its **Maintenance** tab.
+The server side is `catalog-server`, package `nuna.catalog.server.health`. What each page shows, as a reader sees it:
+`docs/site/console/service.html`, `docs/site/console/maintenance.html` and `docs/site/console/table.html`.
 
 Prometheus, Grafana and the alert rules (catalog-metrics.md, worker-metrics.md) stay the place for paging and long
 history. The page answers "how does the catalog stand today" without them, from the catalog itself.
@@ -15,11 +18,11 @@ history. The page answers "how does the catalog stand today" without them, from 
 | Catalog health | Platform operators (`nuna.security.platform-operator-groups`, SEC-1) | `GET /management/v1/health/catalog` and `GET /management/v1/maintenance/scans` |
 | DR replication and the store | Platform operators | `GET /management/v1/dr/watermarks` and `GET /management/v1/health/server?store=true` |
 | Tables that need compaction | Anyone; each table only to a caller with `select` on it | `GET /management/v1/maintenance/tables` (table-health.md) |
-| A table's health, its **Health** tab | Anyone with `select` on the table | `GET .../tables/{table}/health` (table-health.md) |
+| A table's health, its **Maintenance** tab | Anyone with `select` on the table | `GET .../tables/{table}/health` (table-health.md) |
 
 Anyone else gets 403 `ForbiddenException`, audited like every refusal on a management route, and the page shows the
-refusal as the catalog answered it. A non-operator sees "Catalog health is shown to platform operators only" and no
-figure.
+refusal as the catalog answered it. A non-operator who opens Service sees "Service is shown to platform operators
+only, and your groups include none. The catalog answered:" with that refusal, and no figure.
 
 ## Catalog health
 
@@ -148,26 +151,27 @@ GET /management/v1/health/server?store=true
 
 ## Tables that need compaction, and a table's health
 
-Beneath catalog health, the neediest tables as the worker last assessed them (item 47's read route), neediest first,
-50 at a time with **More** for the next page; only tables the viewer may `select` are listed. Each names its catalog,
-namespace and table, why it needs compaction, its score and file counts, when it was assessed and how its last
-compaction went, and links to its table's **Health** tab.
+On the Maintenance page, under "Tonight's queue", the tables of the catalog picked that need compaction as the worker
+last assessed them (item 47's read route), equality deletes first, then the highest score, read 200 a page, at most 10
+pages (`api.queue`); only tables the viewer may `select` are listed. Each names its catalog, namespace and table,
+why it needs compaction, its score and file counts, when it was assessed and how its last compaction went, and links
+to its table's **Maintenance** tab.
 
-The **Health** tab of a table's page shows whether it needs compaction and why (each reason explained), the latest
+The **Maintenance** tab of a table's page shows whether it needs compaction and why (each reason explained), the latest
 assessment's counts, and the last compaction's outcome, start and end; or that the worker has not assessed it yet, or
 that no compaction has run for it.
 
 ## Maintenance on request, and every table in one line
 
 Backlog 114 and 124. A viewer whose groups hold `modify` on a table sees **Compact now** and **Scan for orphans now**
-on its **Health** tab, and **Compact now** beside its name at the top of the table's page. Each opens a dialog that
+on its **Maintenance** tab, and **Compact now** beside its name at the top of the table's page. Each opens a dialog that
 says what the worker will do and asks the catalog (`POST .../maintenance/requests`, table-health.md, "Maintenance on
 request"); its answer is shown as it came, a refusal with its request id: a DR freeze, a legal hold for an orphan scan,
 or a policy that turns the job off. The console judges `modify` from the viewer's own groups' grants on the table, a
 namespace above it or the catalog, asked once a minute at most; the catalog decides. A viewer without it sees neither
 button.
 
-Each request shows on the Health tab, with who asked it and when, waiting or started, and while it waits as a mark
+Each request shows on the Maintenance tab, with who asked it and when, waiting or started, and while it waits as a mark
 beside the table's name; its button is turned off until the worker has started it. On **Maintenance**, a viewer who
 holds `modify` anywhere in the catalog sees **Compact a table now**, which offers tonight's queue first and takes any
 table path in the catalog.
@@ -175,7 +179,7 @@ table path in the catalog.
 The overview's ice line shows every table the viewer may `select`, from `/maintenance/estate` read a page at a time
 while there is a token (table-health.md, "Every table"): above the line each table in shape, as tall
 as its data files, a table not yet assessed as a stub; below it each table queued for tonight, as deep as its score,
-linking to its Health tab; held and frozen tables in their own colours, and a dashed outline where a table compacted
+linking to its Maintenance tab; held and frozen tables in their own colours, and a dashed outline where a table compacted
 last night was. Its legend and the overview's title count the tables in shape (assessed and needing no compaction),
 queued, with equality deletes, not yet assessed, held and frozen; the **In shape** figure gives the tables in shape out of all, with those queued and those not yet assessed.
 

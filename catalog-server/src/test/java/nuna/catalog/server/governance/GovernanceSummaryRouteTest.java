@@ -106,6 +106,45 @@ class GovernanceSummaryRouteTest {
         assertThat(JsonPath.<Integer>read(lifted.body(), "$.history.days")).isEqualTo(30);
     }
 
+    /**
+     * An operator lists the standing DR freezes on the wire, and no hold, while the holds list still refuses him; a
+     * grant holder who is no operator is refused the freezes list, and one holding nothing is told no catalog is
+     * there (D55, item 323).
+     */
+    @Test
+    void anOperatorListsTheStandingFreezesAndNoHold() {
+        String ns = api.namespace();
+        api.table(ns, "frozen_one");
+        String nsId = JsonPath.read(expect(api.manage("GET", "/namespaces/" + ns + "/governance", null), 200).body(),
+                "$.target.id");
+        String reason = "Matter " + Api.suffix();
+        expect(api.manage("POST", "/namespaces/" + ns + "/tables/frozen_one/holds",
+                "{\"reason\":\"" + reason + "\"}", "Authorization", api.steward()), 201);
+        String drill = "DR drill " + Api.suffix();
+        expect(api.manage("PUT", "/namespaces/" + ns + "/dr-freeze", "{\"reason\":\"" + drill + "\"}",
+                "Authorization", api.operator()), 200);
+
+        HttpResponse<String> freezes = expect(api.manage("GET", "/governance/dr-freezes", null, "Authorization",
+                api.operator()), 200);
+        assertThat(JsonPath.<String>read(freezes.body(), "$.catalog")).isEqualTo(Api.CATALOG);
+        Map<String, Object> freeze = JsonPath.<List<Map<String, Object>>>read(freezes.body(),
+                "$.freezes[?(@.on.id == '" + nsId + "')]").getFirst();
+        assertThat(freeze).containsOnlyKeys("on", "reason", "placed-by", "placed-at")
+                .containsEntry("reason", drill).containsEntry("placed-by", "ops");
+        assertThat(freezes.body()).doesNotContain(reason).doesNotContain("\"hold\"").doesNotContain("lifted");
+        expectError(api.manage("GET", "/governance/holds", null, "Authorization", api.operator()), 403,
+                "ForbiddenException");
+        expectError(api.manage("GET", "/governance/dr-freezes", null, "Authorization", api.bystander()), 403,
+                "ForbiddenException");
+        expectError(api.manage("GET", "/governance/dr-freezes", null, "Authorization", api.outsider()), 404,
+                "NoSuchWarehouseException");
+
+        expect(api.manage("DELETE", "/namespaces/" + ns + "/dr-freeze", null, "Authorization", api.operator()), 204);
+        HttpResponse<String> after = expect(api.manage("GET", "/governance/dr-freezes", null, "Authorization",
+                api.operator()), 200);
+        assertThat(JsonPath.<List<Object>>read(after.body(), "$.freezes[?(@.on.id == '" + nsId + "')]")).isEmpty();
+    }
+
     @Test
     void aCallerWithoutDescribeOnTheCatalogIsRefused() {
         expectError(api.manage("GET", "/governance/summary", null, "Authorization", api.outsider()), 404,

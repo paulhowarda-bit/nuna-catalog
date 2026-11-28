@@ -31,6 +31,7 @@
 
       <h2 id="who-sees-it">Who sees it</h2>
       <p>The rail always shows <b class="ui">Governance</b>; the server answers the summary and the holds list to anyone whose groups hold describe on the catalog. Placing and releasing a hold needs manage-tags; freezing and lifting a freeze needs a platform operator, and anyone else is refused with <code>only platform operators may call setDrFreeze</code>.</p>
+      <p>A platform operator whose groups hold nothing in the catalog sees <b class="ui">DR freezes in <var>catalog</var></b> instead: <b class="ui">Freeze a namespace for DR</b>, and under <b class="ui">Standing</b>, newest first, each freeze with <b class="ui">On</b>, <b class="ui">Reason, as recorded</b>, <b class="ui">Placed</b> (when and by whom) and <b class="ui">Lift</b> beside it ("No DR freeze stands in <var>catalog</var>." when there is none). It lists no legal hold. An operator who also holds describe in the catalog sees the whole page, where the standing list already has <b class="ui">Lift</b> beside each freeze.</p>
 
       <h2 id="summary">Summary</h2>
       <p>The title is <b class="ui"><var>x</var> of <var>N</var> tables classified.</b>, then how many tables are closed until a steward classifies them, or <b class="ui">None closed.</b> "Classification, owner, retention class and the regulated flag are set on the Access tab of each namespace, table or view, and for the catalog itself under Holds and freezes, each recorded with who set it."</p>
@@ -58,6 +59,7 @@
           <tbody>
             <tr><td>Summary</td><td><code>GET /management/v1/catalogs/{catalog}/governance/summary</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
             <tr><td>Standing, Lifted and released</td><td><code>GET /management/v1/catalogs/{catalog}/governance/holds</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
+            <tr><td>DR freezes in <var>catalog</var>, for an operator</td><td><code>GET /management/v1/catalogs/{catalog}/governance/dr-freezes</code> (<a href="../api/governance.html#get-catalog-governance-dr-freezes">Governance</a>)</td></tr>
             <tr><td>Place the hold; Release the hold</td><td><code>POST …/holds</code>; <code>DELETE …/holds/{id}</code> on the object (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
             <tr><td>Freeze; Lift the freeze</td><td><code>PUT</code>, <code>DELETE …/namespaces/{ns}/dr-freeze</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>
             <tr><td>The catalog itself</td><td><code>GET /management/v1/catalogs/{catalog}/governance</code> (<a href="../api/governance.html#endpoints">Governance</a>)</td></tr>

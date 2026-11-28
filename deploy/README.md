@@ -39,8 +39,10 @@ Settings come in two parts.
 
 **`config`** holds Spring Boot properties in YAML form. The chart renders them into `application.yaml` in a
 ConfigMap. Every `nuna.*` setting is documented on its settings class in `catalog-server`:
-`DatabaseSettings`, `StorageSettings`, `SecuritySettings`, `AuditSettings`, `GovernanceSettings`,
-`RestSettings` and `UiSettings`. `deploy/local/values.yaml` is a complete example. The chart refuses to
+`DatabaseSettings` (`nuna.database`), `StorageSettings` (`nuna.storage`), `SecuritySettings` (`nuna.security`),
+`OpaSettings` (`nuna.opa`), `AuditSettings` (`nuna.audit`), `AuditCatalogSettings` (`nuna.audit.tables`),
+`GovernanceSettings` (`nuna.governance`), `RefSettings` (`nuna.refs`), `RestSettings` (`nuna.rest`),
+`HealthSettings` (`nuna.health`) and `UiSettings` (`nuna.ui`). `deploy/local/values.yaml` is a complete example. The chart refuses to
 render without at least one entry in `config.nuna.security.issuers`, and without
 `config.spring.datasource.url` unless the database is MongoDB.
 
@@ -95,7 +97,11 @@ migrates its schema. What each one asks of the catalog's database role is on the
 - `postgresql`, the default: PostgreSQL or CockroachDB. `config.spring.datasource.url` is
   `jdbc:postgresql://<host>:<port>/<database>`; the password goes in the Secret as `spring.datasource.password`.
   On PostgreSQL the catalog can sign in by a client certificate instead, and its role then has no password
-  (below).
+  (below). On PostgreSQL the role needs `pg_monitor` (`CREATE ROLE <role> LOGIN IN ROLE pg_monitor`), without
+  which the self-check cannot see the synchronous standbys and reports `pg.no-sync-standby`; on CockroachDB it
+  needs `GRANT SYSTEM VIEWCLUSTERSETTING`, without which the self-check cannot read
+  `kv.raft_log.synchronization.unsafe.disabled` and reports `crdb.fsync-off` (`SelfChecks` in
+  `catalog-store-sql`).
 - `oracle`: single instance, RAC or Exadata. The URL names the catalog's own service,
   `jdbc:oracle:thin:@//<host>:<port>/<service>`, which needs `COMMIT_OUTCOME = TRUE` (Transaction Guard) and
   no `FAILOVER_TYPE`, so the driver never replays a transaction. Set the driver's read timeout, which bounds

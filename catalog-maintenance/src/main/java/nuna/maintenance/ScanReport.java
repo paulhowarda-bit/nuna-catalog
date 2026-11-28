@@ -2,9 +2,11 @@ package nuna.maintenance;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.apache.iceberg.exceptions.ForbiddenException;
@@ -91,6 +93,13 @@ final class ScanReport {
      * scan's report to the catalog; {@link #failuresByKind} counts them all.
      */
     final List<Named> named = new ArrayList<>();
+    /**
+     * Work-list entries, of the tables and requests sections, that the catalog said are closed until classified (D27;
+     * backlog 334), each skipped without loading its table; not counted in {@link #failuresByKind}.
+     */
+    int closed;
+    /** The closed tables {@link #skippedClosed} has named, each once a scan. */
+    private final Set<UUID> namedClosed = new HashSet<>();
 
     /** The failed jobs a scan names at most, as the catalog keeps them. */
     static final int MAX_NAMED = 20;
@@ -131,6 +140,18 @@ final class ScanReport {
         name(kind, table, reason, message);
     }
 
+    /**
+     * A table the catalog said is closed until classified, which the worker did not load (backlog 334): named once a
+     * scan as a {@code table-load} with reason {@code closed}, as a refused load of it was (backlog 327), but not
+     * counted as a failure: nothing failed, and the closure is the catalog's rule (D27).
+     */
+    void skippedClosed(Management.TableWork table) {
+        if (namedClosed.add(table.id())) {
+            name(Failure.TABLE_LOAD, table, "closed", "table " + table.name() + " is closed until it is classified;"
+                    + " not loaded");
+        }
+    }
+
     private void name(Failure kind, Management.TableWork table, String reason, String message) {
         if (named.size() < MAX_NAMED) {
             String words = CONTROL.matcher(message).replaceAll(" ").strip();
@@ -163,6 +184,6 @@ final class ScanReport {
                 + tablesLeftOver + " tables left over), files recorded " + filesRecorded + " (" + filesOutside
                 + " outside), purged " + purged + " (" + purgesSkipped + " skipped), files deleted " + filesDeleted
                 + ", files kept for refs " + kept + ", branches warned " + refsWarned + " and ended " + refsEnded
-                + ", failures " + failures.size();
+                + ", closed until classified " + closed + ", failures " + failures.size();
     }
 }

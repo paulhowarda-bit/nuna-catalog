@@ -6,7 +6,9 @@ import static nuna.catalog.server.governance.Management.ROOT;
 import nuna.catalog.audit.FileDeletion;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
+import nuna.catalog.core.principal.Caller;
 import nuna.catalog.security.Authorizer;
+import nuna.catalog.security.Privilege;
 import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.server.storage.StorageSettings;
 import nuna.catalog.store.CatalogObject;
@@ -87,6 +89,12 @@ class MaintenanceRoutes {
     static final List<String> JOBS = List.of(MaintenancePolicy.EXPIRY_ENABLED, MaintenancePolicy.ORPHAN_ENABLED,
             MaintenancePolicy.COMPACTION_ENABLED, MaintenancePolicy.REWRITE_ENABLED);
 
+    /**
+     * The operation the worker's load of a table is decided on, as the REST routes decide {@code loadTable}: the work
+     * list asks it of each table only to say which are closed until classified (backlog 334).
+     */
+    static final Authorizer.Operation LOAD = new Authorizer.Operation("loadTable", Privilege.SELECT, true);
+
     /** The work list's sections, in the order its pages walk them. */
     private enum Section { TABLES, PURGES, DELETIONS, REQUESTS, REFS }
 
@@ -100,6 +108,7 @@ class MaintenanceRoutes {
     private final Clock clock;
     private final MaintenanceNights nights;
     private final MaintenanceEstate estate;
+    private final Authorizer authorizer;
 
     MaintenanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
                       CatalogNames catalogs, RefSettings refSettings, StorageSettings storage, Clock clock,
@@ -114,6 +123,7 @@ class MaintenanceRoutes {
         this.clock = clock;
         this.nights = new MaintenanceNights(store, management, authorizer, catalogs, clock);
         this.estate = new MaintenanceEstate(store, authorizer, catalogs, clock);
+        this.authorizer = authorizer;
     }
 
     /**
@@ -128,13 +138,15 @@ class MaintenanceRoutes {
      * within {@code nuna.refs.expiry-warning} of it that have not been warned of, to warn of ({@link #refs}). Each
      * page holds items of one section; the token walks on to the next section, unless {@code section}
      * ({@code tables}, {@code purges}, {@code deletions}, {@code requests} or {@code refs}) asks for that section
-     * alone.
+     * alone. A table or request whose table is closed until classified (D27) carries {@code "closed": true}
+     * ({@link #markClosed}), so the worker skips it without loading it (backlog 334).
      */
     @GetMapping(path = WORK, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> work(@RequestParam(required = false) String section,
                                 @RequestParam(required = false) String pageToken,
                                 @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
-        guard.requireMaintenance(management.request(http), null, "listMaintenanceWork");
+        Request request = management.request(http);
+        guard.requireMaintenance(request, null, "listMaintenanceWork");
         Optional<Section> only;
         try {
             only = Optional.ofNullable(section).map(name -> Section.valueOf(name.toUpperCase(Locale.ROOT)));
@@ -169,7 +181,10 @@ class MaintenanceRoutes {
             next = switch (current) {
                 case TABLES -> {
                     Page<CatalogObject> listed = store.listActiveObjects(CatalogObject.Kind.TABLE, page);
-                    listed.items().forEach(table -> due(table).ifPresent(tables::add));
+                    List<Entry> due = new ArrayList<>();
+                    listed.items().forEach(table -> due(table).ifPresent(node -> due.add(new Entry(table, node))));
+                    markClosed(request.caller(), due);
+                    due.forEach(entry -> tables.add(entry.node()));
                     yield listed.nextToken();
                 }
                 case PURGES -> {
@@ -185,7 +200,10 @@ class MaintenanceRoutes {
                 }
                 case REQUESTS -> {
                     Page<MaintenanceRequest> listed = store.listWaitingRequests(page);
-                    listed.items().forEach(waiting -> requested(waiting).ifPresent(requests::add));
+                    List<Entry> waiting = new ArrayList<>();
+                    listed.items().forEach(asked -> requested(asked).ifPresent(waiting::add));
+                    markClosed(request.caller(), waiting);
+                    waiting.forEach(entry -> requests.add(entry.node()));
                     yield listed.nextToken();
                 }
                 case REFS -> refs(page, now, refs);
@@ -439,6 +457,31 @@ class MaintenanceRoutes {
         }
     }
 
+    /** A work-list entry and the table it is of. */
+    private record Entry(CatalogObject table, ObjectNode node) {
+    }
+
+    /**
+     * Marks {@code "closed": true} on each entry whose table is closed until classified (D27; backlog 334): the
+     * authorizer, asked for the calling maintenance principal on the worker's load, answers {@code UNCLASSIFIED}, as
+     * {@link MaintenanceEstate} finds it. The maintenance principal is not exempt from the closure (catalog-security,
+     * 2026-11-28); this only foretells the refusal, so the worker need not be refused, and audited as a denial, at
+     * every scan. It refuses and gives nothing, so it publishes no denial. One decision for the page.
+     */
+    private void markClosed(Caller caller, List<Entry> entries) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        List<Authorizer.Decision> decisions = authorizer.decide(caller, entries.stream()
+                .map(entry -> new Authorizer.Request(new Authorizer.Target.TableOrView(entry.table()), LOAD)).toList());
+        for (int i = 0; i < entries.size(); i++) {
+            if (decisions.get(i) instanceof Authorizer.Decision.Denied denied
+                    && denied.reason() == Authorizer.Reason.UNCLASSIFIED) {
+                entries.get(i).node().put("closed", true);
+            }
+        }
+    }
+
     /** The table as the work list shows it, when its resolved policy runs a job. */
     private Optional<ObjectNode> due(CatalogObject table) {
         Map<String, MaintenancePolicy.Setting> resolved = GovernanceRoutes.resolvePolicy(settings,
@@ -454,7 +497,7 @@ class MaintenanceRoutes {
      * {@code requested-at} and {@code requested-by}. None when the table is gone, or when its resolved policy no
      * longer runs the job, a hold or freeze placed since included: the request waits until it does.
      */
-    private Optional<ObjectNode> requested(MaintenanceRequest request) {
+    private Optional<Entry> requested(MaintenanceRequest request) {
         Optional<CatalogObject> table = store.readObject(request.objectId())
                 .filter(object -> object.kind() == CatalogObject.Kind.TABLE
                         && object.state() == CatalogObject.State.ACTIVE);
@@ -470,7 +513,7 @@ class MaintenanceRoutes {
             node.put("job", MaintenanceRequests.label(request.job()));
             node.put("requested-at", request.requestedAt().toString());
             node.put("requested-by", request.requestedBy());
-            return node;
+            return new Entry(table.get(), node);
         });
     }
 

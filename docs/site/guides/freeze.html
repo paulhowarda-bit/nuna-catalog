@@ -108,6 +108,7 @@ curl -sS -X PUT "$NUNA/management/v1/catalogs/trading/namespaces/equities/tables
       <p>A view's path ends <code>/views/<var>view</var>/dr-freeze</code>.</p>
 
       <h2 id="lift-the-freeze">Lift the freeze</h2>
+      <p>To find the freezes standing in a catalog, open its Governance page, which lists each with its path, reason, who placed it and when, and <strong>Lift</strong> beside it; or send <code>GET</code> to <a href="../api/governance.html#get-catalog-governance-dr-freezes"><code>…/governance/dr-freezes</code></a>. What an operator reads there is freezes only, never legal holds.</p>
       <div class="tabs" data-group="client">
         <section class="tab" data-tab="console" data-label="Console">
           <p>On the namespace's <strong>Access</strong> tab select <strong>Lift the DR freeze</strong>. The dialog says "Lifting the freeze lets commits and cleanup run again beneath this namespace." Select <strong>Lift the freeze</strong>; the console reports <strong>Freeze lifted</strong>. On the Governance page, select <strong>Lift</strong> beside the freeze.</p>

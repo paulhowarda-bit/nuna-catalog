@@ -47,6 +47,8 @@ class FailedJobsReportTest {
             + " it is closed until it is classified";
 
     private final List<String> scanReports = Collections.synchronizedList(new ArrayList<>());
+    /** The paths of every table load the stand-in catalog was asked. */
+    private final List<String> loads = Collections.synchronizedList(new ArrayList<>());
     private HttpServer catalog;
 
     @AfterEach
@@ -88,6 +90,37 @@ class FailedJobsReportTest {
         assertThat(JSON.readTree(scanReports.getFirst()).path("failed-jobs")).as("the start names none").isEmpty();
     }
 
+    /**
+     * A table the work list marks closed until classified (D27; backlog 334) is not loaded, so the catalog refuses
+     * nothing and audits no denial; it is not counted as a failure, the gauge of closed tables reads it, and the scan
+     * still names it as a table-load with reason closed, as the console shows it (backlog 327).
+     */
+    @Test
+    void aClosedTableIsSkippedWithoutLoadingIt() throws Exception {
+        UUID closed = UUID.randomUUID();
+        URI uri = catalog(List.of(closedTable(closed, "party", "beneficial_owners")));
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        try (Worker worker = worker(uri, registry)) {
+            ScanReport report = worker.runOnce();
+            assertThat(report.failuresByKind).as("nothing failed").isEmpty();
+            assertThat(report.closed).isEqualTo(1);
+        }
+
+        assertThat(loads).as("the closed table is never loaded").isEmpty();
+        assertThat(registry.get(WorkerMetrics.FAILURES).tag(WorkerMetrics.KIND, "table-load").counter().count())
+                .as("not counted in nuna_maintenance_failures_total").isZero();
+        assertThat(registry.get(WorkerMetrics.CLOSED).gauge().value()).isEqualTo(1.0);
+        JsonNode ended = JSON.readTree(scanReports.getLast());
+        assertThat(ended.path("failures").path("table-load").isMissingNode()).as("no failure counted").isTrue();
+        assertThat(ended.path("failed-jobs")).hasSize(1);
+        JsonNode job = ended.path("failed-jobs").get(0);
+        assertThat(job.path("kind").asText()).isEqualTo("table-load");
+        assertThat(job.path("id").asText()).isEqualTo(closed.toString());
+        assertThat(job.path("name").asText()).isEqualTo("beneficial_owners");
+        assertThat(job.path("reason").asText()).isEqualTo("closed");
+    }
+
     @Test
     void aScanNamesTheFirstTwentyAndCountsThemAll() throws Exception {
         List<String> tables = IntStream.range(0, ScanReport.MAX_NAMED + 5)
@@ -119,7 +152,17 @@ class FailedJobsReportTest {
                 + "\"snapshot-expiry.min-snapshots-to-keep\":\"1\"}}";
     }
 
+    /** A table entry the catalog marks closed until classified (backlog 334). */
+    private static String closedTable(UUID id, String namespace, String name) {
+        String entry = table(id, namespace, name);
+        return entry.substring(0, entry.length() - 1) + ",\"closed\":true}";
+    }
+
     private static Worker worker(URI uri) {
+        return worker(uri, new SimpleMeterRegistry());
+    }
+
+    private static Worker worker(URI uri, SimpleMeterRegistry registry) {
         FakeClock clock = new FakeClock();
         LocalTime turn = LocalTime.ofInstant(clock.instant().minus(Duration.ofHours(12)), ZoneOffset.UTC)
                 .truncatedTo(ChronoUnit.SECONDS);
@@ -137,7 +180,7 @@ class FailedJobsReportTest {
         return new Worker(new Management(uri, tokens, HttpClient.newHttpClient(), 100),
                 new Catalogs(uri, tokens, Map.of(), TraceHeaders.NONE), new NoFiles(), Compactor.NONE, clock,
                 new CleanupWindow(turn, turn, ZoneOffset.UTC), Duration.ofDays(1), Duration.ofHours(2), 2,
-                new SimpleMeterRegistry(), ObservationRegistry.NOOP);
+                registry, ObservationRegistry.NOOP);
     }
 
     /**
@@ -151,6 +194,9 @@ class FailedJobsReportTest {
             String path = exchange.getRequestURI().getPath();
             String query = String.valueOf(exchange.getRequestURI().getQuery());
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (path.startsWith("/v1/namespaces/party/tables/")) {
+                loads.add(path);
+            }
             if (path.equals("/management/v1/maintenance/work")) {
                 answer(exchange, 200, query.contains("section=tables") ? work : "{}");
             } else if (path.equals(TestReach.ROUTE)) {

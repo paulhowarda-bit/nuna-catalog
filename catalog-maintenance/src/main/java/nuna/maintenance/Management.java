@@ -65,12 +65,19 @@ final class Management {
 
     /**
      * An active table whose resolved maintenance policy runs a job, with that policy (guardrails applied), and the
-     * catalog's refs whose cut names it, whose files cleanup keeps (D33).
+     * catalog's refs whose cut names it, whose files cleanup keeps (D33). {@code closed} when the catalog says the
+     * table is closed until classified (D27; backlog 334): its load would be refused, so the worker does not load it.
      */
     record TableWork(String catalog, UUID id, List<String> namespace, String name, String location,
-                     Map<String, String> policy, List<RefWork> refs) {
+                     Map<String, String> policy, List<RefWork> refs, boolean closed) {
 
-        /** A table no ref names. */
+        /** A table not closed. */
+        TableWork(String catalog, UUID id, List<String> namespace, String name, String location,
+                  Map<String, String> policy, List<RefWork> refs) {
+            this(catalog, id, namespace, name, location, policy, refs, false);
+        }
+
+        /** A table no ref names, not closed. */
         TableWork(String catalog, UUID id, List<String> namespace, String name, String location,
                   Map<String, String> policy) {
             this(catalog, id, namespace, name, location, policy, List.of());
@@ -209,7 +216,7 @@ final class Management {
     private static TableWork table(JsonNode node) {
         return new TableWork(node.path("catalog").asText(), UUID.fromString(node.path("id").asText()),
                 strings(node.path("namespace")), node.path("name").asText(), node.path("location").asText(),
-                policy(node.path("policy")), refs(node.path("refs")));
+                policy(node.path("policy")), refs(node.path("refs")), node.path("closed").asBoolean(false));
     }
 
     /** The refs a table entry, a deletion or a refused record names, each with the metadata it reaches. */

@@ -1,0 +1,16 @@
+Breaks: the maintenance principal acting as itself is exempt from the closure of a table closed until classified, which catalog-security refused (option (b), 2026-11-28; backlog 334).
+Module: catalog-security
+Test: ClosedToMaintenanceTest#theMaintenancePrincipalActingAsItselfIsRefusedAClosedTable
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
+index 9c464c4a..1fc88681 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
+@@ -288,7 +288,7 @@ public final class Authorizer {
+                 && a.kind() == GovernanceAttribute.Kind.REGULATED && "true".equalsIgnoreCase(a.value()));
+         Securable self = object.securable();
+         if (object.kind() == CatalogObject.Kind.TABLE && regulated && needed != Privilege.DESCRIBE
+-                && needed != Privilege.MANAGE_TAGS
++                && needed != Privilege.MANAGE_TAGS && !maintenance(caller)
+                 && attributes.stream().noneMatch(a -> a.target().equals(self)
+                         && a.kind() == GovernanceAttribute.Kind.CLASSIFICATION)) {
+             return new Decision.Denied(Reason.UNCLASSIFIED, null, "table " + object.name().display()

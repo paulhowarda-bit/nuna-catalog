@@ -319,22 +319,43 @@ function holdsPage(catalog, tabs) {
 
 /**
  * Governance for a platform operator who holds nothing in the catalog (backlog 325): the DR freeze alone. The summary
- * and the holds list need describe, which he holds nowhere, so they are not asked for. Item 323 lists here the
- * standing freezes he may lift, in `#operator-freezes`, once the catalog lets an operator read them (D55).
+ * and the holds list need describe, which he holds nowhere, so they are not asked for. `#operator-freezes` lists the
+ * standing freezes he may lift, from the operators' own list, which carries no legal hold (D55, item 323). An operator
+ * who holds describe gets the full page instead, whose standing list already has Lift beside each freeze.
  */
 function freezePage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'governance-freeze'});
   const freezes = h('div', {class: 'stack', id: 'operator-freezes'});
+  const reload = () => load(freezes, async () => {
+    const list = (await api.drFreezes(catalog)).freezes || [];
+    return h('div', {class: 'panel', id: 'freezes-standing'}, h('h2', null, 'Standing ', h('span', {class: 'meta'}, 'newest first')),
+      list.length ? freezeTable(catalog, list, reload) : h('p', {class: 'muted'}, `No DR freeze stands in ${catalog}.`));
+  });
+  reload();
   main.append(pageHead({
     eyebrow: `${catalog} · governance`,
     title: `DR freezes in ${catalog}`,
     sub: 'A freeze stops every cleanup and write in its namespace until it is lifted. As a platform operator you freeze a '
       + 'namespace here by its path. The catalog\'s holds, classifications and summary are for those whose groups hold a '
       + 'grant in it.',
-    side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'freeze-path', onclick: () => freezeOnPath(catalog, () => {})},
+    side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'freeze-path', onclick: () => freezeOnPath(catalog, reload)},
       icon('snow'), 'Freeze a namespace for DR'),
   }), freezes);
   return main;
+}
+
+/**
+ * The standing DR freezes for an operator: what each is on, its reason as recorded (text, never markup: it is free
+ * text), who placed it and when, and Lift. The path is not a link: the object's own pages need a grant he lacks.
+ */
+function freezeTable(catalog, freezes, reload) {
+  return tbl('holds', ['On', 'Reason, as recorded', 'Placed', ''], freezes.map(x => h('tr', {'data-kind': 'freeze',
+    'data-on': (x.on.path || []).join('.')},
+  h('td', {class: 'name'}, x.on.kind === 'catalog' ? code(catalog) : (x.on.path || []).join('.'), ' ', muted('· ' + x.on.kind)),
+  h('td', {class: 'wrap'}, x.reason || muted('–')),
+  h('td', null, h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'] || '')),
+  h('td', null, h('div', {class: 'row-acts'}, h('button', {class: 'btn sm ghost', type: 'button', 'data-act': 'lift',
+    onclick: () => drFreeze(targetOfOn(catalog, x.on), true, reload)}, 'Lift'))))));
 }
 
 /** A namespace named by its path, then the DR freeze dialog for it: platform operators only. */

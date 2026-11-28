@@ -38,6 +38,7 @@
           <tbody>
             <tr><td><code>GET</code></td><td><a href="#get-catalog-governance-summary"><code>/management/v1/catalogs/{catalog}/governance/summary</code></a></td><td>Counts the catalog's classified, regulated, held, frozen and flagged tables.</td></tr>
             <tr><td><code>GET</code></td><td><a href="#get-catalog-governance-holds"><code>/management/v1/catalogs/{catalog}/governance/holds</code></a></td><td>Lists standing holds and freezes, and those lifted in the last 30 days.</td></tr>
+            <tr><td><code>GET</code></td><td><a href="#get-catalog-governance-dr-freezes"><code>/management/v1/catalogs/{catalog}/governance/dr-freezes</code></a></td><td>Lists the standing DR freezes, for platform operators.</td></tr>
             <tr><td><code>GET</code></td><td><a href="#get-governance"><code><var>object</var>/governance</code></a></td><td>Reads an object's attributes, the values it inherits, and its holds.</td></tr>
             <tr><td><code>PUT</code></td><td><a href="#put-attributes-attribute"><code><var>object</var>/attributes/{attribute}</code></a></td><td>Sets a governance attribute.</td></tr>
             <tr><td><code>DELETE</code></td><td><a href="#delete-attributes-attribute"><code><var>object</var>/attributes/{attribute}</code></a></td><td>Removes a governance attribute.</td></tr>
@@ -136,6 +137,40 @@
   ],
   "lifted": [],
   "history": {"days": 30, "since": "2026-10-27T09:00:00Z"}
+}</code></pre>
+        </div>
+      </section>
+
+      <section class="endpoint">
+        <h3 id="get-catalog-governance-dr-freezes"><span class="method" data-method="GET">GET</span> <code>/management/v1/catalogs/{catalog}/governance/dr-freezes</code></h3>
+        <p>Lists the DR freezes standing anywhere in the catalog, the newest placed first, for the platform operators who may lift them: each with what it is on, its reason as recorded, who placed it and when. It lists no legal hold, no freeze lifted before, and nothing about the tables beneath a frozen level. Anyone else who holds a grant in the catalog reads freezes with the holds, on <a href="#get-catalog-governance-holds"><code>…/governance/holds</code></a>, which an operator is refused. A refusal is audited; a read writes no audit record.</p>
+        <p class="doc-meta"><span class="badge needs">Needs a platform operator</span></p>
+        <h4 id="get-catalog-governance-dr-freezes-responses">Responses</h4>
+        <div class="table-wrap">
+          <table class="responses">
+            <thead><tr><th scope="col">Status</th><th scope="col">When</th></tr></thead>
+            <tbody>
+              <tr><td><code>200</code></td><td><code>{"catalog", "freezes": [{"on", "reason", "placed-by", "placed-at"}, …]}</code>.</td></tr>
+              <tr><td><code>403</code></td><td>You hold something in the catalog but are not a platform operator.</td></tr>
+              <tr><td><code>404</code></td><td>You hold nothing in the catalog, or it does not exist.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h4 id="get-catalog-governance-dr-freezes-example">Example</h4>
+        <div class="code" data-lang="bash">
+<pre><code>curl -sS "$NUNA/management/v1/catalogs/trading/governance/dr-freezes" -H "Authorization: Bearer $TOKEN"</code></pre>
+        </div>
+        <div class="code" data-lang="json" data-kind="output" data-title="Response">
+<pre><code>{
+  "catalog": "trading",
+  "freezes": [
+    {
+      "on": {"kind": "namespace", "id": "4b5c6d7e-8f90-4a1b-9c2d-3e4f5a6b7c8d", "path": ["reference"]},
+      "reason": "reconcile after failover",
+      "placed-by": "ops-lee",
+      "placed-at": "2026-11-25T08:00:12.551Z"
+    }
+  ]
 }</code></pre>
         </div>
       </section>
