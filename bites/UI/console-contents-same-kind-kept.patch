@@ -1,0 +1,16 @@
+Breaks: Contents keeps a Kind column that says the same on every row.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/browse.js b/catalog-server/src/main/resources/nuna/ui/browse.js
+--- a/catalog-server/src/main/resources/nuna/ui/browse.js
++++ b/catalog-server/src/main/resources/nuna/ui/browse.js
+@@ -229,7 +229,7 @@
+   const said = i => new Set(rows.map(r => r.children[i].textContent.trim()).filter(t => !['', '–', '—'].includes(t)));
+   const formats = said(2);
+   const empty = heads.map((_, i) => i > 0 && (rows.every(r => blank(r.children[i]))
+-    || (i === 1 && said(1).size === 1) || (i === 2 && formats.size === 1)));
++    || (i === 2 && formats.size === 1)));
+   for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
+   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
+     h('p', {class: 'fine'}, 'Only what your groups may see is listed. ',

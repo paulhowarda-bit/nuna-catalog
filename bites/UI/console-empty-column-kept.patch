@@ -3,15 +3,14 @@ Module: catalog-server
 Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/browse.js b/catalog-server/src/main/resources/nuna/ui/browse.js
-index 40ef7d6c..71865a1b 100644
 --- a/catalog-server/src/main/resources/nuna/ui/browse.js
 +++ b/catalog-server/src/main/resources/nuna/ui/browse.js
-@@ -220,7 +220,7 @@ function contentsTable(catalog, levels, x) {
-     x.ref ? 'Last data change here' : 'Last data change', x.ref ? `On @${x.ref}` : null].filter(Boolean);
-   // A column with nothing on any row says nothing, so it goes (Atelier's review, F16; backlog 193).
-   const blank = td => ['', '–', '—'].includes(td.textContent.trim());
--  const empty = heads.map((_, i) => i > 1 && rows.every(r => blank(r.children[i])));
-+  const empty = heads.map((_, i) => false && rows.every(r => blank(r.children[i])));
+@@ -228,7 +228,7 @@
+   // every Format said v2 (the 27 Nov review; backlog 331): the one format a namespace's tables share is said beneath.
+   const said = i => new Set(rows.map(r => r.children[i].textContent.trim()).filter(t => !['', '–', '—'].includes(t)));
+   const formats = said(2);
+-  const empty = heads.map((_, i) => i > 0 && (rows.every(r => blank(r.children[i]))
++  const empty = heads.map((_, i) => i > 0 && (false && rows.every(r => blank(r.children[i]))
+     || (i === 1 && said(1).size === 1) || (i === 2 && formats.size === 1)));
    for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
    return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
-     h('p', {class: 'fine'}, 'Only what your groups may see is listed. ', x.ref

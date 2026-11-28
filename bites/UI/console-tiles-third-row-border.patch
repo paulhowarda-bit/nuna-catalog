@@ -1,0 +1,16 @@
+Breaks: In two columns, the third row's first tile keeps its left border.
+Module: catalog-server
+Test: ConsoleBrowserTest#overviewTilesFillTheirRowsAndTheEstatesLabelsNeverRunTogether
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1438,7 +1438,7 @@
+   }
+   @container page (max-width: 1092px) {
+     .kpis:has(.kpi-list) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+-    .kpis:has(.kpi-list) .kpi:nth-child(2n+1) { border-left: 0; }
++    .kpis:has(.kpi-list) .kpi:nth-child(3) { border-left: 0; }
+     .kpis:has(.kpi-list) .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
+   }
+ }
