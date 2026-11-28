@@ -1,0 +1,17 @@
+Breaks: Your groups' grants here lists every grant in the catalog again, not those that reach the object.
+Module: catalog-server
+Test: ConsoleBrowserTest#yourGroupsGrantsListOnlyThoseThatReachTheObject
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index 2746c0e9..699fad8e 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -588,7 +588,7 @@ function grantsPart(target) {
+   // Only the grants that reach the object, the answer What you may do reads; every one in the catalog is a click away,
+   // for everyone (Atelier, backlog 329).
+   const ownGrants = () => load(mine, async () => {
+-    const list = await heldHere(target);
++    const list = await api.grantsOfGroups(target.catalog, []);
+     return [list.length ? tbl('stack-line own-here', ['Group', 'Privilege', 'Granted on', 'Granted'], list.map(g => h('tr',
+       {'data-group': g.group, 'data-privilege': g.privilege}, h('td', {class: 'name'}, g.group), privilegeCell(g),
+       h('td', null, grantedOn(target, g.securable)[1]),
