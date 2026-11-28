@@ -392,7 +392,7 @@ Polaris and Gravitino use this kernel. Nessie reimplemented it in its own model;
 2. Is row lineage (v3 `_row_id`, `_last_updated_sequence_number`) wanted for CDC or regulatory audit? If so, v3 becomes a priority, and correct `next-row-id` handling is a compliance-grade requirement.
 3. What are the commit rates and snapshot counts per table, especially for streaming? These drive metadata.json size, loadTable payloads and how soon v4 catalog-managed metadata matters.
 4. Records retention: must prior metadata.json files and commit history be retained (or WORM-protected) for books-and-records purposes? If so, `delete-after-commit` and `metadata-log` trimming conflict with that.
-5. Table encryption: will Fidelity use Iceberg-native encryption, and which KMS? Must the catalog provide tamper-evidence (hash verification) for metadata.json?
+5. Table encryption: will the firm use Iceberg-native encryption, and which KMS? Must the catalog provide tamper-evidence (hash verification) for metadata.json?
 6. Multi-region: should each region's object store hold a copy of metadata.json? Or will v4 relative paths plus catalog-supplied `table-location` be the DR strategy, in which case the catalog's location record must be region-aware?
 7. Governance: who approves schema evolution or partition changes on regulated tables? Should the catalog enforce that through validation hooks, or only record and audit it?
 8. Upgrade cadence: can the team commit to upgrading the pinned Iceberg core every minor release (2–3 per year), with a conformance suite, to keep pace with spec changes?

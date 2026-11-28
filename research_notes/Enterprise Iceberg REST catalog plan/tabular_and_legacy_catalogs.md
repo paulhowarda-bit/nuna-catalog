@@ -499,7 +499,7 @@ Tabular itself lacked anything an enterprise could run: it was SaaS-only, AWS-ce
   4. AWS-first, with GCS in preview and ADLS mentioned only in storage profiles.
   5. Glue sync bypassed RBAC.
   6. Remote signing puts the catalog on the data path for every file GET. That is a throughput and availability risk, which Jason Reid himself flagged ("incredibly high throughput and low latency").
-- [inference] **Fairness check on "bloat".** Some features that look like vendor bloat are enterprise needs at Fidelity's scale: federation for migration, events, policy for lifecycle, and possibly Delta coexistence. The genuinely vendor-shaped items I observed are multi-tenant realms, billing and usage, sample data, and the "single pane of glass" or "most interoperable" breadth push (generic tables, cross-vendor federation connectors). I did not audit Polaris code size or complexity; another researcher's Polaris notes should be consulted.
+- [inference] **Fairness check on "bloat".** Some features that look like vendor bloat are enterprise needs at the firm's scale: federation for migration, events, policy for lifecycle, and possibly Delta coexistence. The genuinely vendor-shaped items I observed are multi-tenant realms, billing and usage, sample data, and the "single pane of glass" or "most interoperable" breadth push (generic tables, cross-vendor federation connectors). I did not audit Polaris code size or complexity; another researcher's Polaris notes should be consulted.
 
 ### Gaps
 - I did not verify whether Polaris supports remote signing, or whether its policy framework executes maintenance itself or only stores rules.
@@ -567,7 +567,7 @@ Tabular itself lacked anything an enterprise could run: it was SaaS-only, AWS-ce
   1. single-table compare-and-swap;
   2. atomic multi-entity commit, needed for `/transactions/commit`;
   3. cross-region consistency semantics matching D7;
-  4. the firm's operational expertise.
+  4. The firm's operational expertise.
 - Put persistence behind a narrow KV-plus-CAS interface (LinkedIn's pattern), and always write metadata JSON to object storage. MongoDB is acceptable *if* its multi-document transaction and write-concern semantics are verified against criteria 2–3. [inference; MongoDB semantics not researched here]
 
 **D6. Maintenance ownership**

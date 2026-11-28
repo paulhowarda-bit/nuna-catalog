@@ -218,13 +218,13 @@ All cells are drawn from the findings above. Latency and fit judgements are [inf
 | On-prem possible | Yes (Enterprise Advanced) or Atlas | Yes | Yes (self-hosted) or Cloud | AWS only | Spanner GCP only; FoundationDB yes |
 
 ### Inferences
-- **The single named pointer is the wrong shape for this workload.** Polaris NoSQL and Nessie both serialize every commit in a catalog through one HEAD pointer. That turns independent per-table commits into one contended register, which explains both Nessie's CockroachDB "write too old" warning and Polaris's caveat that "some databases perform much better". A Fidelity catalog should keep **one pointer document or row per table**, so that contention is per table, and use a multi-document transaction only for `/transactions/commit` and namespace-level operations. [inference]
+- **The single named pointer is the wrong shape for this workload.** Polaris NoSQL and Nessie both serialize every commit in a catalog through one HEAD pointer. That turns independent per-table commits into one contended register, which explains both Nessie's CockroachDB "write too old" warning and Polaris's caveat that "some databases perform much better". The firm's catalog should keep **one pointer document or row per table**, so that contention is per table, and use a multi-document transaction only for `/transactions/commit` and namespace-level operations. [inference]
 - **MongoDB per-table CAS is the textbook case.** A single-document `findOneAndUpdate` with the expected `metadataLocation` (and a monotonic `version`) in the filter is atomic. It is retryable on network errors, so the driver retries once and the server stays exactly-once. With `w:majority`/`j:true`, an acknowledged commit cannot be rolled back on failover. [inference from the cited docs]
 - **Multi-table commits on MongoDB.** Use a transaction with `readConcern: snapshot` and `writeConcern: majority`. Put every table's conditional update inside it, and abort with 409 if any matched count is 0. Treat `TransientTransactionError` (write conflict with a concurrent single-table commit) as a 409, not a server-side spin, because the client already retries 409s. Keep transactions tiny, because of the 5 ms lock wait. [inference]
 - **Idempotency on MongoDB without a transaction.** Embed the last N idempotency keys with their outcomes in the table document (`$push` with `$slice`) within the same `findOneAndUpdate`. A replayed key is then answered from the document atomically. Separately, keep a TTL collection for non-table mutations. [inference]
 - **Reads.** CAS makes read staleness a performance issue, not a correctness one: a stale base yields a 409. But engines expect read-after-write across different clients (Spark commits, then Trino reads). Since MongoDB 8.0 acknowledges majority writes before secondaries apply them, **serve loadTable pointer reads from the primary with `readConcern: majority`**. Do not use linearizable reads; they are too slow and unnecessary given CAS. Do not use secondaries either. [inference]
 - **Do not shard and do not use Atlas Global Clusters for the catalog.** 100k tables × about 2 KB of pointer documents is a few hundred MB. Zones would turn multi-table transactions into distributed transactions and give each table a single writable zone anyway. Use them only if data-residency rules force per-jurisdiction catalogs. [inference]
-- **PostgreSQL's weakness here is multi-region RPO and failover automation, not CAS.** If Fidelity's DR standard requires RPO 0 for the catalog across regions, PostgreSQL needs synchronous replication to another region. That carries a latency cost similar to MongoDB or CockroachDB, plus Patroni with a 3-site DCS. Otherwise Aurora Global DB's "seconds" RPO applies. [inference]
+- **PostgreSQL's weakness here is multi-region RPO and failover automation, not CAS.** If the firm's DR standard requires RPO 0 for the catalog across regions, PostgreSQL needs synchronous replication to another region. That carries a latency cost similar to MongoDB or CockroachDB, plus Patroni with a 3-site DCS. Otherwise Aurora Global DB's "seconds" RPO applies. [inference]
 - **DynamoDB MREC is disqualified for active-active writes.** Two regions can each accept a conditional write against their local item version, and LWW then keeps only one. The other client got a 200, so its committed snapshot silently vanishes. MRSC fixes this, but it is AWS-only and the region set is fixed at three. [inference]
 
 ### Gaps
@@ -368,7 +368,7 @@ A table's correctness needs exactly one serialization point for its pointer. Act
 
 ### Gaps
 - I did not read S3 Multi-Region Access Points or S3 Replication event docs. I did not check whether CRR preserves write ordering between a manifest and a metadata file. The design above assumes it does not.
-- On-premise object stores (for example ECS, MinIO, NetApp StorageGRID) were not researched. Fidelity may use one.
+- On-premise object stores (for example ECS, MinIO, NetApp StorageGRID) were not researched. The firm may use one.
 - No published end-to-end DR runbook from any OSS catalog was found.
 
 ---
@@ -407,7 +407,7 @@ I found no Netflix, Apple or LinkedIn catalog throughput numbers.
 - **Polaris NoSQL ID space:** Snowflake IDs allow "1024 concurrently active 'JVMs running Polaris'" and 4,096 IDs per ms per node [read: https://github.com/apache/polaris/blob/main/persistence/nosql/persistence/README.md].
 
 ### Inferences
-- **No public number shows a catalog database to be the bottleneck at enterprise scale.** The observed limits are client-side metadata I/O per table, metadata.json size on load, and implementation bugs: deadlocks, 5xx under concurrency, and `refs` handling. Fidelity's acceptance tests should target those. [inference]
+- **No public number shows a catalog database to be the bottleneck at enterprise scale.** The observed limits are client-side metadata I/O per table, metadata.json size on load, and implementation bugs: deadlocks, 5xx under concurrency, and `refs` handling. The firm's acceptance tests should target those. [inference]
 - **Proposed SLOs to validate in a proof of concept** (not published numbers) [inference]:
   - loadTable p99 under 50 ms for tables under 1 MB of metadata, and 304 p99 under 10 ms.
   - Commit p99 under 300 ms, excluding client I/O.
@@ -476,7 +476,7 @@ For a regulated enterprise with thousands of tables, the catalog should own **po
 ## 8. Java runtime and framework for a locked-down enterprise
 
 ### Takeaway
-The Java OSS catalogs split as follows: Polaris and Nessie are on Quarkus 3.40.1.1, Gravitino runs Jetty 9.4 plus Jersey 2, and Unity Catalog runs Armeria. Lakekeeper is Rust. JDK 25 (LTS, September 2025) with virtual threads, whose `synchronized` pinning was removed in JDK 24 by JEP 491, makes a blocking, thread-per-request design (sync MongoDB driver, blocking S3 I/O) scale without reactive frameworks. For a curated artifact repository, the deciding factor is which framework Fidelity's platform team already curates and patches, more than raw features.
+The Java OSS catalogs split as follows: Polaris and Nessie are on Quarkus 3.40.1.1, Gravitino runs Jetty 9.4 plus Jersey 2, and Unity Catalog runs Armeria. Lakekeeper is Rust. JDK 25 (LTS, September 2025) with virtual threads, whose `synchronized` pinning was removed in JDK 24 by JEP 491, makes a blocking, thread-per-request design (sync MongoDB driver, blocking S3 I/O) scale without reactive frameworks. For a curated artifact repository, the deciding factor is which framework the firm's platform team already curates and patches, more than raw features.
 
 ### Cited Findings
 - **Polaris** pins `quarkus = "3.40.1.1"` and `mongodb-driver-sync 5.14.0`. Its MongoDB backend "leverages the Quarkus MongoDB extension" [read: https://github.com/apache/polaris/blob/main/gradle/libs.versions.toml; https://github.com/apache/polaris/blob/main/site/content/in-dev/unreleased/metastores/nosql-mongodb.md].
@@ -503,7 +503,7 @@ The Java OSS catalogs split as follows: Polaris and Nessie are on Quarkus 3.40.1
 
 ### Inferences
 - **Recommendation: JDK 25 LTS, virtual threads, and a small framework the enterprise already curates.** [inference]
-  - Spring Boot 4.x is the safest choice if Fidelity's golden path is Spring. Its transitive set is large but almost certainly already approved.
+  - Spring Boot 4.x is the safest choice if the firm's golden path is Spring. Its transitive set is large but almost certainly already approved.
   - Otherwise prefer a minimal stack: Helidon SE 4.x, or Javalin 7 on Jetty 12. Javalin 7 on Jetty 12 is assumed, not verified.
   - Add Jackson, the MongoDB sync driver, `iceberg-core` (for `TableMetadataParser`, `UpdateRequirement`/`MetadataUpdate` and `CatalogHandlers` semantics), and the cloud SDK.
   - Reusing `iceberg-core`'s metadata-update logic is the biggest correctness lever. It ensures commit validation is identical to the reference implementation.
@@ -543,7 +543,7 @@ It meets the RPO-0, auto-failover bar, fits the team's Java and MongoDB lean, an
 
 **Do not** copy Polaris NoSQL's or Nessie's catalog-wide HEAD-pointer model. **Do not** use w:1, Global Clusters, or reads from secondaries for loadTable.
 
-**CockroachDB is an equally valid choice, and the better one if** Fidelity's DBA organization already operates it, or SQL and serializable multi-table semantics are wanted for audit queries. Use REGIONAL BY ROW with each table's home region, plus a client-side 40001 retry loop. Polaris JDBC already supports it.
+**CockroachDB is an equally valid choice, and the better one if** the firm's DBA organization already operates it, or SQL and serializable multi-table semantics are wanted for audit queries. Use REGIONAL BY ROW with each table's home region, plus a client-side 40001 retry loop. Polaris JDBC already supports it.
 
 **Choose PostgreSQL only if** the DR standard accepts active-passive with RPO measured in seconds (Aurora Global), or the team will run synchronous cross-region replication with Patroni. PostgreSQL is the lowest-risk single-region store.
 
@@ -586,7 +586,7 @@ It meets the RPO-0, auto-failover bar, fits the team's Java and MongoDB lean, an
 
 ## Open questions for the enterprise
 1. **DR standard for this tier.** Is the required RPO for an acknowledged table commit zero, or minutes? What is the RTO? This decides D1 between MongoDB or CockroachDB and PostgreSQL, and whether the replication-watermark design is mandatory.
-2. **Database platform reality.** Which databases does Fidelity's DBA organization operate with 3-site topologies today: MongoDB Enterprise or Atlas, CockroachDB, Aurora, or on-prem PostgreSQL with Patroni? Is a third site or region available for a MongoDB voting member or CockroachDB replicas?
+2. **Database platform reality.** Which databases does the firm's DBA organization operate with 3-site topologies today: MongoDB Enterprise or Atlas, CockroachDB, Aurora, or on-prem PostgreSQL with Patroni? Is a third site or region available for a MongoDB voting member or CockroachDB replicas?
 3. **Object storage.** Is it AWS S3 (and which regions), or an on-prem S3-compatible store? What is the replication mechanism and its SLA? Are bucket versioning and Object Lock mandated for regulated data? Is the table `location` region-specific, which forces location rewriting on failover?
 4. **Write topology.** Will any table have writers in more than one region? A single home region per table is assumed.
 5. **Streaming footprint.** How many tables have Flink or Kafka Connect writers, and at what checkpoint or commit intervals? This sizes snapshot retention policy and metadata.json growth.

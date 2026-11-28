@@ -21,7 +21,7 @@ The revised durability rule suits this family: every candidate here is a single-
     - Requirement 5, ambiguous commits: Transaction Guard's `GET_LTXID_OUTCOME` returns committed or not, and fences the in-flight transaction.
     - Requirement 3, read-after-commit reads off the standby: `STANDBY_MAX_DATA_DELAY=0` on a SYNC standby.
     - Data Guard Fast-Start Failover with lag limit 0 and a third-site observer is the turnkey form of the decided topology.
-    - Fidelity is publicly named as adopting Oracle Database@AWS.
+    - The firm is publicly named as adopting Oracle Database@AWS.
     - The costs are licence price, no Iceberg catalog precedent, and JDK 25 not yet in Oracle's JDBC compatibility table.
 - **Runner-up: SQL Server Always On.** Its in-region durability is as good: sync-commit AG plus `REQUIRED_SYNCHRONIZED_SECONDARIES_TO_COMMIT`. It loses on the other two requirements:
   - Readable secondaries give no read-your-writes guarantee.
@@ -248,7 +248,7 @@ Versions as of 2026-11-06:
 
 **Licence, expertise, precedent**
 - PostgreSQL licence, no cost; commercial support optional [inference].
-- Fidelity postings mention PostgreSQL and Aurora PostgreSQL alongside Oracle and Db2 [secondary: https://builtin.com/job/principal-database-administrator-dba-mainframe-db2-z-os/9604993; https://builtinbengaluru.in/job/principal-software-engineering-data-engineerdba/4261945].
+- The firm's postings mention PostgreSQL and Aurora PostgreSQL alongside Oracle and Db2 [secondary: https://builtin.com/job/principal-database-administrator-dba-mainframe-db2-z-os/9604993; https://builtinbengaluru.in/job/principal-software-engineering-data-engineerdba/4261945].
 - Precedent is the strongest of any engine (section 9).
 
 **Disqualifiers**: none. The risks are that HA tooling sits outside the engine and the cancelled-wait rule above.
@@ -429,13 +429,13 @@ Further notes:
 | Partitioning | 11,500 | 2,530 |
 | GoldenGate | 17,500 | 3,850 |
 
-- A firm of Fidelity's size almost certainly holds an enterprise agreement, so the marginal cost may be far lower than list [inference].
+- A firm of this size almost certainly holds an enterprise agreement, so the marginal cost may be far lower than list [inference].
 
 **Precedent**
 - Hive Metastore ships Oracle schema scripts [read: https://github.com/apache/hive/tree/master/standalone-metastore/metastore-server/src/main/sql].
 - No Iceberg REST catalog supports Oracle.
 - Iceberg's JdbcCatalog SQL uses `LIMIT 1` and `ADD COLUMN`, which Oracle does not accept [read: JdbcUtil.java; inference on dialect].
-- Fidelity is named in Oracle's Database@AWS GA press release as adopting it [read: https://www.oracle.com/news/announcement/oracle-database-at-aws-now-generally-available-2025-07-08/].
+- The firm is named in Oracle's Database@AWS GA press release as adopting it [read: https://www.oracle.com/news/announcement/oracle-database-at-aws-now-generally-available-2025-07-08/].
 
 **Disqualifiers**: none. The risks are cost, being first to put an Iceberg catalog on Oracle, the unverified JDK 25 certification, and the undocumented statement-restart behaviour, which the benchmark settles.
 
@@ -592,9 +592,9 @@ Further notes:
 - Only synchronous replication with automation gives RPO 0.
 - Metro Mirror is supported to 300 km, and HyperSwap switches disks with a brief I/O hold.
 - GDPS Continuous Availability is asynchronous software replication with RPO of seconds.
-- This is the firm's tier-1 pattern for brokerage [secondary: Fidelity Db2 z/OS DBA posting]. But it is **out under the deployment rule**: there is no Db2 for z/OS in AWS.
+- This is the firm's tier-1 pattern for brokerage [secondary: the firm's Db2 z/OS DBA posting]. But it is **out under the deployment rule**: there is no Db2 for z/OS in AWS.
 
-**Verdict**: weakest fit among the engines Fidelity already runs [inference].
+**Verdict**: weakest fit among the engines the firm already runs [inference].
 
 ---
 
@@ -669,7 +669,7 @@ The totals are a reading aid, not the decision. Section 11 gives the reasons.
 1. **PostgreSQL** (Patroni or CNPG on-prem; the same stack, or Aurora PostgreSQL with the section 3 caveats, in AWS).
    - It meets every requirement with the portable design in section 1.
    - It has by far the most Iceberg-catalog precedent, the best open CDC path (failover slots plus Debezium), a Loom-ready driver and no licence cost.
-   - Fidelity already runs PostgreSQL and Aurora PostgreSQL [secondary].
+   - The firm already runs PostgreSQL and Aurora PostgreSQL [secondary].
    - What it needs:
      - Patroni `synchronous_mode: quorum` with strict mode, or CNPG `dataDurability: required` with a failover quorum, and etcd in 3 sites.
      - A "never cancel a COMMIT" rule plus the §1.2 durability barrier.
@@ -729,7 +729,7 @@ The totals are a reading aid, not the decision. Section 11 gives the reasons.
 
 ---
 
-## 13. Gaps and open questions for Fidelity
+## 13. Gaps and open questions for the firm
 
 **Gaps in this research**
 - No failover-RTO figures read for Patroni, CNPG or SQL Server AG.
@@ -768,6 +768,6 @@ The totals are a reading aid, not the decision. Section 11 gives the reasons.
   - Code: Iceberg (JdbcCatalog, HiveTableOperations, issue #18743 and PR #18745), Gravitino, OpenHouse, Unity OSS, Nessie configuration, Hive `sql/` tree and DatabaseProduct.java, HIVE-26882/28121 JIRA.
   - The Oracle Database@AWS GA press release; the LinkedIn OpenHouse blog.
 - **WebFetch summaries only.** IBM Docs (Db2 12.1, Db2 13 z/OS JCC, IIDR 11.4, IBM Community posts) and dev.mysql.com (8.4, 9.7, Shell ClusterSet). Both return HTTP 403 to curl.
-- **Secondary.** The Netflix re:Invent 2023 transcript (lilys.ai); Fidelity job postings on Built In mirrors (jobs.fidelity.com returned "Page Not Found"); DBTA (2026-02-04) and Oracle-Base on 26ai release numbering.
-- **Seen in search snippets only, not used.** Fidelity postings listing SingleStore, Aerospike and DynamoDB; a Waters Technology "all in on AWS" article; re:Invent 2014 FIN202.
+- **Secondary.** The Netflix re:Invent 2023 transcript (lilys.ai); the firm's job postings on Built In mirrors (the firm's own careers site returned "Page Not Found"); DBTA (2026-02-04) and Oracle-Base on 26ai release numbering.
+- **Seen in search snippets only, not used.** The firm's postings listing SingleStore, Aerospike and DynamoDB; a Waters Technology "all in on AWS" article; re:Invent 2014 FIN202.
 - **Inherited, not redone.** `../Enterprise Iceberg REST catalog plan/persistence_scale_ha.md`: PostgreSQL READ COMMITTED WHERE re-evaluation, Aurora Global DR basics, Polaris/Lakekeeper/Nessie/Gravitino/Unity store choices.

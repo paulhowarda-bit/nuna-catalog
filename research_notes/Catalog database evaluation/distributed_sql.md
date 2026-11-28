@@ -45,7 +45,7 @@ Design notes that apply to every candidate [inference]:
 
 **Versions (dated).** v25.4 is the current LTS (LTS from 2026-05-03); v26.2 is the latest regular release (2026-04-27); v26.3 is an innovation release (2026-08-19, maintenance to 2027-02-19, no assistance phase). [read: https://github.com/cockroachdb/docs/blob/main/src/current/_data/versions.csv]
 
-**Licence change (2024).** Every version from 24.3.0 on, and patches to 23.1-24.2 released after that date, ship under the proprietary CockroachDB Software License. The free "Core" edition is gone. "Enterprise Free" applies only below $10M combined annual revenue including affiliates, so Fidelity needs paid Enterprise. Free and Trial licences require telemetry; a cluster that goes 7 days without sending it is throttled to 5 concurrent transactions. A cluster with no licence key is throttled 7 days after initialisation, which matters for multi-node benchmarks. Single-node dev clusters need no key. Major-version upgrades need a valid key. Paid Enterprise never throttles on expiry. Prices go through sales. [read: https://github.com/cockroachdb/docs/blob/main/src/current/_includes/common/licensing-faqs.md; https://github.com/cockroachdb/docs/blob/main/src/current/_includes/common/upgrade-cockroach-version-license-limitations.md]
+**Licence change (2024).** Every version from 24.3.0 on, and patches to 23.1-24.2 released after that date, ship under the proprietary CockroachDB Software License. The free "Core" edition is gone. "Enterprise Free" applies only below $10M combined annual revenue including affiliates, so the firm needs paid Enterprise. Free and Trial licences require telemetry; a cluster that goes 7 days without sending it is throttled to 5 concurrent transactions. A cluster with no licence key is throttled 7 days after initialisation, which matters for multi-node benchmarks. Single-node dev clusters need no key. Major-version upgrades need a valid key. Paid Enterprise never throttles on expiry. Prices go through sales. [read: https://github.com/cockroachdb/docs/blob/main/src/current/_includes/common/licensing-faqs.md; https://github.com/cockroachdb/docs/blob/main/src/current/_includes/common/upgrade-cockroach-version-license-limitations.md]
 
 **Atomic unit and isolation.**
 - Multi-statement ACID transactions "spanning arbitrary tables and rows". SERIALIZABLE is the default. READ COMMITTED is available, is "stronger than the PostgreSQL READ COMMITTED", and is the strongest level that does not raise serialization errors needing client-side handling. [read: https://github.com/cockroachdb/docs/blob/main/src/current/v26.3/transactions.md] The v26.2 setting `sql.txn.read_committed_isolation.enabled` defaults to true. [read: https://github.com/cockroachdb/cockroach/blob/release-26.2/docs/generated/settings/settings.html]
@@ -163,7 +163,7 @@ Design notes that apply to every candidate [inference]:
 
 **Precedent.** Zhihu moved its Hive Metastore from MySQL to TiDB to scale metadata storage. [read: https://pingcap.com/case-studies/horizontally-scaling-hive-metastore-database-by-migrating-from-mysql-to-tidb] I found no Iceberg REST catalog on TiDB.
 
-**Disqualifiers.** None hard. Weaknesses: no SERIALIZABLE; MySQL dialect, which forks the SQL from the PostgreSQL-wire finalists and from Polaris/Lakekeeper practice; no downgrade path. Vendor third-party-risk review of PingCAP is a question for Fidelity procurement. [inference]
+**Disqualifiers.** None hard. Weaknesses: no SERIALIZABLE; MySQL dialect, which forks the SQL from the PostgreSQL-wire finalists and from Polaris/Lakekeeper practice; no downgrade path. Vendor third-party-risk review of PingCAP is a question for the firm's procurement. [inference]
 
 ---
 
@@ -209,7 +209,7 @@ Design notes that apply to every candidate [inference]:
 - CDC goes to Kinesis only, in `UNORDERED` mode, at-least-once; records for one primary key "can arrive out of commit order". [read: https://docs.aws.amazon.com/aurora-dsql/latest/userguide/cdc-streams.md] A web-search snippet described it as a May 2026 preview; I did not read the announcement, so its GA status is unverified.
 
 **Other systems screened.**
-- **Oracle Globally Distributed AI Database with Raft replication** is credible if Fidelity's Oracle team offers it. Commits are acknowledged once a majority of replicas hold the commit record ("zero data loss"); failover is under 3 s with under 10 ms network latency. [read: https://docs.oracle.com/en/database/oracle/oracle-database/23/shard/raft-replication-concepts.html] I did not evaluate cross-shard transaction semantics, which a multi-table commit would need; treat it as unevaluated.
+- **Oracle Globally Distributed AI Database with Raft replication** is credible if the firm's Oracle team offers it. Commits are acknowledged once a majority of replicas hold the commit record ("zero data loss"); failover is under 3 s with under 10 ms network latency. [read: https://docs.oracle.com/en/database/oracle/oracle-database/23/shard/raft-replication-concepts.html] I did not evaluate cross-shard transaction semantics, which a multi-table commit would need; treat it as unevaluated.
 - OceanBase, SingleStore, Vitess/PlanetScale, Aurora Limitless, AlloyDB Omni and YDB were not researched this session. FoundationDB is a key-value store, not SQL, and belongs to the KV evaluation.
 
 ---
@@ -241,7 +241,7 @@ The totals are a reading aid, not the decision. The finalists are chosen on the 
 1. **CockroachDB.** The highest correctness bar delivered today: SERIALIZABLE by default, a documented ambiguous-commit code that maps one-to-one onto requirement 5, and native TTL. It also has the most catalog precedent (Apache Polaris JDBC, reportedly Netflix) and native Kafka changefeeds, plus a Debezium connector and Paul's own changefeed experience. PCR covers the async DR leg. The cost is a proprietary, sales-priced licence (the 2024 change) and strict clock discipline.
 2. **YugabyteDB YSQL.** The open-licence alternative with the same PostgreSQL-wire, Raft-in-region, async-DR shape. It has PostgreSQL lock-wait semantics on hot rows and the best audit-outbox CDC (commit-ordered per slot). It is weaker on precedent and needs `pg_cron` for TTL.
 
-Why not TiDB: it is the closest third and wins on read scale-out. It loses on isolation (SI only), on SQL dialect (MySQL, while the rest of the plan and the Polaris and Lakekeeper references are PostgreSQL), on the 6 MB default row limit and on upgrade rollback. Re-open it if Fidelity's DBA team already runs TiDB.
+Why not TiDB: it is the closest third and wins on read scale-out. It loses on isolation (SI only), on SQL dialect (MySQL, while the rest of the plan and the Polaris and Lakekeeper references are PostgreSQL), on the 6 MB default row limit and on upgrade rollback. Re-open it if the firm's DBA team already runs TiDB.
 
 Why not Spanner Omni: it is the strongest consistency model, but it is too new for tier 1. Revisit at the next LTS (roughly 2027), checking for Omni-to-Omni async DR and published pricing.
 

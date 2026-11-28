@@ -2,7 +2,7 @@
 
 Input to the database evaluation (decision D7 in `decision-ledger.md`). Decisions already made: Java 25 / Spring Boot 4 server, stateless nodes; iceberg-core building blocks with our own commit loop (D3); one pointer record per table (D6); split authority (D5): the DB pointer swap is the commit point, metadata.json in object storage is the content of record, and the same atomic DB write stores a compact current-state projection, the file's SHA-256 and a commit-journal entry.
 
-Numbers marked *envelope* are design assumptions until Fidelity supplies real ones (open question ENG-2). Sources are the notes in `research_notes/Enterprise Iceberg REST catalog plan/`.
+Numbers marked *envelope* are design assumptions until the firm supplies real ones (open question ENG-2). Sources are the notes in `research_notes/Enterprise Iceberg REST catalog plan/`.
 
 ## Records
 

@@ -9,7 +9,7 @@ Added 2026-11-26.
 
 ## What
 
-Fidelity's GitHub refused the push of your drop of 2026-11-26 (`nuna-catalog-main (5).zip`) for one finding,
+The firm's GitHub refused the push of your drop of 2026-11-26 (`nuna-catalog-main (5).zip`) for one finding,
 `HIGH_CONFIDENCE_ECS_CLIENT_SECRET_FORMAT_VALUE`, in three places that all hold the same command, the one that turns
 the catalog's database client key into PKCS #8 DER: `openssl pkcs8 -topk8 -nocrypt`, then the input key, then
 `-outform DER`, then the output file. [Quoted in work's note; described here.]

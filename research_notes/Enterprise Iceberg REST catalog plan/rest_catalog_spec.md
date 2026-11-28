@@ -1,6 +1,6 @@
 # Apache Iceberg REST Catalog Specification — full API surface, contracts, clients, and pipeline (as of 2026-11-06)
 
-Researcher notes for the enterprise (Fidelity) from-scratch REST catalog plan. Lens: separate (a) what the spec and real clients require, (b) what an enterprise operator needs, (c) what exists mainly for a vendor's commercial model.
+Researcher notes for the enterprise (the firm) from-scratch REST catalog plan. Lens: separate (a) what the spec and real clients require, (b) what an enterprise operator needs, (c) what exists mainly for a vendor's commercial model.
 
 **Provenance key.** Every claim carries a tag: `[read: …]` means I downloaded and read that exact text this session; `[secondary: …]` means a summary I did not verify against the primary; `[inference]` means my reasoning. Long URLs are abbreviated with these aliases (all were fetched on 2026-11-06):
 
