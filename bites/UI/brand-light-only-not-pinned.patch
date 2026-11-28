@@ -1,0 +1,17 @@
+Breaks: A light-only pack does not pin the light theme: the viewer's saved or system theme applies under the pack.
+Module: catalog-server
+Test: ConsoleBrandTest#thePackShowsFromFirstPaintAndTheButtonTurnsItOffAndOn
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 6dc85982..4a71e9f8 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -44,7 +44,7 @@ try {
+ 
+ function applyTheme() {
+   // A light-only brand pack, while it is on, pins light and hides both switches (D56); the viewer's choice is kept.
+-  const shown = packOn() && root.hasAttribute('data-pack-light') ? 'light' : theme;
++  const shown = theme;
+   if (shown === 'auto') root.removeAttribute('data-theme');
+   else root.setAttribute('data-theme', shown);
+   for (const b of $$('[data-theme-pick]')) b.setAttribute('aria-pressed', String(b.dataset.themePick === theme));

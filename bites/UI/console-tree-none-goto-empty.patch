@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#goToAPathOpensAFullDottedPathNotListedYet
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index 025e4b83..e99e10bd 100644
+index 6dc85982..fae3e885 100644
 --- a/catalog-server/src/main/resources/nuna/ui/app.js
 +++ b/catalog-server/src/main/resources/nuna/ui/app.js
-@@ -767,7 +767,7 @@ document.addEventListener('click', e => {
+@@ -908,7 +908,7 @@ document.addEventListener('click', e => {
    else if (act === 'menu') menu();
    else if (act === 'menu-close') menu(false);
    else if (act === 'pick') catMenu();
 -  else if (act === 'goto') openGoto(null, t.dataset.gotoWords || '');
 +  else if (act === 'goto') openGoto();
    else if (act === 'goto-audit') openGoto('audit');
+   else if (act === 'pack') setPack(!packOn());
  });
- 
