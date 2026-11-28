@@ -67,22 +67,22 @@ class DocsSiteTest {
 
     @Test
     void theDocsLinkIsTheServersOwnSiteAnotherCopyOrNone() {
-        assertThat(new UiSettings(false, null, null, null).docsLink()).isEqualTo("/docs/");
-        assertThat(new UiSettings(false, null, " ", null).docsLink()).isEqualTo("/docs/");
-        assertThat(new UiSettings(false, null, "https://docs.nuna.example/v1", null).docsLink())
+        assertThat(new UiSettings(false, null, null, null, null).docsLink()).isEqualTo("/docs/");
+        assertThat(new UiSettings(false, null, " ", null, null).docsLink()).isEqualTo("/docs/");
+        assertThat(new UiSettings(false, null, "https://docs.nuna.example/v1", null, null).docsLink())
                 .isEqualTo("https://docs.nuna.example/v1/");
-        assertThat(new UiSettings(false, null, "None", null).docsLink()).isNull();
-        assertThatThrownBy(() -> new UiSettings(false, null, "javascript:alert(1)", null))
+        assertThat(new UiSettings(false, null, "None", null, null).docsLink()).isNull();
+        assertThatThrownBy(() -> new UiSettings(false, null, "javascript:alert(1)", null, null))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("nuna.ui.docs-url");
     }
 
     @Test
     void theGrafanaLinkIsAnHttpUrlOrNone() {
-        assertThat(new UiSettings(false, null, null, null).grafanaUrl()).isNull();
-        assertThat(new UiSettings(false, null, null, " ").grafanaUrl()).isNull();
-        assertThat(new UiSettings(false, null, null, " https://grafana.nuna.example ").grafanaUrl())
+        assertThat(new UiSettings(false, null, null, null, null).grafanaUrl()).isNull();
+        assertThat(new UiSettings(false, null, null, " ", null).grafanaUrl()).isNull();
+        assertThat(new UiSettings(false, null, null, " https://grafana.nuna.example ", null).grafanaUrl())
                 .isEqualTo("https://grafana.nuna.example");
-        assertThatThrownBy(() -> new UiSettings(false, null, null, "javascript:alert(1)"))
+        assertThatThrownBy(() -> new UiSettings(false, null, null, "javascript:alert(1)", null))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("nuna.ui.grafana-url");
     }
 }

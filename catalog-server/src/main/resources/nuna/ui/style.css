@@ -64,6 +64,19 @@
   --shadow: 0 1px 2px oklch(23% 0.024 250 / 0.06), 0 8px 24px oklch(23% 0.024 250 / 0.06);
   --glow: none;
 
+  /* roles a brand pack may set (backlog 333; docs/site/configure/brand.html). Each follows the semantic tokens above,
+     so in Ice line, light or dark, they change nothing. */
+  --head-bg: var(--surface);
+  --head-ink: var(--text);
+  --head-ink-2: var(--text-2);
+  --head-field: var(--surface-2);
+  --rail-current-bg: var(--accent-wash);
+  --rail-current-ink: var(--text);
+  --requested-bg: var(--accent-wash);
+  --requested-ink: var(--accent);
+  --mark-h: 18px;
+  --brand-mark-w: 96px;
+
   /* type */
   --f-ui: 'Instrument Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --f-mono: 'Geist Mono', 'Cascadia Mono', ui-monospace, 'SF Mono', Consolas, monospace;
@@ -155,18 +168,18 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 
 /* ===================================================================================== console shell (direction A) */
 .nc-app { display: grid; grid-template-columns: 212px minmax(0, 1fr); grid-template-rows: 52px minmax(0, 1fr); min-height: 640px; background: var(--bg); }
-.nc-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.nc-top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--head-bg); }
 .nc-brand { display: flex; align-items: center; gap: 8px; font: 600 17px/1 var(--f-ui); letter-spacing: -0.02em; }
 .nc-brand .peak { width: 24px; height: 18px; }
 .peak .rock { fill: none; stroke: var(--text); stroke-width: 1.8; stroke-linejoin: round; }
 .peak .ice { stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; filter: var(--glow); }
 .nc-pick { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); font-size: var(--t-13); }
 .nc-pick .lbl { color: var(--text-2); }
-.nc-go { flex: 1; max-width: 460px; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font-size: var(--t-13); }
+.nc-go { flex: 1; max-width: 460px; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--head-field); color: var(--text-2); font-size: var(--t-13); }
 .nc-go kbd { margin-left: auto; }
 .nc-spacer { flex: 1; }
-.nc-who { display: flex; align-items: center; gap: 10px; font-size: var(--t-13); color: var(--text-2); white-space: nowrap; }
-.nc-who b { color: var(--text); font-weight: 600; }
+.nc-who { display: flex; align-items: center; gap: 10px; font-size: var(--t-13); color: var(--head-ink-2); white-space: nowrap; }
+.nc-who b { color: var(--head-ink); font-weight: 600; }
 /* The groups, counted; their names drop below on hover and on focus (backlog 229), growing leftward from the count. */
 .who-groups { position: relative; text-decoration: underline dotted; text-underline-offset: 3px; cursor: default; }
 .who-groups:hover::after, .who-groups:focus::after { content: attr(data-groups); position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: max-content; max-width: 320px; white-space: normal; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: var(--t-12); box-shadow: 0 4px 12px oklch(20% 0.02 250 / 0.14); }
@@ -177,7 +190,7 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .nc-nav { padding: 14px 10px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; background: var(--bg); }
 .nc-nav a { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: var(--r-sm); color: var(--text-2); text-decoration: none; font-size: var(--t-14); }
 .nc-nav a:hover { background: var(--surface-2); color: var(--text); }
-.nc-nav a[aria-current="page"] { background: var(--accent-wash); color: var(--text); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.nc-nav a[aria-current="page"] { background: var(--rail-current-bg); color: var(--rail-current-ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
 .nc-nav a[aria-current="page"] .ic { color: var(--accent); }
 .nc-nav .count { margin-left: auto; font: 500 var(--t-12)/1 var(--f-mono); color: var(--warn-ink); background: var(--warn-wash); padding: 3px 6px; border-radius: 5px; }
 .nc-nav .sep { height: 1px; background: var(--line); margin: 10px 6px; }
@@ -1473,3 +1486,32 @@ details.setup-fold[open] > summary { margin-bottom: 6px; }
   #overview-kpis:has(> .kpi:nth-child(5)) > .kpi:nth-child(3n+1) { border-left: 0; }
   #overview-kpis:has(> .kpi:nth-child(5)) > .kpi:nth-child(n+4) { border-top: 1px solid var(--line); }
 }
+
+/* The brand slot (backlog 333; Atelier, 2026-11-28). An install's pack (brand/brand.css) sets tokens only; brand.js
+   marks the page: data-pack when one is served, data-brand="on" or "off" for this viewer, data-pack-light for a
+   light-only pack, data-pack-mark when the pack has a mark (brand/mark.svg). With no pack none is set and nothing
+   here applies. The mark gets a fixed box, never squashed or cropped: 20 px high and 120 px wide at most. */
+.nc-top .nc-brand { color: var(--head-ink); }
+.nc-top .peak .rock { stroke: var(--head-ink); }
+.nc-top .btn.ghost:not(:hover) { color: var(--head-ink-2); }
+@container frame (min-width: 761px) { .nc-top .reading-slot .main-only { color: var(--head-ink-2); } }
+.nc-brand .mark { display: none; }
+:root[data-brand="on"][data-pack-mark] .nc-brand .peak { display: none; }
+:root[data-brand="on"][data-pack-mark] .nc-brand .mark { display: block; flex: none; width: min(var(--brand-mark-w), 120px); height: min(var(--mark-h), 20px); background: url("brand/mark.svg") left center / contain no-repeat; }
+/* a mark that spells the product's name stands alone; each page's eyebrow then starts with the name (dom.js) */
+:root[data-brand="on"][data-name-out] .nc-brand .nm { display: none; }
+.pill.accent[data-requested] { background: var(--requested-bg); color: var(--requested-ink); }
+/* A light-only pack pins the light theme while it is on, so neither theme switch shows (D56). */
+:root[data-brand="on"][data-pack-light] [data-theme-seg] { display: none; }
+/* The button that turns the pack on and off sits just before the theme switch, whose colours it changes: its icon
+   alone from 761 to 1,400 px, as the switch shows icons, with its words in its name; its words too from 1,401 px; on a
+   phone, in the menu beside the menu's theme switch. Pressed means the pack is on. */
+.nc-top .nc-pack { padding: 0 7px; }
+.nc-top .nc-pack .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.nc-top .nc-pack[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.drawer-x [data-act="pack"][aria-pressed="true"] .ic { color: var(--accent); }
+@container frame (min-width: 1401px) {
+  .nc-top .nc-pack { padding: 0 9px; }
+  .nc-top .nc-pack .tw { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+}
+@container frame (max-width: 760px) { .nc-top .nc-pack { display: none; } }

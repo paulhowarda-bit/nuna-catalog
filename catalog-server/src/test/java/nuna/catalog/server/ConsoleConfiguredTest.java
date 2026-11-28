@@ -41,7 +41,8 @@ class ConsoleConfiguredTest {
         HttpResponse<String> response = get("/ui/config.json");
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(JsonPath.<Map<String, Object>>read(response.body(), "$")).containsOnlyKeys("dev-token-login", "oidc",
-                "docs-url", "grafana-url");
+                "docs-url", "grafana-url", "brand");
+        assertThat(JsonPath.<Object>read(response.body(), "$.brand")).as("no brand pack set").isNull();
         assertThat(JsonPath.<String>read(response.body(), "$['grafana-url']")).isEqualTo("https://grafana.nuna.example");
         assertThat(JsonPath.<Boolean>read(response.body(), "$['dev-token-login']")).isTrue();
         assertThat(JsonPath.<String>read(response.body(), "$['docs-url']")).isEqualTo("https://docs.nuna.example/catalog/");

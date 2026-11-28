@@ -299,6 +299,7 @@ class Page:
                 ('title', {}), ('meta', {'name': 'description'}),
                 ('link', {'rel': 'icon', 'href': R + 'assets/favicon.svg', 'type': 'image/svg+xml'}),
                 ('link', {'rel': 'stylesheet', 'href': R + 'assets/docs.css'}),
+                ('link', {'rel': 'stylesheet', 'href': R + 'assets/brand/brand.css'}),
                 ('script', {'src': R + 'assets/theme.js'}), ('script', {'src': R + 'assets/nav.js', 'defer': ''}),
                 ('script', {'src': R + 'assets/docs.js', 'defer': ''})]
         got = head.elements()

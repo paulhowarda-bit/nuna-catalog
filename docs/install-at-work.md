@@ -259,6 +259,9 @@ config:
 - Every `nuna.*` setting is documented on its settings class in `catalog-server`: `StorageSettings`,
   `SecuritySettings`, `AuditSettings`, `GovernanceSettings`, `RestSettings`, `UiSettings`.
 - Leave `nuna.storage.require-tls` at its default (true) and `nuna.ui.dev-token-login` off.
+- Fidelity mode (backlog 333, D56): the console's and the documentation's brand pack is here only in part,
+  `deploy/brand/fidelity/brand.css`, its colours. [brand-at-work.md](brand-at-work.md) says how to add the font and
+  the word mark, which stay at work, set the words, and mount it with the chart's `brandConfigMap`.
 - A store whose certificate a private CA signed (backlog 21): put the CA's PEM file in a ConfigMap, one key per
   store, and name it in the chart's `storageCaConfigMap.name`; the chart mounts it at `/etc/nuna/storage-ca`, and
   the profile's `ca-bundle` names the file there. That profile's S3 and STS clients then trust the bundle beside

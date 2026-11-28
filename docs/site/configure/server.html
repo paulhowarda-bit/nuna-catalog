@@ -7,6 +7,7 @@
   <meta name="description" content="Set the REST surface's page sizes, caches and limits, the console's sign-in, the health page's peers and the server's logging.">
   <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../assets/docs.css">
+  <link rel="stylesheet" href="../assets/brand/brand.css">
   <script src="../assets/theme.js"></script>
   <script src="../assets/nav.js" defer></script>
   <script src="../assets/docs.js" defer></script>
@@ -280,6 +281,71 @@
           <dt>Restart</dt><dd>Needed</dd>
         </dl>
         <p>The identity provider's name in words, as the console's sign-in page shows it: on the button (<b class="ui">Sign in with the demo's Keycloak</b>), in <b class="ui">Going to…</b>, and in the messages when signing out cannot end the session there. It reads after "with", so write it as it reads mid-sentence. Unset, those places show the issuer's host and port.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-brand-dir"><code>nuna.ui.brand.dir</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>a folder on the server</dd>
+          <dt>Default</dt><dd>none: the console and the documentation are Ice line, nuna's own look</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_BRAND_DIR</code></dd>
+          <dt>Helm</dt><dd>set by the chart from <a href="helm-values.html#nuna-catalog-brandconfigmap"><code>brandConfigMap.name</code></a></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed to set it; not to change the pack's files</dd>
+        </dl>
+        <p>The folder holding a brand pack, whose files the console and the documentation serve in place of their empty brand stylesheet. <a href="brand.html">Brand packs</a> gives what a pack holds and the tokens it may set. The server refuses to start if the folder does not exist. Each file is read on every request, so a changed pack reaches the next page loaded without a restart. Setting it also adds the console's button that turns the pack on and off.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-brand-name"><code>nuna.ui.brand.name</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>nuna</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_BRAND_NAME</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.brand.name</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The product's name in words while the pack is on: in every page's title, on the sign-in page, beside the header's mark and in the sign-out messages. A viewer who turns the pack off sees <code>nuna</code>.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-brand-mark-label"><code>nuna.ui.brand.mark-label</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd>the product's name</dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_BRAND_MARKLABEL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.brand.mark-label</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The header mark's accessible name, which a screen reader gives followed by ", overview".</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-brand-show-name"><code>nuna.ui.brand.show-name</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>boolean</dd>
+          <dt>Default</dt><dd><code>true</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_BRAND_SHOWNAME</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.brand.show-name</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>Whether the product's name sits beside the mark in the header and on the sign-in page. Set it to <code>false</code> for a word mark that already spells the name; each page's eyebrow then starts with the name instead.</p>
+      </section>
+
+      <section class="setting">
+        <h3 id="nuna-ui-brand-toggle-label"><code>nuna.ui.brand.toggle-label</code></h3>
+        <dl class="facts">
+          <dt>Type</dt><dd>string</dd>
+          <dt>Default</dt><dd><code>Brand mode</code></dd>
+          <dt>Environment variable</dt><dd><code>NUNA_UI_BRAND_TOGGLELABEL</code></dd>
+          <dt>Helm</dt><dd><code>config.nuna.ui.brand.toggle-label</code></dd>
+          <dt>Read by</dt><dd>the server</dd>
+          <dt>Restart</dt><dd>Needed</dd>
+        </dl>
+        <p>The words of the button beside the theme switch that turns the pack on and off for one viewer, such as <b class="ui">Harbour mode</b>. The choice is kept in that browser.</p>
       </section>
 
       <h2 id="nuna-health-group">nuna.health</h2>

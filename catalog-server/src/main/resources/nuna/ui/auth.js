@@ -175,7 +175,7 @@ export const idpName = oidc => oidc.name || new URL(oidc.issuer).host;
  * when no IdP is configured or its session cannot be ended: its discovery document names no end_session_endpoint,
  * or cannot be read.
  */
-export async function signOut(oidc) {
+export async function signOut(oidc, product = 'nuna') {
   const idToken = sessionStorage.getItem(ID_TOKEN);
   sessionStorage.clear();
   if (!oidc) return 'Signed out.';
@@ -184,12 +184,12 @@ export async function signOut(oidc) {
   try {
     url = endSessionUrl(await discovery(oidc), oidc, idToken);
   } catch (error) {
-    return `Signed out of nuna, but ${idp} did not end your session there (${error.message}). `
+    return `Signed out of ${product}, but ${idp} did not end your session there (${error.message}). `
       + 'Signing in again may not ask for a password.';
   }
   if (!url) {
     // The name leads no sentence, so a name in words ("the demo's Keycloak") needs no capital (backlog 332).
-    return `Signed out of nuna, but ${idp} offers no way to end your session there, so signing in again may not ask `
+    return `Signed out of ${product}, but ${idp} offers no way to end your session there, so signing in again may not ask `
       + 'for a password.';
   }
   sessionStorage.setItem(SIGNING_OUT, 'true');

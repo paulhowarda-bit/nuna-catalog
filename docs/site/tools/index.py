@@ -73,6 +73,7 @@ def page_html(title, lead, body):
   <meta name="description" content="{html.escape(lead)}">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/docs.css">
+  <link rel="stylesheet" href="assets/brand/brand.css">
   <script src="assets/theme.js"></script>
   <script src="assets/nav.js" defer></script>
   <script src="assets/docs.js" defer></script>

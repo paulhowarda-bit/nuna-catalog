@@ -524,3 +524,11 @@ h2:hover .anchor, h3:hover .anchor, h4:hover .anchor, .anchor:focus-visible { op
 }
 /* long console messages wrap on a phone rather than push the page sideways */
 @media (max-width:640px){.ui{white-space:normal;-webkit-box-decoration-break:clone;box-decoration-break:clone}}
+
+/* The brand slot (backlog 333): theme.js marks the page when a server serves a pack in assets/brand/. Its mark
+   (assets/brand/mark.svg) takes the peak's place in a fixed box, 20 px high and 120 px wide at most, and a light-only
+   pack, while on, pins light, so the theme switch goes. Opened from disk, nothing here applies. */
+.site-head .brand .mark { display: none; }
+:root[data-brand="on"][data-pack-mark] .site-head .brand .peak { display: none; }
+:root[data-brand="on"][data-pack-mark] .site-head .brand .mark { display: block; flex: none; width: min(var(--brand-mark-w, 96px), 120px); height: min(var(--mark-h, 18px), 20px); background: url("brand/mark.svg") left center / contain no-repeat; }
+:root[data-brand="on"][data-pack-light] .site-head .seg { display: none; }

@@ -1,6 +1,8 @@
 package nuna.catalog.server.ui;
 
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -18,10 +20,11 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *                      documentation link
  * @param grafanaUrl    the Grafana that holds nuna's dashboards, an http(s) URL; the Service page links to it, and
  *                      without it (the default) shows no link (backlog 319)
+ * @param brand         an install's brand pack, or null for Ice line, the console's own look (backlog 333)
  */
 @ConfigurationProperties("nuna.ui")
 public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc,
-                         @DefaultValue(UiSettings.OWN_DOCS) String docsUrl, String grafanaUrl) {
+                         @DefaultValue(UiSettings.OWN_DOCS) String docsUrl, String grafanaUrl, Brand brand) {
 
     /** The documentation site this server serves (UiWiring). */
     public static final String OWN_DOCS = "/docs/";
@@ -79,6 +82,44 @@ public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc
         /** The issuer's origin, which the console's Content-Security-Policy lets it connect to. */
         String origin() {
             return issuer.getScheme() + "://" + issuer.getRawAuthority();
+        }
+    }
+
+    /**
+     * An install's brand pack (backlog 333): a folder on the server whose files the console serves under
+     * {@code /ui/brand/} and the documentation under {@code /docs/assets/brand/}, in place of the empty ones the jar
+     * holds. Its {@code brand.css} sets tokens only (docs/site/configure/brand.html gives the contract); its
+     * {@code favicon.svg}, if any, replaces the tab's icon. Files are read on every request, so a changed pack is
+     * served without a restart. Unset, the console and the documentation are Ice line, as before.
+     *
+     * @param dir         the folder holding the pack; it must exist
+     * @param name        the product's name in words, in titles, messages and beside the mark; "nuna" unless set
+     * @param markLabel   the header mark's accessible name, before ", overview"; the product's name unless set
+     * @param showName    whether the product's name sits beside the mark in the header, as "nuna" does beside the
+     *                    peak; false for a mark that already spells it, and each page's eyebrow then starts with it
+     * @param toggleLabel the words of the header's button that turns the pack on and off for one viewer (Paul,
+     *                    2026-11-28; D56), such as "Harbour mode"; "Brand mode" unless set
+     */
+    public record Brand(String dir, @DefaultValue("nuna") String name, String markLabel,
+                        @DefaultValue("true") boolean showName, @DefaultValue("Brand mode") String toggleLabel) {
+
+        public Brand {
+            if (dir == null || dir.isBlank()) {
+                throw new IllegalArgumentException("nuna.ui.brand.dir must name the folder holding the brand pack");
+            }
+            dir = dir.strip();
+            if (!Files.isDirectory(Path.of(dir))) {
+                throw new IllegalArgumentException("nuna.ui.brand.dir must be a folder on the server, not " + dir);
+            }
+            name = name == null || name.isBlank() ? "nuna" : name.strip();
+            markLabel = markLabel == null || markLabel.isBlank() ? name : markLabel.strip();
+            toggleLabel = toggleLabel == null || toggleLabel.isBlank() ? "Brand mode" : toggleLabel.strip();
+        }
+
+        /** The pack's folder as a location for Spring's resource handlers: a file URL ending in a slash. */
+        String location() {
+            String url = Path.of(dir).toAbsolutePath().toUri().toString();
+            return url.endsWith("/") ? url : url + "/";
         }
     }
 }
