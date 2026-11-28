@@ -669,18 +669,13 @@ pre.raw { overflow: visible; }
   .feed-row > .w { grid-column: 1; grid-row: 2; }
   .feed-row > div { grid-column: 2; grid-row: 1 / span 2; }
   .feed-row > .btn { grid-column: 3; grid-row: 1; }
-  .browse .grid-21, .grid-2 { grid-template-columns: minmax(0, 1fr); }
   .tbl th, .tbl td { padding-left: 6px; padding-right: 6px; }
   .tbl.queue th:last-child, .tbl.queue td:last-child { display: none; }
 }
 @container frame (min-width: 761px) and (max-width: 1100px) {
-  .grid-21 { grid-template-columns: minmax(0, 1fr); }
   .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ph { grid-template-columns: minmax(0, 1fr); }
   .ph .side { grid-column: 1; grid-row: auto; justify-content: flex-start; }
-  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpi:nth-child(3) { border-left: 0; }
-  .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
 }
 /* ===================================================================================== v16 */
 /* no text under 12 pixels: code in fine print, chart text drawn one unit to a pixel */
@@ -694,11 +689,6 @@ code, kbd, .mono { font-size: max(12px, 0.93em); }
 /* values stay with their units */
 .nc-go { white-space: nowrap; }
 .kpi-list b { white-space: nowrap; }
-@container frame (min-width: 761px) and (max-width: 1360px) {
-  .kpis:has(.kpi-list) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpis:has(.kpi-list) .kpi:nth-child(3) { border-left: 0; }
-  .kpis:has(.kpi-list) .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
-}
 @container frame (min-width: 761px) and (max-width: 1100px) {
   .tbl.contents th:last-child, .tbl.contents td:last-child { display: none; }
 }
@@ -1016,7 +1006,8 @@ dialog { color: var(--text); }
 /* the metadata log: a row per file, its updates under it */
 .tbl tr.mlog-det td { background: var(--surface-2); padding-top: 10px; padding-bottom: 12px; }
 .tbl tr.mlog-det .raw { margin-top: 6px; white-space: pre; }
-.tbl.mlog td:nth-child(3) { max-width: 46ch; }
+/* Written, Change, the snapshot and By stay on one line, and the table scrolls sideways where it must (backlog 326). */
+.tbl.mlog td.tnum, .tbl.mlog td:nth-child(3), .tbl.mlog td.snap, .tbl.mlog td.by { white-space: nowrap; }
 .mlog-line { margin-right: 6px; font: 500 var(--t-12)/1 var(--f-mono); color: var(--text-2); }
 tr[data-line]:not([data-line="main"]) .mlog-line { color: var(--cref-ink); }
 
@@ -1070,8 +1061,8 @@ tr[data-line]:not([data-line="main"]) .mlog-line { color: var(--cref-ink); }
 .kpi-v.na { color: var(--text-2); }
 .props-tbl td.name { overflow-wrap: anywhere; }
 td.wrap { overflow-wrap: anywhere; }
-/* Audit's Most recorded sits in the side column: its paths and writers wrap so Records and Reads stay in view (backlog 220). */
-#audit-busiest td.name { overflow-wrap: anywhere; }
+/* Audit's Most recorded sits in the side column: its paths break after a dot and its writers at a hyphen, never inside
+   a word, so Records and Reads stay in view (backlogs 220, 326). */
 /* a settings table (item 141): what each setting does under its name, its value, then Change and Reset */
 .tbl.settings td { vertical-align: top; }
 .tbl.settings td.setting code { font-size: var(--t-12); color: var(--text-2); }
@@ -1353,7 +1344,6 @@ details.tech[open] > summary { margin-bottom: 4px; }
 
 /* Row filters and column masks (backlog 243): five figures on the Governance page, and the rule dialog's fields. */
 .kpis.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-@container frame (max-width: 1100px) { .kpis.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 fieldset.dlg-set { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
 fieldset.dlg-set > legend { padding: 0; margin-bottom: 6px; font-weight: 600; font-size: var(--t-13); }
 .rows-choice label { display: flex; gap: 8px; align-items: center; font-size: var(--t-13); }
@@ -1405,3 +1395,44 @@ details.setup-fold[open] > summary { margin-bottom: 6px; }
 .kept-ticks { padding-left: 24px; max-height: 32vh; overflow: auto; overscroll-behavior: contain; }
 .kept-ticks input:disabled + span { opacity: 0.7; }
 .dlg.kept-dlg .dlg-acts { position: sticky; bottom: 0; background: var(--surface); padding: 10px 0 4px; z-index: 1; }
+
+/* The content column is a size container of its own (backlog 326, as Atelier amended it): the grids are measured against the
+   room the rail and the tree leave them, not against the window, so a table beside the tree is not crushed. The frame
+   still lays out the chrome and the phone. Widths are the column's, inside its padding: 972 px is a 1,240 px window beside
+   the full menu, 832 px one of 1,100 px. A size container holds fixed boxes too, so the Settings drawer and its scrim
+   span the content column, from its top. */
+.nc-main { container: page / inline-size; }
+.nc-main .drawer { top: 0; width: min(640px, 100%); }
+.nc-main .drawer-scrim { inset: 0; }
+@container page (max-width: 972px) {
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+}
+@container page (max-width: 832px) {
+  .grid-21 { grid-template-columns: minmax(0, 1fr); }
+  .kpis.five { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container frame (min-width: 761px) {
+  @container page (max-width: 832px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi:nth-child(3) { border-left: 0; }
+    .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
+  }
+  @container page (max-width: 1092px) {
+    .kpis:has(.kpi-list) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpis:has(.kpi-list) .kpi:nth-child(3) { border-left: 0; }
+    .kpis:has(.kpi-list) .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
+  }
+}
+/* Pages whose tables need more of the column than the shared rules give them (backlog 326). History's Commits are about
+   1,000 px on one line, so the tab stacks until its left column could hold them. Governance's two tables stack until each
+   has the room its columns need, holds and freezes about 640 px, regulated areas about 500. Audit's side column keeps
+   400 px, the room Most recorded needs with its paths broken only after a dot. */
+@container page (max-width: 1559px) {
+  #history-tab { grid-template-columns: minmax(0, 1fr); }
+}
+@container page (max-width: 1199px) {
+  #governance-summary > .grid-2 { grid-template-columns: minmax(0, 1fr); }
+}
+@container page (min-width: 833px) {
+  #audit-page > .grid-21 { grid-template-columns: minmax(0, 2fr) minmax(400px, 1fr); }
+}

@@ -682,6 +682,12 @@ class ConsoleBrowserTest {
             return found.isEmpty() ? null : found;
         });
         assertThat(rows).extracting(row -> row.getDomAttribute("data-id")).containsExactly(String.valueOf(first));
+        // The commit shows its snapshot shortened, cut from the id's own digits, and whole on hover (backlog 326): cut
+        // from a parsed number, 8809372496300770237 would show as 8809…0000.
+        WebElement pick = rows.getFirst().findElement(By.cssSelector("button.row-pick"));
+        assertThat(textContent(pick)).isEqualTo("8809…0237");
+        assertThat(pick.getDomAttribute("title")).isEqualTo(String.valueOf(first));
+        assertThat(textContent(driver.findElement(By.cssSelector("#selected-snapshot h2 .meta")))).startsWith("9007…0993 · ");
         assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]")))
                 .extracting(c -> c.getDomAttribute("data-id"))
                 .containsExactly(String.valueOf(first), String.valueOf(second));
@@ -977,6 +983,50 @@ class ConsoleBrowserTest {
                 + "'][data-privilege='select'][data-on='namespace']")).getDomAttribute("class")).isNull();
     }
 
+    /**
+     * The grids are measured against the content column, not the window (backlog 326). Beside the menu and the tree, at
+     * 1,280, 1,440 and 1,920 px, History stacks, so its Commits span the tab; each commit is one line, with no word broken,
+     * and its snapshot shows whole or shortened from the id's own digits. Governance's holds and freezes and its
+     * regulated areas fit their cards, with no word broken. Before, at 1,440 px the content beside the tree was about
+     * 870 px and History kept two columns, so the Commits broke "snapshots expired" letter by letter.
+     */
+    @Test
+    void besideTheMenuAndTheTreeHistoryAndGovernanceShowTheirTablesWhole() {
+        signIn(tester());
+        for (int width : new int[] {1280, 1440, 1920}) {
+            frameOf(width);
+            browser.open("/ui/#" + at("table", eu, "trades", "history"));
+            List<WebElement> snapshots = browser.await("the commits that added snapshots are not shown", d -> {
+                List<WebElement> found = d.findElements(By.cssSelector("#metadata-log tbody tr[data-id]"));
+                return found.size() == 3 ? found : null;
+            });
+            assertThat(driver.findElement(By.cssSelector(".browse > .tree")).isDisplayed()).as("the tree at %d px", width)
+                    .isTrue();
+            assertThat((Boolean) driver.executeScript("const tab = document.getElementById('history-tab').getBoundingClientRect();"
+                    + " const log = document.getElementById('metadata-log').getBoundingClientRect();"
+                    + " return Math.abs(tab.width - log.width) < 1"))
+                    .as("the Commits span the History tab at %d px", width).isTrue();
+            assertThat(cell(snapshots.get(0), 4)).isEqualTo(S3 + " · append");
+            assertThat((List<?>) driver.executeScript(LINES_BROKEN, "#metadata-log tbody tr[data-version] > td:not(:last-child)"))
+                    .as("the commits on more than one line at %d px", width).isEmpty();
+            assertThat((List<?>) driver.executeScript(BROKEN_WORDS, "#metadata-log tbody tr[data-version] > td"))
+                    .as("the words broken in the Commits at %d px", width).isEmpty();
+            assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
+
+            browser.open("/ui/#p=governance&c=trading");
+            browser.await(By.cssSelector("#regulated tr[data-on='" + top + ".ledger']"));
+            browser.await(By.cssSelector("#governance-summary tr[data-kind='freeze'][data-on='" + top + ".equities.eu']"));
+            for (String table : List.of("#governance-summary .grid-2 > .panel:first-child", "#regulated")) {
+                assertThat((Boolean) driver.executeScript("const w = document.querySelector(arguments[0] + ' .wrap-tbl');"
+                        + " return w.scrollWidth <= w.clientWidth + 1", table))
+                        .as("%s fits its card at %d px", table, width).isTrue();
+                assertThat((List<?>) driver.executeScript(BROKEN_WORDS, table + " tbody td"))
+                        .as("the words broken in %s at %d px", table, width).isEmpty();
+            }
+            assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
+        }
+    }
+
     @Test
     void theGovernanceSummaryCountsAndListsTheHoldTheFreezeAndTheRegulatedNamespace() {
         signIn(tester());
@@ -1121,11 +1171,17 @@ class ConsoleBrowserTest {
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip())
                 .isEqualTo("Show audit reads · 2 records hidden");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-kpis .kpi[data-kpi='records'] .kpi-v")))).isEqualTo("4");
-        // Most recorded keeps its number columns in its card at 1440 px: the long path wraps (backlog 220).
-        driver.manage().window().setSize(new Dimension(1440, 900));
+        // Most recorded keeps its number columns in its card at 1280, 1440 and 1920 px: the long path wraps after a dot
+        // (backlog 220), never inside a word, as it broke letter by letter at 1440 (backlog 326).
         WebElement busiest = browser.await(By.cssSelector("#audit-busiest"));
-        browser.await("Most recorded overflows its card", d -> (Boolean) driver.executeScript(
-                "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+        for (int width : new int[] {1280, 1440, 1920}) {
+            frameOf(width);
+            browser.await("Most recorded overflows its card at " + width + " px", d -> (Boolean) driver.executeScript(
+                    "const t = arguments[0].querySelector('table'); return t.scrollWidth <= arguments[0].clientWidth", busiest));
+            assertThat((List<?>) driver.executeScript(BROKEN_WORDS, "#audit-busiest tbody td"))
+                    .as("the words broken in Most recorded at %d px", width).isEmpty();
+        }
+        driver.manage().window().setSize(new Dimension(1440, 900));
         assertThat(textContent(busiest.findElement(By.cssSelector("thead")))).contains("Records", "Reads");
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='hold']")))).isEqualTo("Governance 0");
         WebElement grantBadge = driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .badge"));
@@ -1675,23 +1731,73 @@ class ConsoleBrowserTest {
      * asserts the header fits: no wider than the window, Sign out within it, and no part of it over another.
      */
     private void assertTheHeaderFits(int width, boolean frame) {
-        driver.manage().window().setSize(new Dimension(width, 900));
         if (frame) {
-            for (int i = 0; i < 3; i++) {
-                int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
-                if (now == width) {
-                    break;
-                }
-                Dimension size = driver.manage().window().getSize();
-                driver.manage().window().setSize(new Dimension(size.width + width - now, 900));
-            }
-            assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
-                    .as("the console's frame").isEqualTo(width);
+            frameOf(width);
+        } else {
+            driver.manage().window().setSize(new Dimension(width, 900));
         }
         assertThat(headerFits()).as("the header fits at %d px", width).isTrue();
         assertThat(sideways()).as("the page scrolls sideways at %d px", width).isFalse();
         assertThat((String) driver.executeScript(HEADER_OVERLAPS)).as("the header's parts at %d px", width).isEmpty();
     }
+
+    /** Sizes the window so the console's frame, the window less its scroll bar, is {@code width} wide. */
+    private void frameOf(int width) {
+        driver.manage().window().setSize(new Dimension(width, 900));
+        for (int i = 0; i < 3; i++) {
+            int now = ((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue();
+            if (now == width) {
+                break;
+            }
+            Dimension size = driver.manage().window().getSize();
+            driver.manage().window().setSize(new Dimension(size.width + width - now, 900));
+        }
+        assertThat(((Number) driver.executeScript("return document.getElementById('console').clientWidth")).intValue())
+                .as("the console's frame").isEqualTo(width);
+    }
+
+    /**
+     * The words broken across two lines in the cells {@code arguments[0]} selects, each as the letters before the break,
+     * a bar, and the letter after it: a line may end at a space, a dot, a hyphen or a {@code <br>}, never between two
+     * letters or digits (backlog 326).
+     */
+    private static final String BROKEN_WORDS = """
+            const out = [];
+            const word = c => /[\\p{L}\\p{N}_]/u.test(c);
+            for (const cell of document.querySelectorAll(arguments[0])) {
+              const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+              let prev = null;
+              for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+                if (n.nodeType === Node.ELEMENT_NODE) {
+                  if (n.tagName === 'BR') prev = null;
+                  continue;
+                }
+                for (let i = 0; i < n.data.length; i++) {
+                  const r = document.createRange();
+                  r.setStart(n, i);
+                  r.setEnd(n, i + 1);
+                  const box = r.getClientRects()[0];
+                  if (!box) continue;
+                  const c = n.data[i];
+                  if (prev && word(c) && word(prev.c) && box.top >= prev.bottom - 1) out.push(prev.text + '|' + c);
+                  prev = {c, bottom: box.bottom, text: word(c) ? (prev && word(prev.c) ? prev.text : '') + c : ''};
+                }
+              }
+            }
+            return out;
+            """;
+
+    /** The cells {@code arguments[0]} selects whose words run onto a second line, by their text. */
+    private static final String LINES_BROKEN = """
+            const out = [];
+            for (const cell of document.querySelectorAll(arguments[0])) {
+              const r = document.createRange();
+              r.selectNodeContents(cell);
+              const tops = [...r.getClientRects()].filter(x => x.width > 0 && x.height > 0).map(x => x.top);
+              if (tops.length && Math.max(...tops) - Math.min(...tops) > 8) out.push(cell.textContent);
+            }
+            return out;
+            """;
 
     /**
      * Returns the first overlap in the header, or an empty string: two shown parts of {@code #top} side by side that
