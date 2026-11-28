@@ -73,6 +73,9 @@ config:
       oidc:
         issuer: https://${DEMO_HOST}:8180/realms/nuna
         client-id: nuna-console
+        # What the sign-in button names, instead of the issuer's host (backlog 332). The token box stays on
+        # (catalog-values.yaml): demo.sh prints tokens to paste, and it folds under "Developer sign-in".
+        name: the demo's Keycloak
 
 # The catalog's logs, the audit log nuna.audit among them, go over OTLP to the audit table writer's receiver, which
 # keeps nuna.audit's records for the Audit page (audit-tables-values.yaml); metrics and traces go nowhere. The

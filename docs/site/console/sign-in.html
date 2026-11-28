@@ -7,6 +7,7 @@
   <meta name="description" content="Sign in to the console through your identity provider, or with a pasted token where the server allows it, sign out, and read what each sign-in error means.">
   <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../assets/docs.css">
+  <link rel="stylesheet" href="../assets/brand/brand.css">
   <script src="../assets/theme.js"></script>
   <script src="../assets/nav.js" defer></script>
   <script src="../assets/docs.js" defer></script>
@@ -37,8 +38,8 @@
       <h2 id="what-the-sign-in-page-offers">What the sign-in page offers</h2>
       <p>The page is titled <b class="ui">Sign in to nuna</b>. Before it draws, the console reads its settings from <code>GET /ui/config.json</code>, which needs no sign-in and holds nothing secret. What it offers depends on those settings:</p>
       <ul>
-        <li>With an identity provider: "Your organisation's sign-in page opens, then brings you back here. Your sign-in lasts in this tab only." and the button <b class="ui">Sign in with <var>host</var></b>, where <var>host</var> is the identity provider's host.</li>
-        <li>With developer tokens: a box labelled <b class="ui">Bearer token</b>, the words "Paste a bearer token. For development only: this server allows signing in with one." and the button <b class="ui">Use this token</b>. When an identity provider is also set, a separator marked <b class="ui">development only</b> comes first.</li>
+        <li>With an identity provider: "Your organisation's sign-in page opens, then brings you back here. Your sign-in lasts in this tab only." and the button <b class="ui">Sign in with <var>provider</var></b>, where <var>provider</var> is the identity provider's name in words when <code>nuna.ui.oidc.name</code> sets one, such as <b class="ui">Sign in with the demo's Keycloak</b>, and its host otherwise.</li>
+        <li>With developer tokens: a box labelled <b class="ui">Bearer token</b>, the words "Paste a bearer token. For development only: this server allows signing in with one." and the button <b class="ui">Use this token</b>. When an identity provider is also set, all three sit folded, closed, under <b class="ui">Developer sign-in</b>; with none, they are the only way in and stay open.</li>
         <li>With neither: "No sign-in is set up on this server. Ask whoever runs nuna to connect your organisation's sign-in."</li>
       </ul>
       <figure class="shot" id="fig-console-sign-in"><img src="../img/shots/console-sign-in-light.png" data-dark="../img/shots/console-sign-in-dark.png" width="1440" height="900" alt="The signed-out sign-in page: on the left what nuna is, on the right Sign in to nuna with a button for the identity provider and, under development only, a box to paste a bearer token."><figcaption>The sign-in page with an identity provider and the developer token box.</figcaption></figure>
@@ -46,7 +47,7 @@
       <h2 id="sign-in-through-identity-provider">Sign in through your identity provider</h2>
       <ol class="steps">
         <li><p class="step-title">Open the console's address.</p></li>
-        <li><p class="step-title">Select <b class="ui">Sign in with <var>host</var></b>.</p><p>The console shows <b class="ui">Going to <var>host</var>…</b> and sends you to the identity provider's sign-in page. It signs in as a public client with the authorization code flow and PKCE, so it holds no client secret.</p></li>
+        <li><p class="step-title">Select <b class="ui">Sign in with <var>provider</var></b>.</p><p>The console shows <b class="ui">Going to <var>provider</var>…</b> and sends you to the identity provider's sign-in page. It signs in as a public client with the authorization code flow and PKCE, so it holds no client secret.</p></li>
         <li><p class="step-title">Sign in at the identity provider.</p><p>It sends you back to the console, by default to its own <code>/ui/</code> address (<code>nuna.ui.oidc.redirect-uri</code> can name another).</p></li>
       </ol>
       <p>The console keeps the token in this browser tab's session storage only: not in local storage and not in a cookie. Another tab, or this tab after it closes, signs in again. The console reads your name and groups from the token for display only; the server checks the token's signature on every request.</p>
@@ -55,6 +56,7 @@
       <p>Where the server allows it, you can paste a token instead.</p>
       <ol class="steps">
         <li><p class="step-title">Get a token for your user.</p><p><a href="../clients/tokens.html">Get a token</a> says how.</p></li>
+        <li><p class="step-title">If the page also offers an identity provider, select <b class="ui">Developer sign-in</b>.</p><p>The token box opens.</p></li>
         <li><p class="step-title">Paste it into <b class="ui">Bearer token</b>.</p><p>A leading <code>Bearer </code> is removed. The token is "Kept in this tab only."</p></li>
         <li><p class="step-title">Select <b class="ui">Use this token</b>.</p></li>
       </ol>
@@ -64,7 +66,7 @@
       <ol class="steps">
         <li><p class="step-title">Select <b class="ui">Sign out</b> in the header.</p><p>The console shows <b class="ui">Signing out…</b>, forgets the token, and asks the identity provider to end your session there too, through its end-session endpoint. You return to the sign-in page with <b class="ui">Signed out.</b></p></li>
       </ol>
-      <p>If the identity provider cannot end its session, the console says so: "Signed out of nuna, but <var>host</var> did not end your session there (<var>reason</var>). Signing in again may not ask for a password." If it offers no way to: "Signed out of nuna. <var>host</var> offers no way to end your session there, so signing in again may not ask for a password."</p>
+      <p>If the identity provider cannot end its session, the console says so: "Signed out of nuna, but <var>provider</var> did not end your session there (<var>reason</var>). Signing in again may not ask for a password." If it offers no way to: "Signed out of nuna, but <var>provider</var> offers no way to end your session there, so signing in again may not ask for a password."</p>
 
       <aside class="callout check"><p class="callout-title">The header names you</p><p>Once signed in, the header shows your name, how many groups your token names and when the sign-in ends: <b class="ui"><var>name</var> · <var>N</var> groups · until <var>HH:MM</var></b>. When it ends, the console signs you out with "Your sign-in has expired. Sign in again."</p></aside>
 

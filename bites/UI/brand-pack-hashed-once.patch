@@ -1,0 +1,17 @@
+Breaks: A brand pack's files are hashed once for the server's life, so a pack changed under a running server answers 304 with the old file.
+Module: catalog-server
+Test: BrandSlotTest#aPackFileChangedUnderTheRunningServerIsServedFresh
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+index 41ecd8b7..121a6689 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+@@ -97,7 +97,7 @@ public class UiWiring implements WebMvcConfigurer {
+         // The brand slot: the install's pack first, then the jar's empty stylesheet and Ice line's icon. A pack's file
+         // can change under a running server (a mounted ConfigMap), so each is hashed afresh on every request.
+         registry.addResourceHandler("/ui/brand/*").addResourceLocations(brand(FILES + "brand/"))
+-                .setCacheControl(CacheControl.noCache()).setUseLastModified(false).setEtagGenerator(UiWiring::hash);
++                .setCacheControl(CacheControl.noCache()).setUseLastModified(false).setEtagGenerator(UiWiring::etag);
+         registry.addResourceHandler("/docs/assets/brand/*").addResourceLocations(brand(DOCS + "assets/brand/"))
+                 .setCacheControl(CacheControl.noCache()).setUseLastModified(false).setEtagGenerator(UiWiring::hash);
+     }

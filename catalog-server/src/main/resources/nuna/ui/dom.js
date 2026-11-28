@@ -178,10 +178,14 @@ export function bar(score, max, bad) {
   return svg;
 }
 
-/** A page head: eyebrow, title, a line under it, and controls on the right. */
+/**
+ * A page head: eyebrow, title, a line under it, and controls on the right. When a brand pack's mark stands without
+ * the product's name beside it (nuna.ui.brand.show-name=false), the eyebrow starts with the name (backlog 333).
+ */
 export function pageHead({eyebrow, title, sub, side, crumbs, hero} = {}) {
+  const named = document.documentElement.dataset.nameOut;
   return h('div', {class: 'ph' + (hero ? ' hero' : '')}, crumbs || null,
-    eyebrow ? h('p', {class: 'eyebrow'}, eyebrow) : null,
+    eyebrow ? h('p', {class: 'eyebrow'}, named ? named + ' · ' + eyebrow : eyebrow) : null,
     title ? h('h1', {tabindex: '-1'}, title) : null,
     sub ? h('p', {class: 'sub'}, sub) : null,
     side ? h('div', {class: 'side'}, side) : null);

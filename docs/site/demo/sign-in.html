@@ -7,6 +7,7 @@
   <meta name="description" content="The demo's people and groups, what each may do in the catalogs, how they sign in to the console and the other pages, and the tokens the demo mints.">
   <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../assets/docs.css">
+  <link rel="stylesheet" href="../assets/brand/brand.css">
   <script src="../assets/theme.js"></script>
   <script src="../assets/nav.js" defer></script>
   <script src="../assets/docs.js" defer></script>
@@ -74,7 +75,7 @@
         <table>
           <thead><tr><th scope="col">Page</th><th scope="col">Address</th><th scope="col">How it signs in</th></tr></thead>
           <tbody>
-            <tr><td>The console</td><td><code>https://localhost:8181/ui/</code></td><td>Select <b class="ui">Sign in with localhost:8180</b> and sign in to Keycloak. In the demo the sign-in page also takes a token: paste one under <b class="ui">Paste a bearer token.</b> and select <b class="ui">Use this token</b>.</td></tr>
+            <tr><td>The console</td><td><code>https://localhost:8181/ui/</code></td><td>Select <b class="ui">Sign in with the demo's Keycloak</b> and sign in to Keycloak. In the demo the sign-in page also takes a token: select <b class="ui">Developer sign-in</b>, paste one under <b class="ui">Paste a bearer token.</b> and select <b class="ui">Use this token</b>.</td></tr>
             <tr><td>CloudBeaver</td><td><code>https://localhost:8185</code></td><td>Keycloak. Each person's connections sign in as them: to nuna through Trino with their own token, and to the CDC leg's databases.</td></tr>
             <tr><td>kafbat</td><td><code>https://localhost:8182</code></td><td>Keycloak. <code>oscar</code> administers it and reads its audit log; <code>ana</code>, <code>gary</code> and <code>stella</code> administer topics but only read the catalog's (<code>nuna.*</code>), Kafka Connect's, the brokerage world's and those starting with <code>_</code>.</td></tr>
             <tr><td>SingleStore Studio</td><td><code>https://localhost:8183</code></td><td>Type the username only, then select <b class="ui">Sign in with SAML</b>. Studio takes no passwords, so <code>root</code> cannot sign in there.</td></tr>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-root="../" data-page="configure/brand">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brand packs · nuna docs</title>
+  <meta name="description" content="Give the console and the documentation an install's own colours, fonts, mark and name with a brand pack, which each viewer can turn off again.">
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../assets/docs.css">
+  <link rel="stylesheet" href="../assets/brand/brand.css">
+  <script src="../assets/theme.js"></script>
+  <script src="../assets/nav.js" defer></script>
+  <script src="../assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="site-head" id="site-head">
+  <a class="brand" href="../index.html">nuna docs</a>
+  <a class="all-pages" href="../all-pages.html">All pages</a>
+</header>
+<div class="site">
+  <nav class="site-nav" id="site-nav" aria-label="Documentation"></nav>
+  <main id="main" tabindex="-1">
+    <article class="doc" data-type="reference" data-toc="h2">
+      <header class="doc-head">
+        <h1>Brand packs</h1>
+        <p class="lead">Give the console and the documentation an install's own colours, fonts, mark and name with a brand pack, which each viewer can turn off again.</p>
+        <p class="doc-meta"><span class="badge for">For platform operators</span></p>
+      </header>
+
+      <p>The console and the documentation look the same everywhere unless an install sets a brand pack: their own look is called Ice line. A pack is a folder on the server that <a href="server.html#nuna-ui-brand-dir"><code>nuna.ui.brand.dir</code></a> names; with Helm, a ConfigMap that <a href="helm-values.html#nuna-catalog-brandconfigmap"><code>brandConfigMap.name</code></a> names. The pack changes how things look, never what a page shows or who may see it.</p>
+
+      <h2 id="how-a-pack-is-served">How a pack is served</h2>
+
+      <p>Every console and documentation page links a brand stylesheet at a fixed path, <code>/ui/brand/brand.css</code> and <code>/docs/assets/brand/brand.css</code>, which always exists. The server's own is empty. With a pack set, the server serves the pack's files at both paths instead, and any file the pack lacks falls back to the server's own, so nothing answers 404. The page reads the pack before it first paints, so the pack shows from the start, with no flash of Ice line, and the Content-Security-Policy is the same with or without one. A documentation page opened from disk links the empty file and stays Ice line.</p>
+
+      <p>Each pack file is read afresh on every request, so a changed file reaches the next page loaded without a restart. The words in <a href="server.html#nuna-ui-brand-name"><code>nuna.ui.brand.*</code></a> are read at start-up.</p>
+
+      <h2 id="what-a-pack-holds">What a pack holds</h2>
+
+      <div class="table-wrap">
+        <table>
+          <caption>The files of a brand pack, all in one folder</caption>
+          <thead><tr><th scope="col">File</th><th scope="col">Needed</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>brand.css</code></th><td>yes</td><td>The pack's tokens and <code>@font-face</code> rules, below. It must set <code>--brand-pack</code>, or the page treats the folder as no pack.</td></tr>
+            <tr><th scope="row"><code>favicon.svg</code></th><td>no</td><td>The browser tab's icon while the pack is on. Without it, the tab keeps Ice line's.</td></tr>
+            <tr><th scope="row"><code>mark.svg</code></th><td>no</td><td>The mark in the console's header, on its sign-in page and in the documentation's header, in place of the peak; <code>brand.css</code> sets <code>--brand-mark</code> to say it is there. It is drawn in a fixed box at most 20 px high and 120 px wide, never squashed or cropped, so draw it at that ratio or narrower.</td></tr>
+            <tr><th scope="row">fonts</th><td>no</td><td>The font files <code>brand.css</code> names, as <code>woff2</code>, <code>woff</code>, <code>ttf</code> or <code>otf</code>, by URLs relative to <code>brand.css</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>File names are lower case letters, digits and hyphens. A Helm ConfigMap holds 1 MiB, enough for a couple of <code>woff2</code> fonts.</p>
+
+      <h2 id="the-tokens-a-pack-sets">The tokens a pack sets</h2>
+
+      <p>A pack sets custom properties on <code>:root</code> and <code>@font-face</code> rules, nothing else: no rules aimed at the console's own classes, which change from release to release. Every token has Ice line's value until the pack sets it.</p>
+
+      <div class="table-wrap">
+        <table>
+          <caption>The brand pack's tokens</caption>
+          <thead><tr><th scope="col">Token</th><th scope="col">What it sets</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>--brand-pack</code></th><td>Required, any value, such as <code>1</code>: says the file is a pack.</td></tr>
+            <tr><th scope="row"><code>--brand-light-only</code></th><td>Set it for a pack with no dark colours: while the pack is on, the console and the documentation stay light and both theme switches go.</td></tr>
+            <tr><th scope="row"><code>--brand-mark</code></th><td>Set it when the pack holds <code>mark.svg</code>.</td></tr>
+            <tr><th scope="row"><code>--brand-mark-w</code>, <code>--mark-h</code></th><td>The mark's box: its width (at most <code>120px</code>) and height (at most <code>20px</code>).</td></tr>
+            <tr><th scope="row"><code>--f-ui</code>, <code>--f-mono</code></th><td>The fonts for words and for names and code, each a font list ending in a system font.</td></tr>
+            <tr><th scope="row"><code>--bg</code>, <code>--surface</code>, <code>--surface-2</code>, <code>--line</code>, <code>--line-strong</code>, <code>--sky</code>, <code>--text</code>, <code>--text-2</code></th><td>The page, panels, fields, lines and text.</td></tr>
+            <tr><th scope="row"><code>--accent</code>, <code>--accent-wash</code>, <code>--accent-mark</code>, <code>--on-accent</code></th><td>Links and primary buttons, the selected wash, chart marks and the text on an accent button.</td></tr>
+            <tr><th scope="row"><code>--ok-*</code>, <code>--warn-*</code>, <code>--bad-*</code>, <code>--held-*</code>, <code>--frozen-*</code></th><td>Each status's <code>-ink</code>, <code>-wash</code> and <code>-mark</code>: all is well, a warning, an error, a hold and a freeze.</td></tr>
+            <tr><th scope="row"><code>--head-bg</code>, <code>--head-ink</code>, <code>--head-ink-2</code>, <code>--head-field</code></th><td>The console's header band, its ink, its quieter ink and its Go to a path field.</td></tr>
+            <tr><th scope="row"><code>--rail-current-bg</code>, <code>--rail-current-ink</code></th><td>The current page in the console's menu.</td></tr>
+            <tr><th scope="row"><code>--requested-bg</code>, <code>--requested-ink</code></th><td>The pill of a maintenance job someone requested, the one status drawn in the accent colour.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Body text must keep a contrast of at least 4.5:1 against its background, as Ice line's does. A pack with dark colours too sets them under both of Ice line's dark selectors, <code>:root[data-theme="dark"]</code> and, inside <code>@media (prefers-color-scheme: dark)</code>, <code>:root:not([data-theme="light"])</code>, and leaves out <code>--brand-light-only</code>.</p>
+
+      <h2 id="turning-a-pack-off">Turning a pack off</h2>
+
+      <p>With a pack set, the console's header has a button beside the theme switch, its words from <a href="server.html#nuna-ui-brand-toggle-label"><code>nuna.ui.brand.toggle-label</code></a>; on a phone it is in the menu. A pack starts on for every viewer. Pressing the button turns the pack off for that viewer, in that browser: Ice line's colours, fonts, peak, icon and the name <code>nuna</code> come back, and the theme switch returns. Pressing it again turns the pack back on. The documentation served beside the console follows the same choice. With no pack set there is no button.</p>
+
+      <section class="see-also">
+        <h2 id="see-also">See also</h2>
+        <ul>
+          <li><a href="server.html#nuna-ui-group">Server settings</a>: <code>nuna.ui.brand.*</code></li>
+          <li><a href="helm-values.html#nuna-catalog-brandconfigmap">Helm chart values</a>: <code>brandConfigMap</code></li>
+          <li><a href="../console/index.html">The console</a>: its header and theme switch</li>
+        </ul>
+      </section>
+
+      <details class="doc-sources">
+        <summary>How this page was checked</summary>
+        <p>Written from <code>catalog-server/src/main/java/nuna/catalog/server/ui/UiSettings.java</code>, <code>UiWiring.java</code>, <code>catalog-server/src/main/resources/nuna/ui/brand.js</code>, <code>style.css</code>, <code>docs/site/assets/theme.js</code> and <code>deploy/helm/nuna-catalog/templates/deployment.yaml</code>, checked against commit <code>e843a94c</code> on 2026-11-28, with the test pack in <code>catalog-server/src/test/resources/brand-pack/</code>.</p>
+        <p>No server was started for this page.</p>
+      </details>
+
+    </article>
+  </main>
+  <aside class="toc" id="toc" aria-label="On this page"></aside>
+</div>
+<footer class="site-foot" id="site-foot"></footer>
+</body>
+</html>

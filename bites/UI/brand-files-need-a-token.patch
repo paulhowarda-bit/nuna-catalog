@@ -1,0 +1,17 @@
+Breaks: The brand pack's files need a token, so the console's sign-in page cannot load its pack.
+Module: catalog-server
+Test: BrandSlotTest#theBrandsPathsAndFontsNeedNoToken
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+index 41ecd8b7..c61bed4b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+@@ -48,7 +48,7 @@ public class UiWiring implements WebMvcConfigurer {
+ 
+     /** The console's own paths: its page and its flat set of files. Nothing else skips authentication. */
+     private static final Pattern PUBLIC = Pattern.compile("/ui/?|/ui/[a-z0-9-]+\\.(html|js|css|json|svg|woff2|txt)"
+-            + "|/ui/brand/[a-z0-9-]+\\.(css|svg|png|woff2|woff|ttf|otf)");
++            + "|/ui/brand-files/[a-z0-9-]+\\.(css|svg|png|woff2|woff|ttf|otf)");
+ 
+     /** Where the documentation site's files are on the classpath. */
+     static final String DOCS = "classpath:/nuna/docs/";

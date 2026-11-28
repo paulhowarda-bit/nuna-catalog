@@ -61,6 +61,11 @@ spec:
             # whose name resolves to every ready server (docs/observability/health-page.md).
             - name: NUNA_HEALTH_PEERS
               value: {{ printf "%s.%s.svc:8181" (include "nuna-catalog.peersName" .) .Release.Namespace | quote }}
+            {{- if .Values.brandConfigMap.name }}
+            # The brand pack's folder (backlog 333); its words are set under config's nuna.ui.brand.
+            - name: NUNA_UI_BRAND_DIR
+              value: /etc/nuna/brand
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -122,6 +127,11 @@ spec:
               mountPath: /etc/nuna/storage-ca
               readOnly: true
             {{- end }}
+            {{- if .Values.brandConfigMap.name }}
+            - name: brand
+              mountPath: /etc/nuna/brand
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -149,6 +159,11 @@ spec:
         - name: storage-ca
           configMap:
             name: {{ .Values.storageCaConfigMap.name }}
+        {{- end }}
+        {{- if .Values.brandConfigMap.name }}
+        - name: brand
+          configMap:
+            name: {{ .Values.brandConfigMap.name }}
         {{- end }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:

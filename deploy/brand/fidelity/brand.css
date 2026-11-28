@@ -1,0 +1,51 @@
+/* Fidelity mode for the console and the documentation (backlog 333; Paul, 2026-11-28, D56): the partial pack.
+   It holds only what is not a licensed asset: the colours of Atelier's work mock-up (work item 011) as the brand slot's
+   tokens. The fonts, the word mark and the favicon are licensed to associates and vendors only, so they never enter
+   this repository: the work install adds them, as docs/brand-at-work.md says. Until then the pack keeps Ice line's
+   fonts (Instrument Sans, Geist Mono) and the peak mark, drawn white on the Evergreen header band.
+
+   Light-only for now (--brand-light-only): whether the firm's design system has dark-mode tokens is open at work. With
+   them, work drops --brand-light-only and adds the dark tokens under the two dark selectors configure/brand.html gives.
+
+   Values marked "derived" are not in the mock-up's list; work's Brand Team may replace them. */
+
+/* Work adds, beside this file (docs/brand-at-work.md):
+   @font-face { font-family: 'Fidelity Sans'; src: url('fidelity-sans.woff2') format('woff2'); font-weight: 400 700;
+     font-display: swap; }
+   and in :root below: --f-ui: 'Fidelity Sans', 'Instrument Sans', system-ui, sans-serif; --brand-mark: 1;
+   --brand-mark-w: <the word mark's width at 20 px high, at most 120px>; --mark-h: 20px; */
+
+:root {
+  --brand-pack: 1;
+  --brand-light-only: 1;
+
+  --bg: #f9f7f5;          /* Mist */
+  --surface: #ffffff;
+  --surface-2: #f9f7f5;   /* Mist */
+  --line: #e6e4e1;
+  --line-strong: #cfccc8; /* derived: a step darker than the lines */
+  --sky: #8c8a88;         /* derived: between the two text greys and the lines */
+  --text: #141414;
+  --text-2: #525150;
+
+  /* Fidelity Green marks; the dark green carries text and links, since Fidelity Green on white is about 4.5:1 */
+  --accent: #1e6f1d;
+  --accent-wash: #edfaeb;
+  --accent-mark: #368727;  /* Fidelity Green */
+  --on-accent: #ffffff;
+
+  --ok-ink: #1e6f1d; --ok-wash: #edfaeb; --ok-mark: #368727;
+  --warn-ink: #9d3b0f; --warn-wash: #fff8ed; --warn-mark: #9d3b0f;
+  --bad-ink: #c31212; --bad-wash: #fff1f1; --bad-mark: #c31212;
+  --frozen-ink: #2751c2; --frozen-wash: #f5faff; --frozen-mark: #2751c2;
+
+  /* the header band in Evergreen, white ink, for the white word mark */
+  --head-bg: #044014;      /* Evergreen */
+  --head-ink: #ffffff;
+  --head-ink-2: #d4e4d2;   /* derived: white softened toward the band */
+  --head-field: #ffffff;
+  --rail-current-bg: #edfaeb;
+  --rail-current-ink: #044014;
+  --requested-bg: #edfaeb;
+  --requested-ink: #1e6f1d;
+}
