@@ -212,7 +212,12 @@ kept even when 50 failed scans have come since.
       "started-at": "2027-03-28T01:00:00Z",
       "ended-at": "2027-03-28T01:00:04Z",
       "outcome": "succeeded",
-      "failures": { "orphan-scan": 1 },
+      "failures": { "table-load": 1 },
+      "failed-jobs": [
+        { "kind": "table-load", "catalog": "brokerage", "namespace": ["party"], "name": "beneficial_owners",
+          "id": "5c1f...", "reason": "closed",
+          "message": "Forbidden: table beneficial_owners is in a regulated area and has no classification; it is closed until it is classified" }
+      ],
       "groups": ["nuna-maintenance"],
       "storage": [
         {
@@ -256,6 +261,13 @@ kept even when 50 failed scans have come since.
   in it failed; `failed` when it could not. Absent while the scan runs, as is `ended-at`; a worker that died
   mid-scan leaves its scan that way.
 - `failures` counts the jobs that failed, by kind (worker-metrics.md, "Failure kinds").
+- `failed-jobs` names the first 20 jobs of the scan that failed on a table (backlog 327), so `failures` may count
+  more: each its `kind`, as `failures` counts it, the table's `catalog`, `namespace`, `name` and `id` as the work
+  list named it, a `reason` and the `message` the worker met, one line of at most 300 characters. `reason` is
+  `closed` when the catalog refused the table as closed until classified (D27), `refused` for any other refusal,
+  `not-found` when the table is gone, `changed` when another table now has its name, and `error` otherwise. `[]` for a
+  scan that names none, as one reported by a worker of an earlier release. The console's Worker scans panel, on
+  Service and Maintenance, names the last scan's failed jobs, each table linked.
 - `error`, for a failed scan only: why, the first failed work-list read, at most 1,000 characters.
 - A scan the worker could not report at all, because it could not reach the catalog, is not there. The worker's
   meters still count it.

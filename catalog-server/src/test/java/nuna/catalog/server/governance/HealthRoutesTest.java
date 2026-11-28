@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -267,6 +268,55 @@ class HealthRoutesTest {
             expectError(api.manage("PUT", "/maintenance/scans/" + UUID.randomUUID(), withStorage(scan(at, null, null,
                     "{}", null), refused), worker), 400, "BadRequestException");
         }
+    }
+
+    /**
+     * Backlog 327: a scan keeps the failed jobs the worker names, each with its table and why, beside the counts by
+     * kind, and operators read them with the scans; one that names none, as an earlier worker's, reads as none.
+     */
+    @Test
+    void aScanKeepsTheFailedJobsTheWorkerNames() {
+        Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS).plusSeconds(5400);
+        String id = UUID.randomUUID().toString();
+        String table = UUID.randomUUID().toString();
+        String job = "{\"kind\":\"table-load\",\"catalog\":\"brokerage\",\"namespace\":[\"party\"],"
+                + "\"name\":\"beneficial_owners\",\"id\":\"" + table + "\",\"reason\":\"closed\",\"message\":"
+                + "\"Forbidden: table beneficial_owners is in a regulated area and has no classification; it is closed"
+                + " until it is classified\"}";
+
+        expect(api.manage("PUT", "/maintenance/scans/" + id, withFailedJobs(scan(at, at.plusSeconds(30), "succeeded",
+                "{\"table-load\":1}", null), "[" + job + "]"), WORKER), 204);
+        String older = UUID.randomUUID().toString();
+        expect(api.manage("PUT", "/maintenance/scans/" + older, scan(at.minusSeconds(60), at.minusSeconds(30),
+                "succeeded", "{\"table-load\":1}", null), WORKER), 204);
+
+        String body = expect(api.send("GET", "/management/v1/maintenance/scans", null, AUTH, api.operator()), 200)
+                .body();
+        String scan = "$.scans[?(@.id == '" + id + "')]";
+        assertThat(JsonPath.<List<Integer>>read(body, scan + ".failures.table-load")).containsExactly(1);
+        assertThat(JsonPath.<List<String>>read(body, scan + ".failed-jobs[0].name"))
+                .containsExactly("beneficial_owners");
+        assertThat(JsonPath.<List<String>>read(body, scan + ".failed-jobs[0].namespace[0]")).containsExactly("party");
+        assertThat(JsonPath.<List<String>>read(body, scan + ".failed-jobs[0].id")).containsExactly(table);
+        assertThat(JsonPath.<List<String>>read(body, scan + ".failed-jobs[0].reason")).containsExactly("closed");
+        assertThat(JsonPath.<List<String>>read(body, scan + ".failed-jobs[0].message").getFirst())
+                .endsWith("closed until it is classified");
+        assertThat(JsonPath.<List<List<Object>>>read(body, "$.scans[?(@.id == '" + older + "')].failed-jobs"))
+                .as("a scan that names none").containsExactly(List.of());
+
+        for (String refused : List.of(
+                "{\"kind\":\"table-load\"}",
+                "[" + job.replace("\"closed\"", "\"Closed!\"") + "]",
+                "[" + job.replace(table, "not-a-uuid") + "]",
+                "[" + job.replace("\"namespace\":[\"party\"]", "\"namespace\":[]") + "]",
+                "[" + String.join(",", Collections.nCopies(21, job)) + "]")) {
+            expectError(api.manage("PUT", "/maintenance/scans/" + UUID.randomUUID(), withFailedJobs(scan(at, null,
+                    null, "{}", null), refused), WORKER), 400, "BadRequestException");
+        }
+    }
+
+    private static String withFailedJobs(String scan, String jobs) {
+        return scan.substring(0, scan.length() - 1) + ",\"failed-jobs\":" + jobs + "}";
     }
 
     private static String withStorage(String scan, String storage) {

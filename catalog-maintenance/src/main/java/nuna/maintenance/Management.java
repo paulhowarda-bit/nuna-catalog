@@ -329,18 +329,32 @@ final class Management {
 
     /**
      * Reports a scan's start, or with {@code outcome} ({@code succeeded} or {@code failed}) its end: the failed jobs
-     * by kind, and why a failed scan failed. A scan that has ended keeps its end. And what the store let the worker
-     * do beneath each prefix (backlog 250), by storage identity, its kind and endpoint, the prefixes under it: never a
-     * key, an object or the store's message; no storage at all when the scan could not read its prefixes (item 275).
+     * by kind, the first failed jobs on a table, each with its table and why (backlog 327), and why a failed scan
+     * failed. A scan that has ended keeps its end. And what the store let the worker do beneath each prefix (backlog
+     * 250), by storage identity, its kind and endpoint, the prefixes under it: never a key, an object or the store's
+     * message; no storage at all when the scan could not read its prefixes (item 275).
      */
     void reportScan(UUID id, Instant started, Optional<Instant> ended, Optional<String> outcome,
-                    Map<String, Integer> failures, Optional<String> error, Optional<List<Storage.Reach>> storage) {
+                    Map<String, Integer> failures, Optional<String> error, Optional<List<Storage.Reach>> storage,
+                    List<ScanReport.Named> failedJobs) {
         ObjectNode body = JSON.createObjectNode();
         body.put("started-at", started.toString());
         ended.ifPresent(at -> body.put("ended-at", at.toString()));
         outcome.ifPresent(value -> body.put("outcome", value));
         ObjectNode kinds = body.putObject("failures");
         failures.forEach(kinds::put);
+        ArrayNode named = body.putArray("failed-jobs");
+        failedJobs.forEach(job -> {
+            ObjectNode failed = named.addObject();
+            failed.put("kind", job.kind().label);
+            failed.put("catalog", job.table().catalog());
+            ArrayNode levels = failed.putArray("namespace");
+            job.table().namespace().forEach(levels::add);
+            failed.put("name", job.table().name());
+            failed.put("id", job.table().id().toString());
+            failed.put("reason", job.reason());
+            failed.put("message", job.message());
+        });
         error.ifPresent(message -> body.put("error", message));
         storage.ifPresent(reached -> {
             ArrayNode stores = body.putArray("storage");

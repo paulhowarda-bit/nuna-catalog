@@ -11,7 +11,7 @@ import {dialogForm, failure, field, fill, fmt, granted, h, icon, load, openDialo
 import {catalogOff, emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
 import {policyKey, policyValue, sourceWords, workerPanel} from './health.js';
 import {mayModify, mayModifyAny, pickDialog} from './requests.js';
-import {nothingToRead} from './overview.js';
+import {nothingToRead, unassessedNames} from './overview.js';
 import {pageHref} from './route.js';
 import {readinessOf, readinessPanel, stepsWords} from './readiness.js';
 
@@ -66,8 +66,8 @@ export function maintenancePage(catalog) {
             : rows.length
               ? `${plural(rows.length, 'table')} queued for tonight.` + (c.unassessed ? ` ${fmt(c.unassessed)} not assessed yet.` : '')
               : c.unassessed ? left || shapeWords(c, ready) : `Every table you may read in ${catalog} is in shape.`,
-        sub: 'The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; '
-          + 'each one\'s assessment is on its Maintenance tab.',
+        sub: [left ? null : unassessedNames(tables), 'The worker compacts the neediest first, in its cleanup window. Only '
+          + 'the tables you may read are listed; each one\'s assessment is on its Maintenance tab.'],
         side: [assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
           may ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact-pick', onclick: () => pickDialog(catalog, rows, tables)},
             icon('play'), 'Compact a table now') : null],

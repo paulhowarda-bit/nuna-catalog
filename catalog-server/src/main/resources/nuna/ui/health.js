@@ -325,6 +325,44 @@ function failureCounts(failures) {
   return entries.length ? entries.map(([kind, n]) => kind + ' ' + n).join(', ') : '';
 }
 
+/** What failed, for each kind of failed job on a table the worker names (backlog 327); other kinds name no table. */
+const JOB_WORDS = {
+  'table-load': n => `${plural(n, 'table')} could not be loaded`,
+  'table-changed': n => `${plural(n, 'table')} had been replaced since the work list was read`,
+  'snapshot-expiry': n => `Snapshot expiry failed on ${plural(n, 'table')}`,
+  'manifest-rewrite': n => `Manifest rewrite failed on ${plural(n, 'table')}`,
+  'orphan-scan': n => `The orphan scan failed on ${plural(n, 'table')}`,
+  'compaction': n => `Compaction failed on ${plural(n, 'table')}`,
+};
+
+/** Why a named job failed, in words: the catalog's refusal or the error the worker met. */
+function whyWords(job) {
+  if (job.reason === 'closed') return 'closed until classified';
+  if (job.reason === 'not-found') return 'gone since the work list was read';
+  if (job.reason === 'changed') return 'its name is now another table\'s';
+  return job.reason === 'refused' ? 'refused: ' + job.message.replace(/^Forbidden: /, '') : job.message;
+}
+
+/**
+ * The failed jobs a scan names, by kind, each table linked to its page with why (backlog 327): "1 table could not be
+ * loaded: brokerage.party.beneficial_owners, closed until classified". A kind counted past the jobs named says how
+ * many more; nothing when the scan names none, as an earlier release's worker's.
+ */
+export function failedJobsList(scan) {
+  const jobs = (scan && scan['failed-jobs']) || [];
+  if (!jobs.length) return null;
+  const byKind = new Map();
+  for (const job of jobs) byKind.set(job.kind, [...(byKind.get(job.kind) || []), job]);
+  return h('ul', {class: 'stack', id: 'health-failed-jobs'}, [...byKind].map(([kind, named]) => {
+    const counted = Math.max(named.length, (scan.failures || {})[kind] || 0);
+    const words = JOB_WORDS[kind] ? JOB_WORDS[kind](counted) : `${kind} failed on ${plural(counted, 'table')}`;
+    const tables = named.map((job, i) => [i ? '; ' : '', h('a', {href: objectHref({catalog: job.catalog, kind: 'table',
+      namespace: job.namespace, name: job.name}), 'data-failed-table': job.id}, [job.catalog, ...job.namespace, job.name].join('.')),
+    ', ', whyWords(job)]);
+    return h('li', {'data-kind': kind}, words + ': ', tables, counted > named.length ? `; and ${fmt(counted - named.length)} more` : '', '.');
+  }));
+}
+
 export async function workerPanel() {
   let body;
   try {
@@ -340,6 +378,8 @@ export async function workerPanel() {
   const byKind = {};
   for (const x of recent) for (const [kind, n] of Object.entries(x.failures || {})) byKind[kind] = (byKind[kind] || 0) + n;
   const latestFailed = scans.find(x => x.outcome === 'failed');
+  const latestEnded = scans.find(x => x.outcome);
+  const named = failedJobsList(latestEnded);
   const shown = h('tbody');
   const rowOf = x => h('tr', {class: x.outcome === 'failed' ? 'is-refused' : null},
     h('td', {class: 'tnum', title: when(x['started-at'])}, at(x['started-at'], true)),
@@ -362,6 +402,8 @@ export async function workerPanel() {
       ['Failed jobs in the last day', h('span', {id: 'health-job-failures'}, failureCounts(byKind) || '0')],
       latestFailed ? ['Latest failed scan', when(latestFailed['started-at']) + ': ' + (latestFailed.error || '')] : null,
     ]),
+    named ? [h('p', {class: 'fine'}, 'In the last scan, ', h('span', {class: 'tnum', title: when(latestEnded['started-at'])},
+      at(latestEnded['started-at'], true)), ':'), named] : null,
     scans.length ? tbl('scans', ['Started', 'Took', 'Outcome', 'Failures'], shown, {id: 'health-scans'})
       : h('p', {class: 'muted'}, 'The maintenance worker has not reported a scan. Check that it is running.'),
     h('p', {class: 'fine'}, 'A failure on one table never stops the scan; the next scan retries that table. ', more));
