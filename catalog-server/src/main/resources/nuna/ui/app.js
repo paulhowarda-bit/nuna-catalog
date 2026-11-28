@@ -1,8 +1,8 @@
 // The console: sign-in, the shell (top bar, menu, catalog picker, theme, Go to a path) and the router. Each page
 // lives in its own module and asks the catalog's own routes for what it shows; the server decides every permission.
 
-import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startAgain, startSignIn, useToken, whenSignedOut}
-  from './auth.js';
+import {backFromSignOut, claims, finishSignIn, idpName, signedIn, signedOut, signOut, startAgain, startSignIn, useToken,
+  whenSignedOut} from './auth.js';
 import * as api from './api.js';
 import {auditOpen, groupWords, holdsIn, keepAccess, landingCatalogs, may, operates, readsData} from './access.js';
 import {$, $$, at, failure, fill, fmt, h, icon, pill, plural, techDetails} from './dom.js';
@@ -26,7 +26,7 @@ const gotoIn = $('#goto-in');
 const gotoList = $('#goto-list');
 const gotoH = $('#goto-h');
 
-let config = {'dev-token-login': false, oidc: null, 'docs-url': null, 'grafana-url': null};
+let config = {'dev-token-login': false, oidc: null, 'docs-url': null, 'grafana-url': null, brand: null};
 let catalogs = null;
 let cat = null;
 let prev = null;
@@ -43,9 +43,55 @@ try {
 }
 
 function applyTheme() {
-  if (theme === 'auto') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', theme);
+  // A light-only brand pack, while it is on, pins light and hides both switches (D56); the viewer's choice is kept.
+  const shown = packOn() && root.hasAttribute('data-pack-light') ? 'light' : theme;
+  if (shown === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', shown);
   for (const b of $$('[data-theme-pick]')) b.setAttribute('aria-pressed', String(b.dataset.themePick === theme));
+}
+
+// ---- the brand pack (backlog 333): brand.js found it and applied this viewer's choice before the page painted; the
+// header's button turns it on and off (Paul, 2026-11-28; D56), kept under nuna.brand in this browser, which the
+// documentation served beside the console reads too. Off, the viewer gets Ice line, its look and its words. ----
+
+const PACK = 'nuna.brand';
+const packOn = () => root.dataset.brand === 'on';
+
+/** The product's name in words: the install's (nuna.ui.brand.name) while its pack is on, else "nuna". */
+const product = () => packOn() && config.brand ? config.brand.name : 'nuna';
+
+/** Draws the brand's words and the button's state; the button shows only where a pack is served and set. */
+function applyBrand() {
+  const b = config.brand;
+  const offered = !!b && root.hasAttribute('data-pack');
+  for (const btn of $$('[data-act="pack"]')) {
+    btn.hidden = !offered;
+    btn.setAttribute('aria-pressed', String(packOn()));
+    if (offered) {
+      btn.title = b['toggle-label'];
+      if (btn.closest('.nc-top')) btn.setAttribute('aria-label', b['toggle-label']);
+    }
+  }
+  for (const n of $$('[data-pack-label]')) n.textContent = offered ? b['toggle-label'] : '';
+  for (const n of $$('[data-product]')) n.textContent = product();
+  $('a[data-brand]').setAttribute('aria-label', `${packOn() && b ? b['mark-label'] : 'nuna'}, overview`);
+  if (packOn() && b && !b['show-name']) root.setAttribute('data-name-out', product());
+  else root.removeAttribute('data-name-out');
+}
+
+function setPack(on) {
+  try {
+    if (on) localStorage.removeItem(PACK);
+    else localStorage.setItem(PACK, 'off');
+  } catch {
+    // the choice then lasts this page only
+  }
+  $('link[data-brand-css]').disabled = !on;
+  root.dataset.brand = on ? 'on' : 'off';
+  $('link[rel="icon"]').setAttribute('href', on ? 'brand/favicon.svg' : 'favicon.svg');
+  applyTheme();
+  applyBrand();
+  if (signedIn() && catalogs) render();
 }
 
 function pickTheme(value) {
@@ -242,7 +288,7 @@ function setChrome(navKey, ref) {
     if (k === navKey) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
-  $('[data-brand]').href = cat ? homeHref(cat) : pageHref('service');
+  $('a[data-brand]').href = cat ? homeHref(cat) : pageHref('service');
   const count = $('.count', navEl);
   queue().then(rows => {
     const n = queueOf(rows, cat).length;
@@ -296,7 +342,7 @@ function clearWho() {
 
 // ---- sign-in ----
 
-const brand = cls => h('span', {class: 'nc-brand' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true'}, peak(), 'nuna');
+const brand = cls => h('span', {class: 'nc-brand' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true'}, peak(), h('span', {class: 'mark'}), h('span', {class: 'nm', 'data-product': ''}, product()));
 
 function peak() {
   const NS = 'http://www.w3.org/2000/svg';
@@ -345,30 +391,29 @@ function signInPage(message, again) {
   clearWho();
   catalogs = null;
   prev = null;
-  document.title = 'Sign in · nuna';
+  document.title = 'Sign in · ' + product();
   const form = h('div', {class: 'signin-form'}, brand('only-sm'), h('p', {class: 'claim only-sm'}, CLAIM),
-    h('h1', null, 'Sign in to nuna'),
+    h('h1', null, 'Sign in to ' + product()),
     message ? h('p', {class: 'notice', role: 'status'}, icon('info'), h('span', null, message)) : null,
     again ? startAgainButton() : null);
   if (config.oidc) {
-    const host = new URL(config.oidc.issuer).host;
+    const idp = idpName(config.oidc);
     const status = h('div', {'aria-live': 'polite'});
     form.append(h('p', {class: 'muted'}, 'Your organisation\'s sign-in page opens, then brings you back here. Your sign-in lasts in '
       + 'this tab only.'),
     h('button', {class: 'btn primary lg', type: 'button', 'data-act': 'signin', onclick: async () => {
-      fill(status, h('p', {class: 'loading-line'}, 'Going to ' + host + '…'));
+      fill(status, h('p', {class: 'loading-line'}, 'Going to ' + idp + '…'));
       try {
         await startSignIn(config.oidc);
       } catch (error) {
         fill(status, failure(error, {title: 'Sign-in did not start'}), startAgainButton());
       }
-    }}, icon('key'), 'Sign in with ' + host), status);
+    }}, icon('key'), 'Sign in with ' + idp), status);
   }
   if (config['dev-token-login']) {
     const box = h('textarea', {class: 'tokenbox', rows: 4, spellcheck: 'false', placeholder: 'eyJhbGciOi…', 'aria-label': 'Bearer token'});
     const status = h('div', {'aria-live': 'polite'});
-    if (config.oidc) form.append(h('div', {class: 'or'}, 'development only'));
-    form.append(h('div', null,
+    const parts = [h('div', null,
       h('p', {class: 'fine', title: 'nuna.ui.dev-token-login=true'}, h('b', null, 'Paste a bearer token.'),
         ' For development only: this server allows signing in with one.'),
       box, h('p', {class: 'fine'}, 'Kept in this tab only.')),
@@ -379,17 +424,20 @@ function signInPage(message, again) {
       } catch (error) {
         fill(status, failure(error, {title: 'That token cannot be used'}));
       }
-    }}, 'Use this token'), status);
+    }}, 'Use this token'), status];
+    // Beside an identity provider the box folds away, closed (backlog 332); with none it is the only way in, so open.
+    form.append(...(config.oidc ? [h('details', {class: 'dev-signin', 'data-dev-signin': ''}, h('summary', null, 'Developer sign-in'),
+      parts)] : parts));
   }
   if (!config.oidc && !config['dev-token-login']) {
-    form.append(h('div', {class: 'notice'}, icon('info'), h('div', null, 'No sign-in is set up on this server. Ask whoever runs nuna '
+    form.append(h('div', {class: 'notice'}, icon('info'), h('div', null, 'No sign-in is set up on this server. Ask whoever runs ' + product() + ' '
       + 'to connect your organisation\'s sign-in.',
     techDetails(h('p', null, 'An operator sets ', h('code', null, 'nuna.ui.oidc.issuer'), ' and ', h('code', null, 'nuna.ui.oidc.client-id'),
       ' (or, for local development only, ', h('code', null, 'nuna.ui.dev-token-login=true'), ').')))));
   }
   if (docs('console/sign-in.html')) {
     form.append(h('p', {class: 'fine signin-docs'}, h('a', {href: docs('console/sign-in.html'), target: '_blank', rel: 'noopener',
-      'data-docs-signin': ''}, 'Documentation'), ': how signing in works, and everything nuna does.'));
+      'data-docs-signin': ''}, 'Documentation'), ': how signing in works, and everything ' + product() + ' does.'));
   }
   fill(signinEl, h('main', {class: 'signin', id: 'signin-page'},
     h('div', {class: 'signin-side'}, brand(), h('h2', null, CLAIM),
@@ -410,7 +458,7 @@ async function doSignOut() {
   consoleEl.hidden = true;
   $('#booting').hidden = false;
   $('#booting').textContent = 'Signing out…';
-  const message = await signOut(config.oidc);
+  const message = await signOut(config.oidc, product());
   if (message) signInPage(message);
 }
 
@@ -735,7 +783,7 @@ function render() {
     setChrome(null);
     setDocs(docsOf(r, null));
     slot.replaceChildren(noCatalog());
-    document.title = 'No catalog · nuna';
+    document.title = 'No catalog · ' + product();
     prev = r;
     return;
   }
@@ -744,7 +792,7 @@ function render() {
     setChrome(null);
     setDocs(docsOf(r, null));
     slot.replaceChildren(notFound(`No catalog named ${r.c} that your groups may see`));
-    document.title = 'Not found · nuna';
+    document.title = 'Not found · ' + product();
     prev = r;
     return;
   }
@@ -802,7 +850,7 @@ function render() {
   const pageReads = navKey === 'catalog';
   if (cat && r.page !== 'service' && !pageReads) readingControl({c: cat, r: carried}, !!carried);
   if (!slot.contains(content) || slot.firstElementChild !== content) slot.replaceChildren(content);
-  document.title = `${title} · ${r.page === 'service' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · nuna`;
+  document.title = `${title} · ${r.page === 'service' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · ${product()}`;
   if (tabOnly && prev.tab !== r.tab) {
     const t = $('.nc-main .tabs a[aria-current="page"]', slot);
     if (t) t.focus({preventScroll: true});
@@ -862,6 +910,7 @@ document.addEventListener('click', e => {
   else if (act === 'pick') catMenu();
   else if (act === 'goto') openGoto(null, t.dataset.gotoWords || '');
   else if (act === 'goto-audit') openGoto('audit');
+  else if (act === 'pack') setPack(!packOn());
 });
 
 $('#cat-menu').addEventListener('keydown', e => {
@@ -907,6 +956,7 @@ async function boot() {
   try {
     const response = await fetch('/ui/config.json', {cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(15000)});
     config = await response.json();
+    applyBrand();
   } catch (error) {
     $('#booting').hidden = true;
     signinEl.hidden = false;

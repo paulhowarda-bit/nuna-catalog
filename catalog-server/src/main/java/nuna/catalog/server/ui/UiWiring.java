@@ -33,6 +33,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * same way under {@code /docs/}, so the console's links reach the documentation of the very build that runs, on a
  * network with no way out. It needs no sign-in and holds nothing secret: it is the published documentation. Its
  * policy allows no connections at all.
+ *
+ * <p>Both link a brand stylesheet at a fixed path, {@code /ui/brand/brand.css} and {@code /docs/assets/brand/brand.css},
+ * which always exists (backlog 333): the jar's is empty, so the look is Ice line, and an install that sets
+ * {@code nuna.ui.brand.dir} has its pack's files served there instead, each file the pack lacks falling back to the
+ * jar's. The policy is the same either way, since the pack's files are the server's own.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(UiSettings.class)
@@ -42,7 +47,8 @@ public class UiWiring implements WebMvcConfigurer {
     static final String FILES = "classpath:/nuna/ui/";
 
     /** The console's own paths: its page and its flat set of files. Nothing else skips authentication. */
-    private static final Pattern PUBLIC = Pattern.compile("/ui/?|/ui/[a-z0-9-]+\\.(html|js|css|json|svg|woff2|txt)");
+    private static final Pattern PUBLIC = Pattern.compile("/ui/?|/ui/[a-z0-9-]+\\.(html|js|css|json|svg|woff2|txt)"
+            + "|/ui/brand/[a-z0-9-]+\\.(css|svg|png|woff2|woff|ttf|otf)");
 
     /** Where the documentation site's files are on the classpath. */
     static final String DOCS = "classpath:/nuna/docs/";
@@ -53,6 +59,12 @@ public class UiWiring implements WebMvcConfigurer {
 
     /** Each console file's ETag, by the file's description; the jar's files never change while the server runs. */
     private static final Map<String, String> ETAGS = new ConcurrentHashMap<>();
+
+    private final UiSettings settings;
+
+    UiWiring(UiSettings settings) {
+        this.settings = settings;
+    }
 
     /** Whether {@code path} (without the context path) is one of the console's files, which need no token. */
     public static boolean isConsoleFile(String path) {
@@ -82,6 +94,17 @@ public class UiWiring implements WebMvcConfigurer {
                 .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
         registry.addResourceHandler("/docs/**").addResourceLocations(DOCS).setCacheControl(CacheControl.noCache())
                 .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
+        // The brand slot: the install's pack first, then the jar's empty stylesheet and Ice line's icon. A pack's file
+        // can change under a running server (a mounted ConfigMap), so each is hashed afresh on every request.
+        registry.addResourceHandler("/ui/brand/*").addResourceLocations(brand(FILES + "brand/"))
+                .setCacheControl(CacheControl.noCache()).setUseLastModified(false).setEtagGenerator(UiWiring::hash);
+        registry.addResourceHandler("/docs/assets/brand/*").addResourceLocations(brand(DOCS + "assets/brand/"))
+                .setCacheControl(CacheControl.noCache()).setUseLastModified(false).setEtagGenerator(UiWiring::hash);
+    }
+
+    /** Where a brand file is looked for: the install's pack, if one is set, then {@code fallback} in the jar. */
+    private String[] brand(String fallback) {
+        return settings.brand() == null ? new String[] {fallback} : new String[] {settings.brand().location(), fallback};
     }
 
     /** The site's home is its index page; relative links in it need the trailing slash. */
@@ -93,13 +116,16 @@ public class UiWiring implements WebMvcConfigurer {
 
     /** A strong ETag of a file's bytes; the files are read from the jar, so each is hashed once. */
     static String etag(Resource file) {
-        return ETAGS.computeIfAbsent(file.getDescription(), d -> {
-            try (InputStream in = file.getInputStream()) {
-                return "\"" + DigestUtils.md5DigestAsHex(in) + "\"";
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        });
+        return ETAGS.computeIfAbsent(file.getDescription(), d -> hash(file));
+    }
+
+    /** A strong ETag of a file's bytes as they are now, for files that may change while the server runs. */
+    static String hash(Resource file) {
+        try (InputStream in = file.getInputStream()) {
+            return "\"" + DigestUtils.md5DigestAsHex(in) + "\"";
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     @Bean

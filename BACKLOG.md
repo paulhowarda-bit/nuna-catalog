@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 2 S, 8 M, 4 L, 4 XL.
+**16 open:** 2 S, 7 M, 3 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -28,8 +28,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
 | [265](backlog/265.md) | M | Traces: keep every failing request's trace, by tail sampling in the collector and a 5xx answer marking its span ERROR (at work) | at work with item 43 (D54: nothing left here); was at home a test that every 5xx answer's server span ends ERROR and the fix where it does not, with a bite; at work, with item 43, the collector's two tiers and the charts' sampling; the work part waits on item 43 | 2026-11-24 |
-| [332](backlog/332.md) | M | Sign-in screen: the identity provider's name in words, and the developer token box folded | the code is small, but the docs screenshot needs the demo rebuilt | 2026-11-27 |
-| [333](backlog/333.md) | L | A brand slot for the console and the docs site: Ice line by default, an install's pack by settings | 2 to 5 days; it waits on nothing, the real pack is work's job | 2026-11-27 |
 
 ## Open items in full
 
@@ -1299,104 +1297,6 @@ than one collector, `telemetry.sampling` at 1.0 in work's values, README.md sayi
 tail-sampling tier checked; what is left is work's collector, its chart values, README.md's line for work's mode and a
 forced 5xx in work's Grafana, all with item 43. No agent takes it at home.
 
-### 332. Sign-in screen: the identity provider's name in words, and the developer token box folded
-
-- Added: 2026-11-27 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
-- Touches: catalog-server/src/main/java/nuna/catalog/server/ui/, catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/auth.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/, demo/k8s/catalog-values.yaml, docs/site/console/sign-in.html, docs/site/configure/server.html, docs/site/img/shots/
-- Effort: M, the code is small, but the docs screenshot needs the demo rebuilt
-
-From Atelier's brand review, made at work on 2026-11-27 (at work: item 011, "A brand slot for the console and
-docs", its part 3, with an offline mock-up Paul approved there). Atelier, here, checked it against main at
-a5cdf6ef and wants these two fixes everywhere, whether or not an install ever sets a brand pack (item 333). Paul
-asked on 2026-11-27 to add both items.
-
-What is wrong:
-
-- The sign-in button reads "Sign in with " + the issuer's host and port (`signInPage` in `app.js`), so the first
-  thing a room reads is a host name. The host also shows in "Going to {host}…" and in both sign-out messages
-  (`auth.js`, about lines 184 and 188).
-- Under "development only", the bearer-token box, its words and "Use this token" sit open beside the sign-in button
-  on the demo, which sets `dev-token-login: true` (`demo/k8s/catalog-values.yaml`).
-
-The change:
-
-- A setting for the identity provider's name in words (suggested `nuna.ui.oidc.name`, served in `config.json`), for
-  example "the demo's Keycloak". When set, it fills all four places the host shows today; unset, they keep the host,
-  so `ConsoleSignInTest`'s checks for "Sign in with keycloak:8080" still pass.
-- When an identity provider is set, the token box, its words and its button fold into a closed `<details>` whose
-  summary reads "Developer sign-in". With no identity provider (`deploy/local`), the box is the only way in and stays
-  open.
-- The demo sets the name and keeps `dev-token-login: true`: `demo.sh` prints tokens for presenters and agents ("Sign
-  in, or paste one of these tokens"), so switching it off would break them. `ConsoleBrowser.signIn` puts the token in
-  session storage, so no browser test depends on the box being open.
-
-Done when, with the name set, the button, "Going to…" and both sign-out messages use it, and unset they show the
-host as today; with an identity provider set the token box sits closed under "Developer sign-in", and with none it
-stays open; the demo sets the name; a `config.json` test covers the setting; and `docs/site/console/sign-in.html`
-(about lines 40 to 61), the server settings page and the sign-in screenshots are updated.
-
-### 333. A brand slot for the console and the docs site: Ice line by default, an install's pack by settings
-
-- Added: 2026-11-27 by local_a0cd9c35-a22f-4dde-8b48-c0c950e2d9e0
-- Touches: catalog-server/src/main/java/nuna/catalog/server/ui/, catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/, docs/site/, deploy/helm/nuna-catalog/
-- Effort: L, 2 to 5 days; it waits on nothing, the real pack is work's job
-
-From Atelier's brand review, made at work on 2026-11-27 (at work: item 011, "A brand slot for the console and
-docs", with an offline mock-up of the console and sign-in screen in a work pack beside today's Ice line; Paul
-approved it there). Paul, 2026-11-27: "The current branding is great. But maybe at work we need new branding", and
-"I like the current style. I only want to turn it on at work." So Ice line stays the default everywhere, and only an
-install that sets the brand settings looks different. The work pack (its fonts, word mark and icon) is supplied by
-the work install and never enters this repository; no firm's name goes in the code, the tests or this item.
-
-Atelier, here, checked the work item against main at a5cdf6ef. The idea is right (a switch, not a redesign; the
-tokens in `style.css` make it cheap), but its mechanics do not fit this code:
-
-1. The header mark is fixed markup in `index.html` (the inline peak, "nuna", `aria-label="nuna, overview"`), not
-   drawn by `brand()`, which draws only the sign-in screen's marks. The slot needs both.
-2. The docs site cannot read `config.json`: `DOCS_POLICY` is `default-src 'none'` with no `connect-src`.
-3. A stylesheet added by script after `config.json` answers paints Ice line first, then flips.
-4. `UiWiring.etag` hashes each file once for the server's life: right for files in the jar, wrong for a mounted
-   ConfigMap that changes under a running pod.
-5. The `PUBLIC` pattern allows `.woff2` fonts only; any other font type would be refused silently.
-6. "nuna" is hard-coded beyond the work item's list: both sign-out messages (`auth.js`), `index.html`'s title and
-   aria-label, and `app.js` at about lines 346, 348, 383, 390, 736, 745 and 801.
-7. Dark mode: Ice line's dark selectors are more specific than a pack's plain `:root`, so a light-only pack in Dark
-   would show Ice line's dark colours under the pack's fonts and mark, a half-borrowed look.
-8. Header widths (items 231 and 297): `.nc-brand` is `flex: 0 1 180px` above 760 px, gives way first, and is hidden
-   at 520 px and below, sized for the peak and "nuna". A word mark must never be squashed or cropped.
-
-The design (Atelier):
-
-- Settings (names suggested): `nuna.ui.brand.dir`, a folder on the server holding the pack; the product name in
-  words (default "nuna"); the header mark's accessible name; whether the product name sits beside the mark; whether
-  the pack is light-only. Unset, nothing changes.
-- `index.html` and every docs page link a brand stylesheet at a fixed path that always exists. The jar and
-  `docs/site/assets` ship it empty; when `nuna.ui.brand.dir` is set the server serves the install's file there, and
-  the favicon the same way. No flash, no 404s, no change to the Content-Security-Policy, and a docs copy opened from
-  disk stays Ice line. Files from the brand folder are revalidated by content, not hashed once.
-- The pack sets tokens only: custom properties and `@font-face`, no rules aimed at the console's own selectors, which
-  change weekly. Add the few role tokens Ice line itself then uses: header band background, ink and field colour, the
-  rail's current-page background and ink, the mark's height, and one for the "requested" pill (`requests.js`, about
-  line 72), the one status drawn in the accent colour. Document that list as the pack's contract.
-- A light-only pack pins the light theme and hides both theme switches (header and menu); on the docs site the
-  pack's stylesheet forces light itself.
-- The mark gets a fixed box: fixed height, `flex: none`, at most 20 × 120 px. The product name replaces every
-  hard-coded "nuna" in titles and messages; when it is out of the header, each page's eyebrow starts with it.
-- A neutral test pack in `catalog-server/src/test`, with an invented name and colours and a mark at the maximum size,
-  so the fast build and the header harness exercise the slot.
-- A `brandConfigMap` value in the Helm chart, following `storageCaConfigMap` (a ConfigMap's 1 MiB fits a couple of
-  woff2 fonts), and a docs page for the settings and the token contract.
-- Item 332 does the sign-in words and the token box; this item does not repeat them.
-
-Open at work, not here: does the firm's design system have dark-mode tokens? If it does, the work pack covers dark and
-the light-only pin goes unused there.
-
-Done when, with nothing set, the console and docs render as today and the existing tests and header harness pass
-unchanged; with the test pack set, they show its colours, fonts, mark, favicon and product name from first paint,
-with no console errors, and the header fits at every tier with the menus open at phone widths; a light-only pack
-pins light and hides both switches; a changed pack file is served fresh without a restart; and a docs copy opened
-from disk stays Ice line.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1712,4 +1612,13 @@ from disk stays Ice line.
 | [329](backlog/329.md) | Console: the Access tab says each governance fact once and lists only the grants that reach the object | done | 2026-11-27 |
 | [330](backlog/330.md) | Console: History shows data changes, not only the worker's expiry commits | done | 2026-11-27 |
 | [331](backlog/331.md) | Console: the smaller polish from the 27 Nov review | done | 2026-11-27 |
+| [332](backlog/332.md) | Sign-in screen: the identity provider's name in words, and the developer token box folded | done | 2026-11-28 |
+| [333](backlog/333.md) | A brand slot for the console and the docs site: Ice line by default, an install's pack by settings | done | 2026-11-28 |
 | [334](backlog/334.md) | Maintenance skips tables closed until classified without loading them, and alerts when it has for a day | done | 2026-11-28 |
+| [335](backlog/335.md) | ScaleTest still expects demo.sh's old scale line, so demo-datagen's tests fail | done | 2026-11-28 |
+| [336](backlog/336.md) | The overnight run misses Podman's Windows pipes going away: every container test fails with no Docker environment | done | 2026-11-28 |
+| [339](backlog/339.md) | SecurityGateTest looks for the grant export's audit record in the log, where its context never puts it | done | 2026-11-28 |
+| [340](backlog/340.md) | AlertRulesTest's promtool tests still expect "(backlog 261)" in the availability pages, which 314 took out | done | 2026-11-28 |
+| [341](backlog/341.md) | The console tests that failed in the heavy build of 2026-11-28: ConsoleBrandTest, ConsoleBrowserTest, ConsoleFlaggedTableBrowserTest, ConsoleHealthTest | done | 2026-11-28 |
+| [342](backlog/342.md) | KubernetesCompactionTest reads a cut-off Job's Failed condition before Kubernetes sets it | done | 2026-11-28 |
+| [343](backlog/343.md) | Podman's VM runs short of contiguous memory and Windows' connections to test containers hang: Cockroach and conformance tests fail together | done | 2026-11-28 |

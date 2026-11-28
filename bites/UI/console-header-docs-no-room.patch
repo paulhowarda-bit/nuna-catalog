@@ -1,0 +1,26 @@
+Breaks: the header's gaps from 761 to 1,100 px are 8 and 10 px again, so beside the Docs button, a branch chip and the main-only note it runs past the frame.
+Module: catalog-server
+Test: ConsoleBrowserTest#betweenAPhoneAndAWideScreenTheHeaderFitsAtEveryWidth
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index 017da79d..5daf559f 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -1346,15 +1346,12 @@ details.tech[open] > summary { margin-bottom: 4px; }
+   .nc-go > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+ }
+ @container frame (min-width: 761px) and (max-width: 1100px) {
+-  /* 8 px, not 10: with the Docs button (item 307), a branch chip and the note that a page shows main only, 10 px left
+-     the header 4 px wider than a 901 px frame (backlog 341) */
+-  .nc-top { gap: 8px; }
++  .nc-top { gap: 10px; }
+   .nc-top .nc-pick .lbl, .nc-top .ref-pick .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+   .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 10ch; }
+ }
+ @container frame (min-width: 761px) and (max-width: 900px) {
+-  /* 6 px, not 8: with the same three, 8 px left the header 6 px wider than a 761 px frame (backlog 341) */
+-  .nc-top { gap: 6px; }
++  .nc-top { gap: 8px; }
+   .nc-go kbd { display: none; }
+   .nc-top .signout .tw, .nc-top .nc-docs .tw { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+   .nc-pick b, .nc-top .ref-pick .cref .nm { max-width: 8ch; }

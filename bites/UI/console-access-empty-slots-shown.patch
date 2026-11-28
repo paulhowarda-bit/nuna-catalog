@@ -1,0 +1,16 @@
+Breaks: the Access tab's empty slots take their place in the stack again, so a gap sits above What you may do.
+Module: catalog-server
+Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index 5daf559f..6afd51df 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -573,7 +573,6 @@ pre.raw { margin: 0 0 12px; }
+ .access-acts { justify-content: flex-start; }
+ /* The Access tab's slots that stay empty (the closed notice on an open table, the reader's view on a closed one) take
+    no place in the stack, so What you may do leads with no gap above it (backlog 341). */
+-#access-tab > :empty { display: none; }
+ /* The Grant access dialog (Atelier, 2026-11-24; backlog 248): groups with their duties, the access in words with its
+    wire name, the object, and the live line before Grant. */
+ .grp-pick { display: grid; gap: 2px; max-height: 208px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }

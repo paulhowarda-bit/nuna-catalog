@@ -3,10 +3,10 @@ Module: catalog-server
 Test: ConsoleFilesCacheTest#aFileAnswersByAnEtagOfItsBytesAndNeverByLastModified
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
-index 2e218070..eac328be 100644
+index 41ecd8b7..b5acb31d 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
-@@ -78,8 +78,7 @@ public class UiWiring implements WebMvcConfigurer {
+@@ -90,8 +90,7 @@ public class UiWiring implements WebMvcConfigurer {
       */
      @Override
      public void addResourceHandlers(ResourceHandlerRegistry registry) {
@@ -15,4 +15,4 @@ index 2e218070..eac328be 100644
 +        registry.addResourceHandler("/ui/*").addResourceLocations(FILES).setCacheControl(CacheControl.noCache());
          registry.addResourceHandler("/docs/**").addResourceLocations(DOCS).setCacheControl(CacheControl.noCache())
                  .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
-     }
+         // The brand slot: the install's pack first, then the jar's empty stylesheet and Ice line's icon. A pack's file

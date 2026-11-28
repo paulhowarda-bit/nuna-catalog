@@ -1,0 +1,17 @@
+Breaks: An export of a catalog's grants leaves no audit record.
+Module: catalog-server
+Test: SecurityGateTest#grantsAreListedByPrincipalAndByObjectCheckedInBatchAndExported
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 56ffdfa7..fa106911 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -351,9 +351,6 @@ class GrantRoutes {
+         out.put("exported-by", request.caller().subject().id());
+         out.put("grants", grants);
+         // The whole access map leaves with the caller: who took it, and how much, is audited (backlog 312).
+-        denials.record(new Export(new nuna.catalog.audit.Securable(
+-                nuna.catalog.audit.Securable.Kind.CATALOG, record.id(), record.name(), List.of()), Export.GRANTS,
+-                grants.size(), request.actor()));
+         return json(out);
+     }
+

@@ -7,6 +7,7 @@
   <meta name="description" content="Every value of the three charts, nuna-catalog, nuna-maintenance and nuna-audit-tables, with its default and what it does.">
   <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../assets/docs.css">
+  <link rel="stylesheet" href="../assets/brand/brand.css">
   <script src="../assets/theme.js"></script>
   <script src="../assets/nav.js" defer></script>
   <script src="../assets/docs.js" defer></script>
@@ -90,6 +91,18 @@
           <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
           <tbody>
             <tr><th scope="row"><code>storageCaConfigMap.name</code></th><td><code>""</code></td><td>A ConfigMap of CA bundles for stores whose certificates a private CA signed, one PEM file per key, mounted at <code>/etc/nuna/storage-ca</code>. A storage profile names its file as <a href="storage.html#nuna-storage-profiles-name-ca-bundle"><code>ca-bundle</code></a>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="nuna-catalog-brandconfigmap">brandConfigMap</h3>
+
+      <div class="table-wrap">
+        <table>
+          <caption>nuna-catalog: the brand pack</caption>
+          <thead><tr><th scope="col">Value</th><th scope="col">Default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>brandConfigMap.name</code></th><td><code>""</code></td><td>A ConfigMap holding a <a href="brand.html">brand pack</a>, one file per key (fonts as <code>binaryData</code>), mounted at <code>/etc/nuna/brand</code>; the chart sets <a href="server.html#nuna-ui-brand-dir"><code>nuna.ui.brand.dir</code></a> there. A changed ConfigMap is served without a restart. Empty, the console and the documentation are Ice line.</td></tr>
           </tbody>
         </table>
       </div>

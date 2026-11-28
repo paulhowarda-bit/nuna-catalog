@@ -1,0 +1,17 @@
+Breaks: The brand slot ignores nuna.ui.brand.dir and serves only the jar's empty stylesheet, so a pack never shows.
+Module: catalog-server
+Test: BrandSlotTest#thePacksFilesAreServedAtBothBrandPathsAndWhatItLacksFallsBackToTheJars
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+index 41ecd8b7..9c897d96 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java
+@@ -104,7 +104,7 @@ public class UiWiring implements WebMvcConfigurer {
+ 
+     /** Where a brand file is looked for: the install's pack, if one is set, then {@code fallback} in the jar. */
+     private String[] brand(String fallback) {
+-        return settings.brand() == null ? new String[] {fallback} : new String[] {settings.brand().location(), fallback};
++        return new String[] {fallback};
+     }
+ 
+     /** The site's home is its index page; relative links in it need the trailing slash. */

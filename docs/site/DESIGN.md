@@ -209,6 +209,7 @@ Every `nuna.*` setting, on the page for its prefix. Each setting is one settings
 | `configure/audit.html` | Audit settings | reference | 1 | `nuna.audit.*`. | `AuditSettings` |
 | `configure/governance.html` | Governance and refs settings | reference | 2 | `nuna.governance.*`, `nuna.refs.*`. | `GovernanceSettings` |
 | `configure/server.html` | Server settings | reference | 2 | `nuna.rest.*`, `nuna.ui.*`, `nuna.health.*`, `nuna.telemetry.*`, `nuna.changefeed.*`, `server.port`, logging. | `RestSettings`, `UiSettings`, `catalog-server/src/main/resources/application.yaml` |
+| `configure/brand.html` | Brand packs | reference | 1 | An install's brand pack for the console and the documentation: its files, the tokens it may set, and the button that turns it off. | `UiSettings`, `UiWiring`, `catalog-server/.../ui/brand.js`, `docs/site/assets/theme.js` |
 | `configure/maintenance.html` | Maintenance worker settings | reference | 1 | `nuna.maintenance.*`. | `catalog-maintenance/` (`WorkerApplication` and its settings classes) |
 | `configure/audit-tables.html` | Audit tables writer settings | reference | 2 | `nuna.audit-tables.*`. | `catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java` |
 | `configure/helm-values.html` | Helm chart values | reference | 1 | Every value of the three charts, one `h2` per chart. | `deploy/helm/*/values.yaml`, `deploy/helm/*/templates/` |
@@ -411,6 +412,7 @@ text (no markup) for the description. Keep the indentation; it costs nothing and
   <meta name="description" content="LEAD">
   <link rel="icon" href="ROOTassets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="ROOTassets/docs.css">
+  <link rel="stylesheet" href="ROOTassets/brand/brand.css">
   <script src="ROOTassets/theme.js"></script>
   <script src="ROOTassets/nav.js" defer></script>
   <script src="ROOTassets/docs.js" defer></script>

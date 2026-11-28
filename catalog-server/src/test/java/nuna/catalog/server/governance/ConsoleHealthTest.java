@@ -324,11 +324,14 @@ class ConsoleHealthTest {
         WebElement shown = loadedTab();
         assertThat(shown.findElements(By.id("table-health-verdict"))).as("the health of a table they may not read")
                 .isEmpty();
-        // Rita holds nothing on the hidden namespace, so the catalog answers as if the table did not exist (D18,
-        // backlog 73), and the page shows that answer as it came.
-        assertThat(ConsoleBrowser.textContent(shown)).contains("The catalog answered with an error",
-                "404 NoSuchTableException",
-                "Table does not exist: " + hidden + ".secret");
+        // Rita's grants read nothing on the hidden namespace, so the console asks the catalog nothing it would refuse
+        // (backlog 325) and says so from her grants alone: the same words a table that does not exist gets, so the
+        // name stays hidden (D18).
+        String unread = ConsoleBrowser.textContent(shown);
+        assertThat(unread).contains("Reading this table's data needs select on it, which your groups do not hold.",
+                "Your groups: " + readers + ".").doesNotContain("NoSuchTableException");
+        browser.open("/ui/#c=trading&k=table&ns=" + hidden + "&n=nothing_" + Api.suffix() + "&tab=health");
+        assertThat(ConsoleBrowser.textContent(loadedTab())).as("a table that does not exist").isEqualTo(unread);
     }
 
     @Test

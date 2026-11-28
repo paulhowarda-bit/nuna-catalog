@@ -1,0 +1,17 @@
+Breaks: a classified table's closed marks go only if the console may load it, so a flagged table, read through Trino, keeps them.
+Module: catalog-server
+Test: ConsoleFlaggedTableBrowserTest#aTableClosedUntilClassifiedSaysSoAndAStewardClassifiesItFromTheNotice
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index 42784000..6e4a9855 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -172,7 +172,7 @@ export function tablePage(target, tab, route) {
+     metadata = loadIfRead(target, reads, loadTable);
+     // A classification set opens a closed table: its marks go once its load no longer answers closed. A flagged table
+     // still refuses the console its load, to be read through Trino, so a refusal of another kind opens it too.
+-    metadata.then(() => false, error => closedRefusal(error)).then(shut => {
++    metadata.then(() => false, () => true).then(shut => {
+       if (shut) return;
+       $('.pill[data-closed]', title)?.remove();
+       noteClosed(target, false);
