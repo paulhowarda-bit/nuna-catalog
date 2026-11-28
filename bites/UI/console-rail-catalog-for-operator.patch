@@ -1,0 +1,17 @@
+Breaks: The rail draws Catalog and Branches and tags for a platform operator who holds nothing in the catalog, each a dead end.
+Module: catalog-server
+Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 4a0656f4..0c33d944 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -227,7 +227,7 @@ function setChrome(navKey, ref) {
+   // read, Grants is for those who manage the catalog's grants (backlog 245), Audit for audit readers and them, Service
+   // for platform operators. Catalog, Branches and tags and Governance are for anyone who holds anything in the catalog
+   // (backlog 221), which a platform operator need not: his Governance is the DR freeze alone (backlog 325).
+-  const holds = !!cat && holdsIn(cat);
++  const holds = !!cat;
+   const open = {overview: readsData(), catalog: holds, refs: holds, maintenance: readsData(), governance: holds || (!!cat && operates()),
+     grants: !!cat && may(cat, 'manage-grants'), audit: !!cat && auditOpen(cat), service: operates()};
+   // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).

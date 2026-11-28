@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#theRailOpensBranchesAndTagsAndSaysWhyOneMayNotMakeOne
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index bb364698..9c22205f 100644
+index 4a0656f4..8cec9935 100644
 --- a/catalog-server/src/main/resources/nuna/ui/app.js
 +++ b/catalog-server/src/main/resources/nuna/ui/app.js
-@@ -190,7 +190,7 @@ function setChrome(navKey, ref) {
-   // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
-   // read, Grants is for those who manage the catalog's grants (backlog 245), Audit for audit readers and them, Service
-   // for platform operators. Branches and tags are listed to anyone who holds anything in the catalog (backlog 221).
--  const open = {overview: readsData(), catalog: true, refs: !!cat, maintenance: readsData(), governance: true,
-+  const open = {overview: readsData(), catalog: true, refs: false, maintenance: readsData(), governance: true,
+@@ -228,7 +228,7 @@ function setChrome(navKey, ref) {
+   // for platform operators. Catalog, Branches and tags and Governance are for anyone who holds anything in the catalog
+   // (backlog 221), which a platform operator need not: his Governance is the DR freeze alone (backlog 325).
+   const holds = !!cat && holdsIn(cat);
+-  const open = {overview: readsData(), catalog: holds, refs: holds, maintenance: readsData(), governance: holds || (!!cat && operates()),
++  const open = {overview: readsData(), catalog: holds, refs: false, maintenance: readsData(), governance: holds || (!!cat && operates()),
      grants: !!cat && may(cat, 'manage-grants'), audit: !!cat && auditOpen(cat), service: operates()};
    // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
    const home = cat ? homeKey(cat) : 'service';

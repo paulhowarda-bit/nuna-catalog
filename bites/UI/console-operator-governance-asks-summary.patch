@@ -1,0 +1,17 @@
+Breaks: A platform operator who holds nothing in the catalog gets its governance summary and holds list, both refused, instead of the DR freeze alone.
+Module: catalog-server
+Test: ConsoleBrowserTest#browsingWritesNoRefusalTheCallersOwnGrantsForetell
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/governance.js b/catalog-server/src/main/resources/nuna/ui/governance.js
+index 42920222..2ae8c659 100644
+--- a/catalog-server/src/main/resources/nuna/ui/governance.js
++++ b/catalog-server/src/main/resources/nuna/ui/governance.js
+@@ -15,7 +15,7 @@ const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write
+   ['tags', 'Tags', 'manage-tags']];
+ 
+ export function governancePage(catalog, tab) {
+-  if (!holdsIn(catalog) && operates()) return freezePage(catalog);
++  if (false) return freezePage(catalog);
+   const key = tab === 'holds' ? tab : '';
+   const tabs = tabsNav('Governance', [['', 'Summary'], ['holds', 'Holds and freezes']], key,
+     k => pageHref('governance', catalog, k || null));
