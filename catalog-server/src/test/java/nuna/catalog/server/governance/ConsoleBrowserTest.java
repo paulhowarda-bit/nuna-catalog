@@ -1171,6 +1171,9 @@ class ConsoleBrowserTest {
         // type its title (Atelier's re-walk after phase 2, backlog 214).
         assertThat(driver.findElements(By.cssSelector("#audit-feed .chip")).stream().map(c -> textContent(c).strip()).toList())
                 .contains("All 2", "Grants 1", "Commits 1", "Reads 0");
+        // A chip's title is its record types and their counts, as By kind's rows gave them.
+        assertThat(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']")).getDomAttribute("title"))
+                .isEqualTo("grant 1 · commit 1");
         // The headline counts every record; the chips leave out the hidden reads, and the checkbox says how many
         // (Atelier's re-walk after 212 to 217, backlog 220).
         assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .feed-reads"))).strip())
