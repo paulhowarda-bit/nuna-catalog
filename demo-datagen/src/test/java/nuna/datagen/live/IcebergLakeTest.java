@@ -3,11 +3,13 @@ package nuna.datagen.live;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Map;
 import nuna.datagen.kit.Kit;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.LakeSchemas;
+import nuna.datagen.world.Scale;
 import nuna.datagen.world.World;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.FileFormat;
@@ -125,6 +127,16 @@ class IcebergLakeTest {
         assertThat(other.settings()).isEqualTo(SETTINGS);
         assertThat(other.pacedFrom()).isEqualTo(LocalDate.of(2026, 11, 22));
         assertThat(other.startOffsets(Map.of())).containsEntry(Feed.JOURNAL_LINES, 40L);
+    }
+
+    @Test
+    void theScaleDialsHistoryIsKeptWithTheSettings() {
+        // Item 321: a restart replays each day at the scale it ran at.
+        assertThat(lake.scale()).isEqualTo(Scale.ONE);
+        Scale s = Scale.ONE.with(Instant.parse("2026-11-27T15:00:00Z"), 5).with(Instant.parse("2026-11-28T02:00:00Z"), 2);
+        lake.scale(s);
+        assertThat(lake.scale()).isEqualTo(s);
+        assertThat(lake.settings()).isEqualTo(SETTINGS);
     }
 
     @Test

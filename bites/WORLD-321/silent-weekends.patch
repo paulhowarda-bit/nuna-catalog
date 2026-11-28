@@ -1,0 +1,16 @@
+Breaks: customers do nothing on weekends and holidays
+Module: demo-datagen
+Test: World24x7Test#customersServiceTheirAccountsAndAskForMoneyOnWeekendsAndTheHoliday
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Activity.java b/demo-datagen/src/main/java/nuna/datagen/world/Activity.java
+index 57d4b689..7fb8c72f 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Activity.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Activity.java
+@@ -46,7 +46,7 @@ final class Activity {
+             || calendar.holiday(date) != null;
+         double[] w = quiet ? WEEKEND : WEEKDAY;
+         double share = (quiet ? WEEKEND_SHARE : WEEKDAY_SHARE) * w[z.getHour()] / (quiet ? WEEKEND_SUM : WEEKDAY_SUM);
+-        return share * java.time.Duration.between(from, to).toSeconds() / 3600.0;
++        return quiet ? 0 : share * java.time.Duration.between(from, to).toSeconds() / 3600.0;
+     }
+ 
+     /**

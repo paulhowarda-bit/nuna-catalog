@@ -2,11 +2,11 @@ Breaks: an order's last fill writes the event partially_filled, so its last even
 Module: demo-datagen
 Test: ClearingTest#eachExecutionCameThroughARouteToItsVenueAndEachOrdersLastEventIsItsState
 diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Oms.java b/demo-datagen/src/main/java/nuna/datagen/world/Oms.java
-index 9399b377..4003cd30 100644
+index eb228bc9..6a931e48 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/world/Oms.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/world/Oms.java
-@@ -102,7 +102,7 @@ final class Oms {
-         row.put("settlement_date", settlementDate);
+@@ -104,7 +104,7 @@ final class Oms {
+         row.put("session", o.session());
          row.put("executed_at", at);
          emitter.emit(at, Feed.EXECUTIONS, row);
 -        event(at, o, o.filled() == o.quantity() ? "filled" : "partially_filled", route, exec);

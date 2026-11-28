@@ -1,0 +1,16 @@
+Breaks: the firm onboards toward the 20,000-account ceiling whatever the scale, so it grows past n times its accounts and keeps growing when turned down
+Module: demo-datagen
+Test: ScaleDialTest#atAHigherScaleTheCustomersDoProportionallyMoreAndTheFirmGrows+turnedDownTheFirmStopsOnboardingKeepsItsAccountsAndItsBooksBalance
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/World.java b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+index d0e16656..c17571e9 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/World.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+@@ -445,7 +445,7 @@ public final class World {
+      * gap in a business day's worth of activity, each at its own time, drawn from a source of chance of their own.
+      */
+     private void onboard(Instant from, int n, double customer) {
+-        int gap = Math.min(n * settings.accounts(), MAX_ACCOUNTS) - accounts.size();
++        int gap = MAX_ACCOUNTS - accounts.size();
+         if (gap <= 0) {
+             return;
+         }

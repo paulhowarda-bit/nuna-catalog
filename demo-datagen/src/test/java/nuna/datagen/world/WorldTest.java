@@ -94,7 +94,8 @@ class WorldTest {
         assertThat(r.reasons).isEqualTo(Map.of("BalanceBelowZero", 1));
         assertThat(r.counts.get(Feed.FINANCIAL_TRANSACTIONS)).isBetween(20_000, 60_000);
         assertThat(r.counts.get(Feed.JOURNAL_LINES)).isGreaterThan(5 * r.counts.get(Feed.FINANCIAL_TRANSACTIONS));
-        assertThat(r.counts.get(Feed.BARS_5M)).isEqualTo(22 * Market.BARS * 300);
+        // Every security's bars in the regular session, the most popular's in the others (item 321).
+        assertThat(r.counts.get(Feed.BARS_5M)).isEqualTo(22 * (Market.BARS * 300 + Market.THIN_BARS * Market.thinCount(300)));
         assertThat(r.counts.get(Feed.PRICES_EOD)).isEqualTo(22 * 300);
         assertThat(r.counts.get(Feed.ACCOUNTS)).isEqualTo(1000);
         assertThat(r.counts.get(Feed.SECURITIES)).isEqualTo(300);

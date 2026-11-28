@@ -23,14 +23,14 @@ import nuna.datagen.world.Feed;
  * (order events, routes, executions) are inserted into tables of their own, numbered by {@code seq}, and so, while
  * Kafka is off, is every other feed; a change feed copies each table into the lake.
  *
- * <p>Times are written as UTC; DATETIME has no zone. On the real clock nothing is written overnight or over a weekend,
- * longer than the server keeps an idle connection, so a write that fails opens a new connection and is tried once more.
+ * <p>Times are written as UTC; DATETIME has no zone. A pause in the writes can outlast the server's idle connection (a
+ * generator stopped and started, a quiet minute), so a write that fails opens a new connection and is tried once more.
  */
 public final class SingleStore implements Publisher.Orders, Publisher.Rows, AutoCloseable {
 
     static final List<String> COLUMNS = List.of("order_id", "order_ref", "brokerage_account", "security_id", "symbol",
         "side", "order_type", "limit_price", "quantity", "filled_quantity", "average_price", "status", "locate_id",
-        "accepted_financial_transaction_id", "trade_date", "accepted_at", "updated_at");
+        "accepted_financial_transaction_id", "trade_date", "session", "accepted_at", "updated_at");
 
     static final String UPSERT = "INSERT INTO orders (" + String.join(", ", COLUMNS) + ") VALUES ("
         + COLUMNS.stream().map(c -> "?").collect(Collectors.joining(", ")) + ") ON DUPLICATE KEY UPDATE "

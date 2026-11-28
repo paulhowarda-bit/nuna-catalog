@@ -48,6 +48,14 @@ final class Rng {
         return k - 1;
     }
 
+    /** A count of events with this mean: Poisson, or above a mean of 30 its normal approximation. */
+    int count(double mean) {
+        if (mean <= 0) {
+            return 0;
+        }
+        return mean < 30 ? poisson(mean) : (int) Math.max(0, Math.round(mean + Math.sqrt(mean) * normal()));
+    }
+
     <T> T pick(List<T> list) {
         return list.get(r.nextInt(list.size()));
     }

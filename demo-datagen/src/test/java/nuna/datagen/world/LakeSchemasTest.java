@@ -33,7 +33,7 @@ class LakeSchemasTest {
         Schema withLocate = new Schema(Types.NestedField.optional(1000, LakeSchemas.LOCATE_ID, Types.StringType.get()));
         // A month, so margin debits have built up and interest is booked at its end, at enough accounts that every
         // template is used.
-        World w = new World(World.Settings.of(5, LocalDate.of(2026, 10, 1), 600), KIT);
+        World w = new World(World.Settings.of(6, LocalDate.of(2026, 10, 1), 600), KIT);
         Sink check = new Sink() {
             @Override
             public void accept(Event e) {

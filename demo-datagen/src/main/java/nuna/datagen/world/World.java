@@ -35,8 +35,14 @@ import nuna.datagen.world.Market.Security;
  * settlement at T+1 and month-end margin interest, every financial transaction booked through the demo kit's posting
  * engine. Seed, start date and scale give the same events, in the same order, every time.
  *
- * <p>A business day runs on the New York clock: settlements at 08:00, the session from 09:30 to 16:00 in five-minute
- * bars, unfilled day orders expired at the close, balances at 17:00. Each day ends with {@link Sink#endOfDay}.
+ * <p>The world runs around the clock on the New York clock (D48, amended 2026-11-27): each {@link #runDay} plays a
+ * business day's stretch of time, from 20:30 on the business day before it to 20:30 on the day, weekends and holidays
+ * between included. Customers act at every hour of it ({@link Activity}); trading follows Nasdaq's 24x5 sessions
+ * ({@link Session}), the day's trading from 21:00 the evening before it to 20:00, in five-minute bars; the books keep
+ * the business day: settlements at 08:00, corporate actions the evening before the day's trading opens, a money
+ * request made outside its system's hours recorded at once and booked at 07:00 on the next business day, and the
+ * overnight batch after the 20:00 pause (the close's expiries and requirements at 20:00:01, balances at 20:05,
+ * surveillance and AML monitoring after). Each day ends with {@link Sink#endOfDay}.
  */
 public final class World {
 
@@ -114,6 +120,30 @@ public final class World {
 
     private record Task(Instant at, long seq, Runnable run) {}
 
+    /** The end of a business day's stretch of time, and of the overnight batch: 20:30 New York time. */
+    static final LocalTime DAY_ENDS = LocalTime.of(20, 30);
+    /**
+     * When the payments systems book a customer's ACH, journal and wire requests on a business day: from 07:00 to 19:00
+     * (wires to 15:00, so each is released to Fedwire before it closes). A request made outside them is recorded at once
+     * and booked at the next 07:00 of a business day, with that business date.
+     */
+    static final LocalTime MONEY_OPENS = LocalTime.of(7, 0), MONEY_CUTOFF = LocalTime.of(19, 0),
+        WIRE_CUTOFF = LocalTime.of(15, 0);
+    /** The planning slots: half-hours, so each lies within one hour and one trading session. */
+    static final long SLOT_SECONDS = 1800;
+    /** The most brokerage accounts the scale dial grows the firm to: the generator's memory is sized for these. */
+    public static final int MAX_ACCOUNTS = 20_000;
+    /** The share of the gap to its scale's accounts the firm onboards in a business day's worth of activity. */
+    static final double ONBOARDING = 0.15;
+    private static final String[] PERSONAS = {"dormant", "buy_and_hold", "active_trader", "short_seller"};
+    private static final double[] PERSONA_WEIGHTS = {0.30, 0.42, 0.23, 0.05};
+
+    /** The scale dial's history (item 321), and the source of chance of the customers it brings. */
+    private Scale scale = Scale.ONE;
+    private final Rng rng4;
+    /** The tasks a day planned for after its end (a session that runs past 20:30): the next day runs them. */
+    private final List<Task> carried = new ArrayList<>();
+
     private final PriorityQueue<Task> tasks =
         new PriorityQueue<>(Comparator.comparing(Task::at).thenComparingLong(Task::seq));
 
@@ -131,6 +161,7 @@ public final class World {
         final String locate;
         final Instant acceptedAt;
         final LocalDate tradeDate;
+        final Session session;
         long acceptance;
         long filled;
         BigDecimal estimateLeft;
@@ -142,7 +173,7 @@ public final class World {
         String status = "accepted";
 
         Order(Account account, Security security, String side, String type, long quantity, BigDecimal estimatedPrice,
-              BigDecimal limitPrice, String locate, Instant at) {
+              BigDecimal limitPrice, String locate, Instant at, Session session) {
             this.account = account;
             this.security = security;
             this.side = side;
@@ -153,6 +184,7 @@ public final class World {
             this.locate = locate;
             this.acceptedAt = at;
             this.tradeDate = day;
+            this.session = session;
             this.estimateLeft = estimatedPrice.multiply(BigDecimal.valueOf(quantity));
         }
 
@@ -188,18 +220,8 @@ public final class World {
         this.tax = new Tax(this::emit, engine);
         this.margin = new Margin(this::emit, engine, market, calendar, sec -> borrowRate(sec) != null);
         this.regulatory = new Regulatory(this::emit, engine, calendar);
-        String[] personas = {"dormant", "buy_and_hold", "active_trader", "short_seller"};
-        double[] weights = {0.30, 0.42, 0.23, 0.05};
         for (int i = 0; i < settings.accounts(); i++) {
-            double u = rng.uniform(), c = 0;
-            String persona = personas[personas.length - 1];
-            for (int p = 0; p < personas.length; p++) {
-                c += weights[p];
-                if (u < c) {
-                    persona = personas[p];
-                    break;
-                }
-            }
+            String persona = persona(rng.uniform());
             boolean margin = persona.equals("short_seller") || rng.chance(persona.equals("active_trader") ? 0.6 : 0.2);
             accounts.add(new Account(70_000_001L + i, margin ? "margin" : "cash", persona,
                 settings.start().minusDays(30 + rng.below(3000)), rng.chance(0.15) ? "HIFO" : "FIFO"));
@@ -208,6 +230,24 @@ public final class World {
         this.quotes = new Quotes(market, new Rng(settings.seed() * 31 + 154), this::emitRaw);
         this.digital = new Digital(accounts, market.securities(), new Rng(settings.seed() * 37 + 154), this::emitRaw);
         this.day = calendar.isBusinessDay(settings.start()) ? settings.start() : calendar.next(settings.start());
+        this.rng4 = new Rng(settings.seed() * 31 + 321);
+    }
+
+    private static String persona(double u) {
+        double c = 0;
+        for (int p = 0; p < PERSONAS.length; p++) {
+            c += PERSONA_WEIGHTS[p];
+            if (u < c) {
+                return PERSONAS[p];
+            }
+        }
+        return PERSONAS[PERSONAS.length - 1];
+    }
+
+    /** The world at the scale dial's settings over time (item 321): before the first day. */
+    public World withScale(Scale scale) {
+        this.scale = scale;
+        return this;
     }
 
     public Engine engine() {
@@ -263,10 +303,22 @@ public final class World {
     }
 
     private Instant at(LocalTime t) {
-        return day.atTime(t).atZone(NEW_YORK).toInstant();
+        return at(day, t);
+    }
+
+    static Instant at(LocalDate d, LocalTime t) {
+        return d.atTime(t).atZone(NEW_YORK).toInstant();
+    }
+
+    /** The calendar date in New York of the task running now: a weekend's, say, while the business day is Monday. */
+    private LocalDate today() {
+        return LocalDate.ofInstant(current, NEW_YORK);
     }
 
     private void schedule(Instant at, Runnable run) {
+        if (current != null && at.isBefore(current)) {
+            throw new IllegalStateException("a task planned at " + at + ", before the world's time " + current);
+        }
         tasks.add(new Task(at, seq++, run));
     }
 
@@ -283,13 +335,17 @@ public final class World {
         sink.accept(new Event(at, feed, row));
     }
 
-    /** Plays the next business day into the sink and returns its date. */
+    /**
+     * Plays the next business day's stretch of time into the sink, from 20:30 on the business day before it to 20:30 on
+     * the day, and returns its date.
+     */
     public LocalDate runDay(Sink sink) {
         this.sink = sink;
         LocalDate d = day;
-        // What the day's planning emits (the splits and dividends announced) goes out at 07:00, before the first task:
-        // before this, current was null on the first day and the pacer threw, or yesterday's last time (item 318).
-        current = at(LocalTime.of(7, 0));
+        Instant from = at(calendar.previous(d), DAY_ENDS), to = at(DAY_ENDS);
+        current = from;
+        tasks.addAll(carried);
+        carried.clear();
         if (!started) {
             started = true;
             reference();
@@ -305,23 +361,21 @@ public final class World {
         int played = businessDays;
         schedule(at(LocalTime.of(8, 0)), () -> clearing.settle(current, day, played));
         schedule(at(LocalTime.of(9, 30)), () -> clearing.closeOuts(current, day));
-        for (Account a : accounts) {
-            planDay(a);
-        }
         planServicing();
+        planDaily();
         planBackOffice(played);
-        quotes.plan(day, this::at, this::schedule);
-        digital.plan(day, this::at, this::schedule);
-        LocalTime t = LocalTime.of(9, 30);
-        for (int b = 0; b < Market.BARS; b++) {
-            LocalTime start = t;
-            t = t.plusMinutes(5);
-            schedule(at(t), () -> bars(start));
+        planTrading();
+        schedule(at(LocalTime.of(20, 5)), this::endOfDay);
+        for (Instant s = from; s.isBefore(to); s = s.plusSeconds(SLOT_SECONDS)) {
+            Instant slot = s, end = s.plusSeconds(SLOT_SECONDS);
+            schedule(slot, () -> planSlot(slot, end));
         }
-        schedule(at(LocalTime.of(16, 0, 1)), this::close);
-        schedule(at(LocalTime.of(17, 0)), this::endOfDay);
         while (!tasks.isEmpty()) {
             Task task = tasks.poll();
+            if (!task.at().isBefore(to)) {
+                carried.add(task);
+                continue;
+            }
             current = task.at();
             task.run().run();
         }
@@ -336,10 +390,107 @@ public final class World {
         return d;
     }
 
+    /**
+     * The day's trading (Nasdaq's 24x5 sessions, {@link Session}): five-minute bars from 21:00 the evening before to
+     * 20:00, every security's in the regular session and the most popular's in the others; the quotes; each session's
+     * unfilled orders expired at its end, the regular session's at 16:00:01 with the closing prices, and at 20:00:01,
+     * the end of the trade date, the house requirements for the next.
+     */
+    private void planTrading() {
+        quotes.plan(day, this::schedule);
+        for (Instant t = Session.opens(day); t.isBefore(Session.closes(day)); t = t.plusSeconds(300)) {
+            Instant barStart = t;
+            Session s = Session.at(day, t);
+            schedule(t.plusSeconds(300), () -> bars(barStart, s));
+        }
+        schedule(Session.OVERNIGHT.end(day).plusSeconds(1), () -> expire(Session.OVERNIGHT));
+        schedule(Session.PRE_MARKET.end(day).plusSeconds(1), () -> expire(Session.PRE_MARKET));
+        schedule(Session.REGULAR.end(day).plusSeconds(1), this::close);
+        schedule(Session.POST_MARKET.end(day).plusSeconds(1), () -> {
+            expire(Session.POST_MARKET);
+            margin.requirements(current, day);
+        });
+    }
+
+    /**
+     * A half-hour of the world: the customers the scale dial brings (item 321), then each brokerage account's orders,
+     * money requests and the back office's changes to its parties, at the hour's share of a business day's customer
+     * activity ({@link Activity}) and of the trade date's orders, times the scale; and the digital channels' sessions.
+     */
+    private void planSlot(Instant from, Instant to) {
+        double customer = Activity.customer(calendar, from, to);
+        double trading = Activity.trading(day, from, to);
+        int n = scale.at(from);
+        onboard(from, n, customer);
+        double f = (double) n * settings.accounts() / accounts.size();
+        int seconds = (int) java.time.Duration.between(from, to).toSeconds();
+        for (Account a : new ArrayList<>(accounts)) {
+            if (closed.contains(a.id())) {
+                continue;
+            }
+            if (trading > 0) {
+                planOrders(a, from, seconds, trading * f);
+            }
+            planRequests(a, from, seconds, customer * f);
+        }
+        double servicing = customer * f;
+        schedule(from.plusSeconds(rng3.below(seconds)), () -> office.servicing(current, day, servicing));
+        digital.plan(day, from, to, (double) n * settings.accounts() * Digital.SESSIONS_PER_ACCOUNT * customer,
+            this::schedule);
+    }
+
+    /**
+     * The customers the scale dial brings in a half-hour (item 321): while the firm has fewer brokerage accounts than
+     * its scale times the accounts it began with (at most {@link #MAX_ACCOUNTS}), it onboards {@link #ONBOARDING} of the
+     * gap in a business day's worth of activity, each at its own time, drawn from a source of chance of their own.
+     */
+    private void onboard(Instant from, int n, double customer) {
+        int gap = Math.min(n * settings.accounts(), MAX_ACCOUNTS) - accounts.size();
+        if (gap <= 0) {
+            return;
+        }
+        int k = Math.min(gap, rng4.count(gap * ONBOARDING * customer));
+        int seconds = (int) SLOT_SECONDS;
+        for (int i = 0; i < k; i++) {
+            schedule(from.plusSeconds(rng4.below(seconds)), this::openAccount);
+        }
+    }
+
+    /**
+     * A new customer's brokerage account, opened through the flows the world's own accounts went through: its row, its
+     * parties with their CIP checks and sanctions screens, its roles, suitability profile and trusted contact (the back
+     * office), then its first deposit, an ACH deposit asked for at once.
+     */
+    private void openAccount() {
+        if (accounts.size() >= MAX_ACCOUNTS) {
+            return;
+        }
+        String persona = persona(rng4.uniform());
+        boolean margin = persona.equals("short_seller") || rng4.chance(persona.equals("active_trader") ? 0.6 : 0.2);
+        Account a = new Account(accounts.getFirst().id() + accounts.size(), margin ? "margin" : "cash", persona, today(),
+            rng4.chance(0.15) ? "HIFO" : "FIFO");
+        accounts.add(a);
+        office.open(a);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("brokerage_account", a.id());
+        row.put("account_kind", a.kind());
+        row.put("persona", a.persona());
+        row.put("opened_on", a.opened());
+        row.put("disposal_method", a.disposalMethod());
+        row.put("base_currency_id", USD);
+        row.put("status", "open");
+        row.put("registration_type", office.registration(a.id()));
+        emit(current, Feed.ACCOUNTS, row);
+        office.onboarded(current, day, a.id());
+        digital.opened(a);
+        requestAchDeposit(a, dollars(rng4.lognormal(a.margin() ? 20000 : 5000, persona.equals("dormant") ? 0.7 : 1.0),
+            100));
+    }
+
     // ---------------------------------------------------------------- reference data, sent once
 
     private void reference() {
-        Instant at = at(LocalTime.of(7, 0));
+        Instant at = current;
         for (LocalDate c = day.withDayOfYear(1); c.getYear() <= day.getYear() + 1; c = c.plusDays(1)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("calendar_date", c);
@@ -556,15 +707,16 @@ public final class World {
     // ---------------------------------------------------------------- the back office (item 152)
 
     /**
-     * The back office's day: its morning work and surveillance at 07:15, the parties' changes and complaints at noon, AML
-     * monitoring at 17:30; and on the world's second to fourth business days the seeded structuring deposits, three cash
-     * deposits just under the $10,000 of a currency transaction report, and on its third the seeded sanctions match, an
-     * incoming wire from a listed name, which is blocked and never booked.
+     * The back office's day: its analysts' work due today at 08:30, and in the overnight batch the trade date's
+     * surveillance at 20:10 and AML monitoring at 20:15 (the parties' changes and complaints come at any hour, from the
+     * half-hours: {@link #planSlot}); and on the world's second to fourth business days the seeded structuring
+     * deposits, three cash deposits just under the $10,000 of a currency transaction report, and on its third the
+     * seeded sanctions match, an incoming wire from a listed name, which is blocked and never booked.
      */
     private void planBackOffice(int played) {
-        schedule(at(LocalTime.of(7, 15)), () -> office.morning(current, day));
-        schedule(at(LocalTime.of(12, 0)), () -> office.servicing(current, day));
-        schedule(at(LocalTime.of(17, 30)), () -> office.monitor(current, day));
+        schedule(at(LocalTime.of(8, 30)), () -> office.morning(current, day));
+        schedule(at(LocalTime.of(20, 10)), () -> office.surveil(current, day));
+        schedule(at(LocalTime.of(20, 15)), () -> office.monitor(current, day));
         if (BackOffice.STRUCTURING_DAYS_PLAYED.contains(played)) {
             Account a = account(office.structurer());
             BigDecimal amount = office.structuringAmount();
@@ -608,47 +760,137 @@ public final class World {
     /** The business time of the task running now. */
     private Instant current;
 
-    private void planDay(Account a) {
-        if (closed.contains(a.id())) {      // transferred out in full by ACATS
-            return;
-        }
+    /**
+     * An account's orders in a half-hour of trading: its persona's orders a trade date (a dormant account's few, an
+     * active trader's or short seller's more than one), times the half-hour's share and the scale.
+     */
+    private void planOrders(Account a, Instant from, int seconds, double share) {
         double orders = switch (a.persona()) {
             case "dormant" -> 0.02;
             case "buy_and_hold" -> 0.10;
             case "active_trader" -> 1.4;
             default -> 1.6;
         };
-        int n = rng.poisson(orders);
+        int n = rng.count(orders * share);
         for (int i = 0; i < n; i++) {
-            schedule(at(LocalTime.of(9, 31).plusSeconds(rng.below(6 * 3600 - 60))), () -> placeOrder(a));
-        }
-        boolean active = !a.persona().equals("dormant");
-        if (rng.chance(active ? 0.03 : 0.005)) {
-            BigDecimal amount = dollars(rng.lognormal(2500, 0.8), 10);
-            schedule(at(LocalTime.of(8, 30).plusSeconds(rng.below(8 * 3600))), () -> achDeposit(a, amount));
-        }
-        if (rng.chance(active ? 0.01 : 0.002)) {
-            BigDecimal amount = dollars(rng.lognormal(10000, 0.8), 100);
-            schedule(at(LocalTime.of(8, 30).plusSeconds(rng.below(8 * 3600))), () -> {
-                if (!closed.contains(a.id())) {
-                    cashDeposit(a, amount);
-                }
-            });
-        }
-        if (rng.chance(active ? 0.015 : 0.003)) {
-            double fraction = 0.1 + rng.uniform() * 0.4;
-            boolean cancel = rng.chance(0.08);
-            schedule(at(LocalTime.of(8, 30).plusSeconds(rng.below(8 * 3600))), () -> withdraw(a, fraction, cancel));
+            schedule(from.plusSeconds(rng.below(seconds)), () -> placeOrder(a));
         }
     }
 
-    private void achDeposit(Account a, BigDecimal amount) {
+    /**
+     * An account's money requests in a half-hour, at any hour of any day (D48, amended 2026-11-27): ACH deposits and
+     * withdrawals, wires out and journals to another account, at a business day's rates before, times the half-hour's
+     * share of a business day's customer activity and the scale. Each goes through {@link #whenBooked}.
+     */
+    private void planRequests(Account a, Instant from, int seconds, double share) {
+        boolean active = !a.persona().equals("dormant");
+        if (rng.chance((active ? 0.03 : 0.005) * share)) {
+            BigDecimal amount = dollars(rng.lognormal(2500, 0.8), 10);
+            schedule(from.plusSeconds(rng.below(seconds)), () -> requestAchDeposit(a, amount));
+        }
+        if (rng.chance((active ? 0.015 : 0.003) * share)) {
+            double fraction = 0.1 + rng.uniform() * 0.4;
+            boolean cancel = rng.chance(0.08);
+            schedule(from.plusSeconds(rng.below(seconds)), () -> requestWithdrawal(a, fraction, cancel));
+        }
+        if (rng2.chance((active ? 0.003 : 0.0008) * share)) {
+            double fraction = 0.2 + rng2.uniform() * 0.6;
+            boolean cancel = rng2.chance(0.08);
+            schedule(from.plusSeconds(rng2.below(seconds)), () -> requestWire(a, fraction, cancel));
+        }
+        if (rng2.chance((active ? 0.0015 : 0.0003) * share)) {
+            double fraction = 0.1 + rng2.uniform() * 0.4;
+            Account to = accounts.get(rng2.below(accounts.size()));
+            schedule(from.plusSeconds(rng2.below(seconds)), () -> requestJournal(a, to, fraction));
+        }
+    }
+
+    /**
+     * What happens only while the firm's and the banks' systems run, drawn once a business day for each account, at a
+     * business day's rates times the scale: cash deposits at a branch and incoming wires from 09:00 to 17:00, ACATS
+     * receipts from 10:00 to 15:00, and deliveries in the pause before the day's trading opens, when no order is open.
+     */
+    private void planDaily() {
+        double f = (double) scale.at(current) * settings.accounts() / accounts.size();
+        for (Account a : accounts) {
+            if (closed.contains(a.id())) {
+                continue;
+            }
+            boolean active = !a.persona().equals("dormant");
+            if (rng.chance((active ? 0.01 : 0.002) * f)) {
+                BigDecimal amount = dollars(rng.lognormal(10000, 0.8), 100);
+                schedule(at(LocalTime.of(9, 0).plusSeconds(rng.below(8 * 3600))), () -> {
+                    if (!closed.contains(a.id())) {
+                        cashDeposit(a, amount);
+                    }
+                });
+            }
+            if (rng2.chance((active ? 0.004 : 0.001) * f)) {
+                BigDecimal amount = dollars(rng2.lognormal(25000, 0.9), 100);
+                schedule(at(LocalTime.of(9, 0).plusSeconds(rng2.below(8 * 3600))), () -> {
+                    if (!closed.contains(a.id())) {
+                        String pay = payment();
+                        FinancialTransaction t = ft(70, a, "payments", Map.of(10, amount, 11, pay));
+                        if (book(current, t, false)) {
+                            office.payment(current, day, a.id(), pay, t.id(), 70, "wire", "deposit", "received", amount,
+                                null);
+                        }
+                    }
+                });
+            }
+            if (rng2.chance(0.0006 * f)) {
+                schedule(at(LocalTime.of(10, 0).plusSeconds(rng2.below(5 * 3600))), () -> acatsIn(a));
+            }
+            if (rng2.chance(0.00025 * f)) {
+                boolean full = rng2.chance(0.6);     // most transfers out move the whole account
+                // In the pause before the day's trading opens: every order of the last trade date has expired.
+                schedule(Session.opens(day).minusSeconds(600), () -> acatsOut(a, full));
+            }
+        }
+    }
+
+    /** Whether the payments systems book a request made now at once: on the business day, from 07:00 to the cutoff. */
+    private boolean bookable(LocalTime cutoff) {
+        return today().equals(day) && !current.isBefore(at(MONEY_OPENS)) && current.isBefore(at(cutoff));
+    }
+
+    /**
+     * A customer's money request (D48, amended 2026-11-27): booked at once while its system runs; otherwise recorded at
+     * once, as the customer sees it, and booked at 07:00 on the next business day the system runs, with that business
+     * date (an account closed meanwhile has it rejected).
+     */
+    private void whenBooked(Account a, String pay, String method, String direction, BigDecimal amount, LocalTime cutoff,
+                            Runnable book) {
+        if (bookable(cutoff)) {
+            book.run();
+            return;
+        }
+        office.requested(current, day, a.id(), pay, method, direction, amount);
+        Runnable booked = () -> {
+            if (closed.contains(a.id())) {
+                office.rejected(current, day, pay);
+            } else {
+                book.run();
+            }
+        };
+        if (current.isBefore(at(MONEY_OPENS))) {
+            schedule(at(MONEY_OPENS), booked);
+        } else {
+            later(calendar.next(day), MONEY_OPENS, booked);
+        }
+    }
+
+    private void requestAchDeposit(Account a, BigDecimal amount) {
         if (closed.contains(a.id())) {
             return;
         }
+        String pay = payment();
+        whenBooked(a, pay, "ach", "deposit", amount, MONEY_CUTOFF, () -> achDeposit(a, amount, pay));
+    }
+
+    private void achDeposit(Account a, BigDecimal amount, String pay) {
         BigDecimal goodFaith = amount.min(new BigDecimal("1000.00"));
         LocalDate expected = rng.chance(0.7) ? calendar.next(day) : calendar.next(calendar.next(day));
-        String pay = "PAY-" + (50_000_000 + nextPayment++);
         FinancialTransaction t = ft(31, a, "payments", Map.of(10, amount, 11, expected.toEpochDay(), 12, goodFaith,
             13, pay));
         // One in forty comes back (Nacha): three in five before the deposit settles, the rest one to three business
@@ -666,17 +908,28 @@ public final class World {
         }
     }
 
-    private void withdraw(Account a, double fraction, boolean cancel) {
+    /** A withdrawal of a fraction of what the account may withdraw now, which the booking checks again. */
+    private void requestWithdrawal(Account a, double fraction, boolean cancel) {
         if (closed.contains(a.id())) {
             return;
         }
-        BigDecimal withdrawable = engine.normalBalance(a.id(), 5201).min(engine.balance(a.id(), 1001, null, null));
-        BigDecimal amount = dollars(withdrawable.doubleValue() * fraction, 10);
+        BigDecimal amount = dollars(withdrawable(a).doubleValue() * fraction, 10);
         if (amount.compareTo(new BigDecimal(100)) < 0) {
             return;
         }
+        String pay = payment();
+        boolean requested = !bookable(MONEY_CUTOFF);
+        whenBooked(a, pay, "ach", "withdrawal", amount, MONEY_CUTOFF, () -> withdraw(a, amount, cancel, pay, requested));
+    }
+
+    private void withdraw(Account a, BigDecimal amount, boolean cancel, String pay, boolean requested) {
+        if (withdrawable(a).compareTo(amount) < 0) {
+            if (requested) {
+                office.rejected(current, day, pay);
+            }
+            return;
+        }
         LocalDate expected = calendar.next(day);
-        String pay = "PAY-" + (50_000_000 + nextPayment++);
         FinancialTransaction t = ft(33, a, "payments", Map.of(10, amount, 11, expected.toEpochDay(), 12, pay));
         if (!book(current, t, false)) {
             return;
@@ -684,7 +937,7 @@ public final class World {
         office.payment(current, day, a.id(), pay, t.id(), 33, "ach", "withdrawal", "initiated", amount, expected);
         if (cancel) {
             Instant later = current.plusSeconds(600 + rng.below(3600));
-            Instant latest = at(LocalTime.of(16, 30));
+            Instant latest = at(LocalTime.of(19, 59, 59));
             schedule(later.isAfter(latest) ? latest : later, () -> {
                 FinancialTransaction c = ft(35, a, "payments", Map.of(9, t.id(), 10, amount));
                 if (book(current, c, false)) {
@@ -766,12 +1019,21 @@ public final class World {
         return bp;
     }
 
+    /**
+     * An order at the session's time (item 321): in the regular session a buy, sell, short sale or cover, market or
+     * limit; in the others a limit buy or sell of one of the market's most popular securities, which trade there. None
+     * in a session's last two minutes.
+     */
     private void placeOrder(Account a) {
-        if (closed.contains(a.id())) {      // transferred out in full by ACATS this morning
+        if (closed.contains(a.id())) {      // transferred out in full by ACATS
+            return;
+        }
+        Session session = Session.at(day, current);
+        if (session == null || current.isAfter(session.end(day).minusSeconds(120))) {
             return;
         }
         boolean shortSeller = a.persona().equals("short_seller");
-        if (shortSeller && rng.chance(0.5) && current.isBefore(at(LocalTime.of(15, 30)))) {
+        if (shortSeller && session == Session.REGULAR && rng.chance(0.5) && current.isBefore(at(LocalTime.of(15, 30)))) {
             List<Long> covers = shortsToCover(a);
             if (!covers.isEmpty() && rng.chance(0.5)) {
                 cover(a, covers.get(rng.below(covers.size())));
@@ -787,40 +1049,43 @@ public final class World {
             default -> 0.45;
         };
         if (!held.isEmpty() && rng.chance(sellChance)) {
-            sell(a, held.get(rng.below(held.size())));
+            sell(a, held.get(rng.below(held.size())), session);
         } else {
-            buy(a);
+            buy(a, session);
         }
     }
 
-    private void buy(Account a) {
-        Security s = market.popular();
+    private void buy(Account a, Session session) {
+        Security s = session.thin() ? market.popularThin() : market.popular();
         BigDecimal p = market.price(s);
         BigDecimal bp = buyingPower(a);
         double notional = bp.doubleValue() * (0.05 + rng.uniform() * 0.25);
-        boolean limit = rng.chance(0.6);
-        BigDecimal est = p.multiply(new BigDecimal(limit ? "1.003" : "1.01")).setScale(2, RoundingMode.HALF_UP);
+        boolean limit = session.thin() || rng.chance(0.6);
+        BigDecimal est = p.multiply(new BigDecimal(session.thin() ? "1.006" : limit ? "1.003" : "1.01"))
+            .setScale(2, RoundingMode.HALF_UP);
         long qty = (long) Math.floor(notional / est.doubleValue());
         if (qty < 1 || est.multiply(BigDecimal.valueOf(qty)).compareTo(bp) > 0) {
             return;
         }
-        Order o = new Order(a, s, "buy", limit ? "limit" : "market", qty, est, limit ? est : null, null, current);
+        Order o = new Order(a, s, "buy", limit ? "limit" : "market", qty, est, limit ? est : null, null, current,
+            session);
         FinancialTransaction t = ft(40, a, "oms", Map.of(6, s.id(), 8, qty, 10, o.ref,
             11, o.estimateLeft, 12, est));
         accept(o, t);
     }
 
-    private void sell(Account a, long sec) {
+    private void sell(Account a, long sec, Session session) {
         Security s = market.byIndex((int) (sec - 100001));
         long free = freeToSell(a, sec);
-        if (free < 1) {
+        if (free < 1 || session.thin() && !market.tradesThin(s)) {
             return;
         }
         long qty = rng.chance(0.6) ? free : Math.max(1, (long) Math.ceil(free * (0.2 + rng.uniform() * 0.6)));
         BigDecimal p = market.price(s);
-        boolean limit = rng.chance(0.5);
-        BigDecimal limitPrice = limit ? p.multiply(new BigDecimal("0.997")).setScale(2, RoundingMode.HALF_UP) : null;
-        Order o = new Order(a, s, "sell", limit ? "limit" : "market", qty, p, limitPrice, null, current);
+        boolean limit = session.thin() || rng.chance(0.5);
+        BigDecimal limitPrice = limit ? p.multiply(new BigDecimal(session.thin() ? "0.994" : "0.997"))
+            .setScale(2, RoundingMode.HALF_UP) : null;
+        Order o = new Order(a, s, "sell", limit ? "limit" : "market", qty, p, limitPrice, null, current, session);
         accept(o, ft(43, a, "oms", Map.of(6, s.id(), 8, qty, 10, o.ref)));
     }
 
@@ -844,7 +1109,7 @@ public final class World {
             return;
         }
         String locate = "LOC-" + (30_000_000 + nextLocate++);
-        Order o = new Order(a, s, "sell_short", "market", qty, est, null, locate, current);
+        Order o = new Order(a, s, "sell_short", "market", qty, est, null, locate, current, Session.REGULAR);
         accept(o, ft(60, a, "oms", Map.of(6, s.id(), 8, qty, 10, o.ref, 11, o.estimateLeft, 12, est, 13, locate)));
     }
 
@@ -856,7 +1121,7 @@ public final class World {
         }
         long qty = rng.chance(0.6) ? free : Math.max(1, free / 2);
         BigDecimal est = market.price(s).multiply(new BigDecimal("1.01")).setScale(2, RoundingMode.HALF_UP);
-        Order o = new Order(a, s, "buy_to_cover", "market", qty, est, null, null, current);
+        Order o = new Order(a, s, "buy_to_cover", "market", qty, est, null, null, current, Session.REGULAR);
         openCovers.computeIfAbsent(a.id(), k -> new HashMap<>()).merge(sec, qty, Long::sum);
         accept(o, ft(63, a, "oms", Map.of(6, s.id(), 8, qty, 10, o.ref, 11, o.estimateLeft, 12, est)));
     }
@@ -871,14 +1136,16 @@ public final class World {
         oms.accepted(current, state(o));
         if (o.locate != null) {
             clearing.locate(current, day, o.locate, o.account.id(), o.security, o.quantity, o.ref,
-                at(LocalTime.of(16, 0)), borrowRate(o.security));
+                o.session.end(day), borrowRate(o.security));
         }
         // A short or cover fills in full nine times in ten, the rest cancelled at the close (templates 80 and 81, drawn
-        // from the second source); a buy or sell may stay part-filled to the close.
-        boolean full = o.side.equals("sell_short") || o.side.equals("buy_to_cover") ? rng2.chance(0.9) : rng.chance(0.85);
+        // from the second source); a buy or sell may stay part-filled to its session's end, more often outside the
+        // regular session, where the market is thin.
+        boolean full = o.side.equals("sell_short") || o.side.equals("buy_to_cover") ? rng2.chance(0.9)
+            : rng.chance(o.session.thin() ? 0.6 : 0.85);
         int fills = 1 + (o.quantity >= 10 ? rng.below(3) : 0);
         long left = full ? o.quantity : Math.max(0, o.quantity - Math.max(1, o.quantity / 3));
-        Instant last = at(LocalTime.of(15, 58));
+        Instant last = o.session.end(day).minusSeconds(120);
         Instant t0 = current;
         for (int i = 0; i < fills && left > 0; i++) {
             long q = i == fills - 1 ? left : Math.max(1, left / (fills - i));
@@ -1064,6 +1331,7 @@ public final class World {
         book(current, ft(template, a, "settlement", f), false);
     }
 
+    /** 16:00:01, the regular session's close: the closing prices, and its unfilled orders expired. */
     private void close() {
         Instant now = current;
         for (Security s : market.securities()) {
@@ -1075,7 +1343,16 @@ public final class World {
             row.put("currency_id", USD);
             emit(now, Feed.PRICES_EOD, row);
         }
+        expire(Session.REGULAR);
+    }
+
+    /** A session's end: its orders' unfilled shares expired (templates 46, 47, 80 and 81). */
+    private void expire(Session session) {
+        Instant now = current;
         for (Order o : new ArrayList<>(openOrders.values())) {
+            if (o.session != session) {
+                continue;
+            }
             long open = o.open();
             Map<Integer, Object> f = new HashMap<>(Map.of(6, o.security.id(), 8, open, 9, o.acceptance));
             int template;
@@ -1102,7 +1379,6 @@ public final class World {
                 }
             }
         }
-        margin.requirements(now, day);
     }
 
     private void endOfDay() {
@@ -1169,10 +1445,10 @@ public final class World {
         }
     }
 
-    private void bars(LocalTime start) {
+    /** A five-minute bar of each security that trades in the session: every one in the regular session. */
+    private void bars(Instant barStart, Session session) {
         Instant now = current;
-        Instant barStart = at(start);
-        for (Bar b : market.step()) {
+        for (Bar b : session.thin() ? market.stepThin(session.volume) : market.step()) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("security_id", b.security().id());
             row.put("symbol", b.security().symbol());
@@ -1204,6 +1480,7 @@ public final class World {
         row.put("locate_id", o.locate);
         row.put("accepted_financial_transaction_id", o.acceptance);
         row.put("trade_date", o.tradeDate);
+        row.put("session", o.session.code);
         row.put("accepted_at", o.acceptedAt);
         row.put("updated_at", current);
         emit(current, Feed.ORDERS, row);
@@ -1211,7 +1488,7 @@ public final class World {
 
     private Oms.OrderState state(Order o) {
         return new Oms.OrderState(o.id, o.ref, o.account.id(), o.security, o.side, o.type, o.limitPrice, o.quantity,
-            o.filled, o.value, o.status, o.locate, o.tradeDate);
+            o.filled, o.value, o.status, o.locate, o.tradeDate, o.session.code);
     }
 
     // ---------------------------------------------------------------- the demo kit's events (templates 70 to 91, item 155)
@@ -1279,65 +1556,30 @@ public final class World {
         return "PAY-" + (50_000_000 + nextPayment++);
     }
 
+    /**
+     * The tasks planned for today, the corporate actions announced at 07:00, and the day's splits and dividends going ex
+     * at 20:40 the evening before its trading opens, in the pause, so the day's first trade sees them.
+     */
     private void planServicing() {
         for (Dated d : dated.getOrDefault(day, List.of())) {
             schedule(at(d.at()), d.run());
         }
         dated.remove(day);
-        if (splitsAnnounced.add(YearMonth.from(day))) {
-            announceSplits();
-        }
-        announceDividends();
-        schedule(at(LocalTime.of(8, 5)), this::corporateActions);
-        for (Account a : accounts) {
-            planMoney(a);
-        }
-    }
-
-    private void planMoney(Account a) {
-        if (closed.contains(a.id())) {
-            return;
-        }
-        boolean active = !a.persona().equals("dormant");
-        if (rng2.chance(active ? 0.004 : 0.001)) {
-            BigDecimal amount = dollars(rng2.lognormal(25000, 0.9), 100);
-            schedule(at(LocalTime.of(9, 0).plusSeconds(rng2.below(8 * 3600))), () -> {
-                if (!closed.contains(a.id())) {
-                    String pay = payment();
-                    FinancialTransaction t = ft(70, a, "payments", Map.of(10, amount, 11, pay));
-                    if (book(current, t, false)) {
-                        office.payment(current, day, a.id(), pay, t.id(), 70, "wire", "deposit", "received", amount,
-                            null);
-                    }
-                }
-            });
-        }
-        if (rng2.chance(active ? 0.003 : 0.0008)) {
-            double fraction = 0.2 + rng2.uniform() * 0.6;
-            boolean cancel = rng2.chance(0.08);
-            schedule(at(LocalTime.of(9, 0).plusSeconds(rng2.below(5 * 3600))), () -> wireOut(a, fraction, cancel));
-        }
-        if (rng2.chance(active ? 0.0015 : 0.0003)) {
-            double fraction = 0.1 + rng2.uniform() * 0.4;
-            Account to = accounts.get(rng2.below(accounts.size()));
-            schedule(at(LocalTime.of(8, 30).plusSeconds(rng2.below(8 * 3600))), () -> journal(a, to, fraction));
-        }
-        if (rng2.chance(0.0006)) {
-            schedule(at(LocalTime.of(10, 0).plusSeconds(rng2.below(5 * 3600))), () -> acatsIn(a));
-        }
-        if (rng2.chance(0.00025)) {
-            boolean full = rng2.chance(0.6);     // most transfers out move the whole account
-            // After the morning's settlements and corporate actions, before the open: no order is open.
-            schedule(at(LocalTime.of(8, 10)), () -> acatsOut(a, full));
-        }
+        schedule(at(LocalTime.of(7, 0)), () -> {
+            if (splitsAnnounced.add(YearMonth.from(day))) {
+                announceSplits();
+            }
+            announceDividends();
+        });
+        schedule(Session.opens(day).minusSeconds(1200), this::corporateActions);
     }
 
     private BigDecimal withdrawable(Account a) {
         return engine.normalBalance(a.id(), 5201).min(engine.balance(a.id(), 1001, null, null));
     }
 
-    /** A wire out: instructed now, released to Fedwire 30 minutes to 2.5 hours later with its fee, or cancelled. */
-    private void wireOut(Account a, double fraction, boolean cancel) {
+    /** A wire out of a fraction of what the account may withdraw now, which the booking checks again. */
+    private void requestWire(Account a, double fraction, boolean cancel) {
         if (closed.contains(a.id())) {
             return;
         }
@@ -1346,13 +1588,25 @@ public final class World {
             return;
         }
         String pay = payment();
+        boolean requested = !bookable(WIRE_CUTOFF);
+        whenBooked(a, pay, "wire", "withdrawal", amount, WIRE_CUTOFF, () -> wireOut(a, amount, cancel, pay, requested));
+    }
+
+    /** A wire out: instructed now, released to Fedwire 30 minutes to 2.5 hours later with its fee, or cancelled. */
+    private void wireOut(Account a, BigDecimal amount, boolean cancel, String pay, boolean requested) {
+        if (withdrawable(a).compareTo(amount) < 0) {
+            if (requested) {
+                office.rejected(current, day, pay);
+            }
+            return;
+        }
         FinancialTransaction t = ft(71, a, "payments", Map.of(10, amount, 11, day.toEpochDay(), 12, pay));
         if (!book(current, t, false)) {
             return;
         }
         office.payment(current, day, a.id(), pay, t.id(), 71, "wire", "withdrawal", "initiated", amount, day);
         Instant release = current.plusSeconds(1800 + rng2.below(7200));
-        Instant cutoff = at(LocalTime.of(16, 45));
+        Instant cutoff = at(LocalTime.of(17, 45));
         boolean reverseFee = rng2.chance(0.12);
         schedule(release.isAfter(cutoff) ? cutoff : release, () -> {
             if (cancel) {
@@ -1385,8 +1639,11 @@ public final class World {
             ft(79, a, "fees", Map.of(9, t.id(), 10, amount, 11, feeType, 12, reason)), false));
     }
 
-    /** A cash journal of collected cash to another brokerage account (templates 76 and 77). */
-    private void journal(Account from, Account to, double fraction) {
+    /**
+     * A cash journal of collected cash to another brokerage account (templates 76 and 77), asked for now and booked when
+     * the payments systems run, if the cash is still there and both accounts are open.
+     */
+    private void requestJournal(Account from, Account to, double fraction) {
         if (to.id() == from.id() || closed.contains(from.id()) || closed.contains(to.id())) {
             return;
         }
@@ -1395,6 +1652,21 @@ public final class World {
             return;
         }
         String journal = "JNL-" + (80_000_000 + nextJournal++);
+        if (bookable(MONEY_CUTOFF)) {
+            journal(from, to, amount, journal);
+            return;
+        }
+        office.requested(current, day, from.id(), journal, "journal", "transfer", amount);
+        later(current.isBefore(at(MONEY_OPENS)) ? day : calendar.next(day), MONEY_OPENS, () -> {
+            if (closed.contains(from.id()) || closed.contains(to.id()) || withdrawable(from).compareTo(amount) < 0) {
+                office.rejected(current, day, journal);
+            } else {
+                journal(from, to, amount, journal);
+            }
+        });
+    }
+
+    private void journal(Account from, Account to, BigDecimal amount, String journal) {
         FinancialTransaction sent = ft(76, from, "payments", Map.of(10, amount, 11, journal, 12, to.id()));
         if (book(current, sent, false)
             && book(current, ft(77, to, "payments", Map.of(9, sent.id(), 10, amount, 11, journal, 12, from.id())), false)) {
@@ -1633,7 +1905,7 @@ public final class World {
         }
     }
 
-    /** 08:05, after the settlements and before the open: the day's splits, then the dividends going ex. */
+    /** 20:40 the evening before the day's trading opens: the day's splits, then the dividends going ex. */
     private void corporateActions() {
         for (Split s : splitsByEx.getOrDefault(day, List.of())) {
             applySplit(s);
@@ -1757,7 +2029,7 @@ public final class World {
     }
 
     /**
-     * 17:00: each short position in a hard-to-borrow security accrues its borrow fee, its market value times the rate
+     * 20:05: each short position in a hard-to-borrow security accrues its borrow fee, its market value times the rate
      * over 360, for each calendar day to the next business day; at month end each accrual is charged (template 78).
      */
     private void borrowFees() {
@@ -1879,7 +2151,7 @@ public final class World {
     private static final int[] ACTIVITY = {1201, 1204, 1202, 1304, 1303, 1305, 1301, 1302, 1203};
 
     /**
-     * The month-end close, at the month's last 17:00: each brokerage account's statement and positions as the ledger
+     * The month-end close, at the month's last 20:05: each brokerage account's statement and positions as the ledger
      * holds them (tie 7), the month's 1099-B and 1099-DIV lines, the Rule 606 report, net capital and the
      * best-execution review.
      */

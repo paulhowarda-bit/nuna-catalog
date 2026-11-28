@@ -20,7 +20,7 @@ final class Oms {
     /** An order as the world holds it after a change. */
     record OrderState(long id, String ref, long account, Security security, String side, String type,
                       BigDecimal limitPrice, long quantity, long filled, BigDecimal value, String status, String locate,
-                      LocalDate tradeDate) {
+                      LocalDate tradeDate, String session) {
         BigDecimal averagePrice() {
             return filled == 0 ? null : value.divide(BigDecimal.valueOf(filled), 6, RoundingMode.HALF_UP);
         }
@@ -78,7 +78,8 @@ final class Oms {
             long filledBefore = o.filled() - quantity;
             event(at, new OrderState(o.id(), o.ref(), o.account(), o.security(), o.side(), o.type(), o.limitPrice(),
                 o.quantity(), filledBefore, o.value().subtract(price.multiply(BigDecimal.valueOf(quantity))),
-                filledBefore == 0 ? "accepted" : "partially_filled", o.locate(), o.tradeDate()), "routed", route, null);
+                filledBefore == 0 ? "accepted" : "partially_filled", o.locate(), o.tradeDate(), o.session()), "routed",
+                route, null);
         }
         String exec = "EXE-" + (80_000_000 + nextExecution++);
         Map<String, Object> row = new LinkedHashMap<>();
@@ -100,6 +101,7 @@ final class Oms {
         row.put("leaves_quantity", o.quantity() - o.filled());
         row.put("trade_date", o.tradeDate());
         row.put("settlement_date", settlementDate);
+        row.put("session", o.session());
         row.put("executed_at", at);
         emitter.emit(at, Feed.EXECUTIONS, row);
         event(at, o, o.filled() == o.quantity() ? "filled" : "partially_filled", route, exec);
@@ -146,6 +148,7 @@ final class Oms {
         row.put("route_id", route);
         row.put("exec_id", exec);
         row.put("trade_date", o.tradeDate());
+        row.put("session", o.session());
         row.put("event_time", at);
         emitter.emit(at, Feed.ORDER_EVENTS, row);
     }

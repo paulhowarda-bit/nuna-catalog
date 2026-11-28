@@ -203,15 +203,41 @@ a sanctions match that raise alerts.
   namespace's properties; the anchor is three business days before the day the demo was stood up.
 - **Live (D48 as amended).** `bootstrap`, a Job in `demo.sh up`, makes the topics, namespaces, tables and views (only
   what is missing). `run`, a Deployment, plays the world for ever on the real clock (Paul, 2026-11-23): the three
-  catch-up days and today's earlier hours as fast as the sink takes them, then each event at its own time of day in
-  New York, quiet overnight, over weekends and on holidays. It restarts the sink's task whenever Kafka Connect
+  catch-up days and today's earlier hours as fast as the sink takes them, then each event at its own time in New
+  York, at every hour of every day (24x7, below). It restarts the sink's task whenever Kafka Connect
   reports it failed. Kafka feeds go
   out as schemaless JSON (decimals as strings, dates as ISO strings, times as epoch milliseconds) on one-partition
   topics; the sink commits every 15 seconds. Orders are upserted into SingleStore as they change, and the change feed
-  commits them on the same interval. At 17:00 the clock holds until each table that changed that day holds every row
-  sent, then tags it `eod-YYYY-MM-DD`. `financial_transactions` gains `locate_id` (a schema change the console shows)
+  commits them on the same interval. When a business day's window closes at 20:30 the clock holds until each table
+  that changed that day holds every row sent, then tags it `eod-YYYY-MM-DD`. `financial_transactions` gains `locate_id` (a schema change the console shows)
   just before the first short sale. A restart replays the world without sending and carries each topic on from its
   end offset.
+- **24x7 (D48, amended 2026-11-27; item 321).** Business day d is played as the window from 20:30 on the business
+  day before to 20:30 on d, and everything in it carries business date d, so a weekend's and a holiday's events count
+  to the next business day. Customers act at every hour of every calendar day on a believable curve (`Activity`:
+  busiest in the evening, more on weekends, a trickle at 03:00; holidays follow the weekend curve, and a week holds
+  about five business days of the old activity): digital sessions (at least one in each half-hour), changes to
+  parties, suitability and trusted contacts, complaints, and requests to deposit, withdraw, wire, journal and
+  transfer by ACATS. Trading follows Nasdaq's 24x5 schedule (`Session`): overnight 21:00 to 04:00, pre-market 04:00
+  to 09:30, regular 09:30 to 16:00, post-market 16:00 to 20:00, Sunday 21:00 to Friday 20:00, with the 20:00 to 21:00
+  pause each weekday and nothing on an exchange holiday. A trade after 21:00 takes the next trading day's trade date,
+  and settlement stays T+1 by trade date. Outside the regular session only the most popular fifth of the securities
+  trade, by limit order alone (no short sales), at a twentieth to a tenth of the regular volume and three to six times
+  its spread; `orders`, `order_events` and `executions` carry the order's `session`. The books keep business days: a
+  money request made while the payments systems are shut (before 07:00, after 19:00, wires after 15:00, weekends and
+  holidays) is recorded at once as a payment with status `requested` and booked at 07:00 on the next business day,
+  with that business date, or `rejected` there if the money or the account is gone; the bank sees only what was
+  booked. The back office's batch runs after the trade date's last session: surveillance at 20:10, AML monitoring at
+  20:15, the General Ledger at 20:20; the analysts' work due runs at 08:30. Splits and dividends go ex at 20:40 the
+  evening before, in the pause, and ACATS deliveries at 20:50, when no order is open.
+- **The scale dial (item 321; Paul, 2026-11-27).** `demo.sh scale <n>`, 1 to 50, kept in `~/.nuna-demo/scale` and
+  passed to the generator as `BROKERAGE_SCALE`; it can change on a running world, and the generator takes it from the
+  next whole hour. At scale n the firm onboards new customers toward n times its accounts (at most 20,000), 15% of the
+  gap in each business day's worth of activity, through the same flows as the world's own accounts (an `accounts`
+  row, parties with their CIP checks and screens, roles, suitability, a trusted contact, then a first ACH deposit),
+  and every account's activity is multiplied so the firm does about n times as much an hour. Turned down, onboarding
+  stops and the rates fall; no account is deleted. The dial's history is kept in the `brokerage` namespace's
+  property `world.scale`, so a restart replays each day at the scale it ran at.
 - **Routes (D50, amended 2026-11-24; backlog 238).** The generator needs Kafka or SingleStore, not both (Paul,
   2026-11-24): `BROKERAGE_ROUTE` (both, kafka, singlestore) comes from demo.sh's switches `kafka` and `ss`. With
   SingleStore off, the order management system's events, routes and executions (SingleStore's own, item 151) go

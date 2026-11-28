@@ -62,8 +62,8 @@ class ScaleTest {
         assertThat(large.get(Feed.ACCOUNTS)).isEqualTo(1500);
         assertThat(small.get(Feed.SECURITIES)).isEqualTo(60);
         assertThat(large.get(Feed.SECURITIES)).isEqualTo(400);
-        assertThat(small.get(Feed.BARS_5M)).isEqualTo(60 * Market.BARS);
-        assertThat(large.get(Feed.BARS_5M)).isEqualTo(400 * Market.BARS);
+        assertThat(small.get(Feed.BARS_5M)).isEqualTo(60 * Market.BARS + Market.THIN_BARS * Market.thinCount(60));
+        assertThat(large.get(Feed.BARS_5M)).isEqualTo(400 * Market.BARS + Market.THIN_BARS * Market.thinCount(400));
         // The streams and the books grow with it: sessions with the accounts, quotes with the securities.
         assertThat(large.get(Feed.SESSIONS)).isGreaterThan(3 * small.get(Feed.SESSIONS));
         assertThat(large.get(Feed.QUOTES)).isGreaterThan(2 * small.get(Feed.QUOTES));
@@ -102,6 +102,11 @@ class ScaleTest {
             String yaml = Files.readString(K8S.resolve(manifest));
             for (String name : java.util.List.of("BROKERAGE_ACCOUNTS", "BROKERAGE_SECURITIES", "BROKERAGE_CATCH_UP_DAYS")) {
                 assertThat(yaml).as(manifest).contains("{name: " + name + ", value: \"${" + name + "}\"}");
+            }
+            if (manifest.equals("brokerage.yaml")) {
+                // The scale dial (item 321), which demo.sh keeps in ~/.nuna-demo/scale.
+                assertThat(yaml).contains("{name: BROKERAGE_SCALE, value: \"${BROKERAGE_SCALE}\"}");
+                assertThat(sh).contains("BROKERAGE_SCALE=$(tr -d '\\r\\n' < \"$RUN/scale\"");
             }
             Matcher used = Pattern.compile("\\$\\{(\\w+)}").matcher(yaml);
             while (used.find()) {

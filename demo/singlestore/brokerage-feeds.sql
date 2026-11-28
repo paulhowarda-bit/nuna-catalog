@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS order_events (
   route_id TEXT,
   exec_id TEXT,
   trade_date DATE,
+  session TEXT,
   event_time DATETIME(6),
   PRIMARY KEY (seq),
   SHARD KEY (seq));
@@ -258,6 +259,7 @@ CREATE TABLE IF NOT EXISTS executions (
   leaves_quantity BIGINT,
   trade_date DATE,
   settlement_date DATE,
+  session TEXT,
   executed_at DATETIME(6),
   PRIMARY KEY (seq),
   SHARD KEY (seq));

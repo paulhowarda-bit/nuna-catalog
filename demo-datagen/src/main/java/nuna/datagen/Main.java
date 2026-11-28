@@ -4,7 +4,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -26,6 +28,7 @@ import nuna.datagen.live.Sources;
 import nuna.datagen.world.Event;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.MarketCalendar;
+import nuna.datagen.world.Scale;
 import nuna.datagen.world.Sink;
 import nuna.datagen.world.World;
 
@@ -37,8 +40,10 @@ import nuna.datagen.world.World;
  *       {@code brokerage} namespace's properties. It makes only what is missing.</li>
  *   <li>{@code run}: plays the world day after day, for ever, on the real clock (D48, Paul, 2026-11-23): what has
  *       already happened (the catch-up days, today's earlier hours) as fast as the sink takes it, then each event at
- *       its own time of day in New York, quiet overnight, over weekends and on holidays. A restart resumes where the
- *       last run stopped. A watch restarts the sink's task whenever it has failed ({@link SinkWatch}).</li>
+ *       its own time in New York, at every hour of every day (D48, amended 2026-11-27: customers act around the clock,
+ *       trading follows Nasdaq's 24x5 sessions). A restart resumes where the last run stopped. The scale dial
+ *       ({@code BROKERAGE_SCALE}, item 321) takes effect from the next whole hour ({@link #scale}). A watch restarts the
+ *       sink's task whenever it has failed ({@link SinkWatch}).</li>
  *   <li>{@code drain kafka|singlestore}: waits until what went that way is all in the lake ({@link #drain}).</li>
  *   <li>{@code sql <dir>}: writes brokerage-feeds.sql and brokerage-feeds-pipelines.sql into {@code dir}
  *       ({@link SingleStoreTables}).</li>
@@ -118,7 +123,7 @@ public final class Main {
                 System.out.println("cdc: no business day has ended in the lake yet, so the books are empty");
                 return;
             }
-            World world = new World(lake.settings(), kit);
+            World world = new World(lake.settings(), kit).withScale(lake.scale());
             Custody.Book custody = new Custody.Book();
             Sources.Book sources = new Sources.Book();
             Sink both = new Sink() {
@@ -186,7 +191,7 @@ public final class Main {
     }
 
     /** The scale a new world may be given (item 154): the generator's memory and the demo's sizing are for these. */
-    static final int MIN_ACCOUNTS = 200, MAX_ACCOUNTS = 20_000, MIN_SECURITIES = 50, MAX_SECURITIES = 1_000,
+    static final int MIN_ACCOUNTS = 200, MAX_ACCOUNTS = World.MAX_ACCOUNTS, MIN_SECURITIES = 50, MAX_SECURITIES = 1_000,
         MAX_CATCH_UP_DAYS = 30;
 
     /**
@@ -227,6 +232,22 @@ public final class Main {
         return n;
     }
 
+    /**
+     * The scale dial's history once {@code BROKERAGE_SCALE} (demo.sh scale, from NUNA_DEMO_SCALE; item 321) is taken in:
+     * a scale other than the one the history gives the next whole hour takes effect from that hour, which no run has
+     * drawn an event at, so a restart replays every hour already sent at the scale it was sent at. Unset, the history
+     * stands.
+     *
+     * @throws IllegalArgumentException for a scale outside 1 to {@link Scale#MAX}
+     */
+    static Scale scale(Scale kept, java.util.function.Function<String, String> env, Instant now) {
+        if (env.apply("BROKERAGE_SCALE") == null || env.apply("BROKERAGE_SCALE").isBlank()) {
+            return kept;
+        }
+        int n = bounded(env, "BROKERAGE_SCALE", 1, Scale.MIN, Scale.MAX);
+        return kept.with(now.truncatedTo(ChronoUnit.HOURS).plus(1, ChronoUnit.HOURS), n);
+    }
+
     private static String envOrNull(String name) {
         return System.getenv(name);
     }
@@ -240,6 +261,12 @@ public final class Main {
              SingleStore store = route.singlestore() ? new SingleStore(env("SINGLESTORE_URL", null),
                  env("SINGLESTORE_USER", "root"), env("SINGLESTORE_PASSWORD", null), kit) : null) {
             World.Settings settings = lake.settings();
+            Scale kept = lake.scale();
+            Scale scale = scale(kept, Main::envOrNull, Instant.now());
+            if (!scale.equals(kept)) {
+                lake.scale(scale);
+                System.out.println("the scale dial: " + scale + " (each instant=scale is a change; it holds from then)");
+            }
             lake.withCloses(closes());
             Pacer pacer = new Pacer();
             // What this world has sent each way: through Kafka, each topic's records since the world began; through
@@ -280,11 +307,11 @@ public final class Main {
             // The reconciliation views read every lake table each feed has; a change feed makes its copy as it first
             // runs, which on a new lake is after the bootstrap made the views.
             lake.views();
-            System.out.println("the world: " + settings + ", live from " + lake.pacedFrom() + " on the real clock, route "
-                + route + "; already sent through Kafka " + viaKafka + ", through SingleStore " + viaSingleStore);
+            System.out.println("the world: " + settings + " at scale " + scale.at(Instant.now()) + ", live from "
+                + lake.pacedFrom() + " on the real clock, route " + route + "; already sent through Kafka " + viaKafka + ", through SingleStore " + viaSingleStore);
             Publisher publisher = new Publisher(route, topics, store, store, lake, pacer::await, viaKafka,
                 viaSingleStore);
-            World world = new World(settings, kit);
+            World world = new World(settings, kit).withScale(scale);
             while (true) {
                 long before = publisher.sent();
                 LocalDate day = world.runDay(publisher);

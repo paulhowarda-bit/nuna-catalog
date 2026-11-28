@@ -38,8 +38,10 @@ public final class Market {
     private final double[] popularity;
     private final Rng rng;
 
-    /** Bars per session: 09:30 to 16:00. */
+    /** Bars per regular session: 09:30 to 16:00. */
     public static final int BARS = 78;
+    /** Bars per trade date outside it: overnight 21:00 to 04:00, pre-market to 09:30, post-market 16:00 to 20:00. */
+    public static final int THIN_BARS = 84 + 66 + 48;
 
     Market(Rng rng, int count) {
         this.rng = rng;
@@ -116,23 +118,54 @@ public final class Market {
         price[i] = Math.max(0.01, Math.round(price[i] * ratioOld / ratioNew * 100) / 100.0);
     }
 
-    /** Moves every price one five-minute step and returns the step's bars. */
+    /**
+     * The securities that trade outside the regular session (item 321): the most popular fifth, at least 20, as the
+     * overnight market's liquidity sits in the names most traded by day.
+     */
+    public static int thinCount(int securities) {
+        return Math.min(securities, Math.max(20, securities / 5));
+    }
+
+    /** Whether a security trades outside the regular session. */
+    boolean tradesThin(Security s) {
+        return index(s) < thinCount(securities.size());
+    }
+
+    /** A security that trades outside the regular session, drawn by popularity. */
+    Security popularThin() {
+        return securities.get(rng.zipf(thinCount(securities.size()), 0.9, popularity));
+    }
+
+    /** Moves every price one five-minute step of the regular session and returns the step's bars. */
     List<Bar> step() {
-        double market = rng.normal() * 0.0012;
+        return step(securities.size(), 1.0, 1.0);
+    }
+
+    /**
+     * A five-minute step outside the regular session: only the securities that trade there move, by about a third as
+     * much, on the session's share of the regular session's volume.
+     */
+    List<Bar> stepThin(double volume) {
+        return step(thinCount(securities.size()), 0.35, volume);
+    }
+
+    private List<Bar> step(int count, double move, double volumeShare) {
+        double market = rng.normal() * 0.0012 * move;
         double[] sector = new double[SECTORS.size()];
         for (int k = 0; k < sector.length; k++) {
-            sector[k] = rng.normal() * 0.0008;
+            sector[k] = rng.normal() * 0.0008 * move;
         }
-        List<Bar> bars = new ArrayList<>(securities.size());
-        for (int i = 0; i < securities.size(); i++) {
+        List<Bar> bars = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
             Security s = securities.get(i);
             double open = price[i];
-            double ret = s.beta() * market + sector[SECTORS.indexOf(s.sector())] + rng.normal() * s.sigma() / Math.sqrt(BARS);
+            double ret = s.beta() * market + sector[SECTORS.indexOf(s.sector())]
+                + rng.normal() * s.sigma() / Math.sqrt(BARS) * move;
             double close = Math.max(0.5, open * Math.exp(ret));
             double high = Math.max(open, close) * (1 + Math.abs(rng.normal()) * 0.0008);
             double low = Math.min(open, close) * (1 - Math.abs(rng.normal()) * 0.0008);
             price[i] = Math.round(close * 100) / 100.0;
-            long volume = Math.round(rng.lognormal(20000 / Math.sqrt(i + 1.0), 0.6)) * 10;
+            long volume = Math.max(1, Math.round(rng.lognormal(20000 / Math.sqrt(i + 1.0), 0.6) * volumeShare)) * 10;
             bars.add(new Bar(s, cents4(open), cents4(high), cents4(low), cents4(price[i]), volume));
         }
         return bars;

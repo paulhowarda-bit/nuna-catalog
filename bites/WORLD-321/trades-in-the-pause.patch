@@ -1,0 +1,16 @@
+Breaks: the post-market session runs to 20:30, so orders trade in the 20:00 to 21:00 pause
+Module: demo-datagen
+Test: World24x7Test#nothingTradesInTheWeekendGapThePauseOrOnTheHoliday
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Session.java b/demo-datagen/src/main/java/nuna/datagen/world/Session.java
+index d9cf19c7..f665aa02 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Session.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Session.java
+@@ -20,7 +20,7 @@ enum Session {
+     /** 09:30 to 16:00, the only session with market orders, short sales and every security. */
+     REGULAR("regular", LocalTime.of(9, 30), LocalTime.of(16, 0), 0.85, 1.0, 1.0),
+     /** 16:00 to 20:00. */
+-    POST_MARKET("post_market", LocalTime.of(16, 0), LocalTime.of(20, 0), 0.06, 0.10, 3.0);
++    POST_MARKET("post_market", LocalTime.of(16, 0), LocalTime.of(20, 30), 0.06, 0.10, 3.0);
+ 
+     /** Its name in the order management system's rows. */
+     final String code;

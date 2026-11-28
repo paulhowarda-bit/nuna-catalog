@@ -102,7 +102,7 @@ public final class LakeSchemas {
                 .add("side", TEXT).add("order_type", TEXT).add("limit_price", PRICE).add("quantity", LONG)
                 .add("filled_quantity", LONG).add("leaves_quantity", LONG).add("average_price", PRICE)
                 .add("status", TEXT).add(LOCATE_ID, TEXT).add("route_id", TEXT).add("exec_id", TEXT)
-                .add("trade_date", DATE).add("event_time", TIME);
+                .add("trade_date", DATE).add("session", TEXT).add("event_time", TIME);
             case ROUTES -> c.add("route_id", TEXT).add("order_id", LONG).add("order_ref", TEXT)
                 .add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT).add("side", TEXT)
                 .add("venue", TEXT).add("routed_quantity", LONG).add("limit_price", PRICE).add("trade_date", DATE)
@@ -112,7 +112,7 @@ public final class LakeSchemas {
                 .add("brokerage_account", LONG).add("security_id", LONG).add("symbol", TEXT).add("side", TEXT)
                 .add("venue", TEXT).add("last_quantity", LONG).add("last_price", PRICE).add("gross_amount", MONEY)
                 .add("cum_quantity", LONG).add("leaves_quantity", LONG).add("trade_date", DATE)
-                .add("settlement_date", DATE).add("executed_at", TIME);
+                .add("settlement_date", DATE).add("session", TEXT).add("executed_at", TIME);
             case CNS_OBLIGATIONS -> c.add("obligation_id", TEXT).add("security_id", LONG).add("symbol", TEXT)
                 .add("cusip", TEXT).add("trade_date", DATE).add("settlement_date", DATE).add("buy_quantity", LONG)
                 .add("buy_amount", MONEY).add("sell_quantity", LONG).add("sell_amount", MONEY)

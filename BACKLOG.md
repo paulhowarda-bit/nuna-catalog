@@ -1623,3 +1623,4 @@ document only repeats it, it may point there instead.
 | [318](backlog/318.md) | Brokerage world: fixes from the live check of items 151 to 155 and 308 | done | 2026-11-27 |
 | [319](backlog/319.md) | Console: a link to Grafana's charts on the Service page, when a Grafana URL is configured | done | 2026-11-27 |
 | [320](backlog/320.md) | demo.sh's aml_cases hold check fails at random under pipefail | done | 2026-11-27 |
+| [321](backlog/321.md) | The brokerage world runs 24x7: customers act at any hour, every day, and trading follows Nasdaq's 24x5 session | done | 2026-11-27 |

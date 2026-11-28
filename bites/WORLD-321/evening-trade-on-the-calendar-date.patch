@@ -1,0 +1,16 @@
+Breaks: an order takes the calendar date it was placed on, so a trade after 21:00 is not on the next trading day's trade date
+Module: demo-datagen
+Test: World24x7Test#aTradeAfterNineInTheEveningTakesTheNextTradingDaysTradeDateAndSettlesTPlusOne
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/World.java b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+index d0e16656..8abef75d 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/World.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/World.java
+@@ -183,7 +183,7 @@ public final class World {
+             this.limitPrice = limitPrice;
+             this.locate = locate;
+             this.acceptedAt = at;
+-            this.tradeDate = day;
++            this.tradeDate = LocalDate.ofInstant(at, NEW_YORK);
+             this.session = session;
+             this.estimateLeft = estimatedPrice.multiply(BigDecimal.valueOf(quantity));
+         }

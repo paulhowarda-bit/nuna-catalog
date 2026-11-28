@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS brokerage.orders (
   locate_id VARCHAR(32),
   accepted_financial_transaction_id BIGINT NOT NULL,
   trade_date DATE NOT NULL,
+  -- Nasdaq's 24x5 session the order was placed in (item 321): overnight, pre_market, regular or post_market.
+  session VARCHAR(16) NOT NULL,
   accepted_at DATETIME(6) NOT NULL,
   updated_at DATETIME(6) NOT NULL,
   PRIMARY KEY (order_id),

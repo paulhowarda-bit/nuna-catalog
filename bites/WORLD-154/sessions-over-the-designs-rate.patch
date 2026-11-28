@@ -1,14 +1,14 @@
-Breaks: 0.6 sessions a business day per account, 600 at 1,000 accounts, above the design's 200 to 500
+Breaks: 0.6 sessions per account in a business day's activity, 600 at 1,000 accounts, above the design's 200 to 500
 Module: demo-datagen
-Test: StreamsTest#aBusinessDayHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow
+Test: StreamsTest#aBusinessDaysActivityHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow
 diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Digital.java b/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
-index 4ce3f59b..2b85a97a 100644
+index ac3c8f7f..7755be1e 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
-@@ -23,7 +23,7 @@ final class Digital {
+@@ -20,7 +20,7 @@ import nuna.datagen.world.Market.Security;
+  */
+ final class Digital {
  
-     static final LocalTime FIRST = LocalTime.of(7, 0), LAST_START = LocalTime.of(16, 30),
-         CLOSE = LocalTime.of(16, 59, 59);
 -    static final double SESSIONS_PER_ACCOUNT = 0.35;
 +    static final double SESSIONS_PER_ACCOUNT = 0.6;
  

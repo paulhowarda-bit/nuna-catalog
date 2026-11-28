@@ -43,6 +43,17 @@ class ReconTest {
         "tax_lots_vs_ledger", "statements_vs_ledger", "realized_vs_1099b", "cat_vs_orders", "payments_vs_ledger",
         "bank_vs_ledger", "gl_vs_subledger");
 
+    /** Item 321: the scale dial turned up, then down, on a running world leaves it consistent. */
+    @Test
+    void onACleanWorldWhoseScaleChangesEveryViewIsEmpty() throws SQLException {
+        Played p = Played.scaled();
+        assertThat(p.unexpectedRejections).isZero();
+        assertThat(p.of(Feed.ACCOUNTS).size()).isGreaterThan(Played.clean().of(Feed.ACCOUNTS).size());
+        Map<String, List<Map<String, Object>>> views = recon(p, true);
+        assertThat(views).containsOnlyKeys(VIEWS);
+        assertThat(views).allSatisfy((name, rows) -> assertThat(rows).as(name).isEmpty());
+    }
+
     @Test
     void onACleanWorldEveryViewIsEmpty() throws SQLException {
         Map<String, List<Map<String, Object>>> views = recon(Played.clean(), true);

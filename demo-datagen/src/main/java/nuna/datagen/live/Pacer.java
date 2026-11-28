@@ -7,8 +7,8 @@ import java.time.Instant;
 /**
  * Holds each event back until its business time comes round on the real clock, as a live firm's events would arrive
  * (Paul, 2026-11-23, D48): an order placed at 10:14 New York time is sent at 10:14 New York time. An event whose time
- * has passed (the catch-up days, or today's earlier hours after a start or restart) goes at once. Between one day's
- * close and the next day's first event, overnight and over weekends and holidays, the world sends nothing.
+ * has passed (the catch-up days, or today's earlier hours after a start or restart) goes at once. Since the world runs
+ * around the clock (D48, amended 2026-11-27) every hour sends events, so a long wait is rare.
  */
 public final class Pacer {
 

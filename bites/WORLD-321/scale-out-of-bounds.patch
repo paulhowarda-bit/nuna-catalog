@@ -1,0 +1,16 @@
+Breaks: the scale dial takes any value, 0 and past 50 included
+Module: demo-datagen
+Test: ScaleDialTest#theHistoryIsTheScaleFromEachInstantAndKeepsAsText
+diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Scale.java b/demo-datagen/src/main/java/nuna/datagen/world/Scale.java
+index 1d2a49fa..b0ac7473 100644
+--- a/demo-datagen/src/main/java/nuna/datagen/world/Scale.java
++++ b/demo-datagen/src/main/java/nuna/datagen/world/Scale.java
+@@ -38,7 +38,7 @@ public final class Scale {
+      * @throws IllegalArgumentException for a scale outside 1 to {@link #MAX}
+      */
+     public Scale with(Instant at, int n) {
+-        if (n < MIN || n > MAX) {
++        if (false) {
+             throw new IllegalArgumentException("the scale is from " + MIN + " to " + MAX + ", not " + n);
+         }
+         NavigableMap<Instant, Integer> next = new TreeMap<>(from.headMap(at, false));

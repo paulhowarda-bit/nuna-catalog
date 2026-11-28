@@ -1,6 +1,7 @@
 # The brokerage world's generator (D48, demo-datagen, image brokerage.Dockerfile), live in every demo.sh up: it
-# plays the firm's trading days on the real clock (each event at its own time of day in New York, quiet overnight,
-# over weekends and on holidays; D48, Paul, 2026-11-23), books every financial
+# plays the firm on the real clock, each event at its own time in New York: its customers at every hour of every day,
+# holidays included, and its trading on Nasdaq's 24x5 sessions, Sunday 21:00 to Friday 20:00 (D48, Paul, 2026-11-23,
+# amended 2026-11-27; item 321), books every financial
 # transaction through the demo kit's posting engine, and sends the world's events to two places, from where the
 # demo's pipelines bring them into Iceberg:
 #   Kafka        topics brokerage.*, which Kafka Connect's sink brokerage-lake (demo/brokerage/connector.json)
@@ -59,11 +60,14 @@ spec:
             - {name: BROKERAGE_ACCOUNTS, value: "${BROKERAGE_ACCOUNTS}"}
             - {name: BROKERAGE_SECURITIES, value: "${BROKERAGE_SECURITIES}"}
             - {name: BROKERAGE_CATCH_UP_DAYS, value: "${BROKERAGE_CATCH_UP_DAYS}"}
+            # The scale dial (demo.sh scale; item 321), which may change on a running world: a new value restarts
+            # the pod, and the generator takes it from the next whole hour.
+            - {name: BROKERAGE_SCALE, value: "${BROKERAGE_SCALE}"}
             - {name: BROKERAGE_SEED, value: "20261122"}
             - {name: BROKERAGE_COMMIT_INTERVAL_MS, value: "15000"}
           securityContext: {allowPrivilegeEscalation: false}
           resources:
-            # 256 MB of up to 384 MB at up to 2,000 accounts, 64 MB more of the limit for each 1,000 above (demo.sh
-            # world_memory; item 154).
+            # 256 MB of up to 384 MB at up to 2,000 accounts, 64 MB more of the limit for each 1,000 above, counting
+            # the accounts the scale dial aims at (demo.sh world_memory; items 154, 321).
             requests: {memory: ${BROKERAGE_MEMORY_REQUEST}Mi}
             limits: {memory: ${BROKERAGE_MEMORY_LIMIT}Mi}

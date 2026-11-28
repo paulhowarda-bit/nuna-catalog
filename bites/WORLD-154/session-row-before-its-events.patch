@@ -1,16 +1,16 @@
 Breaks: a session's row goes out as it starts, before the events it counts
 Module: demo-datagen
-Test: StreamsTest#aBusinessDayHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow
+Test: StreamsTest#aBusinessDaysActivityHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow
 diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Digital.java b/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
-index 4ce3f59b..e105b28a 100644
+index ac3c8f7f..2e79e761 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
 +++ b/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
-@@ -142,7 +142,7 @@ final class Digital {
+@@ -138,7 +138,7 @@ final class Digital {
          row.put("page_views", pageViews);
          row.put("events", events.size());
          row.put("business_date", day);
 -        schedule.accept(end, () -> out.emit(end, Feed.SESSIONS, row));
-+        schedule.accept(at.apply(start), () -> out.emit(end, Feed.SESSIONS, row));
++        schedule.accept(start, () -> out.emit(end, Feed.SESSIONS, row));
      }
  
      /** The i-th of a session's n events: a login first and, half the time, a logout last; a visitor only browses. */

@@ -25,6 +25,9 @@
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh sql      open a SingleStore prompt in database brokerage (lake is the other)
 #   demo/demo.sh rate     append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
+#   demo/demo.sh scale [n]  print the brokerage world's scale, or set it from 1 to 50 (item 321): at n the firm grows
+#                         toward n times its accounts and its customers do n times as much, from the next whole hour;
+#                         kept in ~/.nuna-demo/scale, so up and gen put it back; a running generator restarts with it
 #   demo/demo.sh brokerage logs  follow the brokerage world's generator
 #   demo/demo.sh cdc      start the CDC leg: PostgreSQL, Oracle and CockroachDB, through Debezium and Kafka
 #                         Connect, into Iceberg history tables (starts Kafka; stops Trino, the audit table writer
@@ -60,6 +63,12 @@
 # before the day it begins (default 3, from 1 to 30), read by the gen that begins a world (the first, or the first
 # after wipe), which fixes them in the lake; a later gen keeps the world's own and says so. The generator's memory
 # follows NUNA_DEMO_ACCOUNTS (world_memory), so keep it as it was when the world began.
+#
+# The scale dial (item 321; Paul, 2026-11-27): demo/demo.sh scale <n> grows a running world toward n times its
+# accounts (at most 20000) through the generator's onboarding, and multiplies every account's activity by about n,
+# from the next whole hour; turned down, onboarding stops and the rates fall, and no account goes. The generator keeps
+# the dial's history with the world, so a restart replays each day at the scale it ran at. Its memory follows the
+# accounts the dial aims at (world_memory): scale 10 at 1000 accounts asks 896 MiB of the Podman machine, 50 1536.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,8 +84,10 @@ RUN="${NUNA_DEMO_HOME:-$HOME/.nuna-demo}"
 # place, at that worktree's files: its agent owns them.
 if [[ -z "${NUNA_DEMO_COMMIT:-}" ]]; then
   case "${1:-}" in
-    up | engines | gen | ss | kafka | cdc | metrics | token | rate)
-      if [[ "$(git -C "$REPO" rev-parse --absolute-git-dir)" \
+    up | engines | gen | ss | kafka | cdc | metrics | token | rate | scale)
+      if [[ "${1:-}" == scale && -z "${2:-}" ]]; then
+        :   # printing the scale reads nothing of the repo
+      elif [[ "$(git -C "$REPO" rev-parse --absolute-git-dir)" \
           == "$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir)" ]]; then
         mkdir -p "$RUN"
         if ! (set -o noclobber; echo $$ > "$RUN/checkout.pid") 2>/dev/null; then
@@ -143,6 +154,9 @@ BROKERAGE_IMAGE_ID=
 BROKERAGE_ACCOUNTS="${NUNA_DEMO_ACCOUNTS:-1000}"
 BROKERAGE_SECURITIES="${NUNA_DEMO_SECURITIES:-300}"
 BROKERAGE_CATCH_UP_DAYS="${NUNA_DEMO_CATCH_UP_DAYS:-3}"
+# The scale dial (item 321; the header above), kept in $RUN/scale: 1 until it is set.
+BROKERAGE_SCALE=$(tr -d '\r\n' < "$RUN/scale" 2>/dev/null || true)
+[[ "$BROKERAGE_SCALE" =~ ^[0-9]+$ ]] || BROKERAGE_SCALE=1
 for scale in "NUNA_DEMO_ACCOUNTS=$BROKERAGE_ACCOUNTS" "NUNA_DEMO_SECURITIES=$BROKERAGE_SECURITIES" \
     "NUNA_DEMO_CATCH_UP_DAYS=$BROKERAGE_CATCH_UP_DAYS"; do
   [[ "${scale#*=}" =~ ^[0-9]{1,6}$ ]] || { echo "${scale%%=*} is a whole number, not ${scale#*=}" >&2; exit 2; }
@@ -150,9 +164,11 @@ done
 # The generator's memory, and its Jobs' (brokerage.yaml, brokerage-bootstrap.yaml), in MiB: 256 of up to 384 at up to
 # 2,000 accounts, and 64 more of the limit for each 1,000 above. Measured on 2026-11-27, six days of the world held
 # 37 MB of heap at 1,000 accounts and 173 MB at 10,000 (the JVM takes 60% of the limit), and the books grow with
-# the days.
+# the days. The accounts counted are those the scale dial aims at: NUNA_DEMO_ACCOUNTS times the scale, at most 20000.
 world_memory() {
-  local extra=$(( (BROKERAGE_ACCOUNTS - 2000 + 999) / 1000 ))
+  local accounts=$(( BROKERAGE_ACCOUNTS * BROKERAGE_SCALE ))
+  (( accounts <= 20000 )) || accounts=20000
+  local extra=$(( (accounts - 2000 + 999) / 1000 ))
   (( extra > 0 )) || extra=0
   case "$1" in
     limit) echo $(( 384 + 64 * extra )) ;;
@@ -215,7 +231,7 @@ fill() {
     -e "s|\${BROKERAGE_IMAGE}|$BROKERAGE_IMAGE|g" -e "s|\${BROKERAGE_IMAGE_ID}|$BROKERAGE_IMAGE_ID|g" \
     -e "s|\${BROKERAGE_ROUTE}|$(world_route)|g" \
     -e "s|\${BROKERAGE_ACCOUNTS}|$BROKERAGE_ACCOUNTS|g" -e "s|\${BROKERAGE_SECURITIES}|$BROKERAGE_SECURITIES|g" \
-    -e "s|\${BROKERAGE_CATCH_UP_DAYS}|$BROKERAGE_CATCH_UP_DAYS|g" \
+    -e "s|\${BROKERAGE_CATCH_UP_DAYS}|$BROKERAGE_CATCH_UP_DAYS|g" -e "s|\${BROKERAGE_SCALE}|$BROKERAGE_SCALE|g" \
     -e "s|\${BROKERAGE_MEMORY_LIMIT}|$(world_memory limit)|g" \
     -e "s|\${BROKERAGE_MEMORY_REQUEST}|$(world_memory request)|g" \
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
@@ -284,7 +300,7 @@ switches_line() {
     if is_on "$name"; then line+="$name on, "; else line+="$name off, "; fi
   done
   if cdc_running; then line+="cdc on"; else line+="cdc off"; fi
-  echo "$line"
+  echo "$line; scale $BROKERAGE_SCALE"
 }
 
 # curl to the front door (ports.yaml), trusting the certificate's CA. It tries again when the request was never
@@ -2522,7 +2538,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") gen_start; print_access ;;
       stop) gen_stop ;;
-      *) sed -n '2,43p' "$0"; exit 2 ;;
+      *) sed -n '2,46p' "$0"; exit 2 ;;
     esac
     ;;
   ss)
@@ -2530,7 +2546,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") ss_on; print_access ;;
       stop) ss_stop ;;
-      *) sed -n '2,43p' "$0"; exit 2 ;;
+      *) sed -n '2,46p' "$0"; exit 2 ;;
     esac
     ;;
   kafka)
@@ -2538,14 +2554,14 @@ case "${1:-}" in
     case "${2:-}" in
       "") kafka_on ;;
       stop) kafka_off ;;
-      *) sed -n '2,43p' "$0"; exit 2 ;;
+      *) sed -n '2,46p' "$0"; exit 2 ;;
     esac
     ;;
   metrics)
     case "${2:-}" in
       "") metrics_start; print_access ;;
       stop) metrics_stop ;;
-      *) sed -n '2,43p' "$0"; exit 2 ;;
+      *) sed -n '2,46p' "$0"; exit 2 ;;
     esac
     ;;
   token)
@@ -2576,10 +2592,35 @@ case "${1:-}" in
     resume_world
     exit "$status"
     ;;
+  scale)
+    case "${2:-}" in
+      "")
+        echo "The brokerage world's scale: $BROKERAGE_SCALE (demo/demo.sh scale <n>, from 1 to 50, sets it)"
+        ;;
+      *)
+        if [[ ! "$2" =~ ^[0-9]{1,2}$ ]] || (( 10#$2 < 1 || 10#$2 > 50 )); then
+          echo "the scale is a whole number from 1 to 50, not $2" >&2
+          exit 2
+        fi
+        mkdir -p "$RUN"
+        BROKERAGE_SCALE=$(( 10#$2 ))
+        echo "$BROKERAGE_SCALE" > "$RUN/scale"
+        if running brokerage && [[ "$(k get deployment brokerage -o jsonpath='{.spec.replicas}')" != 0 ]]; then
+          load_images
+          say "the brokerage world's generator restarts at scale $BROKERAGE_SCALE, from the next whole hour" \
+            "(memory limit $(world_memory limit) MiB)"
+          apply brokerage.yaml
+          k rollout status deployment/brokerage --timeout=5m >/dev/null
+        else
+          echo "Scale $BROKERAGE_SCALE kept; the generator takes it when it next starts (demo/demo.sh gen or up)"
+        fi
+        ;;
+    esac
+    ;;
   brokerage)
     case "${2:-}" in
       logs) k logs deployment/brokerage --tail=100 -f ;;
-      *) sed -n '2,43p' "$0"; exit 2 ;;
+      *) sed -n '2,46p' "$0"; exit 2 ;;
     esac
     ;;
   cdc)
@@ -2588,7 +2629,7 @@ case "${1:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
       reset) cdc_reset ;;
-      *) sed -n '2,43p' "$0"; exit 2 ;;
+      *) sed -n '2,46p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -2644,7 +2685,7 @@ case "${1:-}" in
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,43p' "$0"
+    sed -n '2,46p' "$0"
     exit 2
     ;;
 esac
