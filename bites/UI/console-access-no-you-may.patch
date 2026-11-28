@@ -3,14 +3,14 @@ Module: catalog-server
 Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
-index 01944cfa..d3d6b524 100644
+index 5b187833..767652d9 100644
 --- a/catalog-server/src/main/resources/nuna/ui/panels.js
 +++ b/catalog-server/src/main/resources/nuna/ui/panels.js
-@@ -504,7 +504,6 @@ async function youMay(target) {
- export function accessTab(target, reload) {
-   const you = h('div');
+@@ -551,7 +551,6 @@ export function accessTab(target, reload, {closed = Promise.resolve(false), reop
    const gov = h('div');
--  load(you, () => youMay(target));
-   load(gov, () => governanceTab(target, reload));
-   // Which branches and tags keep a table or view, after its governance (item 279): from item 170's read alone.
-   const kept = target.kind === 'table' || target.kind === 'view' ? h('div') : null;
+   const shut = h('div');
+   const view = h('div');
+-  load(you, async () => youMay(target, await closed));
+   load(gov, async () => governanceTab(target, await closed ? reopen : reload));
+   closed.then(async isClosed => {
+     if (isClosed) fill(shut, await closedNotice(target, reopen));

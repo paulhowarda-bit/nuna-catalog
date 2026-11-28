@@ -1,0 +1,17 @@
+Breaks: A table closed until classified reads as flagged (or refused) on its Overview, Schema and History, not as closed.
+Module: catalog-server
+Test: ConsoleFlaggedTableBrowserTest#aTableClosedUntilClassifiedSaysSoAndAStewardClassifiesItFromTheNotice
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index 62f44e48..e801a854 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -190,7 +190,7 @@ export function tablePage(target, tab, route) {
+         try {
+           t = await metadata;
+         } catch (error) {
+-          if (closedRefusal(error)) return closedNotice(target, afterChange);
++          if (false) return closedNotice(target, afterChange);
+           return await flaggedLoad(error, target) || await missingLoad(error, target, title)
+             || refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
+         }
