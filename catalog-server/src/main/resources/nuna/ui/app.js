@@ -74,7 +74,7 @@ function applyBrand() {
   }
   for (const n of $$('[data-pack-label]')) n.textContent = offered ? b['toggle-label'] : '';
   for (const n of $$('[data-product]')) n.textContent = product();
-  $('[data-brand]').setAttribute('aria-label', `${packOn() && b ? b['mark-label'] : 'nuna'}, overview`);
+  $('a[data-brand]').setAttribute('aria-label', `${packOn() && b ? b['mark-label'] : 'nuna'}, overview`);
   if (packOn() && b && !b['show-name']) root.setAttribute('data-name-out', product());
   else root.removeAttribute('data-name-out');
 }
@@ -288,7 +288,7 @@ function setChrome(navKey, ref) {
     if (k === navKey) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
-  $('[data-brand]').href = cat ? homeHref(cat) : pageHref('service');
+  $('a[data-brand]').href = cat ? homeHref(cat) : pageHref('service');
   const count = $('.count', navEl);
   queue().then(rows => {
     const n = queueOf(rows, cat).length;

@@ -300,6 +300,9 @@ class ConsoleBrowserTest {
         expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + crowded + "\"]}"), 200);
         api.table(crowded, "lonely");
         signIn(api.everyDuty());
+        // The console's frame is hidden until a page signed in is drawn, so one is drawn before it is measured.
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#who strong"));
         for (int[] at : new int[][] {{1440, 2}, {1280, 3}, {1920, 2}}) {
             frameOf(at[0]);
             browser.open("/ui/#p=overview&c=trading");
@@ -409,7 +412,11 @@ class ConsoleBrowserTest {
                 .extracting(a -> a.getDomAttribute("data-tab"))
                 .containsExactly("overview", "schema", "history", "access", "maintenance");
         assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels']"))).isEmpty();
-        browser.await(By.cssSelector("#access-tab > :first-child #you-may li"));
+        browser.await(By.cssSelector("#access-tab #you-may li"));
+        // It leads: the slots before it that stay empty (the closed notice, on an open table) take no place.
+        assertThat((Boolean) driver.executeScript("const first = [...document.getElementById('access-tab').children]"
+                + ".find(e => e.getClientRects().length > 0); return !!first && first.contains(document.getElementById('you-may'))"))
+                .as("What you may do leads the Access tab").isTrue();
         assertThat(driver.findElements(By.cssSelector("#you-may li"))).extracting(ConsoleBrowser::textContent)
                 .as("the testers' create and modify on the catalog, in words")
                 .containsExactly("Read and write its data, and change it: its schema, properties and maintenance.");
@@ -711,8 +718,9 @@ class ConsoleBrowserTest {
 
     /**
      * A namespace's Contents gives each table its format, snapshot count and last data change, as the catalog's
-     * listing of them answers (backlogs 137 and 330): here the newest entry of the table's metadata log, which
-     * appended rows, "12:49 by lake"; a table created and never written to has none. Each child namespace gets its
+     * listing of them answers (backlogs 137 and 330): here the entry of the table's metadata log before the newest,
+     * which appended rows, the newest having set a tag and a branch, "12:49 by lake"; a table created and never written
+     * to has none. Each child namespace gets its
      * totals over the tables beneath it (backlog 147), its newest data change "12:49 in rates" (backlog 186).
      */
     @Test
@@ -724,9 +732,10 @@ class ConsoleBrowserTest {
         String committer = JsonPath.read(log.body(), "$.journal[0].principal");
         assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[1].last-commit.version"))
                 .isEqualTo(JsonPath.<Integer>read(log.body(), "$.journal[0].new-version"));
+        // trades' newest commit set its tag and branch, which changes no rows (backlog 330); the one before appended.
         assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[1].last-data-change.version"))
-                .as("trades' last commit appended rows").isEqualTo(JsonPath.<Integer>read(log.body(),
-                        "$.journal[0].new-version"));
+                .as("trades' last append, not the refs set after it").isEqualTo(JsonPath.<Integer>read(log.body(),
+                        "$.journal[1].new-version"));
         assertThat(JsonPath.<List<Object>>read(listed.body(), "$.tables[?(@.name == 'positions')].last-data-change"))
                 .as("positions was created and never written to").isEmpty();
 
@@ -1008,8 +1017,15 @@ class ConsoleBrowserTest {
         expect(api.rest("POST", tableRest(levels, "lines"), "{\"requirements\":[],\"updates\":[" + added
                 + "{\"action\":\"set-snapshot-ref\",\"ref-name\":\"main\",\"snapshot-id\":4,\"type\":\"branch\"}]}"),
                 200);
-        for (int id = 1; id <= 3; id++) {
-            expect(api.rest("POST", tableRest(levels, "lines"), Api.removeSnapshot(id)), 200);
+        // The snapshots are seconds old, and the deployment refuses to remove one younger than an hour: the shared clock
+        // goes two hours on for the expiries and back after, rather than counting on an earlier test having moved it.
+        clock.advance(Duration.ofHours(2));
+        try {
+            for (int id = 1; id <= 3; id++) {
+                expect(api.rest("POST", tableRest(levels, "lines"), Api.removeSnapshot(id)), 200);
+            }
+        } finally {
+            clock.advance(Duration.ofHours(-2));
         }
         HttpResponse<String> listed = expect(api.manage("GET", "/namespaces/" + ns(levels)
                 + "/tables", null), 200);
@@ -1131,9 +1147,11 @@ class ConsoleBrowserTest {
         WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
         browser.awaitText(By.cssSelector("dialog.dlg #dlg-h"), "Lift the DR freeze on " + drill.getLast());
         dialog.findElement(By.cssSelector("button[type='submit']")).click();
-        browser.await("the lifted freeze stayed listed", d -> d.findElements(drilled).isEmpty());
-        assertThat(driver.findElements(By.cssSelector("#operator-freezes tr[data-on='" + String.join(".", eu) + "']")))
-                .hasSize(1);
+        // The list is drawn again after the lift, so the lifted row is gone while the list loads too: wait for the
+        // list that holds eu's freeze and not the drill's.
+        By eusRow = By.cssSelector("#operator-freezes tr[data-on='" + String.join(".", eu) + "']");
+        browser.await("the lifted freeze stayed listed, or the others went with it",
+                d -> d.findElements(drilled).isEmpty() && d.findElements(eusRow).size() == 1);
     }
 
     /**
@@ -1435,6 +1453,9 @@ class ConsoleBrowserTest {
     @Test
     void besideTheMenuAndTheTreeHistoryAndGovernanceShowTheirTablesWhole() {
         signIn(tester());
+        // The console's frame is hidden until a page signed in is drawn, so one is drawn before it is measured.
+        browser.open("/ui/#" + at("table", eu, "trades", "history"));
+        browser.await(By.cssSelector("#who strong"));
         for (int width : new int[] {1280, 1440, 1920}) {
             frameOf(width);
             browser.open("/ui/#" + at("table", eu, "trades", "history"));

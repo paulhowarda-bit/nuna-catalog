@@ -148,8 +148,11 @@ class ConsoleBrandTest {
         assertThat(mark.getRect().getHeight()).isEqualTo(20);
         assertThat(driver.findElement(By.cssSelector("#top .nc-brand .peak")).isDisplayed()).isFalse();
         assertThat(driver.findElement(By.cssSelector("#top .nc-brand .nm")).isDisplayed()).isFalse();
+        // The mark is drawn on the header's link, not on <html>, which carries data-brand too while a pack is set.
         assertThat(driver.findElement(By.cssSelector("#top .nc-brand")).getAccessibleName())
                 .isEqualTo("Larchmere Data, overview");
+        assertThat(driver.findElement(By.cssSelector("#top .nc-brand")).getDomAttribute("href"))
+                .as("the mark leads home").isNotEqualTo("#").startsWith("#");
 
         WebElement button = driver.findElement(By.cssSelector("#top .nc-pack"));
         assertThat(button.isDisplayed()).isTrue();

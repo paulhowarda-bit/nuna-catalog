@@ -571,6 +571,9 @@ pre.raw { margin: 0 0 12px; }
 .grants-filter label { display: grid; gap: 5px; font-size: var(--t-12); color: var(--text-2); font-weight: 600; min-width: 0; }
 .grants-filter .field { width: 100%; color: var(--text); }
 .access-acts { justify-content: flex-start; }
+/* The Access tab's slots that stay empty (the closed notice on an open table, the reader's view on a closed one) take
+   no place in the stack, so What you may do leads with no gap above it (backlog 341). */
+#access-tab > :empty { display: none; }
 /* The Grant access dialog (Atelier, 2026-11-24; backlog 248): groups with their duties, the access in words with its
    wire name, the object, and the live line before Grant. */
 .grp-pick { display: grid; gap: 2px; max-height: 208px; overflow: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
