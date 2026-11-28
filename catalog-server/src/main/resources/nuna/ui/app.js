@@ -51,8 +51,9 @@ function applyTheme() {
 }
 
 // ---- the brand pack (backlog 333): brand.js found it and applied this viewer's choice before the page painted; the
-// header's button turns it on and off (Paul, 2026-11-28; D56), kept under nuna.brand in this browser, which the
-// documentation served beside the console reads too. Off, the viewer gets Ice line, its look and its words. ----
+// header's button turns it on and off (Paul, 2026-11-28; D56). It is off until the viewer turns it on, kept as
+// nuna.brand=on in this browser, which the documentation served beside the console reads too. Off, the viewer gets
+// Ice line, its look and its words. ----
 
 const PACK = 'nuna.brand';
 const packOn = () => root.dataset.brand === 'on';
@@ -81,8 +82,8 @@ function applyBrand() {
 
 function setPack(on) {
   try {
-    if (on) localStorage.removeItem(PACK);
-    else localStorage.setItem(PACK, 'off');
+    if (on) localStorage.setItem(PACK, 'on');
+    else localStorage.removeItem(PACK);
   } catch {
     // the choice then lasts this page only
   }

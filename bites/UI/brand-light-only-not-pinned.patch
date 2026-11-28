@@ -1,6 +1,6 @@
 Breaks: A light-only pack does not pin the light theme: the viewer's saved or system theme applies under the pack.
 Module: catalog-server
-Test: ConsoleBrandTest#thePackShowsFromFirstPaintAndTheButtonTurnsItOffAndOn
+Test: ConsoleBrandTest#thePackStartsOffAndTheButtonTurnsItOnFromFirstPaintAndOffAgain
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
 index 6dc85982..4a71e9f8 100644

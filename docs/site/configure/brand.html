@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Brand packs · nuna docs</title>
-  <meta name="description" content="Give the console and the documentation an install's own colours, fonts, mark and name with a brand pack, which each viewer can turn off again.">
+  <meta name="description" content="Give the console and the documentation an install's own colours, fonts, mark and name with a brand pack, which each viewer turns on when they want it.">
   <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../assets/docs.css">
   <link rel="stylesheet" href="../assets/brand/brand.css">
@@ -24,7 +24,7 @@
     <article class="doc" data-type="reference" data-toc="h2">
       <header class="doc-head">
         <h1>Brand packs</h1>
-        <p class="lead">Give the console and the documentation an install's own colours, fonts, mark and name with a brand pack, which each viewer can turn off again.</p>
+        <p class="lead">Give the console and the documentation an install's own colours, fonts, mark and name with a brand pack, which each viewer turns on when they want it.</p>
         <p class="doc-meta"><span class="badge for">For platform operators</span></p>
       </header>
 
@@ -79,9 +79,9 @@
 
       <p>Body text must keep a contrast of at least 4.5:1 against its background, as Ice line's does. A pack with dark colours too sets them under both of Ice line's dark selectors, <code>:root[data-theme="dark"]</code> and, inside <code>@media (prefers-color-scheme: dark)</code>, <code>:root:not([data-theme="light"])</code>, and leaves out <code>--brand-light-only</code>.</p>
 
-      <h2 id="turning-a-pack-off">Turning a pack off</h2>
+      <h2 id="turning-a-pack-on">Turning a pack on and off</h2>
 
-      <p>With a pack set, the console's header has a button beside the theme switch, its words from <a href="server.html#nuna-ui-brand-toggle-label"><code>nuna.ui.brand.toggle-label</code></a>; on a phone it is in the menu. A pack starts on for every viewer. Pressing the button turns the pack off for that viewer, in that browser: Ice line's colours, fonts, peak, icon and the name <code>nuna</code> come back, and the theme switch returns. Pressing it again turns the pack back on. The documentation served beside the console follows the same choice. With no pack set there is no button.</p>
+      <p>With a pack set, the console's header has a button beside the theme switch, its words from <a href="server.html#nuna-ui-brand-toggle-label"><code>nuna.ui.brand.toggle-label</code></a>; on a phone it is in the menu. A pack starts off for every viewer: the console and the documentation are Ice line until the viewer presses the button, which turns the pack on for that viewer, in that browser, and keeps it on across reloads. Pressing it again turns the pack off: Ice line's colours, fonts, peak, icon and the name <code>nuna</code> come back, and the theme switch returns. The documentation served beside the console follows the same choice. With no pack set there is no button.</p>
 
       <section class="see-also">
         <h2 id="see-also">See also</h2>

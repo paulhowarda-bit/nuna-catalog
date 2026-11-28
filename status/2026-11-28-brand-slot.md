@@ -1,4 +1,4 @@
-# 2026-11-28, backlog 333: the brand slot, the Fidelity mode button and the partial Fidelity pack
+# 2026-11-28, backlog 333: the brand slot, the Brand mode button and the partial work pack
 
 Built on item 332's branch (`worktree-agent-acfdef84a0c61b4a0`, not yet landed), which touches the same files.
 
@@ -13,10 +13,10 @@ What changed:
   and `theme.js` (docs) read the pack before the first paint. Role tokens for the header band, the rail's current
   page and the requested pill, each defaulting to Ice line's value. The product's name replaces the hard-coded
   "nuna" in titles and messages while the pack is on.
-- The Fidelity mode button (Paul, 2026-11-28; D56): beside the theme switch where a pack is set, on by default,
+- The Brand mode button (Paul, 2026-11-28; D56): beside the theme switch where a pack is set, on by default (off by default since item 345),
   off gives Ice line, kept in the browser; a light-only pack pins light and hides both theme switches while on.
-- A neutral test pack (`catalog-server/src/test/resources/brand-pack/`) and the partial Fidelity pack
-  (`deploy/brand/fidelity/brand.css`, colours only), with `docs/brand-at-work.md` telling work how to finish it.
+- A neutral test pack (`catalog-server/src/test/resources/brand-pack/`) and the partial work pack
+  (`deploy/brand/work/brand.css`, colours only), with `docs/brand-at-work.md` telling work how to finish it.
 - Helm `brandConfigMap.name`; docs `configure/brand.html` (new), `configure/server.html`, `configure/helm-values.html`.
 - Tests: `BrandSlotTest` (new, fast), `ConsoleBrandTest` (new, heavy, browser), `ConsoleFilesCacheTest`,
   `ConsoleTest`, `ConsoleConfiguredTest`, `ConsoleRulesTest`, and the constructor calls in `DocsSiteTest` and

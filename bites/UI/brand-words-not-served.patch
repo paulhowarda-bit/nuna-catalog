@@ -1,4 +1,4 @@
-Breaks: config.json leaves out the brand pack's words, so the console keeps "nuna" and offers no Fidelity mode button.
+Breaks: config.json leaves out the brand pack's words, so the console keeps "nuna" and offers no Brand mode button.
 Module: catalog-server
 Test: ConsoleBrandTest#configCarriesThePacksWordsAndTheSlotServesThePack
 

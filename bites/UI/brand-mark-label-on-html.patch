@@ -1,6 +1,6 @@
 Breaks: the header mark's label and link are set on the first [data-brand], which is <html> while a pack is set, not the mark.
 Module: catalog-server
-Test: ConsoleBrandTest#thePackShowsFromFirstPaintAndTheButtonTurnsItOffAndOn
+Test: ConsoleBrandTest#thePackStartsOffAndTheButtonTurnsItOnFromFirstPaintAndOffAgain
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
 index 583fcb10..6dc85982 100644

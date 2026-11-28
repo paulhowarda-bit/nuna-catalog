@@ -256,18 +256,17 @@ config:
       oidc:
         issuer: <the console's IdP's iss>    # its discovery document gives the console every endpoint
         client-id: <the console's client>
-        name: Fidelity single sign-on        # the sign-in button's words (backlog 332)
-      brand:                                 # Fidelity mode (backlog 344): the pack's words
+        name: <your single sign-on's name>   # the sign-in button's words (backlog 332)
+      brand:                                 # Brand mode (backlog 344): the pack's words
         show-name: false
-        toggle-label: Fidelity mode
 brandConfigMap:
-  name: nuna-brand                           # the Fidelity pack, with the font and the logo added (brand-at-work.md)
+  name: nuna-brand                           # the work pack, with the font and the logo added (brand-at-work.md)
 ```
 
 - Every `nuna.*` setting is documented on its settings class in `catalog-server`: `StorageSettings`,
   `SecuritySettings`, `AuditSettings`, `GovernanceSettings`, `RestSettings`, `UiSettings`.
 - Leave `nuna.storage.require-tls` at its default (true) and `nuna.ui.dev-token-login` off.
-- Fidelity mode (backlog 333 and 344, D56): the brand pack is `deploy/brand/fidelity/`, finished apart from the
+- Brand mode (backlog 333 and 344, D56): the brand pack is `deploy/brand/work/`, finished apart from the
   font and the logo, which stay at work. [brand-at-work.md](brand-at-work.md) says how to add them and make the
   ConfigMap `nuna-brand` the values above name.
 - A store whose certificate a private CA signed (backlog 21): put the CA's PEM file in a ConfigMap, one key per

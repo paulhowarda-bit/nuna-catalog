@@ -3,16 +3,16 @@
 //
 // It runs after the stylesheets have loaded, so it also reads the brand slot (backlog 333): assets/brand/brand.css is
 // empty here and on disk, so the site is Ice line, and a server whose install sets a brand pack serves the pack there.
-// A pack the reader turned off in the console (nuna.brand, the console's button) is switched off here too; a
-// light-only pack, while on, pins light and hides the theme switch (docs.css).
+// A pack is off unless the reader turned it on in the console (nuna.brand=on, the console's button); a light-only
+// pack, while on, pins light and hides the theme switch (docs.css).
 (function () {
   var root = document.documentElement;
   root.classList.add('js');
-  var t = null, off = false;
+  var t = null, off = true;
   try {
     t = localStorage.getItem('nuna.theme');
-    off = localStorage.getItem('nuna.brand') === 'off';
-  } catch (e) { /* storage blocked: Auto, and any pack on */ }
+    off = localStorage.getItem('nuna.brand') !== 'on';
+  } catch (e) { /* storage blocked: Auto, and any pack off */ }
   var sheet = document.querySelector('link[href$="assets/brand/brand.css"]');
   var props = getComputedStyle(root);
   var has = function (name) { return props.getPropertyValue(name).trim() !== ''; };

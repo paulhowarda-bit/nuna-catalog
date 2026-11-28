@@ -1,17 +1,17 @@
-Breaks: Turning the brand pack off is not kept in the browser, so a reload brings the pack back.
+Breaks: Turning the brand pack on is not kept in the browser, so a reload brings Ice line back.
 Module: catalog-server
-Test: ConsoleBrandTest#thePackShowsFromFirstPaintAndTheButtonTurnsItOffAndOn
+Test: ConsoleBrandTest#thePackStartsOffAndTheButtonTurnsItOnFromFirstPaintAndOffAgain
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index 6dc85982..671f8c82 100644
+index 166c26f0..fdae4a3e 100644
 --- a/catalog-server/src/main/resources/nuna/ui/app.js
 +++ b/catalog-server/src/main/resources/nuna/ui/app.js
 @@ -82,7 +82,7 @@ function applyBrand() {
+ 
  function setPack(on) {
    try {
-     if (on) localStorage.removeItem(PACK);
--    else localStorage.setItem(PACK, 'off');
-+    else localStorage.removeItem(PACK);
+-    if (on) localStorage.setItem(PACK, 'on');
++    if (on) localStorage.removeItem(PACK);
+     else localStorage.removeItem(PACK);
    } catch {
      // the choice then lasts this page only
-   }

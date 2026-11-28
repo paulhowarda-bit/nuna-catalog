@@ -129,8 +129,30 @@ class ConsoleBrandTest {
     }
 
     @Test
-    void thePackShowsFromFirstPaintAndTheButtonTurnsItOffAndOn() {
+    void thePackStartsOffAndTheButtonTurnsItOnFromFirstPaintAndOffAgain() {
         signIn();
+        // Off until this viewer turns it on (Paul, 2026-11-28; D56 amended): Ice line, its theme switch and its name.
+        assertThat(attr("data-brand")).isEqualTo("off");
+        assertThat(driver.executeScript("return document.querySelector('link[data-brand-css]').disabled")).isEqualTo(true);
+        assertThat(driver.executeScript("return getComputedStyle(document.body).fontFamily")).asString()
+                .contains("Instrument Sans").doesNotContain("Larchmere");
+        assertThat(browser.displayed(By.cssSelector("#top [data-theme-seg]"))).hasSize(1);
+        assertThat(driver.findElement(By.cssSelector("#top .nc-brand .peak")).isDisplayed()).isTrue();
+        assertThat(driver.findElement(By.cssSelector("#top .nc-brand .nm")).getText()).isEqualTo("nuna");
+        assertThat(driver.getTitle()).endsWith("· nuna");
+        assertThat(driver.executeScript("return document.querySelector('link[rel=icon]').getAttribute('href')"))
+                .isEqualTo("favicon.svg");
+        WebElement off = driver.findElement(By.cssSelector("#top .nc-pack"));
+        assertThat(off.isDisplayed()).as("the button is offered while the pack is off").isTrue();
+        assertThat(off.getAccessibleName()).isEqualTo("Larchmere mode");
+        assertThat(off.getDomAttribute("aria-pressed")).isEqualTo("false");
+
+        // On: kept in this browser, so after a reload the pack shows from the first paint.
+        off.click();
+        browser.await("the pack turned on", d -> "on".equals(attr("data-brand")));
+        assertThat(driver.executeScript("return localStorage.getItem('nuna.brand')")).isEqualTo("on");
+        driver.navigate().refresh();
+        browser.await(By.cssSelector("#who strong"));
         assertThat(attr("data-brand")).isEqualTo("on");
         assertThat(attr("data-pack-light")).isEqualTo("");
         assertThat(attr("data-theme")).as("a light-only pack pins light").isEqualTo("light");
@@ -159,34 +181,23 @@ class ConsoleBrandTest {
         assertThat(button.getAccessibleName()).isEqualTo("Larchmere mode");
         assertThat(button.getDomAttribute("aria-pressed")).isEqualTo("true");
 
-        // Off: Ice line, its theme switch and its name, kept in this browser across a reload.
+        // Off again: Ice line, and nothing kept, so the next page starts off.
         button.click();
         browser.await("the pack turned off", d -> "off".equals(attr("data-brand")));
         assertThat(driver.executeScript("return document.querySelector('link[data-brand-css]').disabled")).isEqualTo(true);
-        assertThat(driver.executeScript("return getComputedStyle(document.body).fontFamily")).asString()
-                .contains("Instrument Sans").doesNotContain("Larchmere");
         assertThat(browser.displayed(By.cssSelector("#top [data-theme-seg]"))).hasSize(1);
-        assertThat(driver.findElement(By.cssSelector("#top .nc-brand .peak")).isDisplayed()).isTrue();
-        assertThat(driver.findElement(By.cssSelector("#top .nc-brand .nm")).getText()).isEqualTo("nuna");
-        assertThat(driver.getTitle()).endsWith("· nuna");
         assertThat(button.getDomAttribute("aria-pressed")).isEqualTo("false");
-        assertThat(driver.executeScript("return localStorage.getItem('nuna.brand')")).isEqualTo("off");
+        assertThat(driver.executeScript("return localStorage.getItem('nuna.brand')")).isNull();
         driver.navigate().refresh();
         browser.await(By.cssSelector("#who strong"));
         assertThat(attr("data-brand")).isEqualTo("off");
-        assertThat(driver.executeScript("return document.querySelector('link[rel=icon]').getAttribute('href')"))
-                .isEqualTo("favicon.svg");
-
-        // On again.
-        driver.findElement(By.cssSelector("#top .nc-pack")).click();
-        browser.await("the pack turned on", d -> "on".equals(attr("data-brand")));
-        assertThat(attr("data-theme")).isEqualTo("light");
-        assertThat(driver.executeScript("return localStorage.getItem('nuna.brand')")).isNull();
     }
 
     @Test
     void withTheLargestMarkTheHeaderFitsAtEveryWidthAndOnAPhoneTheButtonIsInTheMenu() {
         signIn();
+        driver.findElement(By.cssSelector("#top .nc-pack")).click();
+        browser.await("the pack turned on", d -> "on".equals(attr("data-brand")));
         for (boolean on : List.of(true, false)) {
             for (int width : new int[] {761, 800, 901, 1000, 1101, 1241, 1321, 1401, 1440, 1600}) {
                 driver.manage().window().setSize(new Dimension(width, 900));
@@ -199,7 +210,7 @@ class ConsoleBrandTest {
                 browser.await("the pack turned off", d -> "off".equals(attr("data-brand")));
             }
         }
-        driver.executeScript("localStorage.removeItem('nuna.brand')");
+        driver.executeScript("localStorage.setItem('nuna.brand', 'on')");
         driver.manage().window().setSize(new Dimension(600, 900));
         driver.navigate().refresh();
         browser.await(By.cssSelector("#who .avatar"));
@@ -217,6 +228,10 @@ class ConsoleBrandTest {
         driver.manage().window().setSize(new Dimension(1440, 900));
         browser.signIn(IssuerForTests.bearer("tester", IssuerForTests.GROUP));
         browser.open("/ui/");
+        browser.await(By.cssSelector("#who strong"));
+        // Each test starts with no choice kept in this browser, so the pack is off.
+        driver.executeScript("localStorage.removeItem('nuna.brand')");
+        driver.navigate().refresh();
         browser.await(By.cssSelector("#who strong"));
     }
 
