@@ -1,6 +1,6 @@
 Breaks: a session's row goes out as it starts, before the events it counts
 Module: demo-datagen
-Test: StreamsTest#aBusinessDayHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow
+Test: StreamsTest#aBusinessDaysActivityHoldsTwoToFiveHundredSessionsAndEachSessionsEventsGoOutBeforeItsRow
 diff --git a/demo-datagen/src/main/java/nuna/datagen/world/Digital.java b/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
 index ac3c8f7f..2e79e761 100644
 --- a/demo-datagen/src/main/java/nuna/datagen/world/Digital.java
