@@ -3,10 +3,10 @@ Module: catalog-server
 Test: ConsoleBrowserTest#betweenAPhoneAndAWideScreenTheHeaderFitsAtEveryWidth
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
-index 22e396a7..74ca7811 100644
+index 017da79d..b20e6234 100644
 --- a/catalog-server/src/main/resources/nuna/ui/style.css
 +++ b/catalog-server/src/main/resources/nuna/ui/style.css
-@@ -1311,7 +1311,7 @@ details.tech[open] > summary { margin-bottom: 4px; }
+@@ -1343,7 +1343,7 @@ details.tech[open] > summary { margin-bottom: 4px; }
  @container frame (min-width: 761px) and (max-width: 1400px) { .nc-who .who-until { display: none; } }
  @container frame (min-width: 761px) and (max-width: 1320px) { .nc-who .who-text { display: none; } }
  @container frame (min-width: 761px) and (max-width: 1240px) {
@@ -14,4 +14,4 @@ index 22e396a7..74ca7811 100644
 +  .nc-go > span { display: none; }
  }
  @container frame (min-width: 761px) and (max-width: 1100px) {
-   .nc-top { gap: 10px; }
+   /* 8 px, not 10: with the Docs button (item 307), a branch chip and the note that a page shows main only, 10 px left
