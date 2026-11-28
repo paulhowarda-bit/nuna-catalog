@@ -1,0 +1,17 @@
+Breaks: config.json leaves out the brand pack's words, so the console keeps "nuna" and offers no Fidelity mode button.
+Module: catalog-server
+Test: ConsoleBrandTest#configCarriesThePacksWordsAndTheSlotServesThePack
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+index 68ad464f..665596d1 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+@@ -91,7 +91,7 @@ class UiRoutes {
+         out.put("grafana-url", settings.grafanaUrl());
+         // The brand pack's words; its look is in /ui/brand/brand.css, which the page links itself (backlog 333). The
+         // folder stays on the server.
+-        if (settings.brand() == null) {
++        if (true) {
+             out.put("brand", null);
+         } else {
+             Map<String, Object> brand = new LinkedHashMap<>();

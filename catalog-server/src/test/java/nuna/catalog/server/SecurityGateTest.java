@@ -9,6 +9,7 @@ import nuna.catalog.audit.AuthFailure;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Denial;
 import nuna.catalog.audit.EventCodec;
+import nuna.catalog.audit.Export;
 import nuna.catalog.audit.GovernanceChange;
 import nuna.catalog.audit.MaintenanceExemption;
 import nuna.catalog.core.Names;
@@ -751,10 +752,17 @@ class SecurityGateTest {
         assertThat(JsonPath.<List<String>>read(export.body(),
                 "$.grants[?(@.group == 'analysts')].securable.namespace[0]")).contains("sales", "finance");
         assertDenied(send(ANN, "GET", GRANTS + "/export", null), "exportGrants", "no_privilege");
-        // The console says the export is audited: who took the grants, and how many (backlog 312).
-        assertThat(log.await("\"type\":\"nuna.catalog.export\"", "\"what\":\"grants\""))
-                .contains("\"principal\":\"gina\"", "\"returned\":" + JsonPath.<List<String>>read(export.body(),
-                        "$.grants[*]").size());
+        // The console says the export is audited: who took the grants, and how many (backlog 312). It is a read
+        // record, published synchronously through the AuditPublisher seam as denials are, so it lands in the test
+        // sink; only the outbox relay's records reach the log here (backlog 339).
+        int exported = JsonPath.<List<Object>>read(export.body(), "$.grants[*]").size();
+        assertThat(audit.events()).extracting(CatalogEvent::data).filteredOn(Export.class::isInstance)
+                .map(Export.class::cast).singleElement().satisfies(taken -> {
+                    assertThat(taken.what()).isEqualTo(Export.GRANTS);
+                    assertThat(taken.returned()).isEqualTo(exported);
+                    assertThat(taken.catalog().catalog()).isEqualTo("gate");
+                    assertThat(taken.actor().principal()).isEqualTo("gina");
+                });
         log.await(3, "\"type\":\"nuna.catalog.grant\"");
     }
 

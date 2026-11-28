@@ -89,6 +89,18 @@ class UiRoutes {
         out.put("dev-token-login", settings.devTokenLogin());
         out.put("docs-url", settings.docsLink());
         out.put("grafana-url", settings.grafanaUrl());
+        // The brand pack's words; its look is in /ui/brand/brand.css, which the page links itself (backlog 333). The
+        // folder stays on the server.
+        if (settings.brand() == null) {
+            out.put("brand", null);
+        } else {
+            Map<String, Object> brand = new LinkedHashMap<>();
+            brand.put("name", settings.brand().name());
+            brand.put("mark-label", settings.brand().markLabel());
+            brand.put("show-name", settings.brand().showName());
+            brand.put("toggle-label", settings.brand().toggleLabel());
+            out.put("brand", brand);
+        }
         if (settings.oidc() == null) {
             out.put("oidc", null);
         } else {
@@ -98,6 +110,7 @@ class UiRoutes {
             oidc.put("scopes", settings.oidc().scopes());
             oidc.put("redirect-uri", settings.oidc().redirectUri() == null ? null
                     : settings.oidc().redirectUri().toString());
+            oidc.put("name", settings.oidc().name());
             out.put("oidc", oidc);
         }
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_JSON)

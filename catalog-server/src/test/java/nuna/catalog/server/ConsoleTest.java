@@ -68,11 +68,12 @@ class ConsoleTest {
         assertThat(response.statusCode()).isEqualTo(200);
         assertStrictPolicy(response, "connect-src 'self';");
         Map<String, Object> config = JsonPath.read(response.body(), "$");
-        assertThat(config).containsOnlyKeys("dev-token-login", "oidc", "docs-url", "grafana-url");
+        assertThat(config).containsOnlyKeys("dev-token-login", "oidc", "docs-url", "grafana-url", "brand");
         assertThat(config.get("dev-token-login")).isEqualTo(false);
         assertThat(config.get("docs-url")).as("the documentation this server serves").isEqualTo("/docs/");
         assertThat(config.get("oidc")).isNull();
         assertThat(config.get("grafana-url")).as("no Grafana unless one is named").isNull();
+        assertThat(config.get("brand")).as("Ice line unless an install sets a pack").isNull();
         assertThat(response.body().toLowerCase()).doesNotContain("secret");
     }
 

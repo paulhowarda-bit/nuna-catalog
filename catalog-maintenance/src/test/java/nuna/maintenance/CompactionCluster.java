@@ -140,6 +140,27 @@ final class CompactionCluster implements AutoCloseable {
         return status;
     }
 
+    /**
+     * Waits for the Job's {@code Failed} condition; returns its reason. Since Kubernetes 1.31 a Job that fails sets
+     * {@code FailureTarget} and counts its pod failed while the pod is still terminating, and sets {@code Failed}
+     * only once the pod is gone, up to its 30 s grace period later, so {@link #await} can return before it.
+     */
+    static String awaitFailedReason(String namespace, String job) throws Exception {
+        Instant deadline = Instant.now().plus(Duration.ofMinutes(15));
+        String reason = "";
+        while (Instant.now().isBefore(deadline)) {
+            reason = kubectl(Duration.ofMinutes(1), null, "get", "job", job, "-n", namespace, "-o",
+                    // Single quotes: Java on Windows passes double quotes inside an argument unescaped, and the
+                    // process receives them stripped.
+                    "jsonpath={.status.conditions[?(@.type=='Failed')].reason}").strip();
+            if (!reason.isEmpty()) {
+                return reason;
+            }
+            Thread.sleep(5_000);
+        }
+        return reason;
+    }
+
     static String kubectl(Duration timeout, String stdin, String... arguments) throws Exception {
         List<String> command = new ArrayList<>(List.of("kubectl", "--context", CONTEXT));
         command.addAll(List.of(arguments));

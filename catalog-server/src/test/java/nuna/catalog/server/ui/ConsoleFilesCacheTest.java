@@ -50,4 +50,20 @@ class ConsoleFilesCacheTest {
         assertThat(stale.getStatus()).isEqualTo(200);
         assertThat(stale.getContentAsString()).isEqualTo(first.getContentAsString()).isNotEmpty();
     }
+
+    /**
+     * With no pack set, the brand slot's fixed paths answer with the jar's files (backlog 333): a stylesheet that sets
+     * no token, so the console and the documentation are Ice line, and Ice line's icon. {@link BrandSlotTest} sets one.
+     */
+    @Test
+    void withNoPackTheBrandSlotIsTheJarsEmptyStylesheet() throws Exception {
+        MockMvc mvc = MockMvcBuilders.webAppContextSetup(context).build();
+        for (String path : java.util.List.of("/ui/brand/brand.css", "/docs/assets/brand/brand.css")) {
+            MockHttpServletResponse css = mvc.perform(get(path)).andReturn().getResponse();
+            assertThat(css.getStatus()).as(path).isEqualTo(200);
+            assertThat(css.getContentAsString()).as(path).doesNotContain("--", "{");
+        }
+        assertThat(mvc.perform(get("/ui/brand/favicon.svg")).andReturn().getResponse().getContentAsString())
+                .isEqualTo(mvc.perform(get("/ui/favicon.svg")).andReturn().getResponse().getContentAsString());
+    }
 }

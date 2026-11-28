@@ -87,6 +87,14 @@ databaseTls:
 storageCaConfigMap:
   name: ""
 
+# A ConfigMap in the release's namespace holding a brand pack for the console and the documentation (backlog 333):
+# brand.css, and any of favicon.svg, mark.svg and the fonts brand.css names, one file per key (fonts as binaryData; a
+# ConfigMap's 1 MiB holds a couple of woff2 fonts). The chart mounts it at /etc/nuna/brand and sets
+# nuna.ui.brand.dir there; set the pack's words under config's nuna.ui.brand (docs/site/configure/brand.html). Empty,
+# the console and the documentation are Ice line. A changed ConfigMap is served without a restart.
+brandConfigMap:
+  name: ""
+
 # The JVM sizes its heap from the container's memory limit.
 javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 

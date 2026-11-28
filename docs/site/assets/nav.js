@@ -759,6 +759,13 @@ window.NUNA_NAV = {
        "d": "`nuna.rest.*`, `nuna.ui.*`, `nuna.health.*`, `nuna.telemetry.*`, `nuna.changefeed.*`, `server.port`, logging."
       },
       {
+       "u": "configure/brand.html",
+       "t": "Brand packs",
+       "y": "reference",
+       "p": 1,
+       "d": "An install's brand pack for the console and the documentation: its files, the tokens it may set, and the button that turns it off."
+      },
+      {
        "u": "configure/maintenance.html",
        "t": "Maintenance worker settings",
        "y": "reference",

@@ -108,7 +108,7 @@
     var menu = el('button', {type: 'button', class: 'head-btn menu-open', 'aria-label': 'Open the page list', 'aria-expanded': 'false', 'aria-controls': 'site-nav'});
     menu.appendChild(icon('menu'));
     menu.addEventListener('click', function () { drawer(true); });
-    var brand = el('a', {class: 'brand', href: href('index.html'), 'aria-label': 'nuna docs, home'}, peak(), 'nuna', el('span', {class: 'docs-tag', text: 'docs'}));
+    var brand = el('a', {class: 'brand', href: href('index.html'), 'aria-label': 'nuna docs, home'}, peak(), el('span', {class: 'mark'}), 'nuna', el('span', {class: 'docs-tag', text: 'docs'}));
     var search = el('button', {type: 'button', class: 'head-btn search-open', 'aria-keyshortcuts': '/', 'aria-label': 'Search the docs'},
       icon('search'), el('span', {class: 'lbl', text: 'Search the docs'}), el('kbd', {class: 'k', 'aria-hidden': 'true', text: '/'}));
     search.addEventListener('click', openSearch);

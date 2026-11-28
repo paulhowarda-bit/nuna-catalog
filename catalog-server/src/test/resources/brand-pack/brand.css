@@ -1,0 +1,35 @@
+/* A neutral test pack (backlog 333): an invented product, Larchmere, with invented colours, so the tests exercise the
+   brand slot. Light-only, with a mark at the largest the header allows (120 x 20 px). Its font is a system serif, so a
+   test can tell it from Ice line's Instrument Sans without a font file. Tokens only, as configure/brand.html says. */
+@font-face { font-family: 'Larchmere Serif'; src: local('Georgia'), local('Times New Roman'); font-display: swap; }
+
+:root {
+  --brand-pack: 1;
+  --brand-light-only: 1;
+  --brand-mark: 1;
+  --brand-mark-w: 120px;
+  --mark-h: 20px;
+
+  --f-ui: 'Larchmere Serif', Georgia, serif;
+
+  --bg: #fbf7f0;
+  --surface: #ffffff;
+  --surface-2: #f3ede2;
+  --line: #e4dccd;
+  --line-strong: #cfc4b0;
+  --text: #2a1f14;
+  --text-2: #5e4f3d;
+  --accent: #8a3b12;
+  --accent-wash: #f8e8dc;
+  --accent-mark: #b65a24;
+  --on-accent: #ffffff;
+
+  --head-bg: #3b2a1a;
+  --head-ink: #fbf7f0;
+  --head-ink-2: #e4dccd;
+  --head-field: #ffffff;
+  --rail-current-bg: #f8e8dc;
+  --rail-current-ink: #3b2a1a;
+  --requested-bg: #f8e8dc;
+  --requested-ink: #8a3b12;
+}

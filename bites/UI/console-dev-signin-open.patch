@@ -1,0 +1,17 @@
+Breaks: Beside an identity provider, the developer token box shows open instead of folded under "Developer sign-in".
+Module: catalog-server
+Test: ConsoleSignInTest#theTokenBoxFoldsUnderDeveloperSignInBesideTheIdp
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 2dfa7d81..43b4005a 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -380,7 +380,7 @@ function signInPage(message, again) {
+       }
+     }}, 'Use this token'), status];
+     // Beside an identity provider the box folds away, closed (backlog 332); with none it is the only way in, so open.
+-    form.append(...(config.oidc ? [h('details', {class: 'dev-signin', 'data-dev-signin': ''}, h('summary', null, 'Developer sign-in'),
++    form.append(...(config.oidc ? [h('details', {class: 'dev-signin', 'data-dev-signin': '', open: ''}, h('summary', null, 'Developer sign-in'),
+       parts)] : parts));
+   }
+   if (!config.oidc && !config['dev-token-login']) {

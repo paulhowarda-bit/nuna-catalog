@@ -34,8 +34,7 @@ tests:
             exp_annotations:
               summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
               description: >-
-                2.522% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
-                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                2.522% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target. Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
                 dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
       - eval_time: 375m
         alertname: NunaLoadAvailabilityBurnFast
@@ -44,8 +43,7 @@ tests:
             exp_annotations:
               summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
               description: >-
-                24.47% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
-                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                24.47% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target. Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
                 dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
       - eval_time: 375m
         alertname: NunaRequestAvailabilityBurnFast
@@ -55,7 +53,7 @@ tests:
               summary: "Iceberg calls fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
               description: >-
                 24.47% of the Iceberg REST calls nuna.catalog.requests times were answered 5xx (4xx answers left out);
-                the SLO allows 0.1%, a draft target (backlog 261). Burning at 14.4 times the budget over 1 h and 5 min,
+                the SLO allows 0.1%, a draft target. Burning at 14.4 times the budget over 1 h and 5 min,
                 or 6 times over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
       - eval_time: 375m
         alertname: NunaCommitAvailabilityBurnFast
@@ -180,8 +178,7 @@ tests:
             exp_annotations:
               summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
               description: >-
-                2.42% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
-                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                2.42% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target. Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
                 dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
       - eval_time: 385m
         alertname: NunaLoadAvailabilityBurnFast
@@ -190,8 +187,7 @@ tests:
             exp_annotations:
               summary: "Loads fail with 5xx fast enough to spend the availability SLO's error budget in days (nuna/nuna-catalog)"
               description: >-
-                2.611% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target (backlog
-                261). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
+                2.611% of loads were answered 5xx (4xx answers left out); the SLO allows 0.1%, a draft target. Burning at 14.4 times the budget over 1 h and 5 min, or 6 times over 6 h and 30 min. The catalog
                 dashboard's "Failed loads" names the error types. docs/observability/dashboards-and-alerts.md.
       - eval_time: 385m
         alertname: NunaCatalogGone

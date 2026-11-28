@@ -224,8 +224,16 @@ public final class ConsoleBrowser implements AutoCloseable {
         driver.get(origin + path);
     }
 
-    /** Signs the console in with a bearer token, as its token box would: the token goes into this tab's storage. */
+    /**
+     * Signs the console in with a bearer token, as its token box would: the token goes into this tab's storage. The
+     * last caller's token is cleared first, on a page of the console's origin that runs no script, so the console that
+     * loads next starts signed out: loaded with it, the last caller's pages went on asking the catalog after the swap,
+     * as the new caller, and wrote refusals in the new caller's name (backlog 341).
+     */
     public void signIn(String bearer) {
+        driver.get("about:blank");
+        driver.get(origin + "/ui/favicon.svg");
+        driver.executeScript("sessionStorage.clear();");
         open("/ui/");
         driver.executeScript("sessionStorage.clear(); sessionStorage.setItem('nuna.token', arguments[0]);",
                 bearer.replaceFirst("^Bearer ", ""));

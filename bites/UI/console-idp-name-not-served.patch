@@ -1,0 +1,16 @@
+Breaks: config.json leaves out the identity provider's name in words, so the sign-in screen shows its host.
+Module: catalog-server
+Test: ConsoleConfiguredTest#configCarriesTheSignInSettingsAndNothingElse
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+index 05bfd99a..5b93cd03 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+@@ -98,7 +98,6 @@ class UiRoutes {
+             oidc.put("scopes", settings.oidc().scopes());
+             oidc.put("redirect-uri", settings.oidc().redirectUri() == null ? null
+                     : settings.oidc().redirectUri().toString());
+-            oidc.put("name", settings.oidc().name());
+             out.put("oidc", oidc);
+         }
+         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).contentType(MediaType.APPLICATION_JSON)
