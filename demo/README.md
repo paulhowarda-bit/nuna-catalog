@@ -39,7 +39,7 @@ demo/demo.sh up
 - Run in the main checkout, where other sessions land all day, `up` builds one commit (backlog 274): the main
   checkout's HEAD when it starts. It runs from `~/.nuna-demo/checkout`, a worktree it keeps detached at that
   commit and locked, so a landing during its run neither stops it nor mixes commits into the images. `engines`,
-  `gen`, `ss`, `kafka`, `cdc`, `token` and `rate` do the same, each at the HEAD of its own start; one of them at a
+  `gen`, `ss`, `kafka`, `cdc`, `token`, `rate` and `scale <n>` do the same, each at the HEAD of its own start; one of them at a
   time holds that worktree, and another is refused until it ends. `up` says which commit it builds, and the URLs
   and tokens it prints (and `token`) start with the commit the demo runs. Run from any other worktree, `demo.sh`
   runs from that worktree's files as they are. `demo/test-pin.sh` checks this in a scratch repository.
@@ -410,13 +410,34 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   1000, from 200 to 20000), `NUNA_DEMO_SECURITIES` (300, from 50 to 1000) and `NUNA_DEMO_CATCH_UP_DAYS` (3, from 1
   to 30), set in the shell that runs `gen`. The bootstrap fixes them when the world begins, so they count only for
   the first `gen` on a new lake (or after `wipe`); a later one keeps the world's own, and its log says so with a
-  `WARN`. The generator's memory follows `NUNA_DEMO_ACCOUNTS`: 256 MB of up to 384 MB to 2,000 accounts, and 64 MB
-  more of the limit for each 1,000 above, so keep it as it was when the world began.
-- The real clock: the world's events arrive at their own time of day in New York, as a live firm's would. The
-  three catch-up days and today's earlier hours go at once when the generator starts; then each event waits for its
-  time. A trading day's events fall between 07:00 and 17:00, so the world is quiet overnight, over weekends and on
-  market holidays (the log says `quiet until <time>`). Every minute the generator also asks Kafka Connect whether
-  the sink's task has failed, as it does when the catalog restarts, and restarts it if so.
+  `WARN`. The generator's memory follows `NUNA_DEMO_ACCOUNTS` times the scale (below): 256 MB of up to 384 MB to
+  2,000 accounts, and 64 MB more of the limit for each 1,000 above, so keep `NUNA_DEMO_ACCOUNTS` as it was when the
+  world began.
+- The scale dial (item 321; Paul, 2026-11-27): `demo/demo.sh scale <n>`, from 1 to 50, makes the firm bigger on a
+  running world, with no reset; `demo/demo.sh scale` prints it, and `status` shows it with the switches. It is kept
+  in `~/.nuna-demo/scale`, so `up` and `gen` put it back, and reaches the generator as `BROKERAGE_SCALE`: a new value
+  restarts the pod, and the generator takes it from the next whole hour. At scale n the firm onboards new customers
+  toward n times its accounts (at most 20,000), through the same flows as its own (accounts, parties with their CIP
+  checks and screens, suitability, a first deposit), and every account does about n times as much, so the events an
+  hour grow about n times. Turned down, onboarding stops and the rates fall; no account goes. The generator keeps the
+  dial's history in the lake, so a restart replays each day at the scale it ran at. A higher scale needs more of the
+  Podman machine: the generator's memory limit follows the accounts the dial aims at (896 MiB at scale 10 with 1,000
+  accounts, 1,536 MiB at 20,000), and Kafka Connect, SingleStore and the sink carry n times the rows.
+- The real clock, around the clock (D48, amended 2026-11-27; item 321): the world's events arrive at their own time
+  in New York, as a live firm's would, at every hour of every day. The three catch-up days and today's earlier hours
+  go at once when the generator starts; then each event waits for its time. Customers log in, change their details
+  and ask to move money at all hours, busiest in the evening and at weekends and thinnest at 03:00, holidays
+  included. Trading follows Nasdaq's 24x5 sessions: overnight 21:00 to 04:00, pre-market 04:00 to 09:30, regular
+  09:30 to 16:00, post-market 16:00 to 20:00, from Sunday 21:00 to Friday 20:00, with a pause from 20:00 to 21:00 and
+  none on exchange holidays; outside the regular session only limit orders in the most popular fifth of the
+  securities trade, thinly and at wider quotes, and `orders`, `order_events` and `executions` say which `session`. A
+  trade after 21:00 takes the next trading day's trade date. The books keep business days: a money request made at a
+  weekend, on a holiday or outside the payments systems' hours (07:00 to 19:00, wires to 15:00) shows at once as a
+  payment with status `requested` and is booked at 07:00 on the next business day, with its business date. The
+  back office's batch runs after 20:00, and the `eod-YYYY-MM-DD` tags go on as each business day's window closes at
+  20:30. Every minute the generator also asks Kafka Connect whether the sink's task has failed, as it does when the
+  catalog restarts, and restarts it if so. A world begun before item 321 needs a reset of the brokerage world alone
+  (its events and three tables' columns changed).
 - Kafka: the generator writes plain JSON to 49 topics, and Kafka Connect's Iceberg sink `brokerage-lake`
   (`demo/brokerage/connector.json`, as user `cdc`) routes each record to the table its `lake_table` field names,
   committing every 15 seconds. The tables must exist: the sink neither makes nor changes them.
@@ -505,8 +526,9 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   and offer as it changes (`brokerage.markets.quotes`: the popular names every minute, the tail about one minute in
   five, about 37,000 a business day at 300 securities), and the digital channels' sessions and click events
   (`brokerage.digital.sessions`, `.click_events`: about 0.35 sessions a business day per account, active traders
-  far more than dormant accounts, one in ten a visitor who never logs in, about 15 events each, between 07:00 and
-  17:00). Each event goes out at its time; a session's row goes out as it ends. With Kafka off they go through
+  far more than dormant accounts, one in ten a visitor who never logs in, about 15 events each, at every hour of every
+  day on the customers' curve). Quotes run through all four trading sessions, outside the regular one for the most
+  popular fifth of the securities alone, less often and wider. Each event goes out at its time; a session's row goes out as it ends. With Kafka off they go through
   SingleStore's tables `quotes`, `sessions` and `click_events` into `brokerage.singlestore`, as every Kafka feed does.
   If they land on a world begun before them, the generator sends them from the world's first day as it catches up.
   ```sql

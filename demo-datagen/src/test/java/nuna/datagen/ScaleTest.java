@@ -103,6 +103,11 @@ class ScaleTest {
             for (String name : java.util.List.of("BROKERAGE_ACCOUNTS", "BROKERAGE_SECURITIES", "BROKERAGE_CATCH_UP_DAYS")) {
                 assertThat(yaml).as(manifest).contains("{name: " + name + ", value: \"${" + name + "}\"}");
             }
+            if (manifest.equals("brokerage.yaml")) {
+                // The scale dial (item 321), which demo.sh keeps in ~/.nuna-demo/scale.
+                assertThat(yaml).contains("{name: BROKERAGE_SCALE, value: \"${BROKERAGE_SCALE}\"}");
+                assertThat(sh).contains("BROKERAGE_SCALE=$(tr -d '\\r\\n' < \"$RUN/scale\"");
+            }
             Matcher used = Pattern.compile("\\$\\{(\\w+)}").matcher(yaml);
             while (used.find()) {
                 assertThat(filled).as(manifest + "'s ${" + used.group(1) + "}").contains(used.group(1));
